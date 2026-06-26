@@ -1,0 +1,2180 @@
+{
+  "numberFormats": [
+    {
+      "value": 0,
+      "str": "0"
+    },
+    {
+      "value": 1,
+      "str": "1"
+    },
+    {
+      "value": 5,
+      "str": "5"
+    },
+    {
+      "value": -5,
+      "str": "-5"
+    },
+    {
+      "value": 0.1,
+      "str": "0.1"
+    },
+    {
+      "value": 0.5,
+      "str": "0.5"
+    },
+    {
+      "value": 1.5,
+      "str": "1.5"
+    },
+    {
+      "value": 100,
+      "str": "100"
+    },
+    {
+      "value": 1000000,
+      "str": "1000000"
+    },
+    {
+      "value": 0.000001,
+      "str": "0.000001"
+    },
+    {
+      "value": 1e-7,
+      "str": "1e-7"
+    },
+    {
+      "value": 5e-7,
+      "str": "5e-7"
+    },
+    {
+      "value": 1e+21,
+      "str": "1e+21"
+    },
+    {
+      "value": 100000000000000000000,
+      "str": "100000000000000000000"
+    },
+    {
+      "value": 123456789,
+      "str": "123456789"
+    },
+    {
+      "value": 2.5e-8,
+      "str": "2.5e-8"
+    },
+    {
+      "value": -3.14,
+      "str": "-3.14"
+    },
+    {
+      "value": 9007199254740991,
+      "str": "9007199254740991"
+    },
+    {
+      "value": 0.0001,
+      "str": "0.0001"
+    },
+    {
+      "value": 12345.678,
+      "str": "12345.678"
+    }
+  ],
+  "cases": [
+    {
+      "name": "value_root",
+      "input": 7,
+      "optimized": 7,
+      "nodes": [
+        {
+          "value": 7
+        }
+      ],
+      "root": 0
+    },
+    {
+      "name": "value_float",
+      "input": 0.1,
+      "optimized": 0.1,
+      "nodes": [
+        {
+          "value": 0.1
+        }
+      ],
+      "root": 0
+    },
+    {
+      "name": "add_empty",
+      "input": {
+        "func": "Add",
+        "args": []
+      },
+      "optimized": 0,
+      "nodes": [
+        {
+          "value": 0
+        }
+      ],
+      "root": 0
+    },
+    {
+      "name": "add_consts",
+      "input": {
+        "func": "Add",
+        "args": [
+          2,
+          3
+        ]
+      },
+      "optimized": 5,
+      "nodes": [
+        {
+          "value": 5
+        }
+      ],
+      "root": 0
+    },
+    {
+      "name": "add_const_dyn",
+      "input": {
+        "func": "Add",
+        "args": [
+          0,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "Get",
+        "args": [
+          1000,
+          0
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        }
+      ],
+      "root": 2
+    },
+    {
+      "name": "add_const_front",
+      "input": {
+        "func": "Add",
+        "args": [
+          2,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          3
+        ]
+      },
+      "optimized": {
+        "func": "Add",
+        "args": [
+          5,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 5
+        },
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            1,
+            2
+          ]
+        },
+        {
+          "func": "Add",
+          "args": [
+            0,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    },
+    {
+      "name": "add_nested",
+      "input": {
+        "func": "Add",
+        "args": [
+          {
+            "func": "Add",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              1
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "Add",
+        "args": [
+          1,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1
+        },
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            1,
+            2
+          ]
+        },
+        {
+          "func": "Get",
+          "args": [
+            1,
+            0
+          ]
+        },
+        {
+          "func": "Add",
+          "args": [
+            0,
+            3,
+            4
+          ]
+        }
+      ],
+      "root": 5
+    },
+    {
+      "name": "mul_zero",
+      "input": {
+        "func": "Multiply",
+        "args": [
+          0,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "Execute",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          0
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "func": "Execute",
+          "args": [
+            2,
+            1
+          ]
+        }
+      ],
+      "root": 3
+    },
+    {
+      "name": "mul_identity",
+      "input": {
+        "func": "Multiply",
+        "args": [
+          1,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "Get",
+        "args": [
+          1000,
+          0
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        }
+      ],
+      "root": 2
+    },
+    {
+      "name": "mul_consts",
+      "input": {
+        "func": "Multiply",
+        "args": [
+          2,
+          3
+        ]
+      },
+      "optimized": 6,
+      "nodes": [
+        {
+          "value": 6
+        }
+      ],
+      "root": 0
+    },
+    {
+      "name": "mul_const_dyn",
+      "input": {
+        "func": "Multiply",
+        "args": [
+          2,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          3
+        ]
+      },
+      "optimized": {
+        "func": "Multiply",
+        "args": [
+          6,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 6
+        },
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            1,
+            2
+          ]
+        },
+        {
+          "func": "Multiply",
+          "args": [
+            0,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    },
+    {
+      "name": "sub_basic",
+      "input": {
+        "func": "Subtract",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          2,
+          3
+        ]
+      },
+      "optimized": {
+        "func": "Subtract",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          5
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 5
+        },
+        {
+          "func": "Subtract",
+          "args": [
+            2,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    },
+    {
+      "name": "sub_nested",
+      "input": {
+        "func": "Subtract",
+        "args": [
+          {
+            "func": "Subtract",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              1
+            ]
+          },
+          2
+        ]
+      },
+      "optimized": {
+        "func": "Subtract",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          3
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 3
+        },
+        {
+          "func": "Subtract",
+          "args": [
+            2,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    },
+    {
+      "name": "sub_all_const",
+      "input": {
+        "func": "Subtract",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          0
+        ]
+      },
+      "optimized": {
+        "func": "Get",
+        "args": [
+          1000,
+          0
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        }
+      ],
+      "root": 2
+    },
+    {
+      "name": "div_basic",
+      "input": {
+        "func": "Divide",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          2,
+          4
+        ]
+      },
+      "optimized": {
+        "func": "Divide",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          8
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 8
+        },
+        {
+          "func": "Divide",
+          "args": [
+            2,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    },
+    {
+      "name": "mod_flatten",
+      "input": {
+        "func": "Mod",
+        "args": [
+          {
+            "func": "Mod",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              2
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "Mod",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              2
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 1
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "value": 2
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            5
+          ]
+        },
+        {
+          "func": "Mod",
+          "args": [
+            2,
+            4,
+            6
+          ]
+        }
+      ],
+      "root": 7
+    },
+    {
+      "name": "power_single",
+      "input": {
+        "func": "Power",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "Get",
+        "args": [
+          1000,
+          0
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        }
+      ],
+      "root": 2
+    },
+    {
+      "name": "if_and",
+      "input": {
+        "func": "If",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          },
+          0
+        ]
+      },
+      "optimized": {
+        "func": "And",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 1
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "func": "And",
+          "args": [
+            2,
+            4
+          ]
+        }
+      ],
+      "root": 5
+    },
+    {
+      "name": "if_keep",
+      "input": {
+        "func": "If",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              2
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "If",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              2
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 1
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "value": 2
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            5
+          ]
+        },
+        {
+          "func": "If",
+          "args": [
+            2,
+            4,
+            6
+          ]
+        }
+      ],
+      "root": 7
+    },
+    {
+      "name": "get_shifted",
+      "input": {
+        "func": "Get",
+        "args": [
+          1000,
+          {
+            "func": "Add",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              {
+                "func": "Multiply",
+                "args": [
+                  {
+                    "func": "Get",
+                    "args": [
+                      1000,
+                      1
+                    ]
+                  },
+                  {
+                    "func": "Get",
+                    "args": [
+                      1000,
+                      2
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "GetShifted",
+        "args": [
+          1000,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              2
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 1
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "value": 2
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            5
+          ]
+        },
+        {
+          "func": "GetShifted",
+          "args": [
+            0,
+            2,
+            4,
+            6
+          ]
+        }
+      ],
+      "root": 7
+    },
+    {
+      "name": "getshifted_fold_const",
+      "input": {
+        "func": "GetShifted",
+        "args": [
+          1000,
+          2,
+          3,
+          4
+        ]
+      },
+      "optimized": {
+        "func": "Get",
+        "args": [
+          1000,
+          14
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 14
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        }
+      ],
+      "root": 2
+    },
+    {
+      "name": "getshifted_fold_zero",
+      "input": {
+        "func": "GetShifted",
+        "args": [
+          1000,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          0,
+          0
+        ]
+      },
+      "optimized": {
+        "func": "Get",
+        "args": [
+          1000,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            2
+          ]
+        }
+      ],
+      "root": 3
+    },
+    {
+      "name": "set_compound",
+      "input": {
+        "func": "Set",
+        "args": [
+          1000,
+          5,
+          {
+            "func": "Add",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  5
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "SetAdd",
+        "args": [
+          1000,
+          5,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            2
+          ]
+        },
+        {
+          "func": "SetAdd",
+          "args": [
+            0,
+            1,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    },
+    {
+      "name": "set_compound_commutative",
+      "input": {
+        "func": "Set",
+        "args": [
+          1000,
+          5,
+          {
+            "func": "Add",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  5
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "SetAdd",
+        "args": [
+          1000,
+          5,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            2
+          ]
+        },
+        {
+          "func": "SetAdd",
+          "args": [
+            0,
+            1,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    },
+    {
+      "name": "set_shifted_index",
+      "input": {
+        "func": "Set",
+        "args": [
+          1000,
+          {
+            "func": "Add",
+            "args": [
+              2,
+              {
+                "func": "Multiply",
+                "args": [
+                  {
+                    "func": "Get",
+                    "args": [
+                      1000,
+                      1
+                    ]
+                  },
+                  3
+                ]
+              }
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "SetShifted",
+        "args": [
+          1000,
+          2,
+          3,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 3
+        },
+        {
+          "value": 1
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            5
+          ]
+        },
+        {
+          "func": "SetShifted",
+          "args": [
+            0,
+            1,
+            2,
+            4,
+            6
+          ]
+        }
+      ],
+      "root": 7
+    },
+    {
+      "name": "switch_normalize_default0",
+      "input": {
+        "func": "SwitchWithDefault",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              3
+            ]
+          },
+          0,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              4
+            ]
+          },
+          1,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              5
+            ]
+          },
+          2,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              6
+            ]
+          },
+          0
+        ]
+      },
+      "optimized": {
+        "func": "SwitchInteger",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              3
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              4
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              5
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              6
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 3
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 4
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "value": 5
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            5
+          ]
+        },
+        {
+          "value": 6
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            7
+          ]
+        },
+        {
+          "func": "SwitchInteger",
+          "args": [
+            2,
+            4,
+            6,
+            8
+          ]
+        }
+      ],
+      "root": 9
+    },
+    {
+      "name": "switch_normalize_withdefault",
+      "input": {
+        "func": "SwitchWithDefault",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              3
+            ]
+          },
+          0,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              4
+            ]
+          },
+          1,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              5
+            ]
+          },
+          2,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              6
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              7
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "SwitchIntegerWithDefault",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              3
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              4
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              5
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              6
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              7
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 3
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 4
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "value": 5
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            5
+          ]
+        },
+        {
+          "value": 6
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            7
+          ]
+        },
+        {
+          "value": 7
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            9
+          ]
+        },
+        {
+          "func": "SwitchIntegerWithDefault",
+          "args": [
+            2,
+            4,
+            6,
+            8,
+            10
+          ]
+        }
+      ],
+      "root": 11
+    },
+    {
+      "name": "switch_no_normalize",
+      "input": {
+        "func": "SwitchWithDefault",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              3
+            ]
+          },
+          0,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              4
+            ]
+          },
+          3,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              5
+            ]
+          },
+          5,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              6
+            ]
+          },
+          0
+        ]
+      },
+      "optimized": {
+        "func": "Switch",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              3
+            ]
+          },
+          0,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              4
+            ]
+          },
+          3,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              5
+            ]
+          },
+          5,
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              6
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 3
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 0
+        },
+        {
+          "value": 4
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            4
+          ]
+        },
+        {
+          "value": 5
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            6
+          ]
+        },
+        {
+          "value": 6
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            8
+          ]
+        },
+        {
+          "func": "Switch",
+          "args": [
+            2,
+            3,
+            5,
+            1,
+            7,
+            6,
+            9
+          ]
+        }
+      ],
+      "root": 10
+    },
+    {
+      "name": "while_execute2",
+      "input": {
+        "func": "While",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Execute",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  1
+                ]
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "While",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              1
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 1
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "func": "While",
+          "args": [
+            2,
+            4
+          ]
+        }
+      ],
+      "root": 5
+    },
+    {
+      "name": "while_execute_n",
+      "input": {
+        "func": "While",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Execute",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  1
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  2
+                ]
+              },
+              0
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "While",
+        "args": [
+          {
+            "func": "Get",
+            "args": [
+              1000,
+              0
+            ]
+          },
+          {
+            "func": "Execute",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  1
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  2
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "value": 1
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            3
+          ]
+        },
+        {
+          "value": 2
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            5
+          ]
+        },
+        {
+          "func": "Execute",
+          "args": [
+            4,
+            6
+          ]
+        },
+        {
+          "func": "While",
+          "args": [
+            2,
+            7
+          ]
+        }
+      ],
+      "root": 8
+    },
+    {
+      "name": "appender_dedup",
+      "input": {
+        "func": "Add",
+        "args": [
+          {
+            "func": "Multiply",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              }
+            ]
+          },
+          {
+            "func": "Multiply",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "optimized": {
+        "func": "Add",
+        "args": [
+          {
+            "func": "Multiply",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              }
+            ]
+          },
+          {
+            "func": "Multiply",
+            "args": [
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              },
+              {
+                "func": "Get",
+                "args": [
+                  1000,
+                  0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "value": 1000
+        },
+        {
+          "value": 0
+        },
+        {
+          "func": "Get",
+          "args": [
+            0,
+            1
+          ]
+        },
+        {
+          "func": "Multiply",
+          "args": [
+            2,
+            2
+          ]
+        },
+        {
+          "func": "Add",
+          "args": [
+            3,
+            3
+          ]
+        }
+      ],
+      "root": 4
+    }
+  ]
+}

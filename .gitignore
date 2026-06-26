@@ -1,0 +1,38 @@
+# --- Go build & test artifacts ---
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+coverage.*
+*.cover
+*.prof
+
+# --- Golden-fixture generation scratch ---
+# .goldtmp is the staging dir created by the snode/optimize golden harnesses;
+# committed fixtures (snode_golden.json, optimize_golden.json, harness.*,
+# regenerate.sh) are kept — only transient intermediates are ignored.
+/.goldtmp/
+**/testdata/_blocks.json
+**/testdata/*.tmp
+**/testdata/err.txt
+
+# --- Local tooling / agent scratch (not part of the project) ---
+.claude/
+.agents/
+.codex/
+
+# --- Editors / IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
