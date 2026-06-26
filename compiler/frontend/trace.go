@@ -196,6 +196,8 @@ func (t *tracer) stmt(s ast.Stmt) error {
 		return err
 	case *ast.IfStmt:
 		return t.ifStmt(n)
+	case *ast.SwitchStmt:
+		return t.switchStmt(n)
 	case *ast.ForStmt:
 		return t.forStmt(n)
 	case *ast.BranchStmt:
@@ -617,6 +619,108 @@ func (t *tracer) shortCircuitIf(n *ast.IfStmt, bin *ast.BinaryExpr) error {
 
 	t.enter(merge)
 	t.terminated = len(merge.Incoming) == 0
+	return nil
+}
+
+func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
+	if n.Init != nil {
+		return t.errf(n, "switch init statement is not supported yet")
+	}
+
+	// Evaluate the tag expression (or use true for switch{} with no tag).
+	var tag Num
+	if n.Tag != nil {
+		v, err := t.expr(n.Tag)
+		if err != nil {
+			return err
+		}
+		tag = v
+	} else {
+
+	}
+
+	merge := ir.NewBlock()
+
+	for _, clause := range n.Body.List {
+		cc, ok := clause.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+
+		if cc.List == nil {
+			// default case.
+			t.enter(ir.NewBlock())
+			if err := t.stmtList(cc.Body); err != nil {
+				return err
+			}
+			t.fallthroughTo(merge)
+			continue
+		}
+
+		// Build condition: if tagged, `tag == val` for each val; if untagged, use case expr directly.
+		var cond Num
+		for j, expr := range cc.List {
+			cv, err := t.expr(expr)
+			if err != nil {
+				return err
+			}
+			if j == 0 {
+				cond = cv
+			} else {
+				cond, _ = applyBinary(token.LOR, cond, cv)
+			}
+		}
+
+		if n.Tag != nil {
+			// Tagged: need `tag == caseVal` for each val.
+			var eq Num
+			for j, expr := range cc.List {
+				cv, err := t.expr(expr)
+				if err != nil {
+					return err
+				}
+				eq2, _ := applyBinary(token.EQL, tag, cv)
+				if j == 0 {
+					eq = eq2
+				} else {
+					eq, _ = applyBinary(token.LOR, eq, eq2)
+				}
+			}
+			cond = eq
+		}
+
+		caseBlock := ir.NewBlock()
+
+		if cond.isConst {
+			if cond.c != 0 {
+				// This case is always true: execute body and skip everything after.
+				t.enter(caseBlock)
+				if err := t.stmtList(cc.Body); err != nil {
+					return err
+				}
+				t.fallthroughTo(merge)
+				break
+			}
+			// Constant false: skip this case entirely.
+			continue
+		}
+
+		// Non-constant: generate Branch.
+		nextBlock := ir.NewBlock()
+		t.current.Test = cond.node()
+		t.current.ConnectTo(nextBlock, ir.Cond(0)) // false → next case
+		t.current.ConnectTo(caseBlock, nil)        // true → this case
+
+		t.enter(caseBlock)
+		if err := t.stmtList(cc.Body); err != nil {
+			return err
+		}
+		t.fallthroughTo(merge)
+
+		t.enter(nextBlock)
+	}
+
+	t.enter(merge)
 	return nil
 }
 
