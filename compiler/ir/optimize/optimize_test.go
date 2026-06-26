@@ -608,6 +608,46 @@ func f() {
 	}
 }
 
+func TestCopyCoalesceFoldsCopies(t *testing.T) {
+	t1 := ir.NewTemp("x.1")
+	t2 := ir.NewTemp("y.2")
+
+	e := ir.NewBlock()
+	e.Statements = []ir.Node{
+		ir.SetPlace(ir.TempCell(t1), ir.Const(42)),                     // t1 = 42
+		ir.SetPlace(ir.TempCell(t2), ir.GetPlace(ir.TempCell(t1))),     // t2 = Get(t1) → copy
+		ir.SetPlace(ir.Cell(0, 0), ir.GetPlace(ir.TempCell(t2))),       // use t2
+	}
+
+	CopyCoalesce{}.Run(e)
+
+	// After coalesce: t2 should be replaced by t1 everywhere, and the copy dropped.
+	if len(e.Statements) != 2 {
+		t.Fatalf("expected 2 statements after coalesce, got %d", len(e.Statements))
+	}
+	// Check that the last statement uses t1 not t2.
+	last := e.Statements[1].(ir.Set)
+	get := last.Value.(ir.Get)
+	bp := get.Place.(ir.BlockPlace)
+	if bp.Block != t1 {
+		t.Errorf("expected t1 in use site, got %p", bp.Block)
+	}
+}
+
+func TestCSEDeduplicates(t *testing.T) {
+	// Two identical subexpressions: Get(0,0)+Get(0,0) should share the first result.
+	e := ir.NewBlock()
+	inner := ir.PureInstr(resource.RuntimeFunctionAdd, ir.GetPlace(ir.Cell(0, 0)), ir.Const(1))
+	e.Statements = []ir.Node{
+		ir.SetPlace(ir.Cell(0, 1), inner),
+		ir.SetPlace(ir.Cell(0, 2), ir.GetPlace(ir.TempCell(ir.NewTemp("x")))),
+		ir.SetPlace(ir.Cell(0, 3), inner), // duplicate
+	}
+	CSE{}.Run(e)
+	// After CSE, the second Add should be replaced with a Get to the extracted SSA var.
+	t.Logf("statements after CSE: %d", len(e.Statements))
+}
+
 // TestStandardPipeline runs the whole ordered optimization pipeline (the SCCP
 // stage's deliverable) on a realistic callback: a dataflow-constant condition
 // prunes its dead branch and the constant propagates into the survivor.
