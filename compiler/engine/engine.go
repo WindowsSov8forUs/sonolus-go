@@ -52,6 +52,14 @@ type Archetype struct {
 // entityMemoryBlock is the Play-mode EntityMemory block.
 const entityMemoryBlock = 4000
 
+const (
+	entityDataBlock    = 4001
+	entitySharedBlock  = 4002
+	entityInfoBlock    = 4003
+	entityDespawnBlock = 4004
+	entityInputBlock   = 4005
+)
+
 // PlayEngine describes a play-mode engine to compile.
 type PlayEngine struct {
 	Skin       resource.EngineSkinData
