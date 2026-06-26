@@ -15,6 +15,7 @@ func Standard(mode ir.Mode, callback string) []Pass {
 		FlattenAssociativeOps{},
 		RemoveRedundantArguments{},
 		RewriteToSwitch{},
+		NormalizeSwitch{},
 		CSE{},
 		LICM{},
 		FromSSA{},
@@ -23,6 +24,7 @@ func Standard(mode ir.Mode, callback string) []Pass {
 		CopyCoalesce{},
 		UnreachableCodeElimination{},
 		CoalesceFlow{},
+		CombineExitBlocks{},
 		DeadCodeElimination{},
 	}
 }

@@ -236,3 +236,92 @@ func unflattenStmt(n ir.Node) ir.Node {
 	}
 	return result
 }
+
+// NormalizeSwitch normalizes dense sequential cases: {100,101,102,103} becomes
+// {(cond-100)}→{0,1,2,3} by transforming the test expression.
+type NormalizeSwitch struct{}
+
+func (NormalizeSwitch) Name() string { return "NormalizeSwitch" }
+
+func (NormalizeSwitch) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+	for _, b := range ir.Preorder(entry) {
+		cases := map[float64]bool{}
+		var hasNil bool
+		for _, e := range b.Outgoing {
+			if e.Cond == nil {
+				hasNil = true
+			} else {
+				cases[*e.Cond] = true
+			}
+		}
+		if len(cases) <= 2 || !hasNil {
+			continue
+		}
+		offset, stride := normSwitchParams(cases)
+		if offset == 0 && stride == 1 {
+			continue
+		}
+		for _, e := range b.Outgoing {
+			if e.Cond == nil {
+				continue
+			}
+			v := (*e.Cond - offset) / stride
+			e.Cond = &v
+		}
+		if offset != 0 {
+			b.Test = ir.PureInstr("Subtract", b.Test, ir.Const(offset))
+		}
+		if stride != 1 {
+			b.Test = ir.PureInstr("Divide", b.Test, ir.Const(stride))
+		}
+	}
+	return entry
+}
+
+func normSwitchParams(cases map[float64]bool) (offset, stride float64) {
+	// Collect and sort case values.
+	vals := make([]float64, 0, len(cases))
+	for v := range cases {
+		vals = append(vals, v)
+	}
+	for i := 1; i < len(vals); i++ {
+		for j := i; j > 0 && vals[j] < vals[j-1]; j-- {
+			vals[j], vals[j-1] = vals[j-1], vals[j]
+		}
+	}
+	offset = vals[0]
+	stride = vals[1] - offset
+	if float64(int(offset)) != offset || float64(int(stride)) != stride {
+		return 0, 1
+	}
+	for i, v := range vals[2:] {
+		if v != offset+float64(i+2)*stride {
+			return 0, 1
+		}
+	}
+	return offset, stride
+}
+
+// CombineExitBlocks merges empty exit blocks (no statements, no outgoing edges)
+// into a single canonical exit, reducing block count.
+type CombineExitBlocks struct{}
+
+func (CombineExitBlocks) Name() string { return "CombineExits" }
+
+func (CombineExitBlocks) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+	var firstExit *ir.BasicBlock
+	for _, b := range ir.Preorder(entry) {
+		if len(b.Outgoing) == 0 && len(b.Statements) == 0 {
+			if firstExit == nil {
+				firstExit = b
+			} else {
+				for _, e := range append([]*ir.FlowEdge{}, b.Incoming...) {
+					e.Dst = firstExit
+					firstExit.Incoming = append(firstExit.Incoming, e)
+					b.Incoming = removeEdgeItem(b.Incoming, e)
+				}
+			}
+		}
+	}
+	return entry
+}
