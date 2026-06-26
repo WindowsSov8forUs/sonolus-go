@@ -201,6 +201,7 @@ func vec2Div(t *tracer, v Num, args []Num) (Num, error) {
 var vec2Methods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"add": vec2Add, "sub": vec2Sub, "mul": vec2Mul, "div": vec2Div,
 	"magnitude": vec2Magnitude, "dot": vec2Dot, "normalize": vec2Normalize,
+	"angle": vec2Angle, "rotate": vec2Rotate, "orthogonal": vec2Orthogonal,
 }
 
 // matFields is the field layout of a 3x2 affine matrix.
@@ -354,4 +355,29 @@ func vec2Unit(t *tracer, v Num, args []Num) (Num, error) {
 var vec2Statics = map[string]func() Num{
 	"zero": vec2Zero, "one": vec2One, "up": vec2Up, "down": vec2Down,
 	"left": vec2Left, "right": vec2Right,
+}
+
+func vec2Angle(t *tracer, v Num, args []Num) (Num, error) {
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionArctan2, v.Field("y").node(), v.Field("x").node())), nil
+}
+
+func vec2Rotate(t *tracer, v Num, args []Num) (Num, error) {
+	a := args[0]
+	cos := ir.PureInstr(resource.RuntimeFunctionCos, a.node())
+	sin := ir.PureInstr(resource.RuntimeFunctionSin, a.node())
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("x").node(), cos),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("y").node(), sin))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("x").node(), sin),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("y").node(), cos))),
+	}), nil
+}
+
+func vec2Orthogonal(t *tracer, v Num, args []Num) (Num, error) {
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionNegate, v.Field("y").node())),
+		"y": v.Field("x"),
+	}), nil
 }

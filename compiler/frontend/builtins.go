@@ -119,6 +119,9 @@ var runtimeFns = map[string]runtimeFn{
 	// Side-effecting — debug.
 	"debugLog":   {resource.RuntimeFunctionDebugLog, false, -1},
 	"debugPause": {resource.RuntimeFunctionDebugPause, false, -1},
+	// Life management (side-effecting, variadic).
+	"addLife": {resource.RuntimeFunctionAddLifeScheduled, false, -1},
+
 	// Resource queries (pure).
 	"hasSkinSprite": {resource.RuntimeFunctionHasSkinSprite, true, 1},
 	"hasEffectClip": {resource.RuntimeFunctionHasEffectClip, true, 1},
