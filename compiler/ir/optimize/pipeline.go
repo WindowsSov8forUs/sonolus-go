@@ -25,11 +25,12 @@ func Standard(mode ir.Mode, callback string) []Pass {
 		UnreachableCodeElimination{},
 		CoalesceFlow{},
 		CombineExitBlocks{},
+		AdvancedDCE{},
 		DeadCodeElimination{},
 	}
 }
 
 func Optimize(entry *ir.BasicBlock, mode ir.Mode, callback string, tempBlock int) *ir.BasicBlock {
 	entry = RunPasses(entry, Standard(mode, callback)...)
-	return ir.AllocateTempBlocks(entry, tempBlock)
+	return AllocateLive{BlockID: tempBlock}.Run(entry)
 }

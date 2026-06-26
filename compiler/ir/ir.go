@@ -24,14 +24,29 @@ func (Const) irNode() {}
 
 // Instr is an operation applied to argument nodes. Pure marks side-effect-free
 // operations (sonolus.py distinguishes IRPureInstr from IRInstr); the flag is
-// for optimization passes and does not affect lowering.
+// for optimization passes and does not affect lowering. ID is a monotonic
+// identifier for use as a comparable map key in liveness analysis.
 type Instr struct {
+	ID   int
 	Op   Op
 	Args []Node
 	Pure bool
 }
 
 func (Instr) irNode() {}
+
+// nextID is a package-level monotonic counter for Instr IDs.
+var nextID = new(int)
+
+// NodeKey is a comparable key for any IR node. For Instr nodes, it uses the
+// monotonic ID; for other types it uses the pointer address.
+type NodeKey int64
+
+// Key returns a comparable key for this node suitable for use in maps.
+func (n Instr) Key() NodeKey { return NodeKey(n.ID) }
+
+// incrID returns the next monotonic ID.
+func incrID() int { *nextID++; return *nextID }
 
 // Get reads a memory place (sonolus.py IRGet).
 type Get struct {
@@ -51,10 +66,14 @@ func (Set) irNode() {}
 // --- constructors ---
 
 // PureInstr builds a side-effect-free operation node.
-func PureInstr(op Op, args ...Node) Instr { return Instr{Op: op, Args: args, Pure: true} }
+func PureInstr(op Op, args ...Node) Instr {
+	return Instr{ID: incrID(), Op: op, Args: args, Pure: true}
+}
 
 // ImpureInstr builds an operation node that may have side effects.
-func ImpureInstr(op Op, args ...Node) Instr { return Instr{Op: op, Args: args, Pure: false} }
+func ImpureInstr(op Op, args ...Node) Instr {
+	return Instr{ID: incrID(), Op: op, Args: args, Pure: false}
+}
 
 // GetPlace reads a memory place.
 func GetPlace(p Place) Get { return Get{Place: p} }
