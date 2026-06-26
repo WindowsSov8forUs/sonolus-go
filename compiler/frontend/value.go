@@ -283,3 +283,55 @@ func vec2Normalize(t *tracer, v Num, args []Num) (Num, error) {
 		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, y.node(), mag)),
 	}), nil
 }
+
+var rectFields = []string{"t", "r", "b", "l"}
+
+func rectW(t *tracer, r Num, args []Num) (Num, error) {
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, r.Field("r").node(), r.Field("l").node())), nil
+}
+
+func rectH(t *tracer, r Num, args []Num) (Num, error) {
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, r.Field("t").node(), r.Field("b").node())), nil
+}
+
+func rectCenter(t *tracer, r Num, args []Num) (Num, error) {
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, r.Field("l").node(), r.Field("r").node()),
+			ir.Const(2))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, r.Field("b").node(), r.Field("t").node()),
+			ir.Const(2))),
+	}), nil
+}
+
+func rectTranslate(t *tracer, r Num, args []Num) (Num, error) {
+	dx, dy := args[0], args[0]
+	if len(args) > 1 {
+		dy = args[1]
+	}
+	return compNum(map[string]Num{
+		"t": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, r.Field("t").node(), dy.node())),
+		"r": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, r.Field("r").node(), dx.node())),
+		"b": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, r.Field("b").node(), dy.node())),
+		"l": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, r.Field("l").node(), dx.node())),
+	}), nil
+}
+
+func rectScale(t *tracer, r Num, args []Num) (Num, error) {
+	sx, sy := args[0], args[0]
+	if len(args) > 1 {
+		sy = args[1]
+	}
+	return compNum(map[string]Num{
+		"t": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, r.Field("t").node(), sy.node())),
+		"r": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, r.Field("r").node(), sx.node())),
+		"b": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, r.Field("b").node(), sy.node())),
+		"l": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, r.Field("l").node(), sx.node())),
+	}), nil
+}
+
+var rectMethods = map[string]func(*tracer, Num, []Num) (Num, error){
+	"w": rectW, "h": rectH, "center": rectCenter,
+	"translate": rectTranslate, "scale": rectScale,
+}
