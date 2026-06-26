@@ -494,10 +494,141 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 	return nil
 }
 
+func (t *tracer) shortCircuitIf(n *ast.IfStmt, bin *ast.BinaryExpr) error {
+	thenBlock := ir.NewBlock()
+	merge := ir.NewBlock()
+	var elseBlock *ir.BasicBlock
+	if n.Else != nil {
+		elseBlock = ir.NewBlock()
+	}
+	falseTarget := merge
+	if elseBlock != nil {
+		falseTarget = elseBlock
+	}
+
+	if bin.Op == token.LAND {
+		// Left must be truthy, THEN evaluate right.
+		left, err := t.expr(bin.X)
+		if err != nil {
+			return err
+		}
+		if left.isConst {
+			if left.c == 0 {
+				// Left is constant false: short-circuit, skip to else/merge.
+				if elseBlock != nil {
+					return t.stmtList(n.Else.(*ast.BlockStmt).List)
+				}
+				return nil
+			}
+			// Left is constant true: just evaluate right as the condition.
+			right, err := t.expr(bin.Y)
+			if err != nil {
+				return err
+			}
+			t.current.Test = right.node()
+			if elseBlock != nil {
+				t.current.ConnectTo(falseTarget, ir.Cond(0))
+			} else {
+				t.current.ConnectTo(merge, ir.Cond(0))
+			}
+			t.current.ConnectTo(thenBlock, nil)
+		} else {
+			t.current.Test = left.node()
+			rightBlock := ir.NewBlock()
+			t.current.ConnectTo(falseTarget, ir.Cond(0))
+			t.current.ConnectTo(rightBlock, nil)
+
+			t.enter(rightBlock)
+			right, err := t.expr(bin.Y)
+			if err != nil {
+				return err
+			}
+			rightBlock.Test = right.node()
+			rightBlock.ConnectTo(falseTarget, ir.Cond(0))
+			rightBlock.ConnectTo(thenBlock, nil)
+		}
+	} else {
+		// `||`: left truthy → thenBlock; else → evaluate right.
+		left, err := t.expr(bin.X)
+		if err != nil {
+			return err
+		}
+		if left.isConst {
+			if left.c != 0 {
+				t.stmtList(n.Body.List)
+				t.fallthroughTo(merge)
+				t.enter(merge)
+				return nil
+			}
+			right, err := t.expr(bin.Y)
+			if err != nil {
+				return err
+			}
+			t.current.Test = right.node()
+			if elseBlock != nil {
+				t.current.ConnectTo(falseTarget, ir.Cond(0))
+			} else {
+				t.current.ConnectTo(merge, ir.Cond(0))
+			}
+			t.current.ConnectTo(thenBlock, nil)
+		} else {
+			t.current.Test = left.node()
+			rightBlock := ir.NewBlock()
+			t.current.ConnectTo(thenBlock, nil)         // true → thenBlock
+			t.current.ConnectTo(rightBlock, ir.Cond(0)) // false → evaluate right
+
+			t.enter(rightBlock)
+			right, err := t.expr(bin.Y)
+			if err != nil {
+				return err
+			}
+			rightBlock.Test = right.node()
+			rightBlock.ConnectTo(falseTarget, ir.Cond(0))
+			rightBlock.ConnectTo(thenBlock, nil)
+		}
+	}
+
+	// then branch
+	t.enter(thenBlock)
+	if err := t.stmtList(n.Body.List); err != nil {
+		return err
+	}
+	t.fallthroughTo(merge)
+
+	// else branch
+	if elseBlock != nil {
+		t.enter(elseBlock)
+		switch e := n.Else.(type) {
+		case *ast.BlockStmt:
+			if err := t.stmtList(e.List); err != nil {
+				return err
+			}
+		case *ast.IfStmt:
+			if err := t.ifStmt(e); err != nil {
+				return err
+			}
+		default:
+			return t.errf(n.Else, "unsupported else %T", n.Else)
+		}
+		t.fallthroughTo(merge)
+	}
+
+	t.enter(merge)
+	t.terminated = len(merge.Incoming) == 0
+	return nil
+}
+
 func (t *tracer) ifStmt(n *ast.IfStmt) error {
 	if n.Init != nil {
 		return t.errf(n, "if init statement is not supported yet")
 	}
+	// Short-circuit logical operators: generate CFG branches instead of a single
+	// expression node. `a && b` → test a, true→test b, false→falseTarget.
+	// `a || b` → test a, true→thenBlock, false→test b.
+	if bin, ok := n.Cond.(*ast.BinaryExpr); ok && (bin.Op == token.LAND || bin.Op == token.LOR) {
+		return t.shortCircuitIf(n, bin)
+	}
+
 	cond, err := t.expr(n.Cond)
 	if err != nil {
 		return err
