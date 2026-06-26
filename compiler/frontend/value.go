@@ -200,6 +200,7 @@ func vec2Div(t *tracer, v Num, args []Num) (Num, error) {
 
 var vec2Methods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"add": vec2Add, "sub": vec2Sub, "mul": vec2Mul, "div": vec2Div,
+	"magnitude": vec2Magnitude, "dot": vec2Dot, "normalize": vec2Normalize,
 }
 
 // matFields is the field layout of a 3x2 affine matrix.
@@ -242,4 +243,43 @@ func matTranslate(t *tracer, m Num, args []Num) (Num, error) {
 
 var matMethods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"scale": matScale, "translate": matTranslate,
+}
+
+var transFields = []string{"m11", "m12", "m13", "m21", "m22", "m23", "m31", "m32", "m33"}
+
+func transIdentity() Num {
+	return compNum(map[string]Num{
+		"m11": constNum(1), "m12": constNum(0), "m13": constNum(0),
+		"m21": constNum(0), "m22": constNum(1), "m23": constNum(0),
+		"m31": constNum(0), "m32": constNum(0), "m33": constNum(1),
+	})
+}
+
+func vec2Magnitude(t *tracer, v Num, args []Num) (Num, error) {
+	x, y := v.Field("x"), v.Field("y")
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionPower,
+		ir.PureInstr(resource.RuntimeFunctionAdd,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, x.node(), x.node()),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, y.node(), y.node())),
+		ir.Const(0.5))), nil
+}
+
+func vec2Dot(t *tracer, v Num, args []Num) (Num, error) {
+	w := args[0]
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionAdd,
+		ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("x").node(), w.Field("x").node()),
+		ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("y").node(), w.Field("y").node()))), nil
+}
+
+func vec2Normalize(t *tracer, v Num, args []Num) (Num, error) {
+	x, y := v.Field("x"), v.Field("y")
+	mag := ir.PureInstr(resource.RuntimeFunctionPower,
+		ir.PureInstr(resource.RuntimeFunctionAdd,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, x.node(), x.node()),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, y.node(), y.node())),
+		ir.Const(0.5))
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, x.node(), mag)),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, y.node(), mag)),
+	}), nil
 }

@@ -5,12 +5,14 @@ import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 func Standard(mode ir.Mode, callback string) []Pass {
 	return []Pass{
 		CoalesceFlow{},
+		CoalesceSmallConditionalBlocks{},
 		UnreachableCodeElimination{},
 		DeadCodeElimination{},
 
 		ToSSA{},
 		SCCP{},
 		InlineVars{Aggressive: true, Callback: callback, Oracle: ir.Blocks(mode)},
+		RemoveRedundantArguments{},
 		CSE{},
 		LICM{},
 		FromSSA{},
