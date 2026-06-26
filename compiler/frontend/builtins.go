@@ -60,6 +60,31 @@ var runtimeFns = map[string]runtimeFn{
 	"moveParticle":    {resource.RuntimeFunctionMoveParticleEffect, false, -1},
 	"destroyParticle": {resource.RuntimeFunctionDestroyParticleEffect, false, -1},
 	"print":           {resource.RuntimeFunctionPrint, false, -1},
+	// Timing (pure, variadic).
+	"beatToTime":       {resource.RuntimeFunctionBeatToTime, true, -1},
+	"beatToBPM":        {resource.RuntimeFunctionBeatToBPM, true, -1},
+	"timeToScaledTime": {resource.RuntimeFunctionTimeToScaledTime, true, -1},
+	// Side-effecting — drawing.
+	"drawCurvedB": {resource.RuntimeFunctionDrawCurvedB, false, -1},
+	"drawCurvedT": {resource.RuntimeFunctionDrawCurvedT, false, -1},
+	"drawCurvedL": {resource.RuntimeFunctionDrawCurvedL, false, -1},
+	"drawCurvedR": {resource.RuntimeFunctionDrawCurvedR, false, -1},
+	// Side-effecting — audio.
+	"playLooped":          {resource.RuntimeFunctionPlayLooped, false, -1},
+	"playLoopedScheduled": {resource.RuntimeFunctionPlayLoopedScheduled, false, -1},
+	"stopLooped":          {resource.RuntimeFunctionStopLooped, false, -1},
+	"stopLoopedScheduled": {resource.RuntimeFunctionStopLoopedScheduled, false, -1},
+	// Side-effecting — judgment / exports.
+	"judge":       {resource.RuntimeFunctionJudge, false, -1},
+	"judgeSimple": {resource.RuntimeFunctionJudgeSimple, false, -1},
+	"exportValue": {resource.RuntimeFunctionExportValue, false, -1},
+	// Side-effecting — debug.
+	"debugLog":   {resource.RuntimeFunctionDebugLog, false, -1},
+	"debugPause": {resource.RuntimeFunctionDebugPause, false, -1},
+	// Resource queries (pure).
+	"hasSkinSprite": {resource.RuntimeFunctionHasSkinSprite, true, 1},
+	"hasEffectClip": {resource.RuntimeFunctionHasEffectClip, true, 1},
+	"hasParticle":   {resource.RuntimeFunctionHasParticleEffect, true, 1},
 }
 
 // modeAccessors are the runtime reads exposed as bare identifiers, per mode
@@ -67,19 +92,24 @@ var runtimeFns = map[string]runtimeFn{
 // 1001 = RuntimeUpdate except Preview where 1001 = RuntimeCanvas). All read-only.
 var modeAccessors = map[ir.Mode]map[string]Binding{
 	ir.ModePlay: {
-		"time":          {Block: 1001, Index: 0},
-		"deltaTime":     {Block: 1001, Index: 1},
-		"scaledTime":    {Block: 1001, Index: 2},
-		"touchCount":    {Block: 1001, Index: 3},
-		"isDebug":       {Block: 1000, Index: 0},
-		"aspectRatio":   {Block: 1000, Index: 1},
-		"audioOffset":   {Block: 1000, Index: 2},
-		"inputOffset":   {Block: 1000, Index: 3},
-		"isMultiplayer": {Block: 1000, Index: 4},
-		"safeAreaXMin":  {Block: 1000, Index: 5},
-		"safeAreaXMax":  {Block: 1000, Index: 6},
-		"safeAreaYMin":  {Block: 1000, Index: 7},
-		"safeAreaYMax":  {Block: 1000, Index: 8},
+		"time":              {Block: 1001, Index: 0},
+		"deltaTime":         {Block: 1001, Index: 1},
+		"scaledTime":        {Block: 1001, Index: 2},
+		"touchCount":        {Block: 1001, Index: 3},
+		"isDebug":           {Block: 1000, Index: 0},
+		"aspectRatio":       {Block: 1000, Index: 1},
+		"audioOffset":       {Block: 1000, Index: 2},
+		"inputOffset":       {Block: 1000, Index: 3},
+		"isMultiplayer":     {Block: 1000, Index: 4},
+		"safeAreaXMin":      {Block: 1000, Index: 5},
+		"safeAreaXMax":      {Block: 1000, Index: 6},
+		"safeAreaYMin":      {Block: 1000, Index: 7},
+		"safeAreaYMax":      {Block: 1000, Index: 8},
+		"perfectMultiplier": {Block: 2004, Index: 0},
+		"greatMultiplier":   {Block: 2004, Index: 1},
+		"goodMultiplier":    {Block: 2004, Index: 2},
+		"lifeInitial":       {Block: 2005, Index: 6},
+		"lifeMaximum":       {Block: 2005, Index: 7},
 	},
 	ir.ModeWatch: {
 		"time":         {Block: 1001, Index: 0},

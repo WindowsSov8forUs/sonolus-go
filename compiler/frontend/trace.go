@@ -43,10 +43,12 @@ type loopCtx struct {
 // returnCtx records how a `return` is handled. For a callback (target==nil) a
 // value return becomes Break(value, 1) on the enclosing JumpLoop. For an inlined
 // function, the value is written to temp and control branches to target (the
-// call's continuation block).
+// call's continuation block). compositeFields is set to the field names when the
+// function returns a composite value.
 type returnCtx struct {
-	temp   *ir.TempBlock
-	target *ir.BasicBlock
+	temp            *ir.TempBlock
+	target          *ir.BasicBlock
+	compositeFields []string
 }
 
 // tracer builds a CFG by interpreting a function body.
@@ -76,16 +78,21 @@ type arrayInfo struct {
 	count int
 }
 
-// recordInfo is a record local with named scalar fields at fixed slot offsets,
-// backed by a multi-slot temp.
+// recordInfo is a record local with named scalar fields. Backed by a multi-slot
+// temp for storage, but each field also tracked as an individual Num so reads
+// can be constant-folded or SSA-folded without a memory read.
 type recordInfo struct {
 	tb     *ir.TempBlock
 	fields map[string]int
-	order  []string // field names in slot order, for construction
+	order  []string
+	val    Num // composite Num for scalar-replaceable field reads
 }
 
 // vec2Fields is the field layout of the built-in Vec2 record.
 var vec2Fields = []string{"x", "y"}
+
+// quadFields is the field layout of the built-in Quad record.
+var quadFields = []string{"blx", "bly", "tlx", "tly", "trx", "try", "brx", "bry"}
 
 // enter makes b the current block and marks it reachable.
 func (t *tracer) enter(b *ir.BasicBlock) {
@@ -102,10 +109,8 @@ func (t *tracer) fallthroughTo(b *ir.BasicBlock) {
 	}
 }
 
-// Compile parses a single Go function from src and traces its body into a CFG,
-// returning the entry block. src must be a complete file with at least one
-// function declaration; the first function's body is compiled. env supplies the
-// bare-identifier bindings (archetype fields, runtime accessors) in scope.
+// Compile parses a Go source file and traces the FIRST function body into a CFG.
+// All other functions in the file are collected as helpers in env.Funcs.
 func Compile(src string, env Env) (*ir.BasicBlock, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "engine.go", src, 0)
@@ -113,11 +118,17 @@ func Compile(src string, env Env) (*ir.BasicBlock, error) {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
 
+	if env.Funcs == nil {
+		env.Funcs = map[string]*ast.FuncDecl{}
+	}
 	var fn *ast.FuncDecl
 	for _, d := range file.Decls {
 		if f, ok := d.(*ast.FuncDecl); ok && f.Body != nil {
-			fn = f
-			break
+			if fn == nil {
+				fn = f
+			} else {
+				env.Funcs[f.Name.Name] = f
+			}
 		}
 	}
 	if fn == nil {
@@ -217,23 +228,27 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		return t.fieldStore(sel, n.Rhs[0])
 	}
 
-	name, ok := n.Lhs[0].(*ast.Ident)
+	fnName, ok := n.Lhs[0].(*ast.Ident)
 	if !ok {
 		return t.errf(n, "assignment target must be an identifier")
 	}
 
 	// Field write: `=` to an env binding not shadowed by a local. (`:=` always
 	// declares a fresh local, shadowing any binding.)
-	if _, isLocal := t.vars[name.Name]; !isLocal && n.Tok == token.ASSIGN {
-		if b, ok := t.env.Names[name.Name]; ok {
+	if _, isLocal := t.vars[fnName.Name]; !isLocal && n.Tok == token.ASSIGN {
+		if b, ok := t.env.Names[fnName.Name]; ok {
 			if !b.Writable {
-				return t.errf(n, "cannot assign to read-only %q", name.Name)
+				return t.errf(n, "cannot assign to read-only %q", fnName.Name)
 			}
 			val, err := t.expr(n.Rhs[0])
 			if err != nil {
 				return err
 			}
-			t.emit(ir.SetPlace(ir.Cell(b.Block, b.Index), val.node()))
+			if b.Block < 0 { // exported field: emit ExportValue(index, value)
+				t.emit(ir.ImpureInstr(resource.RuntimeFunctionExportValue, ir.Const(b.Index), val.node()))
+			} else {
+				t.emit(ir.SetPlace(ir.Cell(b.Block, b.Index), val.node()))
+			}
 			return nil
 		}
 	}
@@ -243,9 +258,11 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		if fn, ok := call.Fun.(*ast.Ident); ok {
 			switch fn.Name {
 			case "array":
-				return t.arrayDecl(name, call)
+				return t.arrayDecl(fnName, call)
 			case "vec2":
-				return t.recordDecl(name, call, vec2Fields)
+				return t.recordDecl(fnName, call, vec2Fields)
+			case "quad":
+				return t.recordDecl(fnName, call, quadFields)
 			}
 		}
 	}
@@ -255,25 +272,40 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		return err
 	}
 
-	tb, ok := t.vars[name.Name]
+	// Composite value from a function return or constructor: register as a record.
+	if n.Tok == token.DEFINE && val.IsComposite() {
+		rec := &recordInfo{
+			tb:     &ir.TempBlock{Name: fnName.Name, Size: val.CompositeSize()},
+			fields: map[string]int{},
+			order:  CompositeFieldOrder(&val),
+			val:    val,
+		}
+		for i, f := range rec.order {
+			rec.fields[f] = i
+		}
+		t.records[fnName.Name] = rec
+		return nil
+	}
+
+	tb, ok := t.vars[fnName.Name]
 	if !ok {
 		if n.Tok != token.DEFINE {
-			return t.errf(n, "assignment to undefined variable %q", name.Name)
+			return t.errf(n, "assignment to undefined variable %q", fnName.Name)
 		}
-		tb = t.alloc(name.Name)
+		tb = t.alloc(fnName.Name)
 	}
 	t.emit(ir.SetPlace(t.cell(tb), val.node()))
 	return nil
 }
 
 func (t *tracer) incDec(n *ast.IncDecStmt) error {
-	name, ok := n.X.(*ast.Ident)
+	fnName, ok := n.X.(*ast.Ident)
 	if !ok {
 		return t.errf(n, "increment target must be an identifier")
 	}
-	tb, ok := t.vars[name.Name]
+	tb, ok := t.vars[fnName.Name]
 	if !ok {
-		return t.errf(n, "increment of undefined variable %q", name.Name)
+		return t.errf(n, "increment of undefined variable %q", fnName.Name)
 	}
 	op := binOps[token.ADD]
 	if n.Tok == token.DEC {
@@ -284,14 +316,14 @@ func (t *tracer) incDec(n *ast.IncDecStmt) error {
 	return nil
 }
 
-func (t *tracer) alloc(name string) *ir.TempBlock {
-	tb := ir.NewTemp(name)
-	t.vars[name] = tb
+func (t *tracer) alloc(fnName string) *ir.TempBlock {
+	tb := ir.NewTemp(fnName)
+	t.vars[fnName] = tb
 	return tb
 }
 
-// arrayDecl handles `name := array(count)`: it reserves a multi-slot temp.
-func (t *tracer) arrayDecl(name *ast.Ident, call *ast.CallExpr) error {
+// arrayDecl handles `fnName := array(count)`: it reserves a multi-slot temp.
+func (t *tracer) arrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 	if len(call.Args) != 1 {
 		return t.errf(call, "array expects a constant size")
 	}
@@ -302,15 +334,15 @@ func (t *tracer) arrayDecl(name *ast.Ident, call *ast.CallExpr) error {
 	if !size.isConst || size.c < 1 || size.c != float64(int(size.c)) {
 		return t.errf(call, "array size must be a positive integer constant")
 	}
-	t.arrays[name.Name] = &arrayInfo{tb: &ir.TempBlock{Name: name.Name, Size: int(size.c)}, count: int(size.c)}
+	t.arrays[fnName.Name] = &arrayInfo{tb: &ir.TempBlock{Name: fnName.Name, Size: int(size.c)}, count: int(size.c)}
 	return nil
 }
 
 // arrayElemPlace builds the place for a[index].
-func (t *tracer) arrayElemPlace(name *ast.Ident, indexExpr ast.Expr) (ir.BlockPlace, error) {
-	arr, ok := t.arrays[name.Name]
+func (t *tracer) arrayElemPlace(fnName *ast.Ident, indexExpr ast.Expr) (ir.BlockPlace, error) {
+	arr, ok := t.arrays[fnName.Name]
 	if !ok {
-		return ir.BlockPlace{}, t.errf(name, "undefined array %q", name.Name)
+		return ir.BlockPlace{}, t.errf(fnName, "undefined array %q", fnName.Name)
 	}
 	index, err := t.expr(indexExpr)
 	if err != nil {
@@ -320,11 +352,11 @@ func (t *tracer) arrayElemPlace(name *ast.Ident, indexExpr ast.Expr) (ir.BlockPl
 }
 
 func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
-	name, ok := idx.X.(*ast.Ident)
+	fnName, ok := idx.X.(*ast.Ident)
 	if !ok {
 		return t.errf(idx, "array index target must be an identifier")
 	}
-	place, err := t.arrayElemPlace(name, idx.Index)
+	place, err := t.arrayElemPlace(fnName, idx.Index)
 	if err != nil {
 		return err
 	}
@@ -336,28 +368,32 @@ func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
 	return nil
 }
 
-// recordDecl handles `name := vec2(x, y)` (and future record constructors): it
-// reserves a temp with one slot per field and stores the initializers.
-func (t *tracer) recordDecl(name *ast.Ident, call *ast.CallExpr, fields []string) error {
+// recordDecl handles `fnName := vec2(x, y)` (and future record constructors): it
+// reserves a temp with one slot per field, stores the initializers, and tracks
+// each field as an individual Num for scalar-replaceable reads.
+func (t *tracer) recordDecl(fnName *ast.Ident, call *ast.CallExpr, fields []string) error {
 	if len(call.Args) != len(fields) {
 		return t.errf(call, "%s expects %d arguments", call.Fun.(*ast.Ident).Name, len(fields))
 	}
 	rec := &recordInfo{
-		tb:     &ir.TempBlock{Name: name.Name, Size: len(fields)},
+		tb:     &ir.TempBlock{Name: fnName.Name, Size: len(fields)},
 		fields: map[string]int{},
 		order:  fields,
 	}
+	fieldVals := map[string]Num{}
 	for i, f := range fields {
 		rec.fields[f] = i
 	}
-	t.records[name.Name] = rec
 	for i, arg := range call.Args {
 		val, err := t.expr(arg)
 		if err != nil {
 			return err
 		}
 		t.emit(ir.SetPlace(ir.BlockPlace{Block: rec.tb, Index: ir.Const(i), Offset: 0}, val.node()))
+		fieldVals[fields[i]] = val
 	}
+	rec.val = compNum(fieldVals)
+	t.records[fnName.Name] = rec
 	return nil
 }
 
@@ -375,7 +411,35 @@ func (t *tracer) receiverBinding(sel *ast.SelectorExpr) (b Binding, isRecv bool,
 	return binding, true, nil
 }
 
-// fieldPlace builds the place for v.field.
+// fieldValue returns the traced Num for a record field read, using the tracked
+// composite value for scalar-replaceable folding.
+func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
+	base, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return Num{}, t.errf(sel, "field access requires a record identifier")
+	}
+	rec, ok := t.records[base.Name]
+	if !ok {
+		// Check if this is a bare composite Num in a local variable.
+		if tb, ok2 := t.vars[base.Name]; ok2 {
+			_ = tb
+			return Num{}, t.errf(sel, "scalar variable %q has no fields", base.Name)
+		}
+		return Num{}, t.errf(sel, "undefined record %q", base.Name)
+	}
+	off, ok := rec.fields[sel.Sel.Name]
+	if !ok {
+		return Num{}, t.errf(sel, "record %q has no field %q", base.Name, sel.Sel.Name)
+	}
+	// Return the tracked field Num if it's a constant or pure expression; fall
+	// back to a memory read for mutable-backed fields.
+	if v, ok := rec.val.fields[sel.Sel.Name]; ok && (v.isConst || v.e != nil) {
+		return v, nil
+	}
+	return exprNum(ir.GetPlace(ir.BlockPlace{Block: rec.tb, Index: ir.Const(off), Offset: 0})), nil
+}
+
+// fieldPlace builds the place for v.field (used for writes).
 func (t *tracer) fieldPlace(sel *ast.SelectorExpr) (ir.BlockPlace, error) {
 	base, ok := sel.X.(*ast.Ident)
 	if !ok {
@@ -404,7 +468,11 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 		if err != nil {
 			return err
 		}
-		t.emit(ir.SetPlace(ir.Cell(b.Block, b.Index), val.node()))
+		if b.Block < 0 {
+			t.emit(ir.ImpureInstr(resource.RuntimeFunctionExportValue, ir.Const(b.Index), val.node()))
+		} else {
+			t.emit(ir.SetPlace(ir.Cell(b.Block, b.Index), val.node()))
+		}
 		return nil
 	}
 
@@ -417,6 +485,12 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 		return err
 	}
 	t.emit(ir.SetPlace(place, val.node()))
+	// Update the tracked composite Num so subsequent reads fold the new value.
+	if base, ok := sel.X.(*ast.Ident); ok {
+		if rec, ok2 := t.records[base.Name]; ok2 {
+			rec.val.SetField(sel.Sel.Name, val)
+		}
+	}
 	return nil
 }
 
@@ -569,13 +643,25 @@ func (t *tracer) returnStmt(n *ast.ReturnStmt) error {
 
 	if rc.target == nil {
 		// Callback: a value return breaks the JumpLoop yielding the value.
+		// Composite returns are not supported at the callback level (callbacks
+		// return a single float via Break).
 		if val != nil {
+			if val.IsComposite() {
+				return t.errf(n, "cannot return a composite value from a callback; return individual fields instead")
+			}
 			t.emit(ir.ImpureInstr(resource.RuntimeFunctionBreak, val.node(), ir.Const(1)))
 		}
 	} else {
-		// Inlined function: write the return temp and jump to the continuation.
+		// Inlined function: write the return value to the ret temp.
 		if val != nil {
-			t.emit(ir.SetPlace(ir.TempCell(rc.temp), val.node()))
+			if val.IsComposite() {
+				rc.compositeFields = CompositeFieldOrder(val)
+				for i, f := range rc.compositeFields {
+					t.emit(ir.SetPlace(ir.BlockPlace{Block: rc.temp, Index: ir.Const(i), Offset: 0}, val.Field(f).node()))
+				}
+			} else {
+				t.emit(ir.SetPlace(ir.TempCell(rc.temp), val.node()))
+			}
 		}
 		t.current.ConnectTo(rc.target, nil)
 	}
@@ -634,11 +720,11 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		return res, nil
 	case *ast.IndexExpr:
-		name, ok := n.X.(*ast.Ident)
+		fnName, ok := n.X.(*ast.Ident)
 		if !ok {
 			return Num{}, t.errf(n, "array index target must be an identifier")
 		}
-		place, err := t.arrayElemPlace(name, n.Index)
+		place, err := t.arrayElemPlace(fnName, n.Index)
 		if err != nil {
 			return Num{}, err
 		}
@@ -649,11 +735,17 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		} else if isRecv {
 			return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
 		}
-		place, err := t.fieldPlace(n)
-		if err != nil {
-			return Num{}, err
+		// Bare composite: evaluate vec2(...).x → extract field from the composite.
+		if _, isCall := n.X.(*ast.CallExpr); isCall {
+			v, err := t.expr(n.X)
+			if err != nil {
+				return Num{}, err
+			}
+			if v.IsComposite() {
+				return v.Field(n.Sel.Name), nil
+			}
 		}
-		return exprNum(ir.GetPlace(place)), nil
+		return t.fieldValue(n)
 	case *ast.CallExpr:
 		return t.call(n)
 	default:
@@ -691,7 +783,7 @@ func (t *tracer) ident(n *ast.Ident) (Num, error) {
 		return exprNum(ir.GetPlace(t.cell(tb))), nil
 	}
 	// Environment bindings: archetype fields, runtime accessors (a user variable
-	// of the same name shadows these).
+	// of the same fnName shadows these).
 	if b, ok := t.env.Names[n.Name]; ok {
 		return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
 	}
@@ -723,7 +815,9 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 	case "array":
 		return Num{}, t.errf(n, "array() may only appear in a declaration (a := array(n))")
 	case "vec2":
-		return Num{}, t.errf(n, "vec2() may only appear in a declaration (v := vec2(x, y))")
+		return t.inlineComposite(fn, n, vec2Fields)
+	case "quad":
+		return t.inlineComposite(fn, n, quadFields)
 	}
 
 	args := make([]Num, len(n.Args))
@@ -771,11 +865,32 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 	}
 }
 
+// inlineComposite evaluates a vec2/quad constructor outside a declaration
+// (e.g. in a return or argument position) and returns a composite Num.
+func (t *tracer) inlineComposite(fnName *ast.Ident, call *ast.CallExpr, fields []string) (Num, error) {
+	args := make([]Num, len(call.Args))
+	for i, a := range call.Args {
+		v, err := t.expr(a)
+		if err != nil {
+			return Num{}, err
+		}
+		args[i] = v
+	}
+	if len(args) != len(fields) {
+		return Num{}, t.errf(call, "%s expects %d arguments, got %d", fnName, len(fields), len(args))
+	}
+	fv := map[string]Num{}
+	for i, f := range fields {
+		fv[f] = args[i]
+	}
+	return compNum(fv), nil
+}
+
 // callUserFunc inlines a free helper function: it sees only accessors and other
 // functions (no archetype fields).
-func (t *tracer) callUserFunc(name *ast.Ident, decl *ast.FuncDecl, args []Num) (Num, error) {
+func (t *tracer) callUserFunc(fnName *ast.Ident, decl *ast.FuncDecl, args []Num) (Num, error) {
 	child := Env{Names: t.env.Accessors, Accessors: t.env.Accessors, Funcs: t.env.Funcs, Methods: t.env.Methods}
-	return t.inlineFunc(name, decl, args, child)
+	return t.inlineFunc(fnName, decl, args, child)
 }
 
 // methodCall inlines a non-callback method of the current archetype, invoked as
@@ -828,14 +943,31 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	t.env = childEnv
 
 	for i, p := range params {
-		pt := t.alloc(p)
-		t.emit(ir.SetPlace(ir.TempCell(pt), args[i].node()))
+		if args[i].IsComposite() {
+			// Bind each composite field as a separate local, plus a composite
+			// record in the function's scope. This emulates recordDecl.
+			rec := &recordInfo{
+				tb:     &ir.TempBlock{Name: p, Size: args[i].CompositeSize()},
+				fields: map[string]int{},
+				order:  CompositeFieldOrder(&args[i]),
+				val:    args[i],
+			}
+			for j, f := range rec.order {
+				rec.fields[f] = j
+			}
+			t.records[p] = rec
+		} else {
+			pt := t.alloc(p)
+			t.emit(ir.SetPlace(ir.TempCell(pt), args[i].node()))
+		}
 	}
 
 	t.returns = append(t.returns, returnCtx{temp: retTemp, target: cont})
 	t.inlining[decl.Name.Name] = true
 	err := t.stmtList(decl.Body.List)
 	t.fallthroughTo(cont)
+	addRet := t.returns[len(t.returns)-1]
+	compositeFields := addRet.compositeFields
 	delete(t.inlining, decl.Name.Name)
 	t.returns = t.returns[:len(t.returns)-1]
 
@@ -843,6 +975,15 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	t.enter(cont)
 	if err != nil {
 		return Num{}, err
+	}
+
+	if compositeFields != nil {
+		// Build a composite Num by reading each field from retTemp slots.
+		fieldVals := map[string]Num{}
+		for i, f := range compositeFields {
+			fieldVals[f] = exprNum(ir.GetPlace(ir.BlockPlace{Block: retTemp, Index: ir.Const(i), Offset: 0}))
+		}
+		return compNum(fieldVals), nil
 	}
 	return exprNum(ir.GetPlace(ir.TempCell(retTemp))), nil
 }
@@ -854,8 +995,8 @@ func funcParams(decl *ast.FuncDecl) []string {
 		return out
 	}
 	for _, field := range decl.Type.Params.List {
-		for _, name := range field.Names {
-			out = append(out, name.Name)
+		for _, fnName := range field.Names {
+			out = append(out, fnName.Name)
 		}
 	}
 	return out

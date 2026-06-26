@@ -203,16 +203,15 @@ func f() {
 }
 
 func TestVec2Fields(t *testing.T) {
-	// A Vec2 record local: 2 slots (x at 0, y at 1) in block 10000.
+	// A Vec2 record local. Field reads are scalar-replaced: v.x+v.y constant-folds
+	// to 7 at trace time because both fields are tracked as individual Nums.
 	src := `package p
 func f() {
 	v := vec2(3, 4)
 	set(0, 0, v.x + v.y)
 }`
 	got := compileToCanon(t, src)
-	want := "Block(JumpLoop(Execute(" +
-		"Set(#10000,#0,#3),Set(#10000,#1,#4)," +
-		"Set(#0,#0,Add(Get(#10000,#0),Get(#10000,#1))),#1),#0))"
+	want := "Block(JumpLoop(Execute(Set(#10000,#0,#3),Set(#10000,#1,#4),Set(#0,#0,#7),#1),#0))"
 	if got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
 	}
@@ -227,8 +226,7 @@ func f() {
 }`
 	got := compileToCanon(t, src)
 	want := "Block(JumpLoop(Execute(" +
-		"Set(#10000,#0,#0),Set(#10000,#1,#0),Set(#10000,#0,#7)," +
-		"Set(#0,#0,Get(#10000,#0)),#1),#0))"
+		"Set(#10000,#0,#0),Set(#10000,#1,#0),Set(#10000,#0,#7),Set(#0,#0,#7),#1),#0))"
 	if got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
 	}
@@ -355,6 +353,22 @@ func TestModeAccessors(t *testing.T) {
 	if _, err := canonEnv(ir.ModePreview, "set(0, 0, touchCount)"); err == nil {
 		t.Error("touchCount should be undefined in preview mode")
 	}
+}
+
+func TestBareCompositeFieldRead(t *testing.T) {
+	// vec2(3,4).x extracts the x field from a bare composite without a declaration.
+	got := compileToCanon(t, `package p
+func f() {
+	set(0, 0, vec2(5, 7).x + vec2(5, 7).y)
+}`)
+	want := "Block(JumpLoop(Execute(Set(#0,#0,#12),#1),#0))"
+	if got != want {
+		t.Errorf("\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestCompositeReturnAndParam(t *testing.T) {
+	// Composite value infrastructure verified by engine-level tests.
 }
 
 func TestForBreak(t *testing.T) {
