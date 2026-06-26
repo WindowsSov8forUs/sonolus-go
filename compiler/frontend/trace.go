@@ -267,6 +267,10 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 				return t.recordDecl(fnName, call, quadFields)
 			case "mat":
 				return t.recordDecl(fnName, call, matFields)
+			case "rect":
+				return t.recordDecl(fnName, call, rectFields)
+			case "trans":
+				return t.recordDecl(fnName, call, transFields)
 			}
 		}
 	}
@@ -1055,6 +1059,12 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return t.inlineComposite(fn, n, vec2Fields)
 	case "quad":
 		return t.inlineComposite(fn, n, quadFields)
+	case "mat":
+		return t.inlineComposite(fn, n, matFields)
+	case "rect":
+		return t.inlineComposite(fn, n, rectFields)
+	case "trans":
+		return t.inlineComposite(fn, n, transFields)
 	}
 
 	args := make([]Num, len(n.Args))
@@ -1148,6 +1158,28 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 	if base, ok := sel.X.(*ast.Ident); ok {
 		if rec, ok := t.records[base.Name]; ok {
 			if method, ok2 := vec2Methods[sel.Sel.Name]; ok2 {
+				args := make([]Num, len(n.Args))
+				for i, a := range n.Args {
+					v, err := t.expr(a)
+					if err != nil {
+						return Num{}, err
+					}
+					args[i] = v
+				}
+				return method(t, rec.val, args)
+			}
+			if method, ok2 := matMethods[sel.Sel.Name]; ok2 {
+				args := make([]Num, len(n.Args))
+				for i, a := range n.Args {
+					v, err := t.expr(a)
+					if err != nil {
+						return Num{}, err
+					}
+					args[i] = v
+				}
+				return method(t, rec.val, args)
+			}
+			if method, ok2 := rectMethods[sel.Sel.Name]; ok2 {
 				args := make([]Num, len(n.Args))
 				for i, a := range n.Args {
 					v, err := t.expr(a)
