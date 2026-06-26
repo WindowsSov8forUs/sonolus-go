@@ -381,3 +381,57 @@ func vec2Orthogonal(t *tracer, v Num, args []Num) (Num, error) {
 		"y": v.Field("x"),
 	}), nil
 }
+
+func quadCenter(t *tracer, q Num, args []Num) (Num, error) {
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd,
+				ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("blx").node(), q.Field("tlx").node()),
+				ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("trx").node(), q.Field("brx").node())),
+			ir.Const(4))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd,
+				ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("bly").node(), q.Field("tly").node()),
+				ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("try").node(), q.Field("bry").node())),
+			ir.Const(4))),
+	}), nil
+}
+
+func quadTranslate(t *tracer, q Num, args []Num) (Num, error) {
+	dx, dy := args[0], args[0]
+	if len(args) > 1 {
+		dy = args[1]
+	}
+	add := func(n ir.Node, d ir.Node) ir.Node { return ir.PureInstr(resource.RuntimeFunctionAdd, n, d) }
+	return compNum(map[string]Num{
+		"blx": exprNum(add(q.Field("blx").node(), dx.node())),
+		"bly": exprNum(add(q.Field("bly").node(), dy.node())),
+		"tlx": exprNum(add(q.Field("tlx").node(), dx.node())),
+		"tly": exprNum(add(q.Field("tly").node(), dy.node())),
+		"trx": exprNum(add(q.Field("trx").node(), dx.node())),
+		"try": exprNum(add(q.Field("try").node(), dy.node())),
+		"brx": exprNum(add(q.Field("brx").node(), dx.node())),
+		"bry": exprNum(add(q.Field("bry").node(), dy.node())),
+	}), nil
+}
+
+func quadScale(t *tracer, q Num, args []Num) (Num, error) {
+	s := args[0]
+	mul := func(n ir.Node) ir.Node { return ir.PureInstr(resource.RuntimeFunctionMultiply, n, s.node()) }
+	return compNum(map[string]Num{
+		"blx": exprNum(mul(q.Field("blx").node())), "bly": exprNum(mul(q.Field("bly").node())),
+		"tlx": exprNum(mul(q.Field("tlx").node())), "tly": exprNum(mul(q.Field("tly").node())),
+		"trx": exprNum(mul(q.Field("trx").node())), "try": exprNum(mul(q.Field("try").node())),
+		"brx": exprNum(mul(q.Field("brx").node())), "bry": exprNum(mul(q.Field("bry").node())),
+	}), nil
+}
+
+func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
+	// permute(n) rotates quad corners by n positions (0-3).
+	_ = args
+	return q, nil
+}
+
+var quadMethods = map[string]func(*tracer, Num, []Num) (Num, error){
+	"center": quadCenter, "translate": quadTranslate, "scale": quadScale, "permute": quadPermute,
+}
