@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -50,6 +51,82 @@ func TestCompilePlayFile(t *testing.T) {
 		t.Fatalf("round trip: %v", err)
 	}
 	t.Logf("parsed+compiled Note engine: %d nodes", len(data.Nodes))
+}
+
+// TestHelperFunction: a free helper function is inlined at the call site, and
+// the read-once temps it introduces collapse through optimization.
+func TestHelperFunction(t *testing.T) {
+	src := "package p\n" +
+		"func dbl(x float64) float64 { return x * 2 }\n" +
+		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n}\n" +
+		"func (n Note) UpdateParallel() {\n\tset(2000, 0, dbl(n.Beat))\n}\n"
+	data, err := CompilePlayFile(src)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if data.Archetypes[0].UpdateParallel == nil {
+		t.Fatal("missing callback")
+	}
+	// dbl(n.Beat) = n.Beat * 2 -> a Multiply over the imported field.
+	if !nodeContains(data.Nodes, resource.RuntimeFunctionMultiply) {
+		b, _ := json.Marshal(data.Nodes)
+		t.Errorf("expected Multiply from inlined dbl, nodes: %s", b)
+	}
+	if _, err := codec.Decompress[resource.EnginePlayData](mustPackage(t, data)); err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+}
+
+// TestValueCallbackBreak: a value-returning callback yields via a Break node.
+func TestValueCallbackBreak(t *testing.T) {
+	src := "package p\n" +
+		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n}\n" +
+		"func (n Note) ShouldSpawn() {\n\treturn time > n.Beat\n}\n"
+	data, err := CompilePlayFile(src)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if data.Archetypes[0].ShouldSpawn == nil {
+		t.Fatal("missing shouldSpawn")
+	}
+	if !nodeContains(data.Nodes, resource.RuntimeFunctionBreak) {
+		b, _ := json.Marshal(data.Nodes)
+		t.Errorf("expected Break (return value), nodes: %s", b)
+	}
+}
+
+// TestMethodHelper: a non-callback method (accessing the archetype's fields via
+// its own receiver) is inlined when called as receiver.Method().
+func TestMethodHelper(t *testing.T) {
+	src := "package p\n" +
+		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n\tT float64 `sonolus:\"memory\"`\n}\n" +
+		"func (m Note) targetTime() float64 { return m.Beat * 0.5 }\n" +
+		"func (n Note) Initialize() {\n\tn.T = n.targetTime()\n}\n"
+	data, err := CompilePlayFile(src)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if data.Archetypes[0].Initialize == nil {
+		t.Fatal("missing initialize")
+	}
+	if !nodeContains(data.Nodes, resource.RuntimeFunctionMultiply) {
+		b, _ := json.Marshal(data.Nodes)
+		t.Errorf("expected Multiply from inlined method, nodes: %s", b)
+	}
+}
+
+func TestRecursionError(t *testing.T) {
+	src := "package p\n" +
+		"func f(x float64) float64 { return f(x) }\n" +
+		"type A struct{}\n" +
+		"func (a A) UpdateParallel() { set(2000, 0, f(1)) }\n"
+	_, err := CompilePlayFile(src)
+	if err == nil {
+		t.Fatal("expected recursion error")
+	}
+	if !strings.Contains(err.Error(), "recursive") {
+		t.Errorf("error should mention recursion: %v", err)
+	}
 }
 
 func TestCompilePlayFileImportedReadOnly(t *testing.T) {

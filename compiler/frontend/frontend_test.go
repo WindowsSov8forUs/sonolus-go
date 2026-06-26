@@ -289,6 +289,74 @@ func f() {
 	}
 }
 
+func TestCallbackReturnValue(t *testing.T) {
+	// A value return becomes Break(value, 1) on the callback's JumpLoop, matching
+	// the sonolus.py should_spawn node shape.
+	got := compileToCanon(t, `package p
+func f() {
+	return get(0, 0)
+}`)
+	want := "Block(JumpLoop(Execute(Break(Get(#0,#0),#1),#1),#0))"
+	if got != want {
+		t.Errorf("\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestEarlyReturnVoid(t *testing.T) {
+	// `if cond { return }` exits early; the rest runs only when cond is false.
+	got := compileToCanon(t, `package p
+func f() {
+	if get(0, 0) {
+		return
+	}
+	set(0, 1, 1)
+}`)
+	want := "Block(JumpLoop(" +
+		"Execute(If(Get(#0,#0),#1,#2))," +
+		"Execute(#3)," +
+		"Execute(Set(#0,#1,#1),#3),#0))"
+	if got != want {
+		t.Errorf("\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestModeAccessors(t *testing.T) {
+	canonEnv := func(mode ir.Mode, body string) (string, error) {
+		entry, err := Compile("package p\nfunc f() {\n"+body+"\n}\n", Env{Names: ModeAccessors(mode)})
+		if err != nil {
+			return "", err
+		}
+		entry = ir.AllocateTempBlocks(entry, ir.DefaultTempMemoryBlock)
+		return canon(ir.CFGToSNode(entry)), nil
+	}
+
+	cases := []struct {
+		mode ir.Mode
+		body string
+		cell string
+	}{
+		{ir.ModeWatch, "set(0, 0, isSkip)", "Get(#1001,#3)"},
+		{ir.ModePreview, "set(0, 0, scrollDirection)", "Get(#1001,#0)"},
+		{ir.ModeTutorial, "set(0, 0, navigationDirection)", "Get(#1001,#2)"},
+		{ir.ModeWatch, "set(0, 0, time)", "Get(#1001,#0)"},
+	}
+	for _, c := range cases {
+		got, err := canonEnv(c.mode, c.body)
+		if err != nil {
+			t.Errorf("mode %d: %v", c.mode, err)
+			continue
+		}
+		if !strings.Contains(got, c.cell) {
+			t.Errorf("mode %d body %q: got %s, want cell %s", c.mode, c.body, got, c.cell)
+		}
+	}
+
+	// A Play-only accessor is not in scope in another mode.
+	if _, err := canonEnv(ir.ModePreview, "set(0, 0, touchCount)"); err == nil {
+		t.Error("touchCount should be undefined in preview mode")
+	}
+}
+
 func TestForBreak(t *testing.T) {
 	src := `package p
 func f() {

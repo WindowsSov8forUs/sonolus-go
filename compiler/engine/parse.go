@@ -32,6 +32,7 @@ type parsedArchetype struct {
 	imported []ImportedField
 	memory   []string
 	methods  []parsedMethod
+	helpers  map[string]*ast.FuncDecl // non-callback methods
 }
 
 type parsedMethod struct {
@@ -54,11 +55,12 @@ func CompilePlayFile(src string) (*resource.EnginePlayData, error) {
 
 	archetypes := map[string]*parsedArchetype{}
 	var order []string
+	funcs := map[string]*ast.FuncDecl{} // free helper functions
 
 	get := func(name string) *parsedArchetype {
 		a, ok := archetypes[name]
 		if !ok {
-			a = &parsedArchetype{name: name}
+			a = &parsedArchetype{name: name, helpers: map[string]*ast.FuncDecl{}}
 			archetypes[name] = a
 			order = append(order, name)
 		}
@@ -84,22 +86,25 @@ func CompilePlayFile(src string) (*resource.EnginePlayData, error) {
 			}
 		case *ast.FuncDecl:
 			if d.Recv == nil || len(d.Recv.List) == 0 {
+				if d.Body != nil {
+					funcs[d.Name.Name] = d // free helper function
+				}
 				continue
-			}
-			cb, ok := methodCallbacks[d.Name.Name]
-			if !ok {
-				continue // not a callback method
 			}
 			typeName, recvName := receiverInfo(d.Recv.List[0])
 			if typeName == "" {
 				continue
 			}
 			a := get(typeName)
-			a.methods = append(a.methods, parsedMethod{callback: cb, receiver: recvName, body: d.Body})
+			if cb, ok := methodCallbacks[d.Name.Name]; ok {
+				a.methods = append(a.methods, parsedMethod{callback: cb, receiver: recvName, body: d.Body})
+			} else if d.Body != nil {
+				a.helpers[d.Name.Name] = d // non-callback method = helper
+			}
 		}
 	}
 
-	return compileParsed(fset, archetypes, order)
+	return compileParsed(fset, archetypes, order, funcs)
 }
 
 func receiverInfo(field *ast.Field) (typeName, recvName string) {
@@ -147,7 +152,7 @@ func stringLit(s string) string {
 	return s
 }
 
-func compileParsed(fset *token.FileSet, archetypes map[string]*parsedArchetype, order []string) (*resource.EnginePlayData, error) {
+func compileParsed(fset *token.FileSet, archetypes map[string]*parsedArchetype, order []string, funcs map[string]*ast.FuncDecl) (*resource.EnginePlayData, error) {
 	defs := make([]play.ArchetypeDef, len(order))
 	bindings := make([]map[string]frontend.Binding, len(order))
 	for i, name := range order {
@@ -174,12 +179,13 @@ func compileParsed(fset *token.FileSet, archetypes map[string]*parsedArchetype, 
 	var results []*play.CompileResult
 	for i, name := range order {
 		a := archetypes[name]
+		accessors := frontend.ModeAccessors(ir.ModePlay)
 		names := frontend.ModeAccessors(ir.ModePlay)
 		for k, v := range bindings[i] {
 			names[k] = v
 		}
 		for _, m := range a.methods {
-			env := frontend.Env{Names: names, Receiver: m.receiver}
+			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Methods: a.helpers, Accessors: accessors}
 			entry, err := frontend.CompileBlock(fset, m.body, env)
 			if err != nil {
 				return nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)

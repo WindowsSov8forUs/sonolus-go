@@ -7,6 +7,8 @@ import (
 	"go/token"
 	"strconv"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
 
@@ -21,16 +23,30 @@ type Binding struct {
 // Env is the compilation environment for a callback. Names maps bare
 // identifiers (archetype fields, runtime accessors) to their locations. When
 // Receiver is set (a callback authored as a method), accesses of the form
-// Receiver.Field also resolve against Names.
+// Receiver.Field also resolve against Names. Funcs holds user-defined helper
+// functions callable from the body (inlined when called); Accessors is the base
+// binding set those inlined functions see (no archetype fields).
 type Env struct {
-	Names    map[string]Binding
-	Receiver string
+	Names     map[string]Binding
+	Receiver  string
+	Funcs     map[string]*ast.FuncDecl // free helper functions
+	Methods   map[string]*ast.FuncDecl // non-callback methods of the current archetype
+	Accessors map[string]Binding
 }
 
 // loopCtx records the jump targets for break/continue inside a loop.
 type loopCtx struct {
 	breakTo    *ir.BasicBlock
 	continueTo *ir.BasicBlock
+}
+
+// returnCtx records how a `return` is handled. For a callback (target==nil) a
+// value return becomes Break(value, 1) on the enclosing JumpLoop. For an inlined
+// function, the value is written to temp and control branches to target (the
+// call's continuation block).
+type returnCtx struct {
+	temp   *ir.TempBlock
+	target *ir.BasicBlock
 }
 
 // tracer builds a CFG by interpreting a function body.
@@ -50,6 +66,8 @@ type tracer struct {
 	arrays     map[string]*arrayInfo
 	records    map[string]*recordInfo
 	loops      []loopCtx
+	returns    []returnCtx
+	inlining   map[string]bool
 }
 
 // arrayInfo is a fixed-size scalar array local, backed by a multi-slot temp.
@@ -114,14 +132,18 @@ func Compile(src string, env Env) (*ir.BasicBlock, error) {
 // its original positions in fset for error messages).
 func CompileBlock(fset *token.FileSet, body *ast.BlockStmt, env Env) (*ir.BasicBlock, error) {
 	t := &tracer{
-		fset:    fset,
-		env:     env,
-		vars:    map[string]*ir.TempBlock{},
-		arrays:  map[string]*arrayInfo{},
-		records: map[string]*recordInfo{},
+		fset:     fset,
+		env:      env,
+		vars:     map[string]*ir.TempBlock{},
+		arrays:   map[string]*arrayInfo{},
+		records:  map[string]*recordInfo{},
+		inlining: map[string]bool{},
 	}
 	t.entry = ir.NewBlock()
 	t.current = t.entry
+	// Callback-level return context: a value return becomes Break on the
+	// callback's JumpLoop (target == nil).
+	t.returns = append(t.returns, returnCtx{})
 	if err := t.stmtList(body.List); err != nil {
 		return nil, err
 	}
@@ -167,6 +189,8 @@ func (t *tracer) stmt(s ast.Stmt) error {
 		return t.forStmt(n)
 	case *ast.BranchStmt:
 		return t.branch(n)
+	case *ast.ReturnStmt:
+		return t.returnStmt(n)
 	case *ast.BlockStmt:
 		return t.stmtList(n.List)
 	case *ast.EmptyStmt:
@@ -526,6 +550,39 @@ func (t *tracer) forStmt(n *ast.ForStmt) error {
 	return nil
 }
 
+func (t *tracer) returnStmt(n *ast.ReturnStmt) error {
+	if len(t.returns) == 0 {
+		return t.errf(n, "return outside of a function")
+	}
+	rc := t.returns[len(t.returns)-1]
+
+	var val *Num
+	if len(n.Results) == 1 {
+		v, err := t.expr(n.Results[0])
+		if err != nil {
+			return err
+		}
+		val = &v
+	} else if len(n.Results) > 1 {
+		return t.errf(n, "multiple return values are not supported")
+	}
+
+	if rc.target == nil {
+		// Callback: a value return breaks the JumpLoop yielding the value.
+		if val != nil {
+			t.emit(ir.ImpureInstr(resource.RuntimeFunctionBreak, val.node(), ir.Const(1)))
+		}
+	} else {
+		// Inlined function: write the return temp and jump to the continuation.
+		if val != nil {
+			t.emit(ir.SetPlace(ir.TempCell(rc.temp), val.node()))
+		}
+		t.current.ConnectTo(rc.target, nil)
+	}
+	t.terminated = true
+	return nil
+}
+
 func (t *tracer) branch(n *ast.BranchStmt) error {
 	if len(t.loops) == 0 {
 		return t.errf(n, "%s outside of a loop", n.Tok)
@@ -643,6 +700,10 @@ func (t *tracer) ident(n *ast.Ident) (Num, error) {
 
 // call handles the memory builtins get(block, index) and set(block, index, value).
 func (t *tracer) call(n *ast.CallExpr) (Num, error) {
+	// Method helper call: receiver.Method(args).
+	if sel, ok := n.Fun.(*ast.SelectorExpr); ok {
+		return t.methodCall(n, sel)
+	}
 	fn, ok := n.Fun.(*ast.Ident)
 	if !ok {
 		return Num{}, t.errf(n, "unsupported call target")
@@ -703,6 +764,99 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 			t.emit(ir.ImpureInstr(rf.op, nodes...))
 			return constNum(0), nil
 		}
+		if decl, ok := t.env.Funcs[fn.Name]; ok {
+			return t.callUserFunc(fn, decl, args)
+		}
 		return Num{}, t.errf(n, "unknown function %q", fn.Name)
 	}
+}
+
+// callUserFunc inlines a free helper function: it sees only accessors and other
+// functions (no archetype fields).
+func (t *tracer) callUserFunc(name *ast.Ident, decl *ast.FuncDecl, args []Num) (Num, error) {
+	child := Env{Names: t.env.Accessors, Accessors: t.env.Accessors, Funcs: t.env.Funcs, Methods: t.env.Methods}
+	return t.inlineFunc(name, decl, args, child)
+}
+
+// methodCall inlines a non-callback method of the current archetype, invoked as
+// receiver.Method(args); the method body sees the archetype's fields via its own
+// receiver.
+func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error) {
+	base, ok := sel.X.(*ast.Ident)
+	if !ok || t.env.Receiver == "" || base.Name != t.env.Receiver {
+		return Num{}, t.errf(sel, "unsupported method call")
+	}
+	decl, ok := t.env.Methods[sel.Sel.Name]
+	if !ok {
+		return Num{}, t.errf(sel, "unknown method %q", sel.Sel.Name)
+	}
+	args := make([]Num, len(n.Args))
+	for i, a := range n.Args {
+		v, err := t.expr(a)
+		if err != nil {
+			return Num{}, err
+		}
+		args[i] = v
+	}
+	recv := ""
+	if decl.Recv != nil && len(decl.Recv.List[0].Names) > 0 {
+		recv = decl.Recv.List[0].Names[0].Name
+	}
+	child := Env{Names: t.env.Names, Receiver: recv, Funcs: t.env.Funcs, Methods: t.env.Methods, Accessors: t.env.Accessors}
+	return t.inlineFunc(sel, decl, args, child)
+}
+
+// inlineFunc inlines a function/method body: it binds parameters, traces the
+// body in a fresh scope under childEnv, routes returns to a continuation block,
+// and yields the return value.
+func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, childEnv Env) (Num, error) {
+	if t.inlining[decl.Name.Name] {
+		return Num{}, t.errf(node, "recursive call to %q is not supported", decl.Name.Name)
+	}
+	params := funcParams(decl)
+	if len(args) != len(params) {
+		return Num{}, t.errf(node, "%s expects %d arguments, got %d", decl.Name.Name, len(params), len(args))
+	}
+
+	retTemp := &ir.TempBlock{Name: decl.Name.Name + ".$ret", Size: 1}
+	cont := ir.NewBlock()
+
+	savedVars, savedArrays, savedRecords, savedEnv := t.vars, t.arrays, t.records, t.env
+	t.vars = map[string]*ir.TempBlock{}
+	t.arrays = map[string]*arrayInfo{}
+	t.records = map[string]*recordInfo{}
+	t.env = childEnv
+
+	for i, p := range params {
+		pt := t.alloc(p)
+		t.emit(ir.SetPlace(ir.TempCell(pt), args[i].node()))
+	}
+
+	t.returns = append(t.returns, returnCtx{temp: retTemp, target: cont})
+	t.inlining[decl.Name.Name] = true
+	err := t.stmtList(decl.Body.List)
+	t.fallthroughTo(cont)
+	delete(t.inlining, decl.Name.Name)
+	t.returns = t.returns[:len(t.returns)-1]
+
+	t.vars, t.arrays, t.records, t.env = savedVars, savedArrays, savedRecords, savedEnv
+	t.enter(cont)
+	if err != nil {
+		return Num{}, err
+	}
+	return exprNum(ir.GetPlace(ir.TempCell(retTemp))), nil
+}
+
+// funcParams flattens a function's parameter names in order.
+func funcParams(decl *ast.FuncDecl) []string {
+	var out []string
+	if decl.Type.Params == nil {
+		return out
+	}
+	for _, field := range decl.Type.Params.List {
+		for _, name := range field.Names {
+			out = append(out, name.Name)
+		}
+	}
+	return out
 }

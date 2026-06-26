@@ -62,20 +62,62 @@ var runtimeFns = map[string]runtimeFn{
 	"print":           {resource.RuntimeFunctionPrint, false, -1},
 }
 
-// modeAccessors are the runtime-environment reads exposed as bare identifiers,
-// per mode (field offsets from sonolus.py runtime.py). All are read-only.
+// modeAccessors are the runtime reads exposed as bare identifiers, per mode
+// (field offsets from sonolus.py runtime.py; block 1000 = RuntimeEnvironment,
+// 1001 = RuntimeUpdate except Preview where 1001 = RuntimeCanvas). All read-only.
 var modeAccessors = map[ir.Mode]map[string]Binding{
 	ir.ModePlay: {
-		// RuntimeUpdate block (1001).
-		"time":       {Block: 1001, Index: 0},
-		"deltaTime":  {Block: 1001, Index: 1},
-		"scaledTime": {Block: 1001, Index: 2},
-		"touchCount": {Block: 1001, Index: 3},
-		// RuntimeEnvironment block (1000).
-		"isDebug":     {Block: 1000, Index: 0},
-		"aspectRatio": {Block: 1000, Index: 1},
-		"audioOffset": {Block: 1000, Index: 2},
-		"inputOffset": {Block: 1000, Index: 3},
+		"time":          {Block: 1001, Index: 0},
+		"deltaTime":     {Block: 1001, Index: 1},
+		"scaledTime":    {Block: 1001, Index: 2},
+		"touchCount":    {Block: 1001, Index: 3},
+		"isDebug":       {Block: 1000, Index: 0},
+		"aspectRatio":   {Block: 1000, Index: 1},
+		"audioOffset":   {Block: 1000, Index: 2},
+		"inputOffset":   {Block: 1000, Index: 3},
+		"isMultiplayer": {Block: 1000, Index: 4},
+		"safeAreaXMin":  {Block: 1000, Index: 5},
+		"safeAreaXMax":  {Block: 1000, Index: 6},
+		"safeAreaYMin":  {Block: 1000, Index: 7},
+		"safeAreaYMax":  {Block: 1000, Index: 8},
+	},
+	ir.ModeWatch: {
+		"time":         {Block: 1001, Index: 0},
+		"deltaTime":    {Block: 1001, Index: 1},
+		"scaledTime":   {Block: 1001, Index: 2},
+		"isSkip":       {Block: 1001, Index: 3},
+		"isDebug":      {Block: 1000, Index: 0},
+		"aspectRatio":  {Block: 1000, Index: 1},
+		"audioOffset":  {Block: 1000, Index: 2},
+		"inputOffset":  {Block: 1000, Index: 3},
+		"isReplay":     {Block: 1000, Index: 4},
+		"safeAreaXMin": {Block: 1000, Index: 5},
+		"safeAreaXMax": {Block: 1000, Index: 6},
+		"safeAreaYMin": {Block: 1000, Index: 7},
+		"safeAreaYMax": {Block: 1000, Index: 8},
+	},
+	ir.ModePreview: {
+		// RuntimeCanvas block (1001).
+		"scrollDirection": {Block: 1001, Index: 0},
+		"canvasSize":      {Block: 1001, Index: 1},
+		"isDebug":         {Block: 1000, Index: 0},
+		"aspectRatio":     {Block: 1000, Index: 1},
+		"safeAreaXMin":    {Block: 1000, Index: 2},
+		"safeAreaXMax":    {Block: 1000, Index: 3},
+		"safeAreaYMin":    {Block: 1000, Index: 4},
+		"safeAreaYMax":    {Block: 1000, Index: 5},
+	},
+	ir.ModeTutorial: {
+		"time":                {Block: 1001, Index: 0},
+		"deltaTime":           {Block: 1001, Index: 1},
+		"navigationDirection": {Block: 1001, Index: 2},
+		"isDebug":             {Block: 1000, Index: 0},
+		"aspectRatio":         {Block: 1000, Index: 1},
+		"audioOffset":         {Block: 1000, Index: 2},
+		"safeAreaXMin":        {Block: 1000, Index: 3},
+		"safeAreaXMax":        {Block: 1000, Index: 4},
+		"safeAreaYMin":        {Block: 1000, Index: 5},
+		"safeAreaYMax":        {Block: 1000, Index: 6},
 	},
 }
 
