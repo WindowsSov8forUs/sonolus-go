@@ -1055,6 +1055,10 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return Num{}, t.errf(n, "len expects an array")
 	case "array":
 		return Num{}, t.errf(n, "array() may only appear in a declaration (a := array(n))")
+	case "screen":
+		return t.screenFunc(n)
+	case "safeArea":
+		return t.safeAreaFunc(n)
 	case "vec2":
 		return t.inlineComposite(fn, n, vec2Fields)
 	case "quad":
@@ -1318,4 +1322,25 @@ func (t *tracer) touchField(n *ast.CallExpr, args []Num, fieldOffset int) (Num, 
 		ir.PureInstr(resource.RuntimeFunctionMultiply, args[0].node(), ir.Const(touchStride)),
 		ir.Const(fieldOffset))
 	return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(touchBlock), index, 0))), nil
+}
+
+func (t *tracer) screenFunc(n *ast.CallExpr) (Num, error) {
+	if len(n.Args) != 0 {
+		return Num{}, t.errf(n, "screen() takes no arguments")
+	}
+	ar := exprNum(ir.GetPlace(ir.Cell(1000, 1)))
+	negAr := exprNum(ir.PureInstr(resource.RuntimeFunctionNegate, ar.node()))
+	return compNum(map[string]Num{"t": constNum(1), "r": ar, "b": constNum(-1), "l": negAr}), nil
+}
+
+func (t *tracer) safeAreaFunc(n *ast.CallExpr) (Num, error) {
+	if len(n.Args) != 0 {
+		return Num{}, t.errf(n, "safeArea() takes no arguments")
+	}
+	return compNum(map[string]Num{
+		"t": exprNum(ir.GetPlace(ir.Cell(1000, 8))),
+		"r": exprNum(ir.GetPlace(ir.Cell(1000, 6))),
+		"b": exprNum(ir.GetPlace(ir.Cell(1000, 7))),
+		"l": exprNum(ir.GetPlace(ir.Cell(1000, 5))),
+	}), nil
 }
