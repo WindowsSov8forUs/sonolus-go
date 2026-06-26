@@ -169,3 +169,70 @@ func allBlocks(entry *ir.BasicBlock) []*ir.BasicBlock {
 	}
 	return out
 }
+
+var flattenOps = map[ir.Op]bool{"Add": true, "Multiply": true, "Mod": true, "Rem": true}
+
+// FlattenAssociativeOps flattens nested Add/Add chains: a+(b+c) -> a+b+c.
+// This lets RemoveRedundantArguments see and strip identity elements (+0, *1).
+type FlattenAssociativeOps struct{}
+
+func (FlattenAssociativeOps) Name() string { return "FlattenAssoc" }
+
+func (FlattenAssociativeOps) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+	for _, b := range ir.Preorder(entry) {
+		for i, s := range b.Statements {
+			b.Statements[i] = flattenStmt(s)
+		}
+		b.Test = flattenStmt(b.Test)
+	}
+	return entry
+}
+
+func flattenStmt(n ir.Node) ir.Node {
+	instr, ok := n.(ir.Instr)
+	if !ok || !flattenOps[instr.Op] {
+		return n
+	}
+	args := make([]ir.Node, 0, len(instr.Args))
+	for _, a := range instr.Args {
+		a2 := flattenStmt(a)
+		if in, ok2 := a2.(ir.Instr); ok2 && in.Op == instr.Op {
+			args = append(args, in.Args...)
+		} else {
+			args = append(args, a2)
+		}
+	}
+	return ir.Instr{Op: instr.Op, Args: args, Pure: true}
+}
+
+// UnflattenAssociativeOps restores binary form: a+b+c -> ((a+b)+c). Sonolus
+// opcodes are binary, so this must run before finalization.
+type UnflattenAssociativeOps struct{}
+
+func (UnflattenAssociativeOps) Name() string { return "UnflattenAssoc" }
+
+func (UnflattenAssociativeOps) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+	for _, b := range ir.Preorder(entry) {
+		for i, s := range b.Statements {
+			b.Statements[i] = unflattenStmt(s)
+		}
+		b.Test = unflattenStmt(b.Test)
+	}
+	return entry
+}
+
+func unflattenStmt(n ir.Node) ir.Node {
+	instr, ok := n.(ir.Instr)
+	if !ok || !flattenOps[instr.Op] || len(instr.Args) <= 2 {
+		return n
+	}
+	args := make([]ir.Node, len(instr.Args))
+	for i, a := range instr.Args {
+		args[i] = unflattenStmt(a)
+	}
+	result := args[0]
+	for _, arg := range args[1:] {
+		result = ir.Instr{Op: instr.Op, Args: []ir.Node{result, arg}, Pure: true}
+	}
+	return result
+}

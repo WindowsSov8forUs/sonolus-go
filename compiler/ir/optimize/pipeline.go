@@ -12,11 +12,13 @@ func Standard(mode ir.Mode, callback string) []Pass {
 		ToSSA{},
 		SCCP{},
 		InlineVars{Aggressive: true, Callback: callback, Oracle: ir.Blocks(mode)},
+		FlattenAssociativeOps{},
 		RemoveRedundantArguments{},
 		RewriteToSwitch{},
 		CSE{},
 		LICM{},
 		FromSSA{},
+		UnflattenAssociativeOps{},
 
 		CopyCoalesce{},
 		UnreachableCodeElimination{},
