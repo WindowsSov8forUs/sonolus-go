@@ -434,4 +434,55 @@ func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 
 var quadMethods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"center": quadCenter, "translate": quadTranslate, "scale": quadScale, "permute": quadPermute,
+	"contains": quadContains,
+}
+
+func quadContains(t *tracer, q Num, args []Num) (Num, error) {
+	p := args[0]
+	px, py := p.Field("x").node(), p.Field("y").node()
+	// Check if point is on the same side of all edges of the convex quad.
+	// For each edge AB, cross product (B-A)x(P-A) should have the same sign.
+	check := func(ax, ay, bx, by ir.Node) ir.Node {
+		dx := ir.PureInstr(resource.RuntimeFunctionSubtract, bx, ax)
+		dy := ir.PureInstr(resource.RuntimeFunctionSubtract, by, ay)
+		nx := ir.PureInstr(resource.RuntimeFunctionSubtract, px, ax)
+		ny := ir.PureInstr(resource.RuntimeFunctionSubtract, py, ay)
+		return ir.PureInstr(resource.RuntimeFunctionSubtract,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, dx, ny),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, dy, nx))
+	}
+	v0 := check(q.Field("blx").node(), q.Field("bly").node(), q.Field("tlx").node(), q.Field("tly").node())
+	v1 := check(q.Field("tlx").node(), q.Field("tly").node(), q.Field("trx").node(), q.Field("try").node())
+	v2 := check(q.Field("trx").node(), q.Field("try").node(), q.Field("brx").node(), q.Field("bry").node())
+	v3 := check(q.Field("brx").node(), q.Field("bry").node(), q.Field("blx").node(), q.Field("bly").node())
+	// Point is inside if all cross products have the same sign (all >= 0 or all <= 0).
+	same := ir.PureInstr(resource.RuntimeFunctionAnd,
+		ir.PureInstr(resource.RuntimeFunctionAnd,
+			ir.PureInstr(resource.RuntimeFunctionGreaterOr,
+				ir.PureInstr(resource.RuntimeFunctionMultiply, v0, v1), ir.Const(0)),
+			ir.PureInstr(resource.RuntimeFunctionGreaterOr,
+				ir.PureInstr(resource.RuntimeFunctionMultiply, v1, v2), ir.Const(0))),
+		ir.PureInstr(resource.RuntimeFunctionGreaterOr,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, v2, v3), ir.Const(0)))
+	return exprNum(same), nil
+}
+
+var touchFields = []string{"id", "started", "ended", "time", "startTime", "posX", "posY", "deltaX", "deltaY", "speed", "angle"}
+
+// buildTouch constructs a composite Touch Num from RuntimeTouchArray fields at index i.
+func buildTouch(t *tracer, i Num) Num {
+	const tb, st = 1002, 9
+	off := func(o int) ir.Node {
+		return ir.PureInstr(resource.RuntimeFunctionAdd,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, i.node(), ir.Const(st)),
+			ir.Const(o))
+	}
+	get := func(o int) Num { return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(tb), off(o), 0))) }
+	return compNum(map[string]Num{
+		"id": get(0), "started": get(1), "ended": get(2),
+		"time": get(3), "startTime": get(4),
+		"posX": get(5), "posY": get(6),
+		"deltaX": get(7), "deltaY": get(8),
+		"speed": get(9), "angle": get(10),
+	})
 }
