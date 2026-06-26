@@ -10,7 +10,7 @@ func Standard(mode ir.Mode, callback string) []Pass {
 
 		ToSSA{},
 		SCCP{},
-		InlineVars{Callback: callback, Oracle: ir.Blocks(mode)},
+		InlineVars{Aggressive: true, Callback: callback, Oracle: ir.Blocks(mode)},
 		CSE{},
 		LICM{},
 		FromSSA{},

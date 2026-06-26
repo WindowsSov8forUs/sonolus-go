@@ -836,6 +836,16 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		}
 		place := ir.NewBlockPlace(args[0].node(), args[1].node(), 0)
 		return exprNum(ir.GetPlace(place)), nil
+	case "touchId":
+		return t.touchField(n, args, 0)
+	case "touchStarted":
+		return t.touchField(n, args, 1)
+	case "touchEnded":
+		return t.touchField(n, args, 2)
+	case "touchX":
+		return t.touchField(n, args, 3)
+	case "touchY":
+		return t.touchField(n, args, 4)
 	case "set":
 		if len(args) != 3 {
 			return Num{}, t.errf(n, "set expects (block, index, value)")
@@ -897,6 +907,23 @@ func (t *tracer) callUserFunc(fnName *ast.Ident, decl *ast.FuncDecl, args []Num)
 // receiver.Method(args); the method body sees the archetype's fields via its own
 // receiver.
 func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error) {
+	// Record method call: v.mul(s) where v is a vec2/quad.
+	if base, ok := sel.X.(*ast.Ident); ok {
+		if rec, ok := t.records[base.Name]; ok {
+			if method, ok2 := vec2Methods[sel.Sel.Name]; ok2 {
+				args := make([]Num, len(n.Args))
+				for i, a := range n.Args {
+					v, err := t.expr(a)
+					if err != nil {
+						return Num{}, err
+					}
+					args[i] = v
+				}
+				return method(t, rec.val, args)
+			}
+		}
+	}
+
 	base, ok := sel.X.(*ast.Ident)
 	if !ok || t.env.Receiver == "" || base.Name != t.env.Receiver {
 		return Num{}, t.errf(sel, "unsupported method call")
@@ -1000,4 +1027,15 @@ func funcParams(decl *ast.FuncDecl) []string {
 		}
 	}
 	return out
+}
+
+func (t *tracer) touchField(n *ast.CallExpr, args []Num, fieldOffset int) (Num, error) {
+	if len(args) != 1 {
+		return Num{}, t.errf(n, "touch field expects 1 argument (touch index)")
+	}
+	const touchBlock, touchStride = 1002, 9
+	index := ir.PureInstr(resource.RuntimeFunctionAdd,
+		ir.PureInstr(resource.RuntimeFunctionMultiply, args[0].node(), ir.Const(touchStride)),
+		ir.Const(fieldOffset))
+	return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(touchBlock), index, 0))), nil
 }

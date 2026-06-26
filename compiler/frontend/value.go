@@ -171,3 +171,33 @@ func applyUnary(op token.Token, a Num) (Num, bool) {
 		return Num{}, false
 	}
 }
+
+// Vec2 methods: each returns a new composite Num by applying the operation to
+// both fields individually. The optimizer folds the resulting field reads.
+
+func vec2Add(t *tracer, v Num, args []Num) (Num, error) {
+	w := args[0]
+	if w.IsComposite() {
+		return compNum(map[string]Num{"x": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, v.Field("x").node(), w.Field("x").node())), "y": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, v.Field("y").node(), w.Field("y").node()))}), nil
+	}
+	return compNum(map[string]Num{"x": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, v.Field("x").node(), w.node())), "y": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, v.Field("y").node(), w.node()))}), nil
+}
+
+func vec2Sub(t *tracer, v Num, args []Num) (Num, error) {
+	w := args[0]
+	return compNum(map[string]Num{"x": exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, v.Field("x").node(), w.node())), "y": exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, v.Field("y").node(), w.node()))}), nil
+}
+
+func vec2Mul(t *tracer, v Num, args []Num) (Num, error) {
+	s := args[0]
+	return compNum(map[string]Num{"x": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("x").node(), s.node())), "y": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, v.Field("y").node(), s.node()))}), nil
+}
+
+func vec2Div(t *tracer, v Num, args []Num) (Num, error) {
+	s := args[0]
+	return compNum(map[string]Num{"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, v.Field("x").node(), s.node())), "y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, v.Field("y").node(), s.node()))}), nil
+}
+
+var vec2Methods = map[string]func(*tracer, Num, []Num) (Num, error){
+	"add": vec2Add, "sub": vec2Sub, "mul": vec2Mul, "div": vec2Div,
+}
