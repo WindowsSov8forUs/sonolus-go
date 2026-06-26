@@ -335,3 +335,23 @@ var rectMethods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"w": rectW, "h": rectH, "center": rectCenter,
 	"translate": rectTranslate, "scale": rectScale,
 }
+
+func vec2Zero() Num  { return compNum(map[string]Num{"x": constNum(0), "y": constNum(0)}) }
+func vec2One() Num   { return compNum(map[string]Num{"x": constNum(1), "y": constNum(1)}) }
+func vec2Up() Num    { return compNum(map[string]Num{"x": constNum(0), "y": constNum(1)}) }
+func vec2Down() Num  { return compNum(map[string]Num{"x": constNum(0), "y": constNum(-1)}) }
+func vec2Left() Num  { return compNum(map[string]Num{"x": constNum(-1), "y": constNum(0)}) }
+func vec2Right() Num { return compNum(map[string]Num{"x": constNum(1), "y": constNum(0)}) }
+
+func vec2Unit(t *tracer, v Num, args []Num) (Num, error) {
+	angle := args[0]
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionCos, angle.node())),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionSin, angle.node())),
+	}), nil
+}
+
+var vec2Statics = map[string]func() Num{
+	"zero": vec2Zero, "one": vec2One, "up": vec2Up, "down": vec2Down,
+	"left": vec2Left, "right": vec2Right,
+}

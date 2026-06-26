@@ -13,6 +13,7 @@ func Standard(mode ir.Mode, callback string) []Pass {
 		SCCP{},
 		InlineVars{Aggressive: true, Callback: callback, Oracle: ir.Blocks(mode)},
 		RemoveRedundantArguments{},
+		RewriteToSwitch{},
 		CSE{},
 		LICM{},
 		FromSSA{},
