@@ -201,3 +201,45 @@ func vec2Div(t *tracer, v Num, args []Num) (Num, error) {
 var vec2Methods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"add": vec2Add, "sub": vec2Sub, "mul": vec2Mul, "div": vec2Div,
 }
+
+// matFields is the field layout of a 3x2 affine matrix.
+var matFields = []string{"m11", "m12", "m13", "m21", "m22", "m23"}
+
+func matIdentity() Num {
+	return compNum(map[string]Num{
+		"m11": constNum(1), "m12": constNum(0), "m13": constNum(0),
+		"m21": constNum(0), "m22": constNum(1), "m23": constNum(0),
+	})
+}
+
+func matScale(t *tracer, m Num, args []Num) (Num, error) {
+	sx, sy := args[0], args[0]
+	if len(args) > 1 {
+		sy = args[1]
+	}
+	return compNum(map[string]Num{
+		"m11": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field("m11").node(), sx.node())),
+		"m12": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field("m12").node(), sx.node())),
+		"m13": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field("m13").node(), sx.node())),
+		"m21": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field("m21").node(), sy.node())),
+		"m22": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field("m22").node(), sy.node())),
+		"m23": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field("m23").node(), sy.node())),
+	}), nil
+}
+
+func matTranslate(t *tracer, m Num, args []Num) (Num, error) {
+	tx, ty := args[0], args[0]
+	if len(args) > 1 {
+		ty = args[1]
+	}
+	return compNum(map[string]Num{
+		"m11": m.Field("m11"), "m12": m.Field("m12"),
+		"m13": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, m.Field("m13").node(), tx.node())),
+		"m21": m.Field("m21"), "m22": m.Field("m22"),
+		"m23": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, m.Field("m23").node(), ty.node())),
+	}), nil
+}
+
+var matMethods = map[string]func(*tracer, Num, []Num) (Num, error){
+	"scale": matScale, "translate": matTranslate,
+}

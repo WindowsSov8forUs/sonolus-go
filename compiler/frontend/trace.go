@@ -263,6 +263,8 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 				return t.recordDecl(fnName, call, vec2Fields)
 			case "quad":
 				return t.recordDecl(fnName, call, quadFields)
+			case "mat":
+				return t.recordDecl(fnName, call, matFields)
 			}
 		}
 	}
