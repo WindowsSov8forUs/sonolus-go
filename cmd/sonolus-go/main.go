@@ -16,6 +16,8 @@ import (
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>] [-m <mode>]\n")
+		fmt.Fprintf(os.Stderr, "       sonolus-go serve <engine.go>\n")
+		fmt.Fprintf(os.Stderr, "       sonolus-go level <chart.json>\n")
 		fmt.Fprintf(os.Stderr, "  modes: play (default), watch, preview, tutorial, all\n")
 		flag.PrintDefaults()
 	}

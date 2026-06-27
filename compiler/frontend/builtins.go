@@ -111,6 +111,9 @@ var runtimeFns = map[string]runtimeFn{
 	"beatToStartingBeat":       {resource.RuntimeFunctionBeatToStartingBeat, true, -1},
 	"beatToStartingTime":       {resource.RuntimeFunctionBeatToStartingTime, true, -1},
 	"timeToTimeScale":          {resource.RuntimeFunctionTimeToTimeScale, true, -1},
+	// Side-effecting — canvas (preview).
+	"paint": {resource.RuntimeFunctionPaint, false, -1},
+
 	// Side-effecting — drawing.
 	"drawCurvedB": {resource.RuntimeFunctionDrawCurvedB, false, -1},
 	"drawCurvedT": {resource.RuntimeFunctionDrawCurvedT, false, -1},

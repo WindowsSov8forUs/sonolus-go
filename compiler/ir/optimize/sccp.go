@@ -7,11 +7,11 @@ import (
 )
 
 // SCCP is sparse conditional constant propagation. Port of sonolus.py
-// constant_evaluation.SparseConditionalConstantPropagation, with one documented
-// reduction: the multi-value (frozenset) lattice element is collapsed to NAC.
-// The op set covers arithmetic/comparison/logic/trig/transcendental (35 ops);
-// ops yields NAC. This reduction only makes SCCP fold less; it never produces
-// a wrong constant.
+// constant_evaluation.SparseConditionalConstantPropagation.
+// Op set: 35 ops (arithmetic/comparison/logic/trig/transcendental).
+// Known reduction: frozenset lattice collapsed to NAC — loses multi-target
+// switch-edge pruning found in reference, but never produces wrong constants.
+// Feature-complete for the op set.
 type SCCP struct{}
 
 func (SCCP) Name() string { return "SCCP" }
