@@ -77,6 +77,10 @@ func buildResources(typeSpecs map[string]*ast.StructType) parsedResources {
 			r.config = buildConfig(st)
 		}
 	}
+	// Always set UI defaults — zero-valued visibility/animation invalidates client rendering.
+	if r.config.UI.PrimaryMetric == "" {
+		r.config.UI = defaultUI()
+	}
 	return r
 }
 
