@@ -33,6 +33,7 @@ type Env struct {
 	Methods   map[string]*ast.FuncDecl // non-callback methods of the current archetype
 	Accessors map[string]Binding
 	Mode      ir.Mode
+	Records   map[string][]string // user-defined record: name → field names
 }
 
 // loopCtx records the jump targets for break/continue inside a loop.
@@ -1293,6 +1294,10 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		t.emit(ir.SetPlace(place, args[2].node()))
 		return constNum(0), nil
 	default:
+		// User-defined record constructor: TypeName(val1, val2, ...)
+		if fields, ok := t.env.Records[fn.Name]; ok {
+			return t.inlineComposite(fn, n, fields)
+		}
 		if rf, ok := runtimeFns[fn.Name]; ok {
 			if rf.arity >= 0 && len(args) != rf.arity {
 				return Num{}, t.errf(n, "%s expects %d arguments, got %d", fn.Name, rf.arity, len(args))
