@@ -1393,6 +1393,17 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 				}
 				return method(t, rec.val, args)
 			}
+			if method, ok2 := transMethods[sel.Sel.Name]; ok2 {
+				args := make([]Num, len(n.Args))
+				for i, a := range n.Args {
+					v, err := t.expr(a)
+					if err != nil {
+						return Num{}, err
+					}
+					args[i] = v
+				}
+				return method(t, rec.val, args)
+			}
 		}
 	}
 

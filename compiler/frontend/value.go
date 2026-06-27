@@ -627,3 +627,29 @@ func quadRotate(t *tracer, q Num, args []Num) (Num, error) {
 	brx, bry := rot("brx", "bry")
 	return compNum(map[string]Num{"blx": blx, "bly": bly, "tlx": tlx, "tly": tly, "trx": trx, "try": try, "brx": brx, "bry": bry}), nil
 }
+
+func transCompose(t *tracer, m Num, args []Num) (Num, error) {
+	n := args[0]
+	dot := func(r [3]string, c [3]string) ir.Node {
+		return ir.PureInstr(resource.RuntimeFunctionAdd,
+			ir.PureInstr(resource.RuntimeFunctionAdd,
+				ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field(r[0]).node(), n.Field(c[0]).node()),
+				ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field(r[1]).node(), n.Field(c[1]).node())),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, m.Field(r[2]).node(), n.Field(c[2]).node()))
+	}
+	r0 := [3]string{"m11", "m12", "m13"}
+	r1 := [3]string{"m21", "m22", "m23"}
+	r2 := [3]string{"m31", "m32", "m33"}
+	c0 := [3]string{"m11", "m21", "m31"}
+	c1 := [3]string{"m12", "m22", "m32"}
+	c2 := [3]string{"m13", "m23", "m33"}
+	return compNum(map[string]Num{
+		"m11": exprNum(dot(r0, c0)), "m12": exprNum(dot(r0, c1)), "m13": exprNum(dot(r0, c2)),
+		"m21": exprNum(dot(r1, c0)), "m22": exprNum(dot(r1, c1)), "m23": exprNum(dot(r1, c2)),
+		"m31": exprNum(dot(r2, c0)), "m32": exprNum(dot(r2, c1)), "m33": exprNum(dot(r2, c2)),
+	}), nil
+}
+
+var transMethods = map[string]func(*tracer, Num, []Num) (Num, error){
+	"compose": transCompose,
+}

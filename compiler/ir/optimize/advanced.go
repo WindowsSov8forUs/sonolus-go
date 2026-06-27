@@ -185,18 +185,32 @@ func (a AllocateLive) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 	slotMap := map[*ir.TempBlock]int{}
 	for _, s := range slots {
 		r := ranges[s.tb]
+		sz := s.tb.Size
 		assigned := false
-		for si, se := range slotEnd {
-			if se < r.first {
-				slotEnd[si] = r.last
+		// Find a run of sz contiguous free slots.
+		for si := 0; si+sz <= len(slotEnd); si++ {
+			ok := true
+			for k := 0; k < sz; k++ {
+				if slotEnd[si+k] >= r.first {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				for k := 0; k < sz; k++ {
+					slotEnd[si+k] = r.last
+				}
 				slotMap[s.tb] = si
 				assigned = true
 				break
 			}
 		}
 		if !assigned {
-			slotMap[s.tb] = len(slotEnd)
-			slotEnd = append(slotEnd, r.last)
+			start := len(slotEnd)
+			for k := 0; k < sz; k++ {
+				slotEnd = append(slotEnd, r.last)
+			}
+			slotMap[s.tb] = start
 		}
 	}
 
@@ -249,7 +263,7 @@ func defsOfNode(n ir.Node) map[*ir.TempBlock]bool {
 	d := map[*ir.TempBlock]bool{}
 	if set, ok := n.(ir.Set); ok {
 		if bp, ok2 := set.Place.(ir.BlockPlace); ok2 {
-			if tb, ok3 := bp.Block.(*ir.TempBlock); ok3 && tb.Size == 1 {
+			if tb, ok3 := bp.Block.(*ir.TempBlock); ok3 {
 				d[tb] = true
 			}
 		}
@@ -267,9 +281,7 @@ func collectTUses(n ir.Node, u map[*ir.TempBlock]bool) {
 	switch t := n.(type) {
 	case nil, ir.Const, ir.SSAPlace:
 	case *ir.TempBlock:
-		if t.Size == 1 {
-			u[t] = true
-		}
+		u[t] = true
 	case ir.Instr:
 		for _, a := range t.Args {
 			collectTUses(a, u)
