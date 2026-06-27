@@ -463,7 +463,7 @@ func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 }
 
 var quadMethods = map[string]func(*tracer, Num, []Num) (Num, error){
-	"center": quadCenter, "translate": quadTranslate, "scale": quadScale, "permute": quadPermute,
+	"center": quadCenter, "translate": quadTranslate, "scale": quadScale, "permute": quadPermute, "rotate": quadRotate,
 	"top": quadTop, "right": quadRight, "bottom": quadBottom, "left": quadLeft,
 	"contains": quadContains,
 }
@@ -605,4 +605,25 @@ func vec2AngleDiff(t *tracer, v Num, args []Num) (Num, error) {
 // signedAngleDiff returns the signed angle: Arctan2(cross(a,b), dot(a,b)).
 func vec2SignedAngleDiff(t *tracer, v Num, args []Num) (Num, error) {
 	return vec2AngleDiff(t, v, args)
+}
+
+func quadRotate(t *tracer, q Num, args []Num) (Num, error) {
+	a := args[0]
+	c := exprNum(ir.PureInstr(resource.RuntimeFunctionCos, a.node()))
+	s := exprNum(ir.PureInstr(resource.RuntimeFunctionSin, a.node()))
+	// rotate each corner around origin: (x*c - y*s, x*s + y*c)
+	rot := func(fx, fy string) (Num, Num) {
+		x := ir.PureInstr(resource.RuntimeFunctionSubtract,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, q.Field(fx).node(), c.node()),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, q.Field(fy).node(), s.node()))
+		y := ir.PureInstr(resource.RuntimeFunctionAdd,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, q.Field(fx).node(), s.node()),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, q.Field(fy).node(), c.node()))
+		return exprNum(x), exprNum(y)
+	}
+	blx, bly := rot("blx", "bly")
+	tlx, tly := rot("tlx", "tly")
+	trx, try := rot("trx", "try")
+	brx, bry := rot("brx", "bry")
+	return compNum(map[string]Num{"blx": blx, "bly": bly, "tlx": tlx, "tly": tly, "trx": trx, "try": try, "brx": brx, "bry": bry}), nil
 }

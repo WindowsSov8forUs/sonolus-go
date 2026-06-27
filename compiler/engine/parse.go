@@ -228,6 +228,7 @@ func compileParsed(
 			env := frontend.Env{
 				Names: names, Receiver: m.receiver, Funcs: funcs, Methods: a.helpers,
 				Accessors: frontend.ModeAccessors(ir.ModePlay),
+				Mode:      ir.ModePlay,
 			}
 			entry, err := frontend.CompileBlock(fset, m.body, env)
 			if err != nil {

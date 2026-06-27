@@ -32,6 +32,7 @@ type Env struct {
 	Funcs     map[string]*ast.FuncDecl // free helper functions
 	Methods   map[string]*ast.FuncDecl // non-callback methods of the current archetype
 	Accessors map[string]Binding
+	Mode      ir.Mode
 }
 
 // loopCtx records the jump targets for break/continue inside a loop.
@@ -1222,6 +1223,14 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return t.offsetAdjustedTimeFunc(n)
 	case "prevTime":
 		return t.prevTimeFunc(n)
+	case "isPlay":
+		return boolNum(t.env.Mode == ir.ModePlay), nil
+	case "isWatch":
+		return boolNum(t.env.Mode == ir.ModeWatch), nil
+	case "isPreview":
+		return boolNum(t.env.Mode == ir.ModePreview), nil
+	case "isTutorial":
+		return boolNum(t.env.Mode == ir.ModeTutorial), nil
 	case "vec2":
 		return t.inlineComposite(fn, n, vec2Fields)
 	case "vec2Zero":

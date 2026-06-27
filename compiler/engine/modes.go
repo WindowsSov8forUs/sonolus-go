@@ -190,7 +190,7 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 			if !ok {
 				continue
 			}
-			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors}
+			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
 			entry, err := frontend.CompileBlock(fset, m.body, env)
 			if err != nil {
 				return nil, fmt.Errorf("archetype %q: %w", name, err)
@@ -248,7 +248,7 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 			if !ok {
 				continue
 			}
-			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors}
+			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModePreview}
 			entry, err := frontend.CompileBlock(fset, m.body, env)
 			if err != nil {
 				return nil, fmt.Errorf("archetype %q: %w", name, err)
@@ -295,7 +295,7 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 		if d.Body == nil {
 			continue
 		}
-		env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors}
+		env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeTutorial}
 		entry, err := frontend.CompileBlock(fset, d.Body, env)
 		if err != nil {
 			return nil, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
