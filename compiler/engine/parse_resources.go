@@ -130,7 +130,7 @@ func buildConfig(st *ast.StructType) resource.EngineConfiguration {
 			})
 		}
 	}
-	return resource.EngineConfiguration{Options: opts}
+	return resource.EngineConfiguration{Options: opts, UI: defaultUI()}
 }
 
 func hasTag(tags []string, key string) bool {
@@ -253,4 +253,37 @@ func spriteID(skinST *ast.StructType, name string) int {
 		}
 	}
 	return 0
+}
+
+func defaultVisibility() resource.EngineConfigurationVisibility {
+	return resource.EngineConfigurationVisibility{Scale: 1, Alpha: 1}
+}
+
+func defaultTween() resource.EngineConfigurationAnimationTween {
+	return resource.EngineConfigurationAnimationTween{
+		From: 1, To: 1, Duration: 0,
+		Ease: resource.EngineConfigurationAnimationTweenEaseLinear,
+	}
+}
+
+func defaultUI() resource.EngineConfigurationUI {
+	vis := defaultVisibility()
+	tween := defaultTween()
+	return resource.EngineConfigurationUI{
+		PrimaryMetric:                 resource.EngineConfigurationMetricArcade,
+		SecondaryMetric:               resource.EngineConfigurationMetricAccuracy,
+		MenuVisibility:                vis,
+		JudgmentVisibility:            vis,
+		ComboVisibility:               vis,
+		PrimaryMetricVisibility:       vis,
+		SecondaryMetricVisibility:     vis,
+		ProgressVisibility:            vis,
+		TutorialNavigationVisibility:  vis,
+		TutorialInstructionVisibility: vis,
+		JudgmentAnimation:             resource.EngineConfigurationAnimation{Scale: tween, Alpha: tween},
+		ComboAnimation:                resource.EngineConfigurationAnimation{Scale: tween, Alpha: tween},
+		JudgmentErrorStyle:            resource.EngineConfigurationJudgmentErrorStyleLate,
+		JudgmentErrorPlacement:        resource.EngineConfigurationJudgmentErrorPlacementLeftRight,
+		JudgmentErrorMin:              0,
+	}
 }
