@@ -486,3 +486,53 @@ func buildTouch(t *tracer, i Num) Num {
 		"speed": get(9), "angle": get(10),
 	})
 }
+
+func quadTop(t *tracer, q Num, args []Num) (Num, error) {
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("tlx").node(), q.Field("trx").node()), ir.Const(2))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("tly").node(), q.Field("try").node()), ir.Const(2))),
+	}), nil
+}
+func quadRight(t *tracer, q Num, args []Num) (Num, error) {
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("trx").node(), q.Field("brx").node()), ir.Const(2))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("try").node(), q.Field("bry").node()), ir.Const(2))),
+	}), nil
+}
+func quadBottom(t *tracer, q Num, args []Num) (Num, error) {
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("blx").node(), q.Field("brx").node()), ir.Const(2))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("bly").node(), q.Field("bry").node()), ir.Const(2))),
+	}), nil
+}
+func quadLeft(t *tracer, q Num, args []Num) (Num, error) {
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("blx").node(), q.Field("tlx").node()), ir.Const(2))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionDivide,
+			ir.PureInstr(resource.RuntimeFunctionAdd, q.Field("bly").node(), q.Field("tly").node()), ir.Const(2))),
+	}), nil
+}
+func vec2RotateAbout(t *tracer, v Num, args []Num) (Num, error) {
+	pt, angle := args[0], args[1]
+	dx := exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, v.Field("x").node(), pt.Field("x").node()))
+	dy := exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, v.Field("y").node(), pt.Field("y").node()))
+	cs := ir.PureInstr(resource.RuntimeFunctionCos, angle.node())
+	sn := ir.PureInstr(resource.RuntimeFunctionSin, angle.node())
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, pt.Field("x").node(),
+			ir.PureInstr(resource.RuntimeFunctionSubtract,
+				ir.PureInstr(resource.RuntimeFunctionMultiply, dx.node(), cs),
+				ir.PureInstr(resource.RuntimeFunctionMultiply, dy.node(), sn)))),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionAdd, pt.Field("y").node(),
+			ir.PureInstr(resource.RuntimeFunctionAdd,
+				ir.PureInstr(resource.RuntimeFunctionMultiply, dx.node(), sn),
+				ir.PureInstr(resource.RuntimeFunctionMultiply, dy.node(), cs)))),
+	}), nil
+}
