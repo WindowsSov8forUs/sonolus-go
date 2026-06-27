@@ -202,7 +202,8 @@ var vec2Methods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"add": vec2Add, "sub": vec2Sub, "mul": vec2Mul, "div": vec2Div,
 	"magnitude": vec2Magnitude, "dot": vec2Dot, "normalize": vec2Normalize, "normalizeOrZero": vec2NormalizeOrZero,
 	"angle": vec2Angle, "rotate": vec2Rotate, "orthogonal": vec2Orthogonal,
-	"angleDiff": vec2AngleDiff, "signedAngleDiff": vec2SignedAngleDiff,
+	"rotateAbout": vec2RotateAbout,
+	"angleDiff":   vec2AngleDiff, "signedAngleDiff": vec2SignedAngleDiff,
 }
 
 // matFields is the field layout of a 3x2 affine matrix.

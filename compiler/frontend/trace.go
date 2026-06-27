@@ -1224,6 +1224,18 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return t.prevTimeFunc(n)
 	case "vec2":
 		return t.inlineComposite(fn, n, vec2Fields)
+	case "vec2Zero":
+		return vec2Statics["zero"](), nil
+	case "vec2One":
+		return vec2Statics["one"](), nil
+	case "vec2Up":
+		return vec2Statics["up"](), nil
+	case "vec2Down":
+		return vec2Statics["down"](), nil
+	case "vec2Left":
+		return vec2Statics["left"](), nil
+	case "vec2Right":
+		return vec2Statics["right"](), nil
 	case "quad":
 		return t.inlineComposite(fn, n, quadFields)
 	case "mat":
