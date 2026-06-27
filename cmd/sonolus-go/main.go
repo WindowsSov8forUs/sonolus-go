@@ -10,6 +10,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/level"
 )
 
 func main() {
@@ -32,6 +33,19 @@ func main() {
 		if err := runDevServer(srcPath, 8080); err != nil {
 			fatalf("%v", err)
 		}
+		return
+	}
+
+	if flag.Arg(0) == "level" {
+		levelPath := flag.Arg(1)
+		blob, err := level.PackageLevel(levelPath)
+		if err != nil {
+			fatalf("packaging level: %v", err)
+		}
+		dir := filepath.Join(*outDir, filepath.Base(levelPath[:len(levelPath)-len(filepath.Ext(levelPath))]))
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, level.FileName), blob, 0o644)
+		fmt.Printf("wrote level to %s/\n", dir)
 		return
 	}
 
