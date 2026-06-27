@@ -144,3 +144,32 @@ func TestVec2InCallback(t *testing.T) {
 	}
 	t.Logf("vec2 in callback: %d nodes", len(data.Nodes))
 }
+
+func TestScoreLifeBindings(t *testing.T) {
+	b := ScoreLifeBindings(true, true)
+	if b["entityPerfect"].Block != 4006 || b["entityPerfect"].Index != 0 {
+		t.Errorf("perfect = %+v", b["entityPerfect"])
+	}
+	if b["entityLifeMiss"].Block != 4007 || b["entityLifeMiss"].Index != 3 {
+		t.Errorf("lifeMiss = %+v", b["entityLifeMiss"])
+	}
+}
+
+func TestScoredArchetype(t *testing.T) {
+	src := "package p\n" +
+		"type Note struct {\n" +
+		"\tBeat float64 `sonolus:\"imported\"`\n" +
+		"\t_     float64 `sonolus:\"scored\"`\n" +
+		"\t_     float64 `sonolus:\"lifed\"`\n" +
+		"}\n" +
+		"func (n Note) UpdateSequential() {\n" +
+		"\tset(2000, 0, entityPerfect + entityLifePerfect)\n" +
+		"}\n"
+	data, err := CompilePlayFile(src)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if !nodeContains(data.Nodes, resource.RuntimeFunctionAdd) {
+		t.Errorf("expected Add from entityPerfect+entityLifePerfect")
+	}
+}

@@ -32,6 +32,8 @@ type parsedArchetype struct {
 	input    []string
 	despawn  []string
 	info     []string
+	scored   bool
+	lifed    bool
 	methods  []parsedMethod
 	helpers  map[string]*ast.FuncDecl
 }
@@ -145,6 +147,10 @@ func parseFields(a *parsedArchetype, st *ast.StructType) error {
 				a.despawn = append(a.despawn, name.Name)
 			case "info":
 				a.info = append(a.info, name.Name)
+			case "scored":
+				a.scored = true
+			case "lifed":
+				a.lifed = true
 			case "":
 			default:
 				return fmt.Errorf("archetype %q field %q: unknown sonolus tag %q", a.name, name.Name, tag)
@@ -201,6 +207,9 @@ func compileParsed(
 		}
 		for ii, in := range a.info {
 			b[in] = frontend.Binding{Block: entityInfoBlock, Index: ii, Writable: false}
+		}
+		if a.scored || a.lifed {
+			ArchetypeScoreLife(b, a.scored, a.lifed)
 		}
 		bindings[i] = b
 		defs[i] = play.ArchetypeDef{Name: a.name, HasInput: hasTouch(a), Imports: imports, Exports: exports}
