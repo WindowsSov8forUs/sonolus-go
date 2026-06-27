@@ -1160,6 +1160,8 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return t.touchField(n, args, 3)
 	case "touchY":
 		return t.touchField(n, args, 4)
+	case "pnpoly":
+		return t.pnpolyFunc(n, args)
 	case "set":
 		if len(args) != 3 {
 			return Num{}, t.errf(n, "set expects (block, index, value)")
@@ -1406,4 +1408,34 @@ func (t *tracer) safeAreaFunc(n *ast.CallExpr) (Num, error) {
 		"b": exprNum(ir.GetPlace(ir.Cell(1000, 7))),
 		"l": exprNum(ir.GetPlace(ir.Cell(1000, 5))),
 	}), nil
+}
+
+// pnpolyFunc emits a point-in-quad test: 1 if point is inside the convex quad.
+func (t *tracer) pnpolyFunc(n *ast.CallExpr, args []Num) (Num, error) {
+	if len(args) != 2 {
+		return Num{}, t.errf(n, "pnpoly expects (point, quad)")
+	}
+	point, quad := args[0], args[1]
+	px, py := point.Field("x").node(), point.Field("y").node()
+
+	cross := func(ax, ay, bx, by ir.Node) ir.Node {
+		dx := ir.PureInstr(resource.RuntimeFunctionSubtract, bx, ax)
+		dy := ir.PureInstr(resource.RuntimeFunctionSubtract, by, ay)
+		return ir.PureInstr(resource.RuntimeFunctionSubtract,
+			ir.PureInstr(resource.RuntimeFunctionMultiply, dx, ir.PureInstr(resource.RuntimeFunctionSubtract, py, ay)),
+			ir.PureInstr(resource.RuntimeFunctionMultiply, dy, ir.PureInstr(resource.RuntimeFunctionSubtract, px, ax)))
+	}
+
+	v0 := cross(quad.Field("blx").node(), quad.Field("bly").node(), quad.Field("tlx").node(), quad.Field("tly").node())
+	v1 := cross(quad.Field("tlx").node(), quad.Field("tly").node(), quad.Field("trx").node(), quad.Field("try").node())
+	v2 := cross(quad.Field("trx").node(), quad.Field("try").node(), quad.Field("brx").node(), quad.Field("bry").node())
+	v3 := cross(quad.Field("brx").node(), quad.Field("bry").node(), quad.Field("blx").node(), quad.Field("bly").node())
+
+	inside := ir.PureInstr(resource.RuntimeFunctionAnd,
+		ir.PureInstr(resource.RuntimeFunctionAnd,
+			ir.PureInstr(resource.RuntimeFunctionGreaterOr, ir.PureInstr(resource.RuntimeFunctionMultiply, v0, v1), ir.Const(0)),
+			ir.PureInstr(resource.RuntimeFunctionGreaterOr, ir.PureInstr(resource.RuntimeFunctionMultiply, v1, v2), ir.Const(0))),
+		ir.PureInstr(resource.RuntimeFunctionGreaterOr, ir.PureInstr(resource.RuntimeFunctionMultiply, v2, v3), ir.Const(0)))
+
+	return exprNum(inside), nil
 }

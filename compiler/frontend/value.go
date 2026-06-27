@@ -428,8 +428,36 @@ func quadScale(t *tracer, q Num, args []Num) (Num, error) {
 
 func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 	// permute(n) rotates quad corners by n positions (0-3).
-	_ = args
-	return q, nil
+	// For compile-time constant n, emit the right rotation.
+	n := args[0]
+	if n.isConst {
+		switch int(n.c) % 4 {
+		case 0:
+			return q, nil
+		case 1:
+			return compNum(map[string]Num{
+				"blx": q.Field("tlx"), "bly": q.Field("tly"),
+				"tlx": q.Field("trx"), "tly": q.Field("try"),
+				"trx": q.Field("brx"), "try": q.Field("bry"),
+				"brx": q.Field("blx"), "bry": q.Field("bly"),
+			}), nil
+		case 2:
+			return compNum(map[string]Num{
+				"blx": q.Field("trx"), "bly": q.Field("try"),
+				"tlx": q.Field("brx"), "tly": q.Field("bry"),
+				"trx": q.Field("blx"), "try": q.Field("bly"),
+				"brx": q.Field("tlx"), "bry": q.Field("tly"),
+			}), nil
+		case 3:
+			return compNum(map[string]Num{
+				"blx": q.Field("brx"), "bly": q.Field("bry"),
+				"tlx": q.Field("blx"), "tly": q.Field("bly"),
+				"trx": q.Field("tlx"), "try": q.Field("tly"),
+				"brx": q.Field("trx"), "bry": q.Field("try"),
+			}), nil
+		}
+	}
+	return q, nil // non-constant: identity fallback
 }
 
 var quadMethods = map[string]func(*tracer, Num, []Num) (Num, error){
