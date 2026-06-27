@@ -1,5 +1,5 @@
 // Package build packages compiled engine data into the on-disk Sonolus file
-// layout: each datum is gzip-compressed JSON, mirroring sonolus.py's
+// layout: each datum is gzip-compressed, mirroring sonolus.py's
 // package_data / PackagedEngine.write.
 package build
 
@@ -21,11 +21,11 @@ const (
 	FileRom           = "EngineRom"
 )
 
-// PackagedPlayEngine holds the gzipped blobs for the play-mode slice of an
-// engine. Watch/preview/tutorial/rom are added as those modes are implemented.
+// PackagedPlayEngine holds the gzipped blobs for the play-mode slice of an engine.
 type PackagedPlayEngine struct {
 	Configuration []byte
 	PlayData      []byte
+	Rom           []byte
 }
 
 // PackageAny gzip-compresses any JSON-serializable value.
@@ -41,9 +41,9 @@ func PackageConfiguration(cfg *resource.EngineConfiguration) ([]byte, error) {
 	return codec.Compress(cfg)
 }
 
-// PackagePlay builds the play-mode packaged engine from its configuration and
-// play data.
-func PackagePlay(cfg *resource.EngineConfiguration, data *resource.EnginePlayData) (*PackagedPlayEngine, error) {
+// PackagePlay builds the play-mode packaged engine from its configuration, play
+// data, and ROM.
+func PackagePlay(cfg *resource.EngineConfiguration, data *resource.EnginePlayData, rom []byte) (*PackagedPlayEngine, error) {
 	configuration, err := PackageConfiguration(cfg)
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func PackagePlay(cfg *resource.EngineConfiguration, data *resource.EnginePlayDat
 	if err != nil {
 		return nil, err
 	}
-	return &PackagedPlayEngine{Configuration: configuration, PlayData: playData}, nil
+	return &PackagedPlayEngine{Configuration: configuration, PlayData: playData, Rom: rom}, nil
 }
 
 // Write writes the packaged engine files into dir, creating it if needed.
@@ -63,6 +63,7 @@ func (p *PackagedPlayEngine) Write(dir string) error {
 	files := map[string][]byte{
 		FileConfiguration: p.Configuration,
 		FilePlayData:      p.PlayData,
+		FileRom:           p.Rom,
 	}
 	for name, blob := range files {
 		if blob == nil {

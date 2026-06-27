@@ -76,7 +76,7 @@ func TestRealEngineCompiles(t *testing.T) {
 		t.Errorf("skin sprites = %d, want 2", len(data.Skin.Sprites))
 	}
 
-	pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data)
+	pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data, nil)
 	if err != nil {
 		t.Fatalf("package: %v", err)
 	}

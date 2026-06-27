@@ -66,7 +66,7 @@ func TestPackageRoundTrip(t *testing.T) {
 
 func TestWriteFiles(t *testing.T) {
 	data := tinyPlayData(t)
-	pkg, err := PackagePlay(&resource.EngineConfiguration{}, data)
+	pkg, err := PackagePlay(&resource.EngineConfiguration{}, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

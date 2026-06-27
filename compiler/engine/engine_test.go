@@ -88,7 +88,7 @@ func TestCompilePlayPackages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data)
+	pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestCompilePlayWithArray(t *testing.T) {
 
 func mustPackage(t *testing.T, data *resource.EnginePlayData) []byte {
 	t.Helper()
-	pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data)
+	pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

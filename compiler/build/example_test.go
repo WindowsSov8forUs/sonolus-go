@@ -64,7 +64,7 @@ func TestEndToEndPlay(t *testing.T) {
 	}
 
 	// Package and write, then round-trip back.
-	pkg, err := PackagePlay(&resource.EngineConfiguration{}, data)
+	pkg, err := PackagePlay(&resource.EngineConfiguration{}, data, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

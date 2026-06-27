@@ -43,7 +43,11 @@ func main() {
 		if err != nil {
 			fatalf("compiling: %v", err)
 		}
-		pkg, err := build.PackagePlay(cfg, data)
+		rom, err := build.BuildRom(build.DefaultRom())
+		if err != nil {
+			fatalf("building ROM: %v", err)
+		}
+		pkg, err := build.PackagePlay(cfg, data, rom)
 		if err != nil {
 			fatalf("packaging: %v", err)
 		}
