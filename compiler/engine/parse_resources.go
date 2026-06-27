@@ -9,7 +9,6 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 )
 
-// resourceRole maps Go type names to their role. Returns "" if not a resource.
 func resourceRole(name string) string {
 	switch name {
 	case "Skin":
@@ -169,7 +168,8 @@ func buildBuckets(st *ast.StructType, skinST *ast.StructType) []resource.EngineD
 	var out []resource.EngineDataBucket
 	for _, f := range st.Fields.List {
 		tag := reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus")
-		if tag != "bucket" || len(f.Names) == 0 {
+		tagParts := splitTag(tag)
+		if len(tagParts) == 0 || tagParts[0] != "bucket" || len(f.Names) == 0 {
 			continue
 		}
 		var sprites []resource.EngineDataBucketSprite
@@ -193,6 +193,8 @@ func buildBuckets(st *ast.StructType, skinST *ast.StructType) []resource.EngineD
 								spr.H = parseFloat(v)
 							case "rotation":
 								spr.Rotation = parseFloat(v)
+							case "fallback":
+								spr.FallbackID = spriteID(skinST, v)
 							}
 						}
 					}
@@ -200,7 +202,11 @@ func buildBuckets(st *ast.StructType, skinST *ast.StructType) []resource.EngineD
 				}
 			}
 		}
-		out = append(out, resource.EngineDataBucket{Sprites: sprites})
+		bucket := resource.EngineDataBucket{Sprites: sprites}
+		if unit := tagVal(tagParts, "unit"); unit != "" {
+			bucket.Unit = core.Text(unit)
+		}
+		out = append(out, bucket)
 	}
 	return out
 }
