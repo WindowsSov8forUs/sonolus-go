@@ -22,7 +22,20 @@ func main() {
 	mode := flag.String("m", "play", "engine mode: play, watch, preview, tutorial, all")
 	flag.Parse()
 
-	if flag.NArg() < 1 || flag.Arg(0) != "build" {
+	if flag.NArg() < 1 {
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	if flag.Arg(0) == "serve" {
+		srcPath := flag.Arg(1)
+		if err := runDevServer(srcPath, 8080); err != nil {
+			fatalf("%v", err)
+		}
+		return
+	}
+
+	if flag.Arg(0) != "build" {
 		flag.Usage()
 		os.Exit(1)
 	}
