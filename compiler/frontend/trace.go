@@ -1166,6 +1166,8 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return t.touchField(n, args, 4)
 	case "pnpoly":
 		return t.pnpolyFunc(n, args)
+	case "perspectiveApproach":
+		return t.perspectiveApproachFunc(n, args)
 	case "set":
 		if len(args) != 3 {
 			return Num{}, t.errf(n, "set expects (block, index, value)")
@@ -1460,4 +1462,15 @@ func (t *tracer) prevTimeFunc(n *ast.CallExpr) (Num, error) {
 	tm := exprNum(ir.GetPlace(ir.Cell(1000, 0)))
 	dt := exprNum(ir.GetPlace(ir.Cell(1000, 1)))
 	return exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, tm.node(), dt.node())), nil
+}
+
+func (t *tracer) perspectiveApproachFunc(n *ast.CallExpr, args []Num) (Num, error) {
+	if len(args) != 2 {
+		return Num{}, t.errf(n, "perspectiveApproach expects (x, y)")
+	}
+	// perspectiveApproach(x, y) = 1 / (1 - x * y)
+	denom := ir.PureInstr(resource.RuntimeFunctionSubtract,
+		ir.Const(1),
+		ir.PureInstr(resource.RuntimeFunctionMultiply, args[0].node(), args[1].node()))
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, ir.Const(1), denom)), nil
 }
