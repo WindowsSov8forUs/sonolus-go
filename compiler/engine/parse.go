@@ -44,11 +44,11 @@ type parsedMethod struct {
 	body     *ast.BlockStmt
 }
 
-func CompilePlayFile(src string) (*resource.EnginePlayData, error) {
+func CompilePlayFile(src string) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "engine.go", src, 0)
 	if err != nil {
-		return nil, fmt.Errorf("parse: %w", err)
+		return nil, nil, fmt.Errorf("parse: %w", err)
 	}
 
 	archetypes := map[string]*parsedArchetype{}
@@ -81,7 +81,7 @@ func CompilePlayFile(src string) (*resource.EnginePlayData, error) {
 				if resourceRole(ts.Name.Name) != "" {
 					resourceASTs[ts.Name.Name] = st
 				} else if err := parseFields(get(ts.Name.Name), st); err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
 		case *ast.FuncDecl:
@@ -172,7 +172,7 @@ func compileParsed(
 	archetypes map[string]*parsedArchetype, order []string,
 	funcs map[string]*ast.FuncDecl,
 	r parsedResources,
-) (*resource.EnginePlayData, error) {
+) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
 	defs := make([]play.ArchetypeDef, len(order))
 	bindings := make([]map[string]frontend.Binding, len(order))
 	for i, name := range order {
@@ -231,7 +231,7 @@ func compileParsed(
 			}
 			entry, err := frontend.CompileBlock(fset, m.body, env)
 			if err != nil {
-				return nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
+				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
 			}
 			entry = optimize.Optimize(entry, ir.ModePlay, string(m.callback), ir.DefaultTempMemoryBlock)
 			results = append(results, play.CompileCallback(i, m.callback, ir.CFGToSNode(entry), 0))
@@ -239,9 +239,9 @@ func compileParsed(
 	}
 
 	if err := play.Assemble(data, results); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return data, nil
+	return data, &r.config, nil
 }
 
 func hasTouch(a *parsedArchetype) bool {

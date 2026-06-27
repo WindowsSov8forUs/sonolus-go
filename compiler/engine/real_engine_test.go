@@ -18,7 +18,7 @@ func TestExportedField(t *testing.T) {
 		"\tVal float64 `sonolus:\"exported\"`\n" +
 		"}\n" +
 		"func (n Note) Initialize() {\n\tn.Val = 42\n}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ const realEngineSrc = "package real\n\n" +
 	"}\n"
 
 func TestRealEngineCompiles(t *testing.T) {
-	data, err := CompilePlayFile(realEngineSrc)
+	data, _, err := CompilePlayFile(realEngineSrc)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestCompositeLiterialInCallback(t *testing.T) {
 		"\tv := vec2(n.Beat, 0.5)\n" +
 		"\tdraw(1, v.x, v.y, v.x, 1, 0, 1, 0, 0)\n" +
 		"}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestVec2InCallback(t *testing.T) {
 		"\tv := vec2(n.Beat, 0.5)\n" +
 		"\tset(2000, 0, v.x)\n" +
 		"}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestScoredArchetype(t *testing.T) {
 		"func (n Note) UpdateSequential() {\n" +
 		"\tset(2000, 0, entityPerfect + entityLifePerfect)\n" +
 		"}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}

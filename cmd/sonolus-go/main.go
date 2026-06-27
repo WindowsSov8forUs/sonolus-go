@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
 )
@@ -41,11 +39,11 @@ func main() {
 
 	switch *mode {
 	case "play":
-		data, err := engine.CompilePlayFile(string(src))
+		data, cfg, err := engine.CompilePlayFile(string(src))
 		if err != nil {
 			fatalf("compiling: %v", err)
 		}
-		pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data)
+		pkg, err := build.PackagePlay(cfg, data)
 		if err != nil {
 			fatalf("packaging: %v", err)
 		}

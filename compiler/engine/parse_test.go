@@ -24,7 +24,7 @@ const noteEngineSrc = "package myengine\n\n" +
 	"}\n"
 
 func TestCompilePlayFile(t *testing.T) {
-	data, err := CompilePlayFile(noteEngineSrc)
+	data, _, err := CompilePlayFile(noteEngineSrc)
 	if err != nil {
 		t.Fatalf("compile file: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestHelperFunction(t *testing.T) {
 		"func dbl(x float64) float64 { return x * 2 }\n" +
 		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n}\n" +
 		"func (n Note) UpdateParallel() {\n\tset(2000, 0, dbl(n.Beat))\n}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestValueCallbackBreak(t *testing.T) {
 	src := "package p\n" +
 		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n}\n" +
 		"func (n Note) ShouldSpawn() {\n\treturn time > n.Beat\n}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestMethodHelper(t *testing.T) {
 		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n\tT float64 `sonolus:\"memory\"`\n}\n" +
 		"func (m Note) targetTime() float64 { return m.Beat * 0.5 }\n" +
 		"func (n Note) Initialize() {\n\tn.T = n.targetTime()\n}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestRecursionError(t *testing.T) {
 		"func f(x float64) float64 { return f(x) }\n" +
 		"type A struct{}\n" +
 		"func (a A) UpdateParallel() { set(2000, 0, f(1)) }\n"
-	_, err := CompilePlayFile(src)
+	_, _, err := CompilePlayFile(src)
 	if err == nil {
 		t.Fatal("expected recursion error")
 	}
@@ -133,7 +133,7 @@ func TestCompilePlayFileImportedReadOnly(t *testing.T) {
 	src := "package p\n" +
 		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n}\n" +
 		"func (n Note) Initialize() {\n\tn.Beat = 5\n}\n"
-	_, err := CompilePlayFile(src)
+	_, _, err := CompilePlayFile(src)
 	if err == nil {
 		t.Fatal("expected read-only error writing n.Beat")
 	}
@@ -146,7 +146,7 @@ func TestCompilePlayFileTouchSetsHasInput(t *testing.T) {
 	src := "package p\n" +
 		"type Tap struct{}\n" +
 		"func (t Tap) Touch() {\n\tset(2000, 0, 1)\n}\n"
-	data, err := CompilePlayFile(src)
+	data, _, err := CompilePlayFile(src)
 	if err != nil {
 		t.Fatal(err)
 	}
