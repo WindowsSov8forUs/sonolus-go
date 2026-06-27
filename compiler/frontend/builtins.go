@@ -132,6 +132,13 @@ var runtimeFns = map[string]runtimeFn{
 	"random":        {resource.RuntimeFunctionRandom, true, 1},
 	"randomInteger": {resource.RuntimeFunctionRandomInteger, true, 1},
 
+	// Stream operations (side-effecting — read/watch/replay data).
+	"streamGetValue":       {resource.RuntimeFunctionStreamGetValue, false, 1},
+	"streamGetNextKey":     {resource.RuntimeFunctionStreamGetNextKey, false, 1},
+	"streamGetPreviousKey": {resource.RuntimeFunctionStreamGetPreviousKey, false, 1},
+	"streamHas":            {resource.RuntimeFunctionStreamHas, false, 1},
+	"streamSet":            {resource.RuntimeFunctionStreamSet, false, 2},
+
 	// Life management (side-effecting, variadic).
 	"addLife": {resource.RuntimeFunctionAddLifeScheduled, false, -1},
 
