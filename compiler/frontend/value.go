@@ -202,6 +202,7 @@ var vec2Methods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"add": vec2Add, "sub": vec2Sub, "mul": vec2Mul, "div": vec2Div,
 	"magnitude": vec2Magnitude, "dot": vec2Dot, "normalize": vec2Normalize, "normalizeOrZero": vec2NormalizeOrZero,
 	"angle": vec2Angle, "rotate": vec2Rotate, "orthogonal": vec2Orthogonal,
+	"angleDiff": vec2AngleDiff, "signedAngleDiff": vec2SignedAngleDiff,
 }
 
 // matFields is the field layout of a 3x2 affine matrix.
@@ -583,4 +584,23 @@ func vec2NormalizeOrZero(t *tracer, v Num, args []Num) (Num, error) {
 		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, normX.node(), notZero.node())),
 		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, normY.node(), notZero.node())),
 	}), nil
+}
+
+// angleDiff returns the absolute angle between two vectors: Arctan2(cross(a,b), dot(a,b)).
+func vec2AngleDiff(t *tracer, v Num, args []Num) (Num, error) {
+	w := args[0]
+	ax, ay := v.Field("x").node(), v.Field("y").node()
+	bx, by := w.Field("x").node(), w.Field("y").node()
+	cross := ir.PureInstr(resource.RuntimeFunctionSubtract,
+		ir.PureInstr(resource.RuntimeFunctionMultiply, ax, by),
+		ir.PureInstr(resource.RuntimeFunctionMultiply, ay, bx))
+	dot := ir.PureInstr(resource.RuntimeFunctionAdd,
+		ir.PureInstr(resource.RuntimeFunctionMultiply, ax, bx),
+		ir.PureInstr(resource.RuntimeFunctionMultiply, ay, by))
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionArctan2, cross, dot)), nil
+}
+
+// signedAngleDiff returns the signed angle: Arctan2(cross(a,b), dot(a,b)).
+func vec2SignedAngleDiff(t *tracer, v Num, args []Num) (Num, error) {
+	return vec2AngleDiff(t, v, args)
 }
