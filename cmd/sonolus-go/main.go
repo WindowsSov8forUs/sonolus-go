@@ -14,10 +14,12 @@ import (
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>]\n")
+		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>] [-m <mode>]\n")
+		fmt.Fprintf(os.Stderr, "  modes: play (default), watch, preview, tutorial\n")
 		flag.PrintDefaults()
 	}
 	outDir := flag.String("o", "dist", "output directory")
+	mode := flag.String("m", "play", "engine mode: play, watch, preview, tutorial")
 	flag.Parse()
 
 	if flag.NArg() < 1 || flag.Arg(0) != "build" {
@@ -31,24 +33,56 @@ func main() {
 		fatalf("reading %s: %v", srcPath, err)
 	}
 
-	data, err := engine.CompilePlayFile(string(src))
-	if err != nil {
-		fatalf("compiling %s: %v", srcPath, err)
-	}
-
-	pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data)
-	if err != nil {
-		fatalf("packaging: %v", err)
-	}
-
-	dir := filepath.Join(*outDir, filepath.Base(srcPath[:len(srcPath)-len(filepath.Ext(srcPath))]))
+	name := filepath.Base(srcPath[:len(srcPath)-len(filepath.Ext(srcPath))])
+	dir := filepath.Join(*outDir, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fatalf("creating %s: %v", dir, err)
 	}
-	if err := pkg.Write(dir); err != nil {
-		fatalf("writing: %v", err)
+
+	switch *mode {
+	case "play":
+		data, err := engine.CompilePlayFile(string(src))
+		if err != nil {
+			fatalf("compiling: %v", err)
+		}
+		pkg, err := build.PackagePlay(&resource.EngineConfiguration{}, data)
+		if err != nil {
+			fatalf("packaging: %v", err)
+		}
+		if err := pkg.Write(dir); err != nil {
+			fatalf("writing: %v", err)
+		}
+	case "watch":
+		data, err := engine.CompileWatchFile(string(src))
+		if err != nil {
+			fatalf("compiling: %v", err)
+		}
+		writeGzip(dir, build.FileWatchData, data)
+	case "preview":
+		data, err := engine.CompilePreviewFile(string(src))
+		if err != nil {
+			fatalf("compiling: %v", err)
+		}
+		writeGzip(dir, build.FilePreviewData, data)
+	case "tutorial":
+		data, err := engine.CompileTutorialFile(string(src))
+		if err != nil {
+			fatalf("compiling: %v", err)
+		}
+		writeGzip(dir, build.FileTutorialData, data)
+	default:
+		fatalf("unknown mode: %s", *mode)
 	}
-	fmt.Printf("wrote engine to %s/\n", dir)
+
+	fmt.Printf("wrote %s engine to %s/\n", *mode, dir)
+}
+
+func writeGzip(dir, name string, data any) error {
+	blob, err := build.PackageAny(data)
+	if err != nil {
+		return fmt.Errorf("packaging: %w", err)
+	}
+	return os.WriteFile(filepath.Join(dir, name), blob, 0o644)
 }
 
 func fatalf(format string, args ...interface{}) {

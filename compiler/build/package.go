@@ -28,6 +28,9 @@ type PackagedPlayEngine struct {
 	PlayData      []byte
 }
 
+// PackageAny gzip-compresses any JSON-serializable value.
+func PackageAny(data any) ([]byte, error) { return codec.Compress(data) }
+
 // PackagePlayData gzip-compresses a JSON EnginePlayData.
 func PackagePlayData(data *resource.EnginePlayData) ([]byte, error) {
 	return codec.Compress(data)
