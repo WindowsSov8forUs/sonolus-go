@@ -7,11 +7,11 @@ import (
 )
 
 // SCCP is sparse conditional constant propagation. Port of sonolus.py
-// constant_evaluation.SparseConditionalConstantPropagation, with two documented
-// reductions: the multi-value (frozenset) lattice element is collapsed to NAC,
-// and only arithmetic/comparison/logic/min-max-abs-clamp ops are evaluated
-// (others yield NAC). Both reductions only make SCCP fold less; they never
-// produce a wrong constant.
+// constant_evaluation.SparseConditionalConstantPropagation, with one documented
+// reduction: the multi-value (frozenset) lattice element is collapsed to NAC.
+// The op set covers arithmetic/comparison/logic/trig/transcendental (35 ops);
+// ops yields NAC. This reduction only makes SCCP fold less; it never produces
+// a wrong constant.
 type SCCP struct{}
 
 func (SCCP) Name() string { return "SCCP" }
@@ -405,6 +405,42 @@ func computeOp(op ir.Op, v []float64) lat {
 		return constLat(math.Abs(v[0]))
 	case "Clamp":
 		return constLat(math.Min(math.Max(v[0], v[1]), v[2]))
+	case "Rem":
+		return constLat(floorMod(v[0], v[1]))
+	case "Sign":
+		if v[0] < 0 {
+			return constLat(-1)
+		}
+		if v[0] > 0 {
+			return constLat(1)
+		}
+		return constLat(0)
+	case "Log":
+		return constLat(math.Log(v[0]))
+	case "Ceil":
+		return constLat(math.Ceil(v[0]))
+	case "Floor":
+		return constLat(math.Floor(v[0]))
+	case "Round":
+		return constLat(math.Round(v[0]))
+	case "Frac":
+		return constLat(v[0] - float64(int(v[0])))
+	case "Sin":
+		return constLat(math.Sin(v[0]))
+	case "Cos":
+		return constLat(math.Cos(v[0]))
+	case "Tan":
+		return constLat(math.Tan(v[0]))
+	case "Arctan":
+		return constLat(math.Atan(v[0]))
+	case "Arctan2":
+		return constLat(math.Atan2(v[0], v[1]))
+	case "Degree":
+		return constLat(v[0] * (180 / math.Pi))
+	case "Radian":
+		return constLat(v[0] * (math.Pi / 180))
+	case "CopySign":
+		return constLat(math.Copysign(v[0], v[1]))
 	default:
 		return nac
 	}
@@ -414,8 +450,13 @@ var sccpSupportedOps = map[ir.Op]bool{
 	"Equal": true, "NotEqual": true, "Greater": true, "GreaterOr": true,
 	"Less": true, "LessOr": true, "Not": true, "And": true, "Or": true,
 	"Negate": true, "Add": true, "Subtract": true, "Multiply": true,
-	"Divide": true, "Power": true, "Mod": true, "Max": true, "Min": true,
-	"Abs": true, "Clamp": true,
+	"Divide": true, "Power": true, "Mod": true, "Rem": true,
+	"Max": true, "Min": true, "Abs": true, "Clamp": true,
+	// Transcendental / rounding / trig (sonolus.py full set).
+	"Sign": true, "Log": true, "Ceil": true, "Floor": true, "Round": true,
+	"Frac": true, "Sin": true, "Cos": true, "Tan": true,
+	"Arctan": true, "Arctan2": true, "Degree": true, "Radian": true,
+	"CopySign": true,
 }
 
 func allNonzero(v []float64) bool {

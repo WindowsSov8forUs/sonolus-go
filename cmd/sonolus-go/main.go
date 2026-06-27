@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
 )
@@ -13,11 +15,11 @@ import (
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>] [-m <mode>]\n")
-		fmt.Fprintf(os.Stderr, "  modes: play (default), watch, preview, tutorial\n")
+		fmt.Fprintf(os.Stderr, "  modes: play (default), watch, preview, tutorial, all\n")
 		flag.PrintDefaults()
 	}
 	outDir := flag.String("o", "dist", "output directory")
-	mode := flag.String("m", "play", "engine mode: play, watch, preview, tutorial")
+	mode := flag.String("m", "play", "engine mode: play, watch, preview, tutorial, all")
 	flag.Parse()
 
 	if flag.NArg() < 1 || flag.Arg(0) != "build" {
@@ -37,54 +39,82 @@ func main() {
 		fatalf("creating %s: %v", dir, err)
 	}
 
-	switch *mode {
-	case "play":
-		data, cfg, err := engine.CompilePlayFile(string(src))
-		if err != nil {
-			fatalf("compiling: %v", err)
+	// Config and ROM are engine-global, extracted from Play compile.
+	var cfg *resource.EngineConfiguration
+	playData, playCfg, err := engine.CompilePlayFile(string(src))
+	if err == nil {
+		cfg = playCfg
+	} else {
+		cfg = &resource.EngineConfiguration{}
+	}
+	rom, err := build.BuildRom(build.DefaultRom())
+	if err != nil {
+		fatalf("building ROM: %v", err)
+	}
+
+	modes := []string{*mode}
+	if *mode == "all" {
+		modes = []string{"play", "watch", "preview", "tutorial"}
+	}
+
+	for _, m := range modes {
+		switch m {
+		case "play":
+			if playData == nil {
+				fatalf("play compilation failed")
+			}
+			pkg, err := build.PackagePlay(cfg, playData, rom)
+			if err != nil {
+				fatalf("packaging play: %v", err)
+			}
+			if err := pkg.Write(dir); err != nil {
+				fatalf("writing: %v", err)
+			}
+		case "watch":
+			wd, err := engine.CompileWatchFile(string(src))
+			if err != nil {
+				fatalf("compiling watch: %v", err)
+			}
+			writeAll(dir, cfg, rom, map[string]any{build.FileWatchData: wd})
+		case "preview":
+			pd, err := engine.CompilePreviewFile(string(src))
+			if err != nil {
+				fatalf("compiling preview: %v", err)
+			}
+			writeAll(dir, cfg, rom, map[string]any{build.FilePreviewData: pd})
+		case "tutorial":
+			td, err := engine.CompileTutorialFile(string(src))
+			if err != nil {
+				fatalf("compiling tutorial: %v", err)
+			}
+			writeAll(dir, cfg, rom, map[string]any{build.FileTutorialData: td})
 		}
-		rom, err := build.BuildRom(build.DefaultRom())
-		if err != nil {
-			fatalf("building ROM: %v", err)
-		}
-		pkg, err := build.PackagePlay(cfg, data, rom)
-		if err != nil {
-			fatalf("packaging: %v", err)
-		}
-		if err := pkg.Write(dir); err != nil {
-			fatalf("writing: %v", err)
-		}
-	case "watch":
-		data, err := engine.CompileWatchFile(string(src))
-		if err != nil {
-			fatalf("compiling: %v", err)
-		}
-		writeGzip(dir, build.FileWatchData, data)
-	case "preview":
-		data, err := engine.CompilePreviewFile(string(src))
-		if err != nil {
-			fatalf("compiling: %v", err)
-		}
-		writeGzip(dir, build.FilePreviewData, data)
-	case "tutorial":
-		data, err := engine.CompileTutorialFile(string(src))
-		if err != nil {
-			fatalf("compiling: %v", err)
-		}
-		writeGzip(dir, build.FileTutorialData, data)
-	default:
-		fatalf("unknown mode: %s", *mode)
 	}
 
 	fmt.Printf("wrote %s engine to %s/\n", *mode, dir)
 }
 
-func writeGzip(dir, name string, data any) error {
-	blob, err := build.PackageAny(data)
+func writeAll(dir string, cfg *resource.EngineConfiguration, rom []byte, dataFiles map[string]any) error {
+	configBlob, err := build.PackageConfiguration(cfg)
 	if err != nil {
-		return fmt.Errorf("packaging: %w", err)
+		return fmt.Errorf("packaging config: %w", err)
 	}
-	return os.WriteFile(filepath.Join(dir, name), blob, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, build.FileConfiguration), configBlob, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, build.FileRom), rom, 0o644); err != nil {
+		return err
+	}
+	for name, data := range dataFiles {
+		blob, err := build.PackageAny(data)
+		if err != nil {
+			return fmt.Errorf("packaging %s: %w", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), blob, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func fatalf(format string, args ...interface{}) {
