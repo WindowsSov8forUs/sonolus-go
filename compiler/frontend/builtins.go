@@ -103,9 +103,14 @@ var runtimeFns = map[string]runtimeFn{
 	"destroyParticle": {resource.RuntimeFunctionDestroyParticleEffect, false, -1},
 	"print":           {resource.RuntimeFunctionPrint, false, -1},
 	// Timing (pure, variadic).
-	"beatToTime":       {resource.RuntimeFunctionBeatToTime, true, -1},
-	"beatToBPM":        {resource.RuntimeFunctionBeatToBPM, true, -1},
-	"timeToScaledTime": {resource.RuntimeFunctionTimeToScaledTime, true, -1},
+	"beatToTime":               {resource.RuntimeFunctionBeatToTime, true, -1},
+	"beatToBPM":                {resource.RuntimeFunctionBeatToBPM, true, -1},
+	"timeToScaledTime":         {resource.RuntimeFunctionTimeToScaledTime, true, -1},
+	"timeToStartingTime":       {resource.RuntimeFunctionTimeToStartingTime, true, -1},
+	"timeToStartingScaledTime": {resource.RuntimeFunctionTimeToStartingScaledTime, true, -1},
+	"beatToStartingBeat":       {resource.RuntimeFunctionBeatToStartingBeat, true, -1},
+	"beatToStartingTime":       {resource.RuntimeFunctionBeatToStartingTime, true, -1},
+	"timeToTimeScale":          {resource.RuntimeFunctionTimeToTimeScale, true, -1},
 	// Side-effecting — drawing.
 	"drawCurvedB": {resource.RuntimeFunctionDrawCurvedB, false, -1},
 	"drawCurvedT": {resource.RuntimeFunctionDrawCurvedT, false, -1},
@@ -123,6 +128,10 @@ var runtimeFns = map[string]runtimeFn{
 	// Side-effecting — debug.
 	"debugLog":   {resource.RuntimeFunctionDebugLog, false, -1},
 	"debugPause": {resource.RuntimeFunctionDebugPause, false, -1},
+	// Random (pure, arity 1 — max value).
+	"random":        {resource.RuntimeFunctionRandom, true, 1},
+	"randomInteger": {resource.RuntimeFunctionRandomInteger, true, 1},
+
 	// Life management (side-effecting, variadic).
 	"addLife": {resource.RuntimeFunctionAddLifeScheduled, false, -1},
 
