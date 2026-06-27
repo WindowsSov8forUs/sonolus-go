@@ -200,6 +200,8 @@ func (t *tracer) stmt(s ast.Stmt) error {
 		return t.switchStmt(n)
 	case *ast.ForStmt:
 		return t.forStmt(n)
+	case *ast.RangeStmt:
+		return t.rangeStmt(n)
 	case *ast.BranchStmt:
 		return t.branch(n)
 	case *ast.ReturnStmt:
@@ -623,6 +625,67 @@ func (t *tracer) shortCircuitIf(n *ast.IfStmt, bin *ast.BinaryExpr) error {
 
 	t.enter(merge)
 	t.terminated = len(merge.Incoming) == 0
+	return nil
+}
+
+func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
+	// Lower for-range over a count/collection into a standard integer for-loop:
+	//   for i := range counts → for i := 0; i < counts; i++ { ... }
+	if n.Key == nil {
+		return t.errf(n, "range statement requires a key variable")
+	}
+	if n.Value != nil {
+		return t.errf(n, "range value variable is not supported yet")
+	}
+	keyName, ok := n.Key.(*ast.Ident)
+	if !ok {
+		return t.errf(n, "range key must be an identifier")
+	}
+	if n.Tok != token.DEFINE && n.Tok != token.ASSIGN {
+		return t.errf(n, "range requires := or =")
+	}
+
+	// Evaluate the bound expression.
+	bound, err := t.expr(n.X)
+	if err != nil {
+		return err
+	}
+
+	// Declare loop variable i := 0
+	iTB := ir.NewTemp("range")
+	t.vars[keyName.Name] = iTB
+	t.emit(ir.SetPlace(t.cell(iTB), ir.Const(0)))
+
+	loopHead := ir.NewBlock()
+	loopBody := ir.NewBlock()
+	merge := ir.NewBlock()
+
+	t.current.ConnectTo(loopHead, nil)
+	t.enter(loopHead)
+
+	// Test: i < bound
+	loopHead.Test = ir.PureInstr("Less", ir.GetPlace(t.cell(iTB)), bound.node())
+	loopHead.ConnectTo(merge, ir.Cond(0)) // false → exit
+	loopHead.ConnectTo(loopBody, nil)     // true → body
+
+	// Loop body
+	t.enter(loopBody)
+	t.loops = append(t.loops, loopCtx{breakTo: merge, continueTo: loopHead})
+	if err := t.stmtList(n.Body.List); err != nil {
+		return err
+	}
+	t.loops = t.loops[:len(t.loops)-1]
+
+	// Increment i++
+	t.emit(ir.SetPlace(t.cell(iTB),
+		ir.PureInstr("Add", ir.GetPlace(t.cell(iTB)), ir.Const(1))))
+	t.fallthroughTo(loopHead)
+
+	t.enter(merge)
+	t.terminated = len(merge.Incoming) == 0
+
+	// Clean up loop variable
+	delete(t.vars, keyName.Name)
 	return nil
 }
 
