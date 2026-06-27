@@ -463,6 +463,7 @@ func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 
 var quadMethods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"center": quadCenter, "translate": quadTranslate, "scale": quadScale, "permute": quadPermute,
+	"top": quadTop, "right": quadRight, "bottom": quadBottom, "left": quadLeft,
 	"contains": quadContains,
 }
 
