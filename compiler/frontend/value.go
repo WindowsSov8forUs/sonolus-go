@@ -200,7 +200,7 @@ func vec2Div(t *tracer, v Num, args []Num) (Num, error) {
 
 var vec2Methods = map[string]func(*tracer, Num, []Num) (Num, error){
 	"add": vec2Add, "sub": vec2Sub, "mul": vec2Mul, "div": vec2Div,
-	"magnitude": vec2Magnitude, "dot": vec2Dot, "normalize": vec2Normalize,
+	"magnitude": vec2Magnitude, "dot": vec2Dot, "normalize": vec2Normalize, "normalizeOrZero": vec2NormalizeOrZero,
 	"angle": vec2Angle, "rotate": vec2Rotate, "orthogonal": vec2Orthogonal,
 }
 
@@ -534,5 +534,25 @@ func vec2RotateAbout(t *tracer, v Num, args []Num) (Num, error) {
 			ir.PureInstr(resource.RuntimeFunctionAdd,
 				ir.PureInstr(resource.RuntimeFunctionMultiply, dx.node(), sn),
 				ir.PureInstr(resource.RuntimeFunctionMultiply, dy.node(), cs)))),
+	}), nil
+}
+
+func vec2NormalizeOrZero(t *tracer, v Num, args []Num) (Num, error) {
+	x, y := v.Field("x"), v.Field("y")
+	magSq := ir.PureInstr(resource.RuntimeFunctionAdd,
+		ir.PureInstr(resource.RuntimeFunctionMultiply, x.node(), x.node()),
+		ir.PureInstr(resource.RuntimeFunctionMultiply, y.node(), y.node()))
+	eps := ir.Const(1e-10)
+	useZero := ir.PureInstr(resource.RuntimeFunctionLessOr, magSq, eps)
+	mag := ir.PureInstr(resource.RuntimeFunctionPower, magSq, ir.Const(0.5))
+	// If magnitude ≈ 0, return zero; else normalize
+	normX := exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, x.node(), mag))
+	normY := exprNum(ir.PureInstr(resource.RuntimeFunctionDivide, y.node(), mag))
+	// Use If-style selection via Multiply and Not:
+	// result.x = zeroX * isZero + normX * (1 - isZero)  [simplified: if isZero→0, else→norm]
+	notZero := exprNum(ir.PureInstr(resource.RuntimeFunctionNot, useZero))
+	return compNum(map[string]Num{
+		"x": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, normX.node(), notZero.node())),
+		"y": exprNum(ir.PureInstr(resource.RuntimeFunctionMultiply, normY.node(), notZero.node())),
 	}), nil
 }
