@@ -1122,6 +1122,10 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return t.screenFunc(n)
 	case "safeArea":
 		return t.safeAreaFunc(n)
+	case "offsetAdjustedTime":
+		return t.offsetAdjustedTimeFunc(n)
+	case "prevTime":
+		return t.prevTimeFunc(n)
 	case "vec2":
 		return t.inlineComposite(fn, n, vec2Fields)
 	case "quad":
@@ -1438,4 +1442,22 @@ func (t *tracer) pnpolyFunc(n *ast.CallExpr, args []Num) (Num, error) {
 		ir.PureInstr(resource.RuntimeFunctionGreaterOr, ir.PureInstr(resource.RuntimeFunctionMultiply, v2, v3), ir.Const(0)))
 
 	return exprNum(inside), nil
+}
+
+func (t *tracer) offsetAdjustedTimeFunc(n *ast.CallExpr) (Num, error) {
+	if len(n.Args) != 0 {
+		return Num{}, t.errf(n, "offsetAdjustedTime() takes no arguments")
+	}
+	tm := exprNum(ir.GetPlace(ir.Cell(1000, 0)))
+	ao := exprNum(ir.GetPlace(ir.Cell(1000, 2)))
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, tm.node(), ao.node())), nil
+}
+
+func (t *tracer) prevTimeFunc(n *ast.CallExpr) (Num, error) {
+	if len(n.Args) != 0 {
+		return Num{}, t.errf(n, "prevTime() takes no arguments")
+	}
+	tm := exprNum(ir.GetPlace(ir.Cell(1000, 0)))
+	dt := exprNum(ir.GetPlace(ir.Cell(1000, 1)))
+	return exprNum(ir.PureInstr(resource.RuntimeFunctionSubtract, tm.node(), dt.node())), nil
 }
