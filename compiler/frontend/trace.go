@@ -215,8 +215,18 @@ func (t *tracer) stmt(s ast.Stmt) error {
 	}
 }
 
+var compoundOps = map[token.Token]token.Token{
+	token.ADD_ASSIGN: token.ADD, token.SUB_ASSIGN: token.SUB,
+	token.MUL_ASSIGN: token.MUL, token.QUO_ASSIGN: token.QUO,
+	token.REM_ASSIGN: token.REM,
+}
+
 func (t *tracer) assign(n *ast.AssignStmt) error {
-	if n.Tok != token.ASSIGN && n.Tok != token.DEFINE {
+	// Compound assignment: x += y → x = x + y
+	if nt := n.Tok; nt != token.ASSIGN && nt != token.DEFINE {
+		if binOp, ok := compoundOps[nt]; ok {
+			return t.compoundAssign(n, binOp)
+		}
 		return t.errf(n, "unsupported assignment %s", n.Tok)
 	}
 	if len(n.Lhs) != 1 || len(n.Rhs) != 1 {
@@ -359,6 +369,92 @@ func (t *tracer) arrayElemPlace(fnName *ast.Ident, indexExpr ast.Expr) (ir.Block
 		return ir.BlockPlace{}, err
 	}
 	return ir.BlockPlace{Block: arr.tb, Index: index.node(), Offset: 0}, nil
+}
+
+func (t *tracer) compoundAssign(n *ast.AssignStmt, binOp token.Token) error {
+	lhs := n.Lhs[0]
+	rhs, err := t.expr(n.Rhs[0])
+	if err != nil {
+		return err
+	}
+
+	// Read the current value of the LHS.
+	var cur Num
+	switch l := lhs.(type) {
+	case *ast.Ident:
+		if tb, ok := t.vars[l.Name]; ok {
+			cur = exprNum(ir.GetPlace(t.cell(tb)))
+		} else if b, ok := t.env.Names[l.Name]; ok {
+			cur = exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index)))
+		} else {
+			return t.errf(n, "undefined variable %q in compound assignment", l.Name)
+		}
+	case *ast.SelectorExpr:
+		place, err := t.fieldPlace(l)
+		if err != nil {
+			return err
+		}
+		cur = exprNum(ir.GetPlace(place))
+	case *ast.IndexExpr:
+		// Array element read
+		id, ok := l.X.(*ast.Ident)
+		if !ok {
+			return t.errf(n, "only named array variables supported for += etc.")
+		}
+		arr, ok := t.arrays[id.Name]
+		if !ok {
+			return t.errf(n, "undefined array %q", id.Name)
+		}
+		idx, err := t.expr(l.Index)
+		if err != nil {
+			return err
+		}
+		cur = exprNum(ir.GetPlace(ir.BlockPlace{Block: arr.tb, Index: idx.node(), Offset: 0}))
+	default:
+		return t.errf(n, "unsupported compound assign target %T", lhs)
+	}
+
+	result, ok := applyBinary(binOp, cur, rhs)
+	if !ok {
+		return t.errf(n, "unsupported compound operation")
+	}
+	return t.writePlace(lhs, result)
+}
+
+func (t *tracer) writePlace(lhs ast.Expr, val Num) error {
+	switch l := lhs.(type) {
+	case *ast.Ident:
+		if tb, ok := t.vars[l.Name]; ok {
+			t.emit(ir.SetPlace(t.cell(tb), val.node()))
+			return nil
+		}
+		if b, ok := t.env.Names[l.Name]; ok {
+			if !b.Writable {
+				return t.errf(lhs, "cannot write %q: read-only", l.Name)
+			}
+			if b.Block < 0 {
+				t.emit(ir.ImpureInstr(resource.RuntimeFunctionExportValue, ir.Const(b.Index), val.node()))
+			} else {
+				t.emit(ir.SetPlace(ir.Cell(b.Block, b.Index), val.node()))
+			}
+			return nil
+		}
+	case *ast.SelectorExpr:
+		place, err := t.fieldPlace(l)
+		if err != nil {
+			return err
+		}
+		t.emit(ir.SetPlace(place, val.node()))
+		if base, ok2 := l.X.(*ast.Ident); ok2 {
+			if rec, ok3 := t.records[base.Name]; ok3 {
+				rec.val.SetField(l.Sel.Name, val)
+			}
+		}
+		return nil
+	case *ast.IndexExpr:
+		return t.errf(lhs, "compound assign to array elements is not yet supported")
+	}
+	return t.errf(lhs, "cannot write compound assign to %T", lhs)
 }
 
 func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
