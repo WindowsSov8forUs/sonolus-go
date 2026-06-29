@@ -232,9 +232,9 @@ func emitDefaultLevel(dir, name, engineName, skin, bg, effect, particle string) 
 		"author":        loc("sonolus-go"),
 		"tags":          []any{},
 		"engine":        engineName,
-		"useSkin":       skin,
-		"useBackground": bg,
-		"useEffect":     effect,
-		"useParticle":   particle,
+		"useSkin":       map[string]any{"useDefault": true},
+		"useBackground": map[string]any{"useDefault": true},
+		"useEffect":     map[string]any{"useDefault": true},
+		"useParticle":   map[string]any{"useDefault": true},
 	})
 }
