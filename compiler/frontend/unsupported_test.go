@@ -96,7 +96,7 @@ type I interface { M() }
 func f() {}
 `, statusEnv())
 	if err != nil {
-		t.Logf("interface caused error (behavior may change): %v", err)
+		t.Errorf("interface caused error (behavior may change): %v", err)
 	}
 }
 
@@ -113,8 +113,7 @@ func f() {
 }
 `, statusEnv())
 	if err == nil {
-		t.Log("recursive helper compiled (behavior may change)")
-		return
+		t.Fatal("recursive helper compiled — should have been rejected")
 	}
 	t.Logf("recursive helper error (expected): %v", err)
 }
@@ -133,8 +132,7 @@ func f() {
 }
 `, statusEnv())
 	if err == nil {
-		t.Log("tagless switch compiled (behavior may change)")
-		return
+		t.Fatal("tagless switch compiled — should have been rejected")
 	}
 	if !contains(err.Error(), "unsupported") && !contains(err.Error(), "break") {
 		t.Errorf("expected 'unsupported' or 'break' error, got: %v", err)
@@ -153,8 +151,7 @@ func f() {
 }
 `, statusEnv())
 	if err == nil {
-		t.Log("closure capture compiled (behavior may change)")
-		return
+		t.Fatal("closure capture compiled — should have been rejected")
 	}
 	t.Logf("closure capture error (expected): %v", err)
 }
@@ -173,8 +170,7 @@ func f() {
 }
 `, statusEnv())
 	if err == nil {
-		t.Log("type switch compiled (behavior may change)")
-		return
+		t.Fatal("type switch compiled — should have been rejected")
 	}
 	t.Logf("type switch error (expected): %v", err)
 }
@@ -189,8 +185,7 @@ type N struct {
 func (n N) Initialize() {}
 `, statusEnv())
 	if err == nil {
-		t.Log("map field compiled (behavior may change)")
-		return
+		t.Fatal("map field compiled — should have been rejected")
 	}
 	t.Logf("map field error (expected): %v", err)
 }
