@@ -1,6 +1,11 @@
 package optimize
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"hash"
+	"math"
+	"sort"
 	"strconv"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -12,10 +17,9 @@ type CSE struct{}
 
 func (CSE) Name() string { return "CSE" }
 
-func (CSE) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (CSE) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	dom := ComputeDominance(entry)
 
-	// Phase 1: canonicalize commutative ops.
 	for _, b := range ir.Preorder(entry) {
 		for i, s := range b.Statements {
 			b.Statements[i] = cseCanonicalize(s)
@@ -23,19 +27,22 @@ func (CSE) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 		b.Test = cseCanonicalize(b.Test)
 	}
 
-	// Phase 2: dominator-tree extraction.
-	cs := cseState{table: map[string]ir.SSAPlace{}, nextID: 0}
+	cs := cseState{table: map[cseKeyType]ir.SSAPlace{}, nextID: 0, gen: gen}
 	cs.process(entry, dom)
 	return entry
 }
 
 var cseCommutative = map[ir.Op]bool{
-	"Equal": true, "NotEqual": true, "Max": true, "Min": true,
+	opEqual: true, opNotEqual: true, opMax: true, opMin: true,
 }
 
+// cseKeyType is the map key type for the CSE expression table.
+type cseKeyType = [sha256.Size]byte
+
 type cseState struct {
-	table  map[string]ir.SSAPlace
+	table  map[cseKeyType]ir.SSAPlace
 	nextID int
+	gen    *ir.IDGen
 }
 
 func (c *cseState) newSSA() ir.SSAPlace {
@@ -45,7 +52,7 @@ func (c *cseState) newSSA() ir.SSAPlace {
 }
 
 func (c *cseState) process(block *ir.BasicBlock, dom *Dominance) {
-	var added []string
+	var added []cseKeyType
 	var stmts []ir.Node
 
 	for _, s := range block.Statements {
@@ -67,7 +74,7 @@ func (c *cseState) process(block *ir.BasicBlock, dom *Dominance) {
 	}
 }
 
-func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]string) ir.Node {
+func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]cseKeyType) ir.Node {
 	switch t := n.(type) {
 	case ir.Instr:
 		k := cseKey(t)
@@ -78,10 +85,10 @@ func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]string) ir.Node {
 		for i, a := range t.Args {
 			args[i] = c.rewrite(a, pre, added)
 		}
-		n2 := ir.Instr{Op: t.Op, Args: args, Pure: t.Pure || ir.Pure(t.Op)}
-		if ir.Pure(t.Op) && !ir.SideEffects(t.Op) && cseCost(n2) >= 4 {
+		n2 := ir.Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure || ir.Pure(t.Op)}
+		if ir.Pure(t.Op) && !ir.SideEffects(t.Op) && exprCost(n2) >= inlineCostThreshold {
 			p := c.newSSA()
-			*pre = append(*pre, ir.Set{Place: p, Value: n2})
+			*pre = append(*pre, ir.Set{ID: c.gen.Next(), Place: p, Value: n2})
 			c.table[k] = p
 			*added = append(*added, k)
 			return ir.Get{Place: p}
@@ -104,7 +111,7 @@ func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]string) ir.Node {
 		if bp, ok := t.Place.(ir.BlockPlace); ok {
 			p2 := ir.BlockPlace{Block: c.rewrite(bp.Block, pre, added), Index: c.rewrite(bp.Index, pre, added), Offset: bp.Offset}
 			v2 := c.rewrite(t.Value, pre, added)
-			return ir.Set{Place: p2, Value: v2}
+			return ir.Set{ID: t.ID, Place: p2, Value: v2}
 		}
 		return t
 
@@ -113,67 +120,84 @@ func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]string) ir.Node {
 	}
 }
 
-func cseCost(n ir.Node) int {
-	switch t := n.(type) {
-	case ir.Instr:
-		s := 1
-		for _, a := range t.Args {
-			s += cseCost(a)
-		}
-		return s
-	default:
-		return 1
-	}
-}
-
 func cseCanonicalize(n ir.Node) ir.Node {
 	t, ok := n.(ir.Instr)
 	if !ok || !ir.Pure(t.Op) || ir.SideEffects(t.Op) || !cseCommutative[t.Op] {
 		return n
 	}
-	args := make([]ir.Node, len(t.Args))
+	type argKey struct {
+		arg ir.Node
+		key cseKeyType
+	}
+	pairs := make([]argKey, len(t.Args))
 	for i, a := range t.Args {
-		args[i] = cseCanonicalize(a)
+		pairs[i].arg = cseCanonicalize(a)
+		pairs[i].key = cseKey(pairs[i].arg)
 	}
-	cseSortArgs(args)
-	return ir.Instr{Op: t.Op, Args: args, Pure: true}
+	sort.Slice(pairs, func(i, j int) bool {
+		return bytes.Compare(pairs[i].key[:], pairs[j].key[:]) < 0
+	})
+	args := make([]ir.Node, len(pairs))
+	for i, p := range pairs {
+		args[i] = p.arg
+	}
+	return ir.Instr{ID: t.ID, Op: t.Op, Args: args, Pure: true}
 }
 
-func cseSortArgs(args []ir.Node) {
-	for i := 1; i < len(args); i++ {
-		for j := i; j > 0 && cseKey(args[j]) < cseKey(args[j-1]); j-- {
-			args[j], args[j-1] = args[j-1], args[j]
-		}
-	}
+// cseKey returns a hash-based key for the given IR node. It uses incremental
+// SHA-256 hashing (matching the pattern in [ir.HashCFG]) to avoid the
+// allocation overhead of recursive string concatenation.
+func cseKey(n ir.Node) cseKeyType {
+	h := sha256.New()
+	cseHash(n, h)
+	return cseKeyType(h.Sum(nil))
 }
 
-func cseKey(n ir.Node) string {
+func cseHash(n ir.Node, h hash.Hash) {
 	switch t := n.(type) {
 	case ir.Const:
-		return fmtFloat(float64(t))
+		h.Write([]byte("c"))
+		writeFloat64Hex(h, float64(t))
 	case ir.SSAPlace:
-		return t.Name + "." + itoa(t.Num)
+		h.Write([]byte("v"))
+		h.Write([]byte(t.Name))
+		writeIntComma(h, t.Num)
 	case ir.Instr:
-		s := string(t.Op) + "("
-		for i, a := range t.Args {
-			if i > 0 {
-				s += ","
-			}
-			s += cseKey(a)
+		h.Write([]byte("i"))
+		h.Write([]byte(string(t.Op)))
+		writeIntComma(h, len(t.Args))
+		for _, a := range t.Args {
+			cseHash(a, h)
 		}
-		return s + ")"
 	case ir.Get:
-		return "G(" + cseKey(t.Place) + ")"
+		h.Write([]byte("g"))
+		cseHash(t.Place, h)
 	case ir.BlockPlace:
-		return "B(" + cseKey(t.Block) + "," + cseKey(t.Index) + "," + itoa(t.Offset) + ")"
+		h.Write([]byte("b"))
+		cseHash(t.Block, h)
+		if t.Index != nil {
+			cseHash(t.Index, h)
+		} else {
+			h.Write([]byte{0})
+		}
+		writeIntComma(h, t.Offset)
 	default:
-		return "?"
+		h.Write([]byte("?"))
 	}
 }
 
-func fmtFloat(f float64) string {
-	if f == float64(int64(f)) && f != 0 {
-		return itoa(int(f))
-	}
-	return strconv.FormatFloat(f, 'g', -1, 64)
+// --- zero-allocation hash-writing helpers (from flow.go) ---
+
+func writeFloat64Hex(h hash.Hash, v float64) {
+	var buf [20]byte
+	b := strconv.AppendUint(buf[:0], math.Float64bits(v), 16)
+	b = append(b, ',')
+	h.Write(b)
+}
+
+func writeIntComma(h hash.Hash, v int) {
+	var buf [20]byte
+	b := strconv.AppendInt(buf[:0], int64(v), 10)
+	b = append(b, ',')
+	h.Write(b)
 }
