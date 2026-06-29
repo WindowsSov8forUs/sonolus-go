@@ -61,7 +61,7 @@ func toSNode(v any) SNode {
 		for i, a := range argsRaw {
 			args[i] = toSNode(a)
 		}
-		return Func{Func: resource.RuntimeFunction(fn), Args: args}
+		return Func{Op: resource.RuntimeFunction(fn), Args: args}
 	default:
 		panic(fmt.Sprintf("bad snode json: %T", v))
 	}
@@ -79,7 +79,7 @@ func canonSNode(n SNode) string {
 		for i, a := range t.Args {
 			parts[i] = canonSNode(a)
 		}
-		return string(t.Func) + "(" + strings.Join(parts, ",") + ")"
+		return string(t.Op) + "(" + strings.Join(parts, ",") + ")"
 	default:
 		return "?"
 	}
@@ -92,13 +92,19 @@ func canonGoldNode(raw json.RawMessage) string {
 	}
 	if v, ok := m["value"]; ok {
 		var f float64
-		_ = json.Unmarshal(v, &f)
+		if err := json.Unmarshal(v, &f); err != nil {
+			panic(fmt.Sprintf("bad value in golden file: %v", err))
+		}
 		return "V" + FormatNumber(f)
 	}
 	var fn string
-	_ = json.Unmarshal(m["func"], &fn)
+	if err := json.Unmarshal(m["func"], &fn); err != nil {
+		panic(fmt.Sprintf("bad func in golden file: %v", err))
+	}
 	var args []int
-	_ = json.Unmarshal(m["args"], &args)
+	if err := json.Unmarshal(m["args"], &args); err != nil {
+		panic(fmt.Sprintf("bad args in golden file: %v", err))
+	}
 	ss := make([]string, len(args))
 	for i, a := range args {
 		ss[i] = fmt.Sprintf("%d", a)
@@ -138,7 +144,7 @@ func TestOptimizeGolden(t *testing.T) {
 	g := loadGold(t)
 	for _, c := range g.Cases {
 		t.Run(c.Name, func(t *testing.T) {
-			got := Optimize(decodeSNode(c.Input))
+			got := Peephole(decodeSNode(c.Input))
 			want := decodeSNode(c.Optimized)
 			if canonSNode(got) != canonSNode(want) {
 				t.Errorf("Optimize mismatch\n got: %s\nwant: %s", canonSNode(got), canonSNode(want))
@@ -153,7 +159,7 @@ func TestAppendGolden(t *testing.T) {
 		t.Run(c.Name, func(t *testing.T) {
 			var nodes []resource.EngineDataNode
 			a := NewAppender(&nodes)
-			root, err := a.Append(Optimize(decodeSNode(c.Input)))
+			root, err := a.Append(Peephole(decodeSNode(c.Input)))
 			if err != nil {
 				t.Fatalf("append: %v", err)
 			}

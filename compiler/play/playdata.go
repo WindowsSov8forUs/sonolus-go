@@ -1,6 +1,13 @@
+// Package play compiles and assembles Play-mode engine data. Play mode
+// supports the full set of callbacks (Preprocess, Initialize, Touch, etc.),
+// archetype exports, and score/life bindings.
 package play
 
-import "github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+import (
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
+)
 
 // ArchetypeDef is the static metadata for one play-mode archetype, used to seed
 // the EnginePlayData skeleton before callbacks are folded in.
@@ -26,31 +33,19 @@ func BuildPlayData(
 ) *resource.EnginePlayData {
 	arcs := make([]resource.EnginePlayDataArchetype, len(archetypes))
 	for i, a := range archetypes {
-		imports := a.Imports
-		if imports == nil {
-			imports = []resource.EngineDataArchetypeImport{}
-		}
-		exports := a.Exports
-		if exports == nil {
-			exports = []resource.EngineArchetypeDataName{}
-		}
 		arcs[i] = resource.EnginePlayDataArchetype{
 			Name:     resource.EngineArchetypeName(a.Name),
 			HasInput: a.HasInput,
-			Imports:  imports,
-			Exports:  exports,
+			Imports:  modecompile.NormalizeSlice(a.Imports),
+			Exports:  modecompile.NormalizeSlice(a.Exports),
 		}
-	}
-
-	if buckets == nil {
-		buckets = []resource.EngineDataBucket{}
 	}
 
 	return &resource.EnginePlayData{
 		Skin:       skin,
 		Effect:     effect,
 		Particle:   particle,
-		Buckets:    buckets,
+		Buckets:    modecompile.NormalizeSlice(buckets),
 		Archetypes: arcs,
 		Nodes:      []resource.EngineDataNode{},
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/play"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
@@ -24,8 +25,8 @@ func tinyPlayData(t *testing.T) *resource.EnginePlayData {
 		[]play.ArchetypeDef{{Name: "A"}},
 	)
 	get := snode.Call(resource.RuntimeFunctionGet, snode.Val(1000), snode.Val(0))
-	if err := play.Assemble(data, []*play.CompileResult{
-		{ArchetypeIndex: 0, Callback: play.CallbackUpdateParallel, Order: 0, Node: get},
+	if err := play.Assemble(data, []*modecompile.Result{
+		{ArchetypeIndex: 0, Callback: string(play.CallbackUpdateParallel), Node: get},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +49,7 @@ func TestNodeSerializationByteExact(t *testing.T) {
 
 func TestPackageRoundTrip(t *testing.T) {
 	data := tinyPlayData(t)
-	blob, err := PackagePlayData(data)
+	blob, err := codec.Compress(data)
 	if err != nil {
 		t.Fatal(err)
 	}

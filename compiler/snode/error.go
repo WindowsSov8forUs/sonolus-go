@@ -2,6 +2,7 @@ package snode
 
 import "fmt"
 
+// ErrUnknownSNodeType is returned when a node type is not recognized.
 type ErrUnknownSNodeType struct {
 	SNode SNode
 }

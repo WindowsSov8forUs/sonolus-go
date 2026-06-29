@@ -21,6 +21,7 @@ func intSliceKey(slice []int) string {
 	return string(key)
 }
 
+// Appender builds a flat EngineDataNode list from an SNode tree, deduplicating nodes.
 type Appender struct {
 	nodes *[]resource.EngineDataNode
 
@@ -52,9 +53,9 @@ func (a *Appender) Append(snode SNode) (int, error) {
 			args[i] = argIndex
 		}
 
-		key := a.funcKey(v.Func, args)
+		key := a.funcKey(v.Op, args)
 		node := resource.EngineDataFunctionNode{
-			Func: v.Func,
+			Func: v.Op,
 			Args: args,
 		}
 		return a.appendNode(key, node), nil

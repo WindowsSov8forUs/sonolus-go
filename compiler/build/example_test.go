@@ -8,6 +8,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/play"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
@@ -31,23 +32,21 @@ func TestEndToEndPlay(t *testing.T) {
 	// EntityMemory block (0) used here only as an opaque addressable target.
 	const mem = 0
 
-	results := []*play.CompileResult{
+	results := []*modecompile.Result{
 		// Note.spawnOrder = constant 0 -> omitted entirely.
-		play.CompileCallback(0, play.CallbackSpawnOrder, val(0), 0),
+		play.CompileCallback(0, play.CallbackSpawnOrder, val(0)),
 		// Note.initialize: Set(mem, 1, 2 + 3) -> constant folds to Set(mem,1,5).
 		play.CompileCallback(0, play.CallbackInitialize,
-			call(resource.RuntimeFunctionSet, val(mem), val(1), call(resource.RuntimeFunctionAdd, val(2), val(3))),
-			0),
+			call(resource.RuntimeFunctionSet, val(mem), val(1), call(resource.RuntimeFunctionAdd, val(2), val(3)))),
 		// Note.updateParallel: Execute(Set(mem,1,Get(mem,1)+1), 0) -> SetAdd + drop return.
 		play.CompileCallback(0, play.CallbackUpdateParallel,
 			call(resource.RuntimeFunctionExecute,
 				call(resource.RuntimeFunctionSet, val(mem), val(1),
 					call(resource.RuntimeFunctionAdd, call(resource.RuntimeFunctionGet, val(mem), val(1)), val(1))),
-				val(0)),
-			0),
+				val(0))),
 		// Stage.updateParallel shares the Get(mem,1) subexpression with Note.
 		play.CompileCallback(1, play.CallbackUpdateParallel,
-			call(resource.RuntimeFunctionGet, val(mem), val(1)), 0),
+			call(resource.RuntimeFunctionGet, val(mem), val(1))),
 	}
 
 	if err := play.Assemble(data, results); err != nil {
