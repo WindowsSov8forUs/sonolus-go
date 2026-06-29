@@ -2,7 +2,10 @@ name: CI
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +33,8 @@ jobs:
           go-version: '1.25'
       - run: go test ./... -count=1
       - run: go vet ./...
-      - run: make fmt-check
+      - run: gofmt -s -l . > fmt.out && test ! -s fmt.out || (cat fmt.out && exit 1)
+        shell: bash
   fuzz:
     runs-on: ubuntu-latest
     steps:
