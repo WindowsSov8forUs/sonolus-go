@@ -20,14 +20,9 @@ type InputLevel struct {
 
 // LevelEntity is a single chart entity.
 type LevelEntity struct {
-	Archetype string       `json:"archetype"`
-	Data      []EntityData `json:"data"`
-}
-
-// EntityData is a single name-value pair in an entity's import data.
-type EntityData struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
+	Name      string            `json:"name,omitempty"`
+	Archetype string            `json:"archetype"`
+	Data      []json.RawMessage `json:"data"`
 }
 
 // CompileLevel parses a JSON level definition and builds LevelData.
@@ -39,13 +34,15 @@ func CompileLevel(src string) (*resource.LevelData, error) {
 	var entities []resource.LevelDataEntity
 	for _, e := range in.Entities {
 		var data []resource.LevelDataEntityData
-		for _, d := range e.Data {
-			data = append(data, resource.LevelDataEntityValueData{
-				Name:  resource.EngineArchetypeDataName(d.Name),
-				Value: d.Value,
-			})
+		for _, raw := range e.Data {
+			d, err := resource.DecodeLevelDataEntityData(raw)
+			if err != nil {
+				return nil, fmt.Errorf("entity %q: %w", e.Archetype, err)
+			}
+			data = append(data, d)
 		}
 		entities = append(entities, resource.LevelDataEntity{
+			Name:      e.Name,
 			Archetype: resource.EngineArchetypeName(e.Archetype),
 			Data:      data,
 		})

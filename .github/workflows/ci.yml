@@ -1,0 +1,56 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Clone sibling dependency repos (required by local replace directives in go.mod).
+      # Remove these steps once sonolus-core-go, sonolus-pack-go, and sonolus-server-go
+      # are published as versioned modules.
+      - uses: actions/checkout@v4
+        with:
+          repository: WindowsSov8forUs/sonolus-core-go
+          path: ../sonolus-core-go
+        continue-on-error: true
+      - uses: actions/checkout@v4
+        with:
+          repository: WindowsSov8forUs/sonolus-pack-go
+          path: ../sonolus-pack-go
+        continue-on-error: true
+      - uses: actions/checkout@v4
+        with:
+          repository: WindowsSov8forUs/sonolus-server-go
+          path: ../sonolus-server-go
+        continue-on-error: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go test ./... -count=1
+      - run: go vet ./...
+      - run: make fmt-check
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: WindowsSov8forUs/sonolus-core-go
+          path: ../sonolus-core-go
+        continue-on-error: true
+      - uses: actions/checkout@v4
+        with:
+          repository: WindowsSov8forUs/sonolus-pack-go
+          path: ../sonolus-pack-go
+        continue-on-error: true
+      - uses: actions/checkout@v4
+        with:
+          repository: WindowsSov8forUs/sonolus-server-go
+          path: ../sonolus-server-go
+        continue-on-error: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go test -fuzz=FuzzCompilePlay -fuzztime=60s ./compiler/engine/
