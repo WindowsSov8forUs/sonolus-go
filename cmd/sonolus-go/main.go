@@ -17,6 +17,13 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/level"
 )
 
+// Build metadata — populated by ldflags at build time.
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>] [-m <mode>]\n")
@@ -27,12 +34,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  build modes: play (default), watch, preview, tutorial, all\n")
 		flag.PrintDefaults()
 	}
+	versionFlag := flag.Bool("version", false, "print version and exit")
 	outDir := flag.String("o", "dist", "output directory")
 	modeFlag := flag.String("m", "play", "engine mode: play, watch, preview, tutorial, all")
 	romFlag := flag.String("rom", "", "path to raw float32 ROM file (optional)")
 	authorFlag := flag.String("author", "sonolus-go", "engine author (for pack)")
 	addrFlag := flag.String("addr", ":8080", "server listen address (for host)")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("sonolus-go %s (commit %s, built %s)\n", version, commit, date)
+		return
+	}
 
 	if flag.NArg() < 1 {
 		flag.Usage()

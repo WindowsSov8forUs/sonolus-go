@@ -42,9 +42,18 @@ type parsedResources struct {
 
 func buildResources(typeSpecs map[string]*ast.StructType) (parsedResources, error) {
 	var r parsedResources
+	seen := map[string]bool{}
 
 	for name, st := range typeSpecs {
-		switch resourceRole(name) {
+		role := resourceRole(name)
+		if role == "" {
+			continue
+		}
+		if seen[role] {
+			return parsedResources{}, fmt.Errorf("duplicate resource type %q: only one %s struct is allowed", name, name)
+		}
+		seen[role] = true
+		switch role {
 		case "skin":
 			r.skin.RenderMode = skinRenderMode(st)
 			for _, f := range st.Fields.List {

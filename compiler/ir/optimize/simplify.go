@@ -8,7 +8,7 @@ import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 // of CoalesceFlow (which needs phi handling).
 type CoalesceSmallConditionalBlocks struct{}
 
-func (CoalesceSmallConditionalBlocks) Name() string { return "CoalesceSmallCond" }
+func (CoalesceSmallConditionalBlocks) Name() string { return "CoalesceSmallConditionalBlocks" }
 
 func (CoalesceSmallConditionalBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	queue := []*ir.BasicBlock{entry}
@@ -72,7 +72,7 @@ func (CoalesceSmallConditionalBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *
 // Port of sonolus.py simplify.RemoveRedundantArguments.
 type RemoveRedundantArguments struct{}
 
-func (RemoveRedundantArguments) Name() string { return "TrimArgs" }
+func (RemoveRedundantArguments) Name() string { return "RemoveRedundantArguments" }
 
 func (RemoveRedundantArguments) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range ir.Preorder(entry) {
@@ -167,7 +167,7 @@ var flattenOps = map[ir.Op]bool{opAdd: true, opMultiply: true, opMod: true, opRe
 // This lets RemoveRedundantArguments see and strip identity elements (+0, *1).
 type FlattenAssociativeOps struct{}
 
-func (FlattenAssociativeOps) Name() string { return "FlattenAssoc" }
+func (FlattenAssociativeOps) Name() string { return "FlattenAssociativeOps" }
 
 func (FlattenAssociativeOps) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range ir.Preorder(entry) {
@@ -200,7 +200,7 @@ func flattenStmt(n ir.Node) ir.Node {
 // opcodes are binary, so this must run before finalization.
 type UnflattenAssociativeOps struct{}
 
-func (UnflattenAssociativeOps) Name() string { return "UnflattenAssoc" }
+func (UnflattenAssociativeOps) Name() string { return "UnflattenAssociativeOps" }
 
 func (UnflattenAssociativeOps) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range ir.Preorder(entry) {
@@ -297,7 +297,7 @@ func normSwitchParams(cases map[float64]bool) (offset, stride float64) {
 // into a single canonical exit, reducing block count.
 type CombineExitBlocks struct{}
 
-func (CombineExitBlocks) Name() string { return "CombineExits" }
+func (CombineExitBlocks) Name() string { return "CombineExitBlocks" }
 
 func (CombineExitBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	var firstExit *ir.BasicBlock

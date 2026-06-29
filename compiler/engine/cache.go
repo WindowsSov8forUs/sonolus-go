@@ -24,23 +24,29 @@ func NewCacheKey(mode, src string) CacheKey {
 // CompileCache stores compiled engine data indexed by CacheKey, enabling
 // fast recompilation when source has not changed (e.g. in the dev server).
 // All methods are safe for concurrent use.
+//
+// MaxEntries controls the maximum number of entries per mode map. When a map
+// exceeds this limit, the oldest entry (by Go map iteration) is evicted.
+// Set to 0 to disable eviction (unbounded growth). Default: 256.
 type CompileCache struct {
-	mu       sync.RWMutex
-	play     map[CacheKey]*resource.EnginePlayData
-	watch    map[CacheKey]*resource.EngineWatchData
-	preview  map[CacheKey]*resource.EnginePreviewData
-	tutorial map[CacheKey]*resource.EngineTutorialData
-	config   map[CacheKey]*resource.EngineConfiguration
+	mu         sync.RWMutex
+	MaxEntries int
+	play       map[CacheKey]*resource.EnginePlayData
+	watch      map[CacheKey]*resource.EngineWatchData
+	preview    map[CacheKey]*resource.EnginePreviewData
+	tutorial   map[CacheKey]*resource.EngineTutorialData
+	config     map[CacheKey]*resource.EngineConfiguration
 }
 
-// NewCache creates an empty compile cache.
+// NewCache creates an empty compile cache with the default max entries (256).
 func NewCache() *CompileCache {
 	return &CompileCache{
-		play:     make(map[CacheKey]*resource.EnginePlayData),
-		watch:    make(map[CacheKey]*resource.EngineWatchData),
-		preview:  make(map[CacheKey]*resource.EnginePreviewData),
-		tutorial: make(map[CacheKey]*resource.EngineTutorialData),
-		config:   make(map[CacheKey]*resource.EngineConfiguration),
+		MaxEntries: 256,
+		play:       make(map[CacheKey]*resource.EnginePlayData),
+		watch:      make(map[CacheKey]*resource.EngineWatchData),
+		preview:    make(map[CacheKey]*resource.EnginePreviewData),
+		tutorial:   make(map[CacheKey]*resource.EngineTutorialData),
+		config:     make(map[CacheKey]*resource.EngineConfiguration),
 	}
 }
 
@@ -74,9 +80,17 @@ func getKeyed[T any](c *CompileCache, m map[CacheKey]T, key CacheKey) (T, bool) 
 }
 
 // putKeyed is a generic helper for map stores under the write lock.
+// When MaxEntries > 0 and the map reaches the limit, a random entry
+// (by Go map iteration) is evicted before inserting the new one.
 func putKeyed[T any](c *CompileCache, m map[CacheKey]T, key CacheKey, data T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.MaxEntries > 0 && len(m) >= c.MaxEntries {
+		for k := range m {
+			delete(m, k)
+			break
+		}
+	}
 	m[key] = data
 }
 
