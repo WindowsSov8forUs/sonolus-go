@@ -146,7 +146,7 @@ func TestVec2InCallback(t *testing.T) {
 }
 
 func TestScoreLifeBindings(t *testing.T) {
-	b := ScoreLifeBindings(true, true)
+	b := scoreLifeBindings(true, true)
 	if b["entityPerfect"].Block != 4006 || b["entityPerfect"].Index != 0 {
 		t.Errorf("perfect = %+v", b["entityPerfect"])
 	}
