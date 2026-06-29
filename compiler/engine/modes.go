@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"go/ast"
+	"sort"
 	"go/parser"
 	"go/token"
 	"reflect"
@@ -316,7 +317,14 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 	app := snode.NewAppender(&nodes)
 
 	var pp, nav, upd int
+	sortedFuncs := make([]*ast.FuncDecl, 0, len(funcs))
 	for _, d := range funcs {
+		sortedFuncs = append(sortedFuncs, d)
+	}
+	sort.Slice(sortedFuncs, func(i, j int) bool {
+		return sortedFuncs[i].Name.Name < sortedFuncs[j].Name.Name
+	})
+	for _, d := range sortedFuncs {
 		cb := ""
 		switch d.Name.Name {
 		case "Preprocess":

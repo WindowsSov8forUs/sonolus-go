@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 )
+
+// ErrUnknownMode is returned when the user supplies an unrecognized mode string.
+var ErrUnknownMode = errors.New("unknown mode")
 
 // Mode is a Sonolus engine compilation mode.
 type Mode string
@@ -25,7 +29,7 @@ func ParseMode(s string) (Mode, error) {
 	case "play", "watch", "preview", "tutorial", "all":
 		return Mode(s), nil
 	}
-	return "", fmt.Errorf("unknown mode: %s (valid: play, watch, preview, tutorial, all)", s)
+	return "", fmt.Errorf("%w: %s (valid: play, watch, preview, tutorial, all)", ErrUnknownMode, s)
 }
 
 // Expand returns a slice of individual modes. ModeAll expands to all four; every

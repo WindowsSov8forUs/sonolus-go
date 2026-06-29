@@ -1,27 +1,15 @@
 package ir
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
 
-func canon(n snode.SNode) string {
-	switch t := n.(type) {
-	case snode.Value:
-		return "#" + snode.FormatNumber(float64(t))
-	case snode.Func:
-		ps := make([]string, len(t.Args))
-		for i, a := range t.Args {
-			ps[i] = canon(a)
-		}
-		return string(t.Op) + "(" + strings.Join(ps, ",") + ")"
-	}
-	return "?"
-}
+var canon = modecompile.Canon
 
 // TestFinalizeSingleBlockBreak reproduces the pydori should_spawn node shape:
 // a single block whose body is Break(1,1), terminating the JumpLoop.

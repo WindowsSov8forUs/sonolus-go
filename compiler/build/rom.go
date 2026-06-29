@@ -2,11 +2,19 @@ package build
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"os"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
+)
+
+var (
+	// ErrROMBadSize is returned when a ROM file size is not a multiple of 4 (expected raw float32).
+	ErrROMBadSize = errors.New("ROM file size is not a multiple of 4 (expected raw float32)")
+	// ErrROMRead is returned when a ROM file cannot be read.
+	ErrROMRead = errors.New("failed to read ROM file")
 )
 
 // BuildROM produces the gzipped EngineRom file from a list of float32 values.
@@ -25,10 +33,10 @@ func BuildROM(values []float32) ([]byte, error) {
 func BuildROMFromFile(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading ROM file %q: %w", path, err)
+		return nil, fmt.Errorf("%w: %q: %w", ErrROMRead, path, err)
 	}
 	if len(data)%4 != 0 {
-		return nil, fmt.Errorf("ROM file %q: size %d is not a multiple of 4 (expected raw float32)", path, len(data))
+		return nil, fmt.Errorf("%w: %q size %d", ErrROMBadSize, path, len(data))
 	}
 	values := make([]float32, len(data)/4)
 	for i := range values {
