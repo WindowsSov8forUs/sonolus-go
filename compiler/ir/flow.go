@@ -1,6 +1,13 @@
 package ir
 
-import "sort"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"hash"
+	"math"
+	"sort"
+	"strconv"
+)
 
 // FlowEdge is a directed CFG edge with a branch condition. Cond semantics
 // (matching sonolus.py): nil = unconditional / default / true branch; 0 = false
@@ -116,4 +123,122 @@ func traverseReversePostorder(entry *BasicBlock) []*BasicBlock {
 		post[i], post[j] = post[j], post[i]
 	}
 	return post
+}
+
+// HashCFG computes a deterministic hash of the CFG structure for caching.
+// Port of sonolus.py hash_cfg.
+func HashCFG(entry *BasicBlock) string {
+	blocks := Preorder(entry)
+	idx := map[*BasicBlock]int{}
+	for i, b := range blocks {
+		idx[b] = i
+	}
+
+	h := sha256.New()
+	for _, b := range blocks {
+		writeIntComma(h, idx[b])
+		writeIntComma(h, len(b.Statements))
+		writeIntComma(h, len(b.Outgoing))
+		for _, s := range b.Statements {
+			hashNode(h, s)
+		}
+		if b.Test != nil {
+			hashNode(h, b.Test)
+		} else {
+			h.Write([]byte{0})
+		}
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func hashNode(h hash.Hash, n Node) {
+	switch t := n.(type) {
+	case Const:
+		h.Write([]byte("c"))
+		writeUintHexComma(h, math.Float64bits(float64(t)))
+	case Instr:
+		h.Write([]byte("i"))
+		h.Write([]byte(string(t.Op)))
+		writeIntRaw(h, len(t.Args))
+		writeBoolRaw(h, t.Pure)
+		h.Write([]byte{','})
+		for _, a := range t.Args {
+			hashNode(h, a)
+		}
+	case Get:
+		h.Write([]byte("g"))
+		hashPlace(h, t.Place)
+	case Set:
+		h.Write([]byte("s"))
+		hashPlace(h, t.Place)
+		hashNode(h, t.Value)
+	case BlockPlace:
+		h.Write([]byte("b"))
+		hashNode(h, t.Block)
+		if t.Index != nil {
+			hashNode(h, t.Index)
+		} else {
+			h.Write([]byte{0})
+		}
+		writeIntComma(h, t.Offset)
+	case SSAPlace:
+		h.Write([]byte("v"))
+		h.Write([]byte(t.Name))
+		writeIntComma(h, t.Num)
+	case *TempBlock:
+		h.Write([]byte("t"))
+		h.Write([]byte(t.Name))
+		writeIntComma(h, t.Size)
+	}
+}
+
+func hashPlace(h hash.Hash, p Place) {
+	switch p := p.(type) {
+	case BlockPlace:
+		h.Write([]byte("b"))
+		hashNode(h, p.Block)
+		if p.Index != nil {
+			hashNode(h, p.Index)
+		} else {
+			h.Write([]byte{0})
+		}
+		writeIntComma(h, p.Offset)
+	case SSAPlace:
+		h.Write([]byte("v"))
+		h.Write([]byte(p.Name))
+		writeIntComma(h, p.Num)
+	}
+}
+
+// --- low-allocation hash-writing helpers ---
+// Each uses a small stack-allocated buffer and strconv to avoid the
+// reflection and format-parsing overhead of fmt.Fprintf.
+
+func writeIntComma(h hash.Hash, v int) {
+	var buf [20]byte
+	b := strconv.AppendInt(buf[:0], int64(v), 10)
+	b = append(b, ',')
+	h.Write(b)
+}
+
+func writeIntRaw(h hash.Hash, v int) {
+	var buf [20]byte
+	b := strconv.AppendInt(buf[:0], int64(v), 10)
+	h.Write(b)
+}
+
+func writeUintHexComma(h hash.Hash, v uint64) {
+	var buf [20]byte
+	b := strconv.AppendUint(buf[:0], v, 16)
+	b = append(b, ',')
+	h.Write(b)
+}
+
+func writeBoolRaw(h hash.Hash, v bool) {
+	if v {
+		h.Write([]byte("true"))
+	} else {
+		h.Write([]byte("false"))
+	}
 }

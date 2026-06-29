@@ -10,7 +10,7 @@ type CoalesceSmallConditionalBlocks struct{}
 
 func (CoalesceSmallConditionalBlocks) Name() string { return "CoalesceSmallCond" }
 
-func (CoalesceSmallConditionalBlocks) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (CoalesceSmallConditionalBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	queue := []*ir.BasicBlock{entry}
 	processed := map[*ir.BasicBlock]bool{}
 
@@ -30,7 +30,7 @@ func (CoalesceSmallConditionalBlocks) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 				break
 			}
 			// Graft nextBlock into this one.
-			nextBlock.Incoming = removeEdgeItem(nextBlock.Incoming, nextEdge)
+			nextBlock.Incoming = removeEdge(nextBlock.Incoming, nextEdge)
 			block.Test = nextBlock.Test
 			block.Outgoing = nextBlock.Outgoing
 			block.Statements = append(block.Statements, nextBlock.Statements...)
@@ -60,7 +60,7 @@ func (CoalesceSmallConditionalBlocks) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range allBlocks(entry) {
 		for _, e := range b.Incoming {
 			if !reachable[e.Src] {
-				b.Incoming = removeEdgeItem(b.Incoming, e)
+				b.Incoming = removeEdge(b.Incoming, e)
 			}
 		}
 	}
@@ -74,16 +74,17 @@ type RemoveRedundantArguments struct{}
 
 func (RemoveRedundantArguments) Name() string { return "TrimArgs" }
 
-func (RemoveRedundantArguments) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (RemoveRedundantArguments) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range ir.Preorder(entry) {
+		b.Test = trimArgs(gen, b.Test)
 		for i, s := range b.Statements {
-			b.Statements[i] = trimArgs(s)
+			b.Statements[i] = trimArgs(gen, s)
 		}
 	}
 	return entry
 }
 
-func trimArgs(n ir.Node) ir.Node {
+func trimArgs(gen *ir.IDGen, n ir.Node) ir.Node {
 	instr, ok := n.(ir.Instr)
 	if !ok || !ir.Pure(instr.Op) {
 		return n
@@ -93,18 +94,18 @@ func trimArgs(n ir.Node) ir.Node {
 
 	// Remove identity elements: Add(a,0)→a, Sub(a,0)→a, Mul(a,1)→a, Div(a,1)→a
 	switch op {
-	case "Add", "Subtract":
+	case opAdd, opSubtract:
 		args = filterConst(args, 0)
-	case "Multiply", "Divide":
+	case opMultiply, opDivide:
 		args = filterConst(args, 1)
 	}
 	// Fold empty op lists.
 	switch op {
-	case "Add", "Subtract":
+	case opAdd, opSubtract:
 		if len(args) == 0 {
 			return ir.Const(0)
 		}
-	case "Multiply", "Divide":
+	case opMultiply, opDivide:
 		if len(args) == 0 {
 			return ir.Const(1)
 		}
@@ -115,7 +116,7 @@ func trimArgs(n ir.Node) ir.Node {
 	if len(args) == 1 {
 		return args[0]
 	}
-	return ir.Instr{Op: op, Args: args, Pure: true}
+	return ir.Instr{ID: gen.Next(), Op: op, Args: args, Pure: true}
 }
 
 func filterConst(args []ir.Node, drop float64) []ir.Node {
@@ -141,16 +142,6 @@ func sameArgs(a, b []ir.Node) bool {
 	return true
 }
 
-func removeEdgeItem(edges []*ir.FlowEdge, target *ir.FlowEdge) []*ir.FlowEdge {
-	out := make([]*ir.FlowEdge, 0, len(edges))
-	for _, e := range edges {
-		if e != target {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
 func allBlocks(entry *ir.BasicBlock) []*ir.BasicBlock {
 	var out []*ir.BasicBlock
 	seen := map[*ir.BasicBlock]bool{}
@@ -170,7 +161,7 @@ func allBlocks(entry *ir.BasicBlock) []*ir.BasicBlock {
 	return out
 }
 
-var flattenOps = map[ir.Op]bool{"Add": true, "Multiply": true, "Mod": true, "Rem": true}
+var flattenOps = map[ir.Op]bool{opAdd: true, opMultiply: true, opMod: true, opRem: true}
 
 // FlattenAssociativeOps flattens nested Add/Add chains: a+(b+c) -> a+b+c.
 // This lets RemoveRedundantArguments see and strip identity elements (+0, *1).
@@ -178,7 +169,7 @@ type FlattenAssociativeOps struct{}
 
 func (FlattenAssociativeOps) Name() string { return "FlattenAssoc" }
 
-func (FlattenAssociativeOps) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (FlattenAssociativeOps) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range ir.Preorder(entry) {
 		for i, s := range b.Statements {
 			b.Statements[i] = flattenStmt(s)
@@ -202,7 +193,7 @@ func flattenStmt(n ir.Node) ir.Node {
 			args = append(args, a2)
 		}
 	}
-	return ir.Instr{Op: instr.Op, Args: args, Pure: true}
+	return ir.Instr{ID: instr.ID, Op: instr.Op, Args: args, Pure: true}
 }
 
 // UnflattenAssociativeOps restores binary form: a+b+c -> ((a+b)+c). Sonolus
@@ -211,28 +202,28 @@ type UnflattenAssociativeOps struct{}
 
 func (UnflattenAssociativeOps) Name() string { return "UnflattenAssoc" }
 
-func (UnflattenAssociativeOps) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (UnflattenAssociativeOps) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range ir.Preorder(entry) {
 		for i, s := range b.Statements {
-			b.Statements[i] = unflattenStmt(s)
+			b.Statements[i] = unflattenStmt(gen, s)
 		}
-		b.Test = unflattenStmt(b.Test)
+		b.Test = unflattenStmt(gen, b.Test)
 	}
 	return entry
 }
 
-func unflattenStmt(n ir.Node) ir.Node {
+func unflattenStmt(gen *ir.IDGen, n ir.Node) ir.Node {
 	instr, ok := n.(ir.Instr)
 	if !ok || !flattenOps[instr.Op] || len(instr.Args) <= 2 {
 		return n
 	}
 	args := make([]ir.Node, len(instr.Args))
 	for i, a := range instr.Args {
-		args[i] = unflattenStmt(a)
+		args[i] = unflattenStmt(gen, a)
 	}
 	result := args[0]
 	for _, arg := range args[1:] {
-		result = ir.Instr{Op: instr.Op, Args: []ir.Node{result, arg}, Pure: true}
+		result = ir.Instr{ID: gen.Next(), Op: instr.Op, Args: []ir.Node{result, arg}, Pure: true}
 	}
 	return result
 }
@@ -243,7 +234,7 @@ type NormalizeSwitch struct{}
 
 func (NormalizeSwitch) Name() string { return "NormalizeSwitch" }
 
-func (NormalizeSwitch) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (NormalizeSwitch) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	for _, b := range ir.Preorder(entry) {
 		cases := map[float64]bool{}
 		var hasNil bool
@@ -269,10 +260,10 @@ func (NormalizeSwitch) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 			e.Cond = &v
 		}
 		if offset != 0 {
-			b.Test = ir.PureInstr("Subtract", b.Test, ir.Const(offset))
+			b.Test = gen.PureInstr(opSubtract, b.Test, ir.Const(offset))
 		}
 		if stride != 1 {
-			b.Test = ir.PureInstr("Divide", b.Test, ir.Const(stride))
+			b.Test = gen.PureInstr(opDivide, b.Test, ir.Const(stride))
 		}
 	}
 	return entry
@@ -308,7 +299,7 @@ type CombineExitBlocks struct{}
 
 func (CombineExitBlocks) Name() string { return "CombineExits" }
 
-func (CombineExitBlocks) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (CombineExitBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	var firstExit *ir.BasicBlock
 	for _, b := range ir.Preorder(entry) {
 		if len(b.Outgoing) == 0 && len(b.Statements) == 0 {
@@ -318,9 +309,40 @@ func (CombineExitBlocks) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 				for _, e := range append([]*ir.FlowEdge{}, b.Incoming...) {
 					e.Dst = firstExit
 					firstExit.Incoming = append(firstExit.Incoming, e)
-					b.Incoming = removeEdgeItem(b.Incoming, e)
+					b.Incoming = removeEdge(b.Incoming, e)
 				}
 			}
+		}
+	}
+	return entry
+}
+
+// NormalizeBlocks recursively normalizes the IR tree in each block: nil
+// BlockPlace.Index is replaced with Const(0), and all sub-expressions are
+// recursively normalized. Port of sonolus.py simplify.NormalizeBlocks.
+type NormalizeBlocks struct{}
+
+func (NormalizeBlocks) Name() string { return "NormalizeBlocks" }
+
+func (NormalizeBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
+	norm := func(n ir.Node) ir.Node {
+		if n == nil {
+			return nil
+		}
+		if bp, ok := n.(ir.BlockPlace); ok {
+			if bp.Index == nil {
+				bp.Index = ir.Const(0)
+			}
+			return bp
+		}
+		return n
+	}
+	for _, b := range ir.Preorder(entry) {
+		for si, s := range b.Statements {
+			b.Statements[si] = ir.Map(s, norm)
+		}
+		if b.Test != nil {
+			b.Test = ir.Map(b.Test, norm)
 		}
 	}
 	return entry

@@ -1,6 +1,8 @@
 package optimize
 
-import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+import (
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+)
 
 // RewriteToSwitch converts if-else chains comparing against constants into switch
 // statements. Phase 1 swaps Equal(const, a) tests to make the const the edge
@@ -10,7 +12,7 @@ type RewriteToSwitch struct{}
 
 func (RewriteToSwitch) Name() string { return "RewriteToSwitch" }
 
-func (RewriteToSwitch) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (RewriteToSwitch) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	rewriteIfsToSwitch(entry)
 	rewriteCombineBlocks(entry)
 	rewriteRemoveUnreachable(entry)
@@ -36,7 +38,7 @@ func rewriteIfsToSwitch(entry *ir.BasicBlock) {
 			continue
 		}
 		instr, ok := b.Test.(ir.Instr)
-		if !ok || instr.Op != "Equal" || len(instr.Args) != 2 {
+		if !ok || instr.Op != opEqual || len(instr.Args) != 2 {
 			continue
 		}
 		var constVal *float64
@@ -96,16 +98,16 @@ func rewriteCombineBlocks(entry *ir.BasicBlock) {
 			continue
 		}
 		// The test expression must be structurally identical.
-		if !nodeTestsEqual(block.Test, nextBlock.Test) {
+		if !nodeEqual(block.Test, nextBlock.Test) {
 			continue
 		}
 		// Merge: graft next's outgoing edges onto block.
-		block.Outgoing = removeEdgeItem(block.Outgoing, defaultEdge)
-		nextBlock.Incoming = removeEdgeItem(nextBlock.Incoming, defaultEdge)
+		block.Outgoing = removeEdge(block.Outgoing, defaultEdge)
+		nextBlock.Incoming = removeEdge(nextBlock.Incoming, defaultEdge)
 
 		for _, e := range nextBlock.Outgoing {
 			if hasCond(block.Outgoing, e.Cond) {
-				e.Dst.Incoming = removeEdgeItem(e.Dst.Incoming, e)
+				e.Dst.Incoming = removeEdge(e.Dst.Incoming, e)
 				continue
 			}
 			e.Src = block
@@ -129,62 +131,10 @@ func hasCond(edges []*ir.FlowEdge, cond *float64) bool {
 	return false
 }
 
-func nodeTestsEqual(a, b ir.Node) bool {
-	// Simple structural equality for test expressions.
-	switch ta := a.(type) {
-	case ir.Const:
-		tb, ok := b.(ir.Const)
-		return ok && float64(ta) == float64(tb)
-	case ir.Get:
-		tb, ok := b.(ir.Get)
-		if !ok {
-			return false
-		}
-		return placeTestsEqual(ta.Place, tb.Place)
-	case ir.Instr:
-		tb, ok := b.(ir.Instr)
-		return ok && ta.Op == tb.Op && nodeSliceEqual(ta.Args, tb.Args)
-	default:
-		return false
-	}
-}
-
-func placeTestsEqual(a, b ir.Place) bool {
-	ba, oka := a.(ir.BlockPlace)
-	bb, okb := b.(ir.BlockPlace)
-	if !oka || !okb {
-		return a == b
-	}
-	return nodeTestsEqual(ba.Block, bb.Block) && nodeTestsEqual(ba.Index, bb.Index) && ba.Offset == bb.Offset
-}
-
-func nodeSliceEqual(a, b []ir.Node) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if !nodeTestsEqual(a[i], b[i]) {
-			return false
-		}
-	}
-	return true
-}
-
 func rewriteRemoveUnreachable(entry *ir.BasicBlock) {
-	reachable := map[*ir.BasicBlock]bool{entry: true}
-	stack := []*ir.BasicBlock{entry}
-	for len(stack) > 0 {
-		b := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		for _, e := range b.Outgoing {
-			if !reachable[e.Dst] {
-				reachable[e.Dst] = true
-				stack = append(stack, e.Dst)
-			}
-		}
-	}
+	r := reachable(entry)
 	for _, b := range ir.Preorder(entry) {
-		b.Incoming = filterIncoming(b.Incoming, reachable)
+		b.Incoming = filterIncoming(b.Incoming, r)
 	}
 }
 

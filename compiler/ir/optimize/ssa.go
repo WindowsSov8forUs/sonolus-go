@@ -6,6 +6,10 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
 
+// undefVarName is used as a placeholder SSA name when a variable is accessed
+// in unreachable code. The "#" prefix avoids collisions with user-defined names.
+const undefVarName = "#undef"
+
 // ToSSA converts size-1 temp-block variables into SSA form: it inserts phi nodes
 // at the iterated dominance frontiers of each variable's definitions, then
 // renames definitions and uses into versioned SSA places. Port of sonolus.py
@@ -14,7 +18,7 @@ type ToSSA struct{}
 
 func (ToSSA) Name() string { return "ToSSA" }
 
-func (ToSSA) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (ToSSA) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	dom := ComputeDominance(entry)
 
 	order, defBlocks := defsToBlocks(entry)
@@ -162,7 +166,7 @@ func (r *renamer) renameNode(n ir.Node, toPop *[]*ir.TempBlock) ir.Node {
 		for i, a := range t.Args {
 			args[i] = r.renameNode(a, toPop)
 		}
-		return ir.Instr{Op: t.Op, Args: args, Pure: t.Pure}
+		return ir.Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure}
 	case ir.Get:
 		return ir.Get{Place: r.renamePlace(t.Place, toPop)}
 	case ir.Set:
@@ -172,7 +176,7 @@ func (r *renamer) renameNode(n ir.Node, toPop *[]*ir.TempBlock) ir.Node {
 			r.stack[tb] = append(r.stack[tb], np)
 			*toPop = append(*toPop, tb)
 		}
-		return ir.Set{Place: r.renamePlace(t.Place, toPop), Value: value}
+		return ir.Set{ID: t.ID, Place: r.renamePlace(t.Place, toPop), Value: value}
 	case *ir.TempBlock:
 		// Only size-1 temps are SSA variables; larger temps (arrays/records)
 		// stay as memory blocks.
@@ -183,7 +187,7 @@ func (r *renamer) renameNode(n ir.Node, toPop *[]*ir.TempBlock) ir.Node {
 			return v
 		}
 		// Access to a definitely-undefined variable (may be unreachable).
-		return ir.SSAPlace{Name: "err", Num: 0}
+		return ir.SSAPlace{Name: undefVarName, Num: 0}
 	case ir.BlockPlace:
 		return r.renamePlace(t, toPop)
 	default:
@@ -202,7 +206,7 @@ func (r *renamer) renamePlace(p ir.Place, toPop *[]*ir.TempBlock) ir.Place {
 		if v, ok := r.top(tb); ok {
 			return v
 		}
-		return ir.SSAPlace{Name: "err", Num: 0}
+		return ir.SSAPlace{Name: undefVarName, Num: 0}
 	}
 	return ir.BlockPlace{
 		Block:  r.renameNode(bp.Block, toPop),
@@ -214,13 +218,13 @@ func (r *renamer) renamePlace(p ir.Place, toPop *[]*ir.TempBlock) ir.Place {
 // FromSSA destroys SSA form: it splits each phi-carrying block's incoming edges
 // with a "between" block, materializes phis as copies on those edges, and maps
 // each SSA value back to a temp block named "name.num". Port of sonolus.py
-// ssa.FromSSA. AllocateTempBlocks must run afterward before finalization.
+// ssa.FromSSA. allocateTempBlocks must run afterward before finalization.
 type FromSSA struct{}
 
 func (FromSSA) Name() string { return "FromSSA" }
 
-func (FromSSA) Run(entry *ir.BasicBlock) *ir.BasicBlock {
-	f := &fromSSAState{temps: map[string]*ir.TempBlock{}}
+func (FromSSA) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
+	f := &fromSSAState{temps: map[string]*ir.TempBlock{}, gen: gen}
 	for _, b := range ir.Preorder(entry) {
 		f.processBlock(b)
 	}
@@ -230,6 +234,7 @@ func (FromSSA) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 // fromSSAState carries the temp-name cache so that values written and read
 // across edges resolve to the same (pointer-identified) temp.
 type fromSSAState struct {
+	gen   *ir.IDGen
 	temps map[string]*ir.TempBlock
 }
 
@@ -243,7 +248,7 @@ func (f *fromSSAState) tempFor(name string) *ir.TempBlock {
 }
 
 func (f *fromSSAState) placeFromSSA(s ir.SSAPlace, suffix string) ir.BlockPlace {
-	name := s.Name + "." + itoa(s.Num) + suffix
+	name := s.Name + "." + strconv.Itoa(s.Num) + suffix
 	return ir.BlockPlace{Block: f.tempFor(name), Index: ir.Const(0), Offset: 0}
 }
 
@@ -294,7 +299,7 @@ func (f *fromSSAState) processBlock(block *ir.BasicBlock) {
 			}
 			if argsBySrc[src][target] {
 				src.Statements = append(src.Statements,
-					ir.SetPlace(f.placeFromSSA(target, "*"), ir.GetPlace(f.placeFromSSA(arg.(ir.SSAPlace), ""))))
+					f.gen.SetPlace(f.placeFromSSA(target, "*"), ir.GetPlace(f.placeFromSSA(arg.(ir.SSAPlace), ""))))
 			}
 		}
 	}
@@ -306,10 +311,10 @@ func (f *fromSSAState) processBlock(block *ir.BasicBlock) {
 			}
 			if argsBySrc[src][target] {
 				src.Statements = append(src.Statements,
-					ir.SetPlace(f.placeFromSSA(target, ""), ir.GetPlace(f.placeFromSSA(target, "*"))))
+					f.gen.SetPlace(f.placeFromSSA(target, ""), ir.GetPlace(f.placeFromSSA(target, "*"))))
 			} else {
 				src.Statements = append(src.Statements,
-					ir.SetPlace(f.placeFromSSA(target, ""), ir.GetPlace(f.placeFromSSA(arg.(ir.SSAPlace), ""))))
+					f.gen.SetPlace(f.placeFromSSA(target, ""), ir.GetPlace(f.placeFromSSA(arg.(ir.SSAPlace), ""))))
 			}
 		}
 	}
@@ -332,11 +337,11 @@ func (f *fromSSAState) processStmt(n ir.Node) ir.Node {
 		for i, a := range t.Args {
 			args[i] = f.processStmt(a)
 		}
-		return ir.Instr{Op: t.Op, Args: args, Pure: t.Pure}
+		return ir.Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure}
 	case ir.Get:
 		return ir.Get{Place: f.processPlace(t.Place)}
 	case ir.Set:
-		return ir.Set{Place: f.processPlace(t.Place), Value: f.processStmt(t.Value)}
+		return ir.Set{ID: t.ID, Place: f.processPlace(t.Place), Value: f.processStmt(t.Value)}
 	case ir.BlockPlace:
 		return f.processPlace(t)
 	default:
@@ -355,4 +360,20 @@ func (f *fromSSAState) processPlace(p ir.Place) ir.Place {
 	}
 }
 
-func itoa(n int) string { return strconv.Itoa(n) }
+// Requires implements ManagedPass.
+func (ToSSA) Requires() []Analysis { return nil }
+
+// Preserves implements ManagedPass — ToSSA produces SSA form.
+func (ToSSA) Preserves() []Analysis { return []Analysis{AnalysisSSA} }
+
+// Destroys implements ManagedPass.
+func (ToSSA) Destroys() []Analysis { return nil }
+
+// Requires implements ManagedPass.
+func (FromSSA) Requires() []Analysis { return []Analysis{AnalysisSSA} }
+
+// Preserves implements ManagedPass.
+func (FromSSA) Preserves() []Analysis { return nil }
+
+// Destroys implements ManagedPass — FromSSA exits SSA form.
+func (FromSSA) Destroys() []Analysis { return []Analysis{AnalysisSSA} }

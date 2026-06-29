@@ -7,7 +7,20 @@
 // bridges the two: CFGToSNode lowers an optimized CFG into an snode.SNode.
 package ir
 
-import "github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+import (
+	"math"
+
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+)
+
+// Runtime memory block IDs used by the Sonolus engine across all modes.
+const (
+	BlockRuntimeEnvironment = 1000
+	BlockRuntimeUpdate      = 1001 // also BlockRuntimeCanvas in Preview
+	BlockRuntimeTouch       = 1002
+	BlockEngineRom          = 3000
+	TouchFieldStride        = 9
+)
 
 // Op is an IR/runtime operation. It shares the runtime function vocabulary with
 // the final node list.
@@ -25,7 +38,7 @@ func (Const) irNode() {}
 // Instr is an operation applied to argument nodes. Pure marks side-effect-free
 // operations (sonolus.py distinguishes IRPureInstr from IRInstr); the flag is
 // for optimization passes and does not affect lowering. ID is a monotonic
-// identifier for use as a comparable map key in liveness analysis.
+// identifier used by liveness analysis.
 type Instr struct {
 	ID   int
 	Op   Op
@@ -35,18 +48,29 @@ type Instr struct {
 
 func (Instr) irNode() {}
 
-// nextID is a package-level monotonic counter for Instr IDs.
-var nextID = new(int)
+// IDGen generates monotonic node identifiers for a single compilation. Each
+// compilation entry point creates one IDGen and threads it through the frontend
+// tracer, optimizer pipeline, and finalizer. This eliminates shared mutable state,
+// making concurrent compilations safe.
+type IDGen struct{ n int }
 
-// NodeKey is a comparable key for any IR node. For Instr nodes, it uses the
-// monotonic ID; for other types it uses the pointer address.
-type NodeKey int64
+// NewIDGen returns a fresh ID generator starting at 1.
+func NewIDGen() *IDGen { return &IDGen{} }
 
-// Key returns a comparable key for this node suitable for use in maps.
-func (n Instr) Key() NodeKey { return NodeKey(n.ID) }
+// Next returns the next monotonic ID from this generator.
+func (g *IDGen) Next() int { g.n++; return g.n }
 
-// incrID returns the next monotonic ID.
-func incrID() int { *nextID++; return *nextID }
+// --- constructors ---
+
+// PureInstr builds a side-effect-free operation node.
+func (g *IDGen) PureInstr(op Op, args ...Node) Instr {
+	return Instr{ID: g.Next(), Op: op, Args: args, Pure: true}
+}
+
+// ImpureInstr builds an operation node that may have side effects.
+func (g *IDGen) ImpureInstr(op Op, args ...Node) Instr {
+	return Instr{ID: g.Next(), Op: op, Args: args, Pure: false}
+}
 
 // Get reads a memory place (sonolus.py IRGet).
 type Get struct {
@@ -55,28 +79,37 @@ type Get struct {
 
 func (Get) irNode() {}
 
-// Set writes value to a memory place (sonolus.py IRSet).
+// Set writes value to a memory place (sonolus.py IRSet). ID is a monotonic
+// identifier used by liveness analysis.
 type Set struct {
+	ID    int
 	Place Place
 	Value Node
 }
 
 func (Set) irNode() {}
 
-// --- constructors ---
-
-// PureInstr builds a side-effect-free operation node.
-func PureInstr(op Op, args ...Node) Instr {
-	return Instr{ID: incrID(), Op: op, Args: args, Pure: true}
-}
-
-// ImpureInstr builds an operation node that may have side effects.
-func ImpureInstr(op Op, args ...Node) Instr {
-	return Instr{ID: incrID(), Op: op, Args: args, Pure: false}
+// SetPlace writes a value to a memory place.
+func (g *IDGen) SetPlace(p Place, value Node) Set {
+	return Set{ID: g.Next(), Place: p, Value: value}
 }
 
 // GetPlace reads a memory place.
 func GetPlace(p Place) Get { return Get{Place: p} }
 
-// SetPlace writes a value to a memory place.
-func SetPlace(p Place, value Node) Set { return Set{Place: p, Value: value} }
+// FloorMod computes a floored modulo (result has the sign of the divisor),
+// matching Python's % and the runtime RuntimeFunctionMod semantics.
+// Used by frontend constant folding (value.go) and SCCP (sccp.go).
+func FloorMod(a, b float64) float64 {
+	r := math.Mod(a, b)
+	if r != 0 && (r < 0) != (b < 0) {
+		r += b
+	}
+	return r
+}
+
+// IEEERem computes IEEE 754 remainder, matching the runtime RuntimeFunctionRem semantics.
+// Used by frontend constant folding and SCCP for compile-time evaluation.
+func IEEERem(a, b float64) float64 {
+	return math.Remainder(a, b)
+}

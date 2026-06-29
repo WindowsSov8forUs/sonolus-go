@@ -9,7 +9,7 @@ type UnreachableCodeElimination struct{}
 
 func (UnreachableCodeElimination) Name() string { return "UnreachableCodeElimination" }
 
-func (UnreachableCodeElimination) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (UnreachableCodeElimination) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	original := reachable(entry)
 
 	visited := map[*ir.BasicBlock]bool{}

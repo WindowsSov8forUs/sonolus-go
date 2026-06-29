@@ -24,7 +24,7 @@ func (BlockPlace) placeNode() {}
 // TempBlock is a virtual scratch block backing a local variable (sonolus.py
 // TempBlock). It is identified by pointer: each local gets one TempBlock that is
 // shared by all its accesses. TempBlock-backed places must be resolved to a
-// concrete memory block by AllocateTempBlocks before finalization.
+// concrete memory block by allocateTempBlocks before finalization.
 type TempBlock struct {
 	Name string
 	Size int

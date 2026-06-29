@@ -23,13 +23,17 @@ const (
 	opSwitchIntegerWithDefault = resource.RuntimeFunctionSwitchIntegerWithDefault
 )
 
-// romBlock is the EngineRom memory block; non-finite constants are read from it.
-const romBlock = 3000
+// BlockEngineRom (defined in ir.go) is the EngineRom memory block; non-finite
+// constants are read from it.
 
 // CFGToSNode lowers an (optimized) CFG into a single snode.SNode tree, encoding
 // inter-block control flow as a Block(JumpLoop(...)) of per-block Execute nodes.
 // Port of sonolus.py finalize.cfg_to_engine_node.
-func CFGToSNode(entry *BasicBlock) snode.SNode {
+//
+// This function may panic on internal invariant violations (e.g., TempBlock
+// that escaped allocateTempBlocks). Callers should recover at the top-level
+// API boundary (see engine.compileCallbackBlock).
+func CFGToSNode(gen *IDGen, entry *BasicBlock) snode.SNode {
 	order := traverseReversePostorder(entry)
 	index := make(map[*BasicBlock]int, len(order))
 	for i, b := range order {
@@ -43,7 +47,7 @@ func CFGToSNode(entry *BasicBlock) snode.SNode {
 		for _, s := range b.Statements {
 			stmts = append(stmts, Lower(s))
 		}
-		stmts = append(stmts, controlFlow(b, index, exit))
+		stmts = append(stmts, controlFlow(gen, b, index, exit))
 		blockStatements = append(blockStatements, snode.Call(opExecute, stmts...))
 	}
 	blockStatements = append(blockStatements, snode.Val(0))
@@ -59,7 +63,7 @@ type condEdge struct {
 
 // controlFlow encodes a block's outgoing edges as the trailing node of its
 // Execute body: a fallthrough index, an If, or a Switch.
-func controlFlow(b *BasicBlock, index map[*BasicBlock]int, exit int) snode.SNode {
+func controlFlow(gen *IDGen, b *BasicBlock, index map[*BasicBlock]int, exit int) snode.SNode {
 	edges := sortedOutgoing(b)
 
 	var defaultDst *BasicBlock
@@ -92,7 +96,7 @@ func controlFlow(b *BasicBlock, index map[*BasicBlock]int, exit int) snode.SNode
 	case defaultDst != nil && len(conds) == 1:
 		// {cond: branch, default} -> If(test == cond, branch, default).
 		return snode.Call(opIf,
-			Lower(PureInstr(opEqual, b.Test, Const(conds[0].cond))),
+			Lower(gen.PureInstr(opEqual, b.Test, Const(conds[0].cond))),
 			snode.Val(float64(index[conds[0].dst])),
 			snode.Val(float64(index[defaultDst])),
 		)
@@ -177,11 +181,11 @@ func Lower(n Node) snode.SNode {
 func numeric(v float64) snode.SNode {
 	switch {
 	case math.IsInf(v, 1):
-		return snode.Call(opGet, snode.Val(romBlock), snode.Val(1))
+		return snode.Call(opGet, snode.Val(BlockEngineRom), snode.Val(1))
 	case math.IsInf(v, -1):
-		return snode.Call(opGet, snode.Val(romBlock), snode.Val(2))
+		return snode.Call(opGet, snode.Val(BlockEngineRom), snode.Val(2))
 	case math.IsNaN(v):
-		return snode.Call(opGet, snode.Val(romBlock), snode.Val(0))
+		return snode.Call(opGet, snode.Val(BlockEngineRom), snode.Val(0))
 	default:
 		return snode.Val(v)
 	}

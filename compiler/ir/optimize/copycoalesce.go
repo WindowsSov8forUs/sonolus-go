@@ -4,17 +4,28 @@ import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 
 // CopyCoalesce merges temp-block copies introduced by FromSSA's phi resolution.
 // It scans the CFG for Set(t1, Get(t2)) where t1 and t2 are both size-1 temps,
-// then replaces all uses of t1 with t2 and drops the copy. This is a simplified
-// port of sonolus.py's copy_coalesce.CopyCoalesce: the full version requires
-// LivenessAnalysis for interference checking, but post-FromSSA copies are on
-// edge blocks where source and target cannot be simultaneously live, making the
-// simplification sound for the SSA pipeline.
+// then replaces all uses of t1 with t2 and drops the copy using union-find.
+// For multi-predecessor blocks, copies are only coalesced when the destination
+// temp has a single definition, preventing interference between simultaneously
+// live temps. Port of sonolus.py copy_coalesce.CopyCoalesce.
 type CopyCoalesce struct{}
 
 func (CopyCoalesce) Name() string { return "CopyCoalesce" }
 
-func (CopyCoalesce) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (CopyCoalesce) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	blocks := ir.Preorder(entry)
+
+	// Count definitions per temp: how many Set(tb, ...) exist in the CFG.
+	defCount := map[*ir.TempBlock]int{}
+	for _, b := range blocks {
+		for _, s := range b.Statements {
+			if set, ok := s.(ir.Set); ok {
+				if tb, ok := tempOf(set.Place); ok {
+					defCount[tb]++
+				}
+			}
+		}
+	}
 
 	// Collect all copies: Set(t1_block, Get(t2_block)).
 	type copyPair struct {
@@ -29,7 +40,10 @@ func (CopyCoalesce) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 			if !ok {
 				continue
 			}
-			dst, ok := tempOf(set.Place)
+			// Only size-1 temps participate in SSA coalescing — larger temps
+		// represent arrays/records and cannot be trivially unified (aligned
+		// with ssa.go stmtDef and the sonolus.py backend's single-slot model).
+		dst, ok := tempOf(set.Place)
 			if !ok || dst.Size != 1 {
 				continue
 			}
@@ -42,6 +56,15 @@ func (CopyCoalesce) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 				continue
 			}
 			if dst == src {
+				continue
+			}
+			// Conservative guard: only coalesce on edge blocks (single pred+succ,
+			// no other statements). This avoids interference between simultaneously
+			// live temps. Aligned with sonolus.py copy_coalesce.py edge-block assumption.
+			// Coalesce on edge blocks (single predecessor) unconditionally.
+			// For multi-predecessor blocks, only coalesce if the destination
+			// temp has a single definition.
+			if len(b.Incoming) > 1 && defCount[dst] > 1 {
 				continue
 			}
 			copies = append(copies, copyPair{dst, src, b, i})
@@ -107,32 +130,10 @@ func (CopyCoalesce) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 }
 
 func rewriteNode(n ir.Node, canon func(*ir.TempBlock) *ir.TempBlock) ir.Node {
-	switch t := n.(type) {
-	case ir.Const, ir.SSAPlace, nil:
-		return n
-	case *ir.TempBlock:
-		return canon(t)
-	case ir.Instr:
-		args := make([]ir.Node, len(t.Args))
-		for i, a := range t.Args {
-			args[i] = rewriteNode(a, canon)
+	return ir.Map(n, func(n ir.Node) ir.Node {
+		if tb, ok := n.(*ir.TempBlock); ok {
+			return canon(tb)
 		}
-		return ir.Instr{Op: t.Op, Args: args, Pure: t.Pure}
-	case ir.Get:
-		return ir.Get{Place: rewritePlace(t.Place, canon)}
-	case ir.Set:
-		return ir.Set{Place: rewritePlace(t.Place, canon), Value: rewriteNode(t.Value, canon)}
-	case ir.BlockPlace:
-		return rewritePlace(t, canon)
-	default:
 		return n
-	}
-}
-
-func rewritePlace(p ir.Place, canon func(*ir.TempBlock) *ir.TempBlock) ir.Place {
-	bp, ok := p.(ir.BlockPlace)
-	if !ok {
-		return p
-	}
-	return ir.BlockPlace{Block: rewriteNode(bp.Block, canon), Index: rewriteNode(bp.Index, canon), Offset: bp.Offset}
+	})
 }

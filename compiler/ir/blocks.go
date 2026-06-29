@@ -126,6 +126,20 @@ var blockTables = map[Mode]map[int]blockInfo{
 	},
 }
 
+// Canonical block ID constants referenced by all packages.
+// Values must match the blockTables above.
+const (
+	BlockEntityMemory  = 4000
+	BlockEntityData    = 4001
+	BlockEntityShared  = 4002
+	BlockEntityInfo    = 4003
+	BlockEntityDespawn = 4004
+	BlockEntityInput   = 4005
+	BlockEntityScore   = 4006
+	BlockEntityLife    = 4007
+	BlockTempMemory    = 10000
+)
+
 // BlockSet answers block read/write questions for a given mode. It satisfies
 // the optimizer's BlockOracle interface structurally.
 type BlockSet struct{ mode Mode }

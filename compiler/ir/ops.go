@@ -1,71 +1,15 @@
+// Operation classification tables for the ir package: which RuntimeFunction
+// operations are pure (side-effect-free and deterministic in their arguments)
+// and which have side effects. Generated from sonolus.py backend/ops.py.
+//
+//go:generate go run ./generate/main.go
+
 package ir
 
-import "github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-
-// sideEffectOps is the set of runtime operations with observable side effects,
-// ported verbatim from sonolus.py's Op.side_effects classification. Dead-store
-// elimination must preserve a value computation if its op is in this set.
-var sideEffectOps = map[resource.RuntimeFunction]bool{
-	"AddLifeScheduled": true, "Break": true, "Copy": true, "DebugLog": true,
-	"DebugPause": true, "DecrementPost": true, "DecrementPostPointed": true,
-	"DecrementPostShifted": true, "DecrementPre": true, "DecrementPrePointed": true,
-	"DecrementPreShifted": true, "DestroyParticleEffect": true, "Draw": true,
-	"DrawCurvedB": true, "DrawCurvedBT": true, "DrawCurvedL": true, "DrawCurvedLR": true,
-	"DrawCurvedR": true, "DrawCurvedT": true, "ExportValue": true, "IncrementPost": true,
-	"IncrementPostPointed": true, "IncrementPostShifted": true, "IncrementPre": true,
-	"IncrementPrePointed": true, "IncrementPreShifted": true, "MoveParticleEffect": true,
-	"Paint": true, "Play": true, "PlayLooped": true, "PlayLoopedScheduled": true,
-	"PlayScheduled": true, "Print": true, "Set": true, "SetAdd": true,
-	"SetAddPointed": true, "SetAddShifted": true, "SetDivide": true, "SetDividePointed": true,
-	"SetDivideShifted": true, "SetMod": true, "SetModPointed": true, "SetModShifted": true,
-	"SetMultiply": true, "SetMultiplyPointed": true, "SetMultiplyShifted": true,
-	"SetPointed": true, "SetPower": true, "SetPowerPointed": true, "SetPowerShifted": true,
-	"SetRem": true, "SetRemPointed": true, "SetRemShifted": true, "SetShifted": true,
-	"SetSubtract": true, "SetSubtractPointed": true, "SetSubtractShifted": true,
-	"Spawn": true, "SpawnParticleEffect": true, "StackEnter": true, "StackGrow": true,
-	"StackInit": true, "StackLeave": true, "StackPop": true, "StackPush": true,
-	"StackSet": true, "StackSetFrame": true, "StackSetFramePointer": true,
-	"StackSetPointer": true, "StopLooped": true, "StopLoopedScheduled": true,
-	"StreamSet": true,
-}
-
 // SideEffects reports whether an operation has observable side effects.
+// The classification is generated from sonolus.py's Op.side_effects.
 func SideEffects(op Op) bool { return sideEffectOps[op] }
 
-// pureOps is the set of operations that are pure (no side effects and value
-// depends only on arguments), ported verbatim from sonolus.py Op.pure.
-var pureOps = map[resource.RuntimeFunction]bool{
-	"Abs": true, "Add": true, "And": true, "Arccos": true, "Arcsin": true,
-	"Arctan": true, "Arctan2": true, "BeatToBPM": true, "BeatToStartingBeat": true,
-	"BeatToStartingTime": true, "BeatToTime": true, "Block": true, "Ceil": true,
-	"Clamp": true, "Cos": true, "Cosh": true, "Degree": true, "Divide": true,
-	"DoWhile": true, "EaseInBack": true, "EaseInCirc": true, "EaseInCubic": true,
-	"EaseInElastic": true, "EaseInExpo": true, "EaseInOutBack": true,
-	"EaseInOutCirc": true, "EaseInOutCubic": true, "EaseInOutElastic": true,
-	"EaseInOutExpo": true, "EaseInOutQuad": true, "EaseInOutQuart": true,
-	"EaseInOutQuint": true, "EaseInOutSine": true, "EaseInQuad": true,
-	"EaseInQuart": true, "EaseInQuint": true, "EaseInSine": true, "EaseOutBack": true,
-	"EaseOutCirc": true, "EaseOutCubic": true, "EaseOutElastic": true,
-	"EaseOutExpo": true, "EaseOutInBack": true, "EaseOutInCirc": true,
-	"EaseOutInCubic": true, "EaseOutInElastic": true, "EaseOutInExpo": true,
-	"EaseOutInQuad": true, "EaseOutInQuart": true, "EaseOutInQuint": true,
-	"EaseOutInSine": true, "EaseOutQuad": true, "EaseOutQuart": true,
-	"EaseOutQuint": true, "EaseOutSine": true, "Equal": true, "Execute": true,
-	"Execute0": true, "Floor": true, "Frac": true, "Greater": true, "GreaterOr": true,
-	"HasEffectClip": true, "HasParticleEffect": true, "HasSkinSprite": true,
-	"If": true, "Judge": true, "JudgeSimple": true, "JumpLoop": true, "Lerp": true,
-	"LerpClamped": true, "Less": true, "LessOr": true, "Log": true, "Max": true,
-	"Min": true, "Mod": true, "Multiply": true, "Negate": true, "Not": true,
-	"NotEqual": true, "Or": true, "Power": true, "Radian": true, "Rem": true,
-	"Remap": true, "RemapClamped": true, "Round": true, "Sign": true, "Sin": true,
-	"Sinh": true, "StreamGetNextKey": true, "StreamGetPreviousKey": true,
-	"StreamGetValue": true, "StreamHas": true, "Subtract": true, "Switch": true,
-	"SwitchInteger": true, "SwitchIntegerWithDefault": true, "SwitchWithDefault": true,
-	"Tan": true, "Tanh": true, "TimeToScaledTime": true, "TimeToStartingScaledTime": true,
-	"TimeToStartingTime": true, "TimeToTimeScale": true, "Trunc": true, "Unlerp": true,
-	"UnlerpClamped": true, "While": true,
-}
-
 // Pure reports whether an operation is pure (side-effect-free and deterministic
-// in its arguments).
+// in its arguments). The classification is generated from sonolus.py's Op.pure.
 func Pure(op Op) bool { return pureOps[op] }

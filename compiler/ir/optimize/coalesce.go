@@ -9,7 +9,7 @@ type CoalesceFlow struct{}
 
 func (CoalesceFlow) Name() string { return "CoalesceFlow" }
 
-func (CoalesceFlow) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (CoalesceFlow) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	queue := []*ir.BasicBlock{entry}
 	processed := map[*ir.BasicBlock]bool{}
 
@@ -112,3 +112,8 @@ func (CoalesceFlow) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 
 	return entry
 }
+
+// Requires: none (runs early, before dominance/SSA).
+func (CoalesceFlow) Requires() []Analysis  { return nil }
+func (CoalesceFlow) Preserves() []Analysis { return nil }
+func (CoalesceFlow) Destroys() []Analysis  { return []Analysis{AnalysisDominance} }

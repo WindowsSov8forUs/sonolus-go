@@ -4,15 +4,17 @@ import "fmt"
 
 // DefaultTempMemoryBlock is the memory block temps are allocated into by
 // default (sonolus.py play-mode TemporaryMemory).
-const DefaultTempMemoryBlock = 10000
+// This is an alias for BlockTempMemory defined in blocks.go.
+const DefaultTempMemoryBlock = BlockTempMemory
 
-// AllocateTempBlocks resolves every TempBlock-backed place to a concrete cell in
+// allocateTempBlocks resolves every TempBlock-backed place to a concrete cell in
 // the given memory block, assigning each distinct temp its own slot (no reuse).
-// This is the trivial allocator required before finalization; a liveness-based
-// allocator with slot reuse is a later optimization.
-//
 // Temps are assigned slots in deterministic first-seen order over the CFG.
-func AllocateTempBlocks(entry *BasicBlock, blockID int) *BasicBlock {
+//
+// This is test-only scaffolding. The production pipeline uses
+// optimize.AllocateLive (linear-scan, liveness-aware) in [optimize.Standard] / advanced.go.
+// Use [AllocateTestBlocks] for the exported test-only wrapper.
+func allocateTempBlocks(entry *BasicBlock, blockID int) *BasicBlock {
 	a := &allocator{blockID: blockID, slot: map[*TempBlock]int{}}
 
 	// Pass 1: assign slots in a deterministic traversal order.
@@ -92,11 +94,11 @@ func (a *allocator) rewrite(n Node) Node {
 		for i, arg := range t.Args {
 			args[i] = a.rewrite(arg)
 		}
-		return Instr{Op: t.Op, Args: args, Pure: t.Pure}
+		return Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure}
 	case Get:
 		return Get{Place: a.rewritePlace(t.Place)}
 	case Set:
-		return Set{Place: a.rewritePlace(t.Place), Value: a.rewrite(t.Value)}
+		return Set{ID: t.ID, Place: a.rewritePlace(t.Place), Value: a.rewrite(t.Value)}
 	case BlockPlace:
 		return a.rewritePlace(t)
 	default:
@@ -122,4 +124,16 @@ func (a *allocator) rewritePlace(p Place) Place {
 		return BlockPlace{Block: Const(a.blockID), Index: a.rewrite(bp.Index), Offset: base}
 	}
 	return BlockPlace{Block: a.rewrite(bp.Block), Index: a.rewrite(bp.Index), Offset: bp.Offset}
+}
+
+// AllocateTestBlocks is the exported test-only wrapper around allocateTempBlocks.
+// It assigns each distinct TempBlock a slot in the given memory block (no reuse,
+// deterministic first-seen order).
+//
+// Production code must use optimize.AllocateLive instead. This function is
+// exported solely for unit tests that need a pre-SSA, pre-optimize allocation,
+// because those tests call the frontend tracer directly and the result contains
+// unresolved TempBlocks.
+func AllocateTestBlocks(entry *BasicBlock, blockID int) *BasicBlock {
+	return allocateTempBlocks(entry, blockID)
 }

@@ -10,8 +10,8 @@ type DeadCodeElimination struct{}
 
 func (DeadCodeElimination) Name() string { return "DeadCodeElimination" }
 
-func (DeadCodeElimination) Run(entry *ir.BasicBlock) *ir.BasicBlock {
-	blocks := orderedBlocks(entry)
+func (DeadCodeElimination) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
+	blocks := ir.Preorder(entry)
 
 	uses := map[*ir.TempBlock]bool{}
 	defs := map[*ir.TempBlock][]ir.Set{}
@@ -107,79 +107,16 @@ func handleStatement(s ir.Node, uses map[*ir.TempBlock]bool, defs map[*ir.TempBl
 	updateUses(set, uses)
 }
 
-// updateUses adds the temp blocks read by n to uses.
+// updateUses adds the temp blocks read by n to uses. Uses ir.Walk for
+// read-only traversal of the node tree.
 func updateUses(n ir.Node, uses map[*ir.TempBlock]bool) {
-	switch t := n.(type) {
-	case nil, ir.Const, ir.SSAPlace:
-	case *ir.TempBlock:
-		uses[t] = true
-	case ir.Instr:
-		for _, a := range t.Args {
-			updateUses(a, uses)
+	ir.Walk(n, func(node ir.Node) {
+		if tb, ok := node.(*ir.TempBlock); ok {
+			uses[tb] = true
 		}
-	case ir.Get:
-		updateUses(t.Place, uses)
-	case ir.Set:
-		if bp, ok := t.Place.(ir.BlockPlace); ok {
-			if _, isTemp := bp.Block.(*ir.TempBlock); !isTemp {
-				updateUses(bp.Block, uses)
-			}
-			updateUses(bp.Index, uses)
-		}
-		updateUses(t.Value, uses)
-	case ir.BlockPlace:
-		updateUses(t.Block, uses)
-		updateUses(t.Index, uses)
-	}
+	})
 }
 
-func placeEqual(a, b ir.Place) bool {
-	pa, oka := a.(ir.BlockPlace)
-	pb, okb := b.(ir.BlockPlace)
-	if !oka || !okb {
-		return a == b
-	}
-	return nodeEqual(pa.Block, pb.Block) && nodeEqual(pa.Index, pb.Index) && pa.Offset == pb.Offset
-}
-
-func nodeEqual(a, b ir.Node) bool {
-	switch ta := a.(type) {
-	case ir.Const:
-		tb, ok := b.(ir.Const)
-		return ok && ta == tb
-	case *ir.TempBlock:
-		tb, ok := b.(*ir.TempBlock)
-		return ok && ta == tb
-	case ir.Get:
-		tb, ok := b.(ir.Get)
-		return ok && placeEqual(ta.Place, tb.Place)
-	case ir.BlockPlace:
-		tb, ok := b.(ir.BlockPlace)
-		return ok && placeEqual(ta, tb)
-	case nil:
-		return b == nil
-	default:
-		return false
-	}
-}
-
-// orderedBlocks returns reachable blocks. Order does not affect DCE (it gathers
-// uses/defs over the whole CFG).
-func orderedBlocks(entry *ir.BasicBlock) []*ir.BasicBlock {
-	out := make([]*ir.BasicBlock, 0)
-	visited := map[*ir.BasicBlock]bool{}
-	stack := []*ir.BasicBlock{entry}
-	for len(stack) > 0 {
-		b := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if visited[b] {
-			continue
-		}
-		visited[b] = true
-		out = append(out, b)
-		for _, e := range b.Outgoing {
-			stack = append(stack, e.Dst)
-		}
-	}
-	return out
-}
+func (DeadCodeElimination) Requires() []Analysis  { return nil }
+func (DeadCodeElimination) Preserves() []Analysis { return nil }
+func (DeadCodeElimination) Destroys() []Analysis  { return nil }

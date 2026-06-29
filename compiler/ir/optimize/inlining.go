@@ -3,18 +3,13 @@ package optimize
 import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 
 // BlockOracle answers questions about concrete memory blocks needed to decide
-// whether a memory read may be inlined. The full model (sonolus.py blocks.py)
-// is not yet ported; the conservative default treats every block as writable
-// and non-constant, so memory reads are never inlined (always safe).
+// whether a memory read may be inlined. A full per-mode block model is
+// implemented in ir/blocks.go; pass a mode-specific oracle to InlineVars for
+// correct inlining behaviour.
 type BlockOracle interface {
 	Writable(blockID int, callback string) bool
 	RuntimeConstant(blockID int) bool
 }
-
-type conservativeOracle struct{}
-
-func (conservativeOracle) Writable(int, string) bool { return true }
-func (conservativeOracle) RuntimeConstant(int) bool  { return false }
 
 // InlineVars inlines SSA value definitions into their uses, collapsing read-once
 // temporaries and copies. Port of sonolus.py inlining.InlineVars.
@@ -27,17 +22,75 @@ type InlineVars struct {
 func (InlineVars) Name() string { return "InlineVars" }
 
 func (v InlineVars) oracle() BlockOracle {
-	if v.Oracle != nil {
-		return v.Oracle
+	if v.Oracle == nil {
+		panic("InlineVars: Oracle is nil — pass ir.Blocks(mode) or provide a BlockOracle; conservativeOracle silently disables inlining and is not a valid production default")
 	}
-	return conservativeOracle{}
+	return v.Oracle
 }
 
-func (v InlineVars) Run(entry *ir.BasicBlock) *ir.BasicBlock {
-	dom := ComputeDominance(entry)
+func (v InlineVars) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	blocks := ir.Preorder(entry)
+	defBlocks, crossesLoop := v.computeLoopInfo(entry, blocks)
 
-	loopBodies := computeLoopBodies(blocks, dom)
+	useCounts, definitions, defOrder := v.collectDefsAndUses(blocks)
+
+	canonical := v.canonicalizeCopies(definitions, defOrder, useCounts, defBlocks, crossesLoop)
+
+	inlined := v.inlineDefs(defOrder, canonical, useCounts, defBlocks, crossesLoop)
+
+	valid := v.validateInlined(defOrder, inlined, useCounts)
+
+	for _, b := range blocks {
+		all := append(append([]ir.Node{}, b.Statements...), b.Test)
+		newStmts := make([]ir.Node, 0, len(all))
+		for _, stmt := range all {
+			if set, ok := stmt.(ir.Set); ok {
+				if _, ok := set.Place.(ir.SSAPlace); ok {
+					if q, ok := ssaGet(set.Value); ok {
+						if repl, has := inlined[q]; has && repl != nil && v.isFreeToInline(repl) {
+							newStmts = append(newStmts, ir.Set{ID: set.ID, Place: set.Place, Value: repl})
+						} else {
+							newStmts = append(newStmts, stmt)
+						}
+						continue
+					}
+				}
+			}
+			for {
+				subs := map[ir.SSAPlace]ir.Node{}
+				for p := range getInlinableUses(stmt) {
+					if valid[p] && (v.Aggressive || v.isFreeToInline(inlined[p]) || !crossesLoop(p, b)) {
+						subs[p] = inlined[p]
+					}
+				}
+				if len(subs) > 0 {
+					stmt = substitute(stmt, subs)
+				} else {
+					newStmts = append(newStmts, stmt)
+					break
+				}
+			}
+		}
+		b.Statements = newStmts[:len(newStmts)-1]
+		b.Test = newStmts[len(newStmts)-1]
+	}
+
+	return entry
+}
+
+// computeLoopInfo builds the dominance tree, detects loops, and returns a
+// map from SSA place to its defining block plus a helper that reports whether
+// a use at useBlock crosses a loop boundary relative to the definition.
+func (v InlineVars) computeLoopInfo(entry *ir.BasicBlock, blocks []*ir.BasicBlock) (
+	map[ir.SSAPlace]*ir.BasicBlock,
+	func(ir.SSAPlace, *ir.BasicBlock) bool,
+) {
+	dom := ComputeDominance(entry)
+	loops := FindLoops(blocks, dom)
+	loopBodies := make([]map[*ir.BasicBlock]bool, len(loops))
+	for i, l := range loops {
+		loopBodies[i] = l.Body
+	}
 	defBlocks := map[ir.SSAPlace]*ir.BasicBlock{}
 	for _, b := range blocks {
 		for _, phi := range b.Phis {
@@ -65,7 +118,16 @@ func (v InlineVars) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 		}
 		return false
 	}
+	return defBlocks, crossesLoop
+}
 
+// collectDefsAndUses walks all blocks and gathers use counts, definitions, and
+// a deterministic definition order.
+func (v InlineVars) collectDefsAndUses(blocks []*ir.BasicBlock) (
+	map[ir.SSAPlace]int,
+	map[ir.SSAPlace]ir.Node,
+	[]ir.SSAPlace,
+) {
 	useCounts := map[ir.SSAPlace]int{}
 	definitions := map[ir.SSAPlace]ir.Node{}
 	var defOrder []ir.SSAPlace
@@ -75,7 +137,6 @@ func (v InlineVars) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 		}
 		definitions[p] = val
 	}
-
 	for _, b := range blocks {
 		for _, stmt := range b.Statements {
 			countUses(stmt, useCounts)
@@ -99,15 +160,24 @@ func (v InlineVars) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 			}
 		}
 	}
-
 	// A copy definition (p = Get(q)) does not really "use" q for counting.
 	for _, defn := range definitions {
 		if q, ok := ssaGet(defn); ok {
 			useCounts[q]--
 		}
 	}
+	return useCounts, definitions, defOrder
+}
 
-	// Canonicalize copy chains, then fold an inlinable inner definition in.
+// canonicalizeCopies chains through copy definitions and folds inlinable inner
+// definitions into outer ones.
+func (v InlineVars) canonicalizeCopies(
+	definitions map[ir.SSAPlace]ir.Node,
+	defOrder []ir.SSAPlace,
+	useCounts map[ir.SSAPlace]int,
+	defBlocks map[ir.SSAPlace]*ir.BasicBlock,
+	crossesLoop func(ir.SSAPlace, *ir.BasicBlock) bool,
+) map[ir.SSAPlace]ir.Node {
 	canonical := map[ir.SSAPlace]ir.Node{}
 	for _, p := range defOrder {
 		defn := definitions[p]
@@ -138,8 +208,18 @@ func (v InlineVars) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 			canonical[p] = inner
 		}
 	}
+	return canonical
+}
 
-	// Fully inline each definition's inlinable uses.
+// inlineDefs fully inlines each definition's inlinable uses, iterating to a
+// fixed point.
+func (v InlineVars) inlineDefs(
+	defOrder []ir.SSAPlace,
+	canonical map[ir.SSAPlace]ir.Node,
+	useCounts map[ir.SSAPlace]int,
+	defBlocks map[ir.SSAPlace]*ir.BasicBlock,
+	crossesLoop func(ir.SSAPlace, *ir.BasicBlock) bool,
+) map[ir.SSAPlace]ir.Node {
 	inlined := map[ir.SSAPlace]ir.Node{}
 	for _, p := range defOrder {
 		defn := canonical[p]
@@ -162,50 +242,23 @@ func (v InlineVars) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 		}
 		inlined[p] = defn
 	}
+	return inlined
+}
 
+// validateInlined returns the set of SSA places whose inlined definitions are
+// eligible for substitution at use sites.
+func (v InlineVars) validateInlined(
+	defOrder []ir.SSAPlace,
+	inlined map[ir.SSAPlace]ir.Node,
+	useCounts map[ir.SSAPlace]int,
+) map[ir.SSAPlace]bool {
 	valid := map[ir.SSAPlace]bool{}
 	for _, p := range defOrder {
 		if v.isInlinable(inlined[p]) && (useCounts[p] <= 1 || v.isFreeToInline(inlined[p]) || v.Aggressive) {
 			valid[p] = true
 		}
 	}
-
-	for _, b := range blocks {
-		all := append(append([]ir.Node{}, b.Statements...), b.Test)
-		newStmts := make([]ir.Node, 0, len(all))
-		for _, stmt := range all {
-			if set, ok := stmt.(ir.Set); ok {
-				if _, ok := set.Place.(ir.SSAPlace); ok {
-					if q, ok := ssaGet(set.Value); ok {
-						if repl, has := inlined[q]; has && repl != nil && v.isFreeToInline(repl) {
-							newStmts = append(newStmts, ir.Set{Place: set.Place, Value: repl})
-						} else {
-							newStmts = append(newStmts, stmt)
-						}
-						continue
-					}
-				}
-			}
-			for {
-				subs := map[ir.SSAPlace]ir.Node{}
-				for p := range getInlinableUses(stmt) {
-					if valid[p] && (v.Aggressive || v.isFreeToInline(inlined[p]) || !crossesLoop(p, b)) {
-						subs[p] = inlined[p]
-					}
-				}
-				if len(subs) > 0 {
-					stmt = substitute(stmt, subs)
-				} else {
-					newStmts = append(newStmts, stmt)
-					break
-				}
-			}
-		}
-		b.Statements = newStmts[:len(newStmts)-1]
-		b.Test = newStmts[len(newStmts)-1]
-	}
-
-	return entry
+	return valid
 }
 
 // ssaGet returns the SSA place q if n is Get(q), i.e. a copy.
@@ -382,7 +435,7 @@ func substitute(n ir.Node, subs map[ir.SSAPlace]ir.Node) ir.Node {
 		for i, a := range t.Args {
 			args[i] = substitute(a, subs)
 		}
-		return ir.Instr{Op: t.Op, Args: args, Pure: t.Pure}
+		return ir.Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure}
 	case ir.Get:
 		if s, ok := t.Place.(ir.SSAPlace); ok {
 			if r, has := subs[s]; has {
@@ -391,7 +444,7 @@ func substitute(n ir.Node, subs map[ir.SSAPlace]ir.Node) ir.Node {
 		}
 		return ir.Get{Place: substitutePlace(t.Place, subs)}
 	case ir.Set:
-		return ir.Set{Place: substitutePlace(t.Place, subs), Value: substitute(t.Value, subs)}
+		return ir.Set{ID: t.ID, Place: substitutePlace(t.Place, subs), Value: substitute(t.Value, subs)}
 	case ir.SSAPlace:
 		if r, has := subs[t]; has {
 			return r
@@ -420,30 +473,6 @@ func substitutePlace(p ir.Place, subs map[ir.SSAPlace]ir.Node) ir.Place {
 	}
 }
 
-// --- loops ---
-
-func computeLoopBodies(blocks []*ir.BasicBlock, dom *Dominance) []map[*ir.BasicBlock]bool {
-	loopsByHeader := map[*ir.BasicBlock][]*ir.BasicBlock{}
-	for _, b := range blocks {
-		for _, e := range b.Outgoing {
-			if dominates(dom, e.Dst, e.Src) {
-				loopsByHeader[e.Dst] = append(loopsByHeader[e.Dst], e.Src)
-			}
-		}
-	}
-	var bodies []map[*ir.BasicBlock]bool
-	for header, latches := range loopsByHeader {
-		body := map[*ir.BasicBlock]bool{}
-		for _, latch := range latches {
-			for b := range computeLoopBody(header, latch) {
-				body[b] = true
-			}
-		}
-		bodies = append(bodies, body)
-	}
-	return bodies
-}
-
 func dominates(dom *Dominance, a, b *ir.BasicBlock) bool {
 	for x := b; x != nil; {
 		if x == a {
@@ -458,22 +487,6 @@ func dominates(dom *Dominance, a, b *ir.BasicBlock) bool {
 	return false
 }
 
-func computeLoopBody(header, latch *ir.BasicBlock) map[*ir.BasicBlock]bool {
-	body := map[*ir.BasicBlock]bool{header: true}
-	if latch == header {
-		return body
-	}
-	body[latch] = true
-	worklist := []*ir.BasicBlock{latch}
-	for len(worklist) > 0 {
-		b := worklist[len(worklist)-1]
-		worklist = worklist[:len(worklist)-1]
-		for _, e := range b.Incoming {
-			if !body[e.Src] {
-				body[e.Src] = true
-				worklist = append(worklist, e.Src)
-			}
-		}
-	}
-	return body
-}
+func (v InlineVars) Requires() []Analysis  { return []Analysis{AnalysisSSA} }
+func (v InlineVars) Preserves() []Analysis { return nil }
+func (v InlineVars) Destroys() []Analysis  { return nil }
