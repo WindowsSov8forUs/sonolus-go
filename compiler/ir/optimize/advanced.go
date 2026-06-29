@@ -1,6 +1,10 @@
 package optimize
 
-import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+import (
+	"sort"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+)
 
 // LivenessResult holds per-block live-in/live-out and per-statement live-after
 // sets. Statement keys are ir.Instr.ID values (monotonic, comparable).
@@ -9,17 +13,7 @@ type LivenessResult struct {
 	LiveOut map[*ir.BasicBlock]map[*ir.TempBlock]bool
 	Live    map[int]map[*ir.TempBlock]bool // live-after for each statement (by Instr.ID)
 	Defs    map[int]map[*ir.TempBlock]bool // temps defined by each statement
-}
-
-// LivenessAnalysis computes live-in, live-out, and per-statement live-after
-// sets via backward dataflow. Only size-1 TempBlocks are tracked.
-type LivenessAnalysis struct{}
-
-func (LivenessAnalysis) Name() string { return "LivenessAnalysis" }
-
-func (LivenessAnalysis) Run(entry *ir.BasicBlock) *ir.BasicBlock {
-	_ = analyzeLiveness(entry)
-	return entry
+	Uses    map[int]map[*ir.TempBlock]bool // temps used by each statement (precomputed)
 }
 
 func analyzeLiveness(entry *ir.BasicBlock) *LivenessResult {
@@ -29,15 +23,23 @@ func analyzeLiveness(entry *ir.BasicBlock) *LivenessResult {
 		LiveOut: map[*ir.BasicBlock]map[*ir.TempBlock]bool{},
 		Live:    map[int]map[*ir.TempBlock]bool{},
 		Defs:    map[int]map[*ir.TempBlock]bool{},
+		Uses:    map[int]map[*ir.TempBlock]bool{},
 	}
 
+	// Track which statements are the first write to a multi-slot temp (array init).
+	arrayInit := map[int]map[*ir.TempBlock]bool{}
 	for _, b := range blocks {
 		for _, s := range b.Statements {
 			id := stmtID(s)
 			res.Defs[id] = defsOfNode(s)
+			res.Uses[id] = usesOfNode(s)
 			res.Live[id] = map[*ir.TempBlock]bool{}
 		}
 	}
+
+	// Preprocess arrays: forward dataflow to find first-def sites per temp.
+	// Port of sonolus.py liveness.preprocess_arrays.
+	preprocessArrays(entry, blocks, arrayInit)
 
 	exits := findExits(entry)
 	if len(exits) == 0 {
@@ -56,6 +58,8 @@ func analyzeLiveness(entry *ir.BasicBlock) *LivenessResult {
 					}
 				}
 			}
+			// Remove multi-slot temps that have been defined in successors
+			// (array_defs_out tracking — Python live filtering at process_block:74-78).
 			res.LiveOut[b] = lo
 
 			cur := copyTempSet(lo)
@@ -69,7 +73,12 @@ func analyzeLiveness(entry *ir.BasicBlock) *LivenessResult {
 				for d := range res.Defs[id] {
 					delete(cur, d)
 				}
-				for u := range usesOfNode(s) {
+				// When initializing a multi-slot temp, kill it from the live set
+				// so that initialization writes don't extend the live range upward.
+				for t := range arrayInit[id] {
+					delete(cur, t)
+				}
+				for u := range res.Uses[id] {
 					cur[u] = true
 				}
 			}
@@ -84,10 +93,105 @@ func analyzeLiveness(entry *ir.BasicBlock) *LivenessResult {
 	return res
 }
 
-// stmtID returns the Instr.ID of a statement, or 0 for non-Instr nodes.
+// preprocessArrays performs a forward dataflow pass to mark which Set
+// statements are the first write to a multi-slot TempBlock. This enables
+// per-element liveness for arrays: only reads after the first elemental
+// write keep the array alive.
+func preprocessArrays(entry *ir.BasicBlock, blocks []*ir.BasicBlock, arrayInit map[int]map[*ir.TempBlock]bool) {
+	type blockArrays struct {
+		in, out map[*ir.TempBlock]bool
+	}
+	state := map[*ir.BasicBlock]*blockArrays{}
+	for _, b := range blocks {
+		state[b] = &blockArrays{
+			in:  map[*ir.TempBlock]bool{},
+			out: map[*ir.TempBlock]bool{},
+		}
+	}
+
+	visited := map[*ir.BasicBlock]bool{}
+	queue := []*ir.BasicBlock{entry}
+	for len(queue) > 0 {
+		b := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		isFirst := !visited[b]
+		visited[b] = true
+
+		// Merge all incoming array-def sets.
+		arrDefs := map[*ir.TempBlock]bool{}
+		for _, e := range b.Incoming {
+			if in, ok := state[e.Src]; ok {
+				for t := range in.out {
+					arrDefs[t] = true
+				}
+			}
+		}
+		// Also start from block's own input.
+		for t := range state[b].in {
+			arrDefs[t] = true
+		}
+
+		for _, s := range b.Statements {
+			set, ok := s.(ir.Set)
+			if !ok {
+				continue
+			}
+			tb := multiSlotTemp(set.Place)
+			if tb == nil {
+				continue
+			}
+			id := stmtID(s)
+			if !arrDefs[tb] {
+				// First write to this multi-slot temp along this path.
+				if arrayInit[id] == nil {
+					arrayInit[id] = map[*ir.TempBlock]bool{}
+				}
+				arrayInit[id][tb] = true
+				arrDefs[tb] = true
+			}
+
+		}
+
+		old := state[b].out
+		if isFirst || !tempSetEq(old, arrDefs) {
+			state[b].out = arrDefs
+			for _, e := range b.Outgoing {
+				// Propagate to successors.
+				if dst, ok := state[e.Dst]; ok {
+					for t := range arrDefs {
+						dst.in[t] = true
+					}
+				}
+				queue = append(queue, e.Dst)
+			}
+		}
+	}
+}
+
+// multiSlotTemp returns the TempBlock if p is a BlockPlace with a multi-slot
+// temp block (size > 1). Returns nil for single-slot or non-temp places.
+func multiSlotTemp(p ir.Place) *ir.TempBlock {
+	bp, ok := p.(ir.BlockPlace)
+	if !ok {
+		return nil
+	}
+	tb, ok := bp.Block.(*ir.TempBlock)
+	if !ok || tb.Size <= 1 {
+		return nil
+	}
+	return tb
+}
+
+// stmtID returns the monotonic ID of a statement for liveness tracking.
+// Nodes without an ID (e.g. Const, Get, BlockPlace) return 0 and share
+// liveness slot 0. This is safe because such nodes are never defs that
+// liveness needs to distinguish — only Instr and Set carry DSets.
 func stmtID(s ir.Node) int {
 	if instr, ok := s.(ir.Instr); ok {
 		return instr.ID
+	}
+	if set, ok := s.(ir.Set); ok {
+		return set.ID
 	}
 	return 0
 }
@@ -98,7 +202,7 @@ type AdvancedDCE struct{}
 
 func (AdvancedDCE) Name() string { return "AdvancedDCE" }
 
-func (AdvancedDCE) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (AdvancedDCE) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	res := analyzeLiveness(entry)
 	for _, b := range ir.Preorder(entry) {
 		filtered := make([]ir.Node, 0, len(b.Statements))
@@ -127,13 +231,13 @@ func (AdvancedDCE) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 
 // AllocateLive assigns TempBlocks to minimal concrete slots using live-interval
 // packing. Non-overlapping live ranges reuse the same slot.
+// It is called directly (not via RunPasses) as the final allocation step.
 type AllocateLive struct {
 	BlockID int
 }
 
-func (a AllocateLive) Name() string { return "AllocateLive" }
-
-func (a AllocateLive) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+// Run performs the live-interval allocation and returns entry unchanged.
+func (a AllocateLive) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	res := analyzeLiveness(entry)
 	blocks := ir.Preorder(entry)
 	blk := a.BlockID
@@ -174,12 +278,14 @@ func (a AllocateLive) Run(entry *ir.BasicBlock) *ir.BasicBlock {
 	for t, r := range ranges {
 		slots = append(slots, slot{t, r.last})
 	}
-	// Sort by first block index.
-	for i := 1; i < len(slots); i++ {
-		for j := i; j > 0 && ranges[slots[j].tb].first < ranges[slots[j-1].tb].first; j-- {
-			slots[j], slots[j-1] = slots[j-1], slots[j]
+	// Sort by size descending, then first-use ascending (sonolus.py strategy).
+	sort.Slice(slots, func(i, j int) bool {
+		ai, aj := slots[i].tb.Size, slots[j].tb.Size
+		if ai != aj {
+			return ai > aj
 		}
-	}
+		return ranges[slots[i].tb].first < ranges[slots[j].tb].first
+	})
 
 	slotEnd := []int{}
 	slotMap := map[*ir.TempBlock]int{}
@@ -235,7 +341,7 @@ func rewriteTemp(n ir.Node, blk int, slots map[*ir.TempBlock]int) ir.Node {
 	case ir.Get:
 		return ir.Get{Place: rewriteTempPlace(t.Place, blk, slots)}
 	case ir.Set:
-		return ir.Set{Place: rewriteTempPlace(t.Place, blk, slots), Value: rewriteTemp(t.Value, blk, slots)}
+		return ir.Set{ID: t.ID, Place: rewriteTempPlace(t.Place, blk, slots), Value: rewriteTemp(t.Value, blk, slots)}
 	case ir.BlockPlace:
 		return rewriteTempPlace(t, blk, slots)
 	default:
