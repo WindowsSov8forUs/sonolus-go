@@ -2,55 +2,50 @@ package optimize
 
 import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 
-type LICM struct{}
-
-type licmLoop struct {
-	header  *ir.BasicBlock
-	latches []*ir.BasicBlock
-	body    map[*ir.BasicBlock]bool
+// LICM hoists loop-invariant expressions out of loop bodies into pre-headers.
+// Loop detection uses dominance-tree back-edges (FindLoops in optimize.go):
+// an edge B→H is a back-edge when H dominates B. The loop body is the set of
+// blocks reachable backward from the latch, stopped at the header.
+//
+// IMPORTANT: LICM copies loop-invariant expressions into pre-header blocks
+// but does NOT rewrite uses inside the loop body. A subsequent CSE pass
+// (CommonSubexpressionElimination) deduplicates the hoisted copy against the
+// original, effectively rewiring loop-body reads to the pre-header value.
+// This coupling matches the original sonolus.py design (sonolus/backend/
+// optimize/licm.py:31-33). The Standard pipeline runs LICM immediately
+// before CSE to satisfy this invariant.
+//
+// Port of sonolus.py licm.LoopInvariantCodeMotion.
+type LICM struct {
+	Oracle BlockOracle
 }
 
 func (LICM) Name() string { return "LICM" }
 
-func (LICM) Run(entry *ir.BasicBlock) *ir.BasicBlock {
+func (l LICM) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
+	if l.Oracle == nil {
+		panic("LICM: Oracle is nil — pass ir.Blocks(mode) or provide a BlockOracle")
+	}
 	dom := ComputeDominance(entry)
 	blocks := ir.ReversePostorder(entry)
 
-	hl := map[*ir.BasicBlock][]*ir.BasicBlock{}
-	for _, b := range blocks {
-		for _, e := range b.Outgoing {
-			if dominates(dom, e.Dst, e.Src) {
-				hl[e.Dst] = append(hl[e.Dst], e.Src)
-			}
-		}
-	}
-
-	var loops []licmLoop
-	for header, latches := range hl {
-		body := map[*ir.BasicBlock]bool{}
-		for _, latch := range latches {
-			for b := range licmComputeLoopBody(header, latch) {
-				body[b] = true
-			}
-		}
-		loops = append(loops, licmLoop{header, latches, body})
-	}
+	loops := FindLoops(blocks, dom)
 
 	nextID := 0
 	for _, lp := range loops {
-		if lp.header == entry {
+		if lp.Header == entry {
 			continue
 		}
-		licmProcessLoop(lp, dom, &nextID)
+		licmProcessLoop(lp, dom, &nextID, l.Oracle)
 	}
 	return entry
 }
 
-func licmProcessLoop(lp licmLoop, dom *Dominance, nextID *int) {
+func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle BlockOracle) {
 	var preheader *ir.BasicBlock
 	var nonBack []*ir.FlowEdge
-	for _, e := range lp.header.Incoming {
-		if !lp.body[e.Src] {
+	for _, e := range lp.Header.Incoming {
+		if !lp.Body[e.Src] {
 			nonBack = append(nonBack, e)
 		}
 	}
@@ -61,20 +56,20 @@ func licmProcessLoop(lp licmLoop, dom *Dominance, nextID *int) {
 		preheader = nonBack[0].Src
 	} else {
 		preheader = ir.NewBlock()
-		preheader.ConnectTo(lp.header, nil)
+		preheader.ConnectTo(lp.Header, nil)
 		for _, e := range nonBack {
 			e.Dst = preheader
 			preheader.Incoming = append(preheader.Incoming, e)
-			lp.header.Incoming = licmRemoveEdge(lp.header.Incoming, e)
+			lp.Header.Incoming = removeEdge(lp.Header.Incoming, e)
 		}
-		lp.header.Incoming = append(lp.header.Incoming, &ir.FlowEdge{Src: preheader, Dst: lp.header, Cond: nil})
+		lp.Header.Incoming = append(lp.Header.Incoming, &ir.FlowEdge{Src: preheader, Dst: lp.Header, Cond: nil})
 	}
 
-	defs := licmDefsInLoop(lp.body)
+	defs := licmDefsInLoop(lp.Body)
 	var guaranteed []*ir.BasicBlock
-	for b := range lp.body {
+	for b := range lp.Body {
 		ok := true
-		for _, latch := range lp.latches {
+		for _, latch := range lp.Latches {
 			if !dominates(dom, b, latch) {
 				ok = false
 				break
@@ -85,12 +80,12 @@ func licmProcessLoop(lp licmLoop, dom *Dominance, nextID *int) {
 		}
 	}
 
-	hoisted := map[string]bool{}
+	hoisted := map[cseKeyType]bool{}
 	for _, b := range guaranteed {
 		for _, s := range b.Statements {
-			licmHoistExpr(s, preheader, defs, nextID, hoisted)
+			licmHoistExpr(s, preheader, defs, nextID, hoisted, oracle)
 		}
-		licmHoistExpr(b.Test, preheader, defs, nextID, hoisted)
+		licmHoistExpr(b.Test, preheader, defs, nextID, hoisted, oracle)
 	}
 }
 
@@ -113,7 +108,7 @@ func licmDefsInLoop(body map[*ir.BasicBlock]bool) map[ir.SSAPlace]bool {
 	return defs
 }
 
-func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID *int, hoisted map[string]bool) {
+func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID *int, hoisted map[cseKeyType]bool, oracle BlockOracle) {
 	instr, ok := n.(ir.Instr)
 	if !ok || !ir.Pure(instr.Op) || ir.SideEffects(instr.Op) {
 		return
@@ -122,10 +117,10 @@ func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]boo
 	if hoisted[k] {
 		return
 	}
-	if !licmIsInvariant(instr, defs) {
+	if !licmIsInvariant(instr, defs, oracle) {
 		return
 	}
-	if licmCost(instr) < 4 {
+	if exprCost(instr) < inlineCostThreshold {
 		return
 	}
 	hoisted[k] = true
@@ -134,16 +129,16 @@ func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]boo
 	preheader.Statements = append(preheader.Statements, ir.Set{Place: p, Value: instr})
 }
 
-func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool) bool {
+func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle BlockOracle) bool {
 	for _, a := range instr.Args {
-		if !licmArgInvariant(a, defs) {
+		if !licmArgInvariant(a, defs, oracle) {
 			return false
 		}
 	}
 	return true
 }
 
-func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool) bool {
+func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle BlockOracle) bool {
 	switch t := n.(type) {
 	case ir.Const:
 		return true
@@ -151,7 +146,7 @@ func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool) bool {
 		return !defs[t]
 	case ir.Instr:
 		for _, a := range t.Args {
-			if !licmArgInvariant(a, defs) {
+			if !licmArgInvariant(a, defs, oracle) {
 				return false
 			}
 		}
@@ -160,49 +155,19 @@ func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool) bool {
 		if p, ok := t.Place.(ir.SSAPlace); ok {
 			return !defs[p]
 		}
+		// A concrete-block load is invariant if the block oracle says the block
+		// is not writable (or is runtime-constant). Both conditions hold for
+		// ROM, shared memory, and other read-only blocks.
+		if bp, ok := t.Place.(ir.BlockPlace); ok && oracle != nil {
+			if c, ok := bp.Block.(ir.Const); ok {
+				blockID := int(float64(c))
+				if !oracle.Writable(blockID, "") || oracle.RuntimeConstant(blockID) {
+					return licmArgInvariant(bp.Index, defs, oracle)
+				}
+			}
+		}
 		return false
 	default:
 		return false
 	}
-}
-
-func licmCost(n ir.Node) int {
-	if instr, ok := n.(ir.Instr); ok {
-		s := 1
-		for _, a := range instr.Args {
-			s += licmCost(a)
-		}
-		return s
-	}
-	return 1
-}
-
-func licmComputeLoopBody(header, latch *ir.BasicBlock) map[*ir.BasicBlock]bool {
-	body := map[*ir.BasicBlock]bool{header: true}
-	if latch == header {
-		return body
-	}
-	body[latch] = true
-	work := []*ir.BasicBlock{latch}
-	for len(work) > 0 {
-		b := work[0]
-		work = work[1:]
-		for _, e := range b.Incoming {
-			if !body[e.Src] {
-				body[e.Src] = true
-				work = append(work, e.Src)
-			}
-		}
-	}
-	return body
-}
-
-func licmRemoveEdge(edges []*ir.FlowEdge, target *ir.FlowEdge) []*ir.FlowEdge {
-	out := make([]*ir.FlowEdge, 0, len(edges))
-	for _, e := range edges {
-		if e != target {
-			out = append(out, e)
-		}
-	}
-	return out
 }
