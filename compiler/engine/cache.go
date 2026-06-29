@@ -51,8 +51,10 @@ func NewCache() *CompileCache {
 }
 
 func (c *CompileCache) GetPlay(key CacheKey) (*resource.EnginePlayData, *resource.EngineConfiguration) {
-	d, dok := getKeyed(c, c.play, key)
-	cfg, cok := getKeyed(c, c.config, key)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	d, dok := c.play[key]
+	cfg, cok := c.config[key]
 	if !dok {
 		return nil, nil
 	}
@@ -63,10 +65,17 @@ func (c *CompileCache) GetPlay(key CacheKey) (*resource.EnginePlayData, *resourc
 }
 
 func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg *resource.EngineConfiguration) {
-	putKeyed(c, c.play, key, data)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Eviction check on c.play
+	if c.MaxEntries > 0 && len(c.play) >= c.MaxEntries {
+		for k := range c.play {
+			delete(c.play, k)
+			break
+		}
+	}
+	c.play[key] = data
 	if cfg != nil {
-		c.mu.Lock()
-		defer c.mu.Unlock()
 		c.config[key] = cfg
 	}
 }

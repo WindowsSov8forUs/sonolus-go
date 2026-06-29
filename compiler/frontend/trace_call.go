@@ -38,7 +38,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		res, ok := applyBinary(t.gen, n.Op, x, y)
 		if !ok {
-			return Num{}, t.errf(n, "unsupported binary operator %s", n.Op)
+			return Num{}, t.errf(n, "binary operator %s requires scalar operands", n.Op)
 		}
 		return res, nil
 	case *ast.IndexExpr:
@@ -64,7 +64,10 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 				return Num{}, err
 			}
 			if v.IsComposite() {
-				return v.Field(n.Sel.Name), nil
+				if f, ok := v.TryField(n.Sel.Name); ok {
+					return f, nil
+				}
+				return Num{}, t.errf(n, "record has no field %q", n.Sel.Name)
 			}
 		}
 		return t.fieldValue(n)
@@ -421,7 +424,11 @@ func (t *tracer) callWithArgs(fn *ast.Ident, n *ast.CallExpr, args []Num) (Num, 
 			}
 			nodes := make([]ir.Node, len(args))
 			for i, a := range args {
-				nodes[i] = a.mustNode()
+				nd, err := a.node()
+				if err != nil {
+					return Num{}, t.errf(n, "argument %d: %v", i, err)
+				}
+				nodes[i] = nd
 			}
 			if rf.returns {
 				return exprNum(t.gen.PureInstr(rf.op, nodes...)), nil

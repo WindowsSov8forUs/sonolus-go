@@ -182,6 +182,9 @@ func applyBinary(gen *ir.IDGen, op token.Token, a, b Num) (Num, bool) {
 			return folded, true
 		}
 	}
+	if !a.IsScalar() || !b.IsScalar() {
+		return Num{}, false // caller will report error
+	}
 	return exprNum(gen.PureInstr(rtOp, a.mustNode(), b.mustNode())), true
 }
 
@@ -225,6 +228,9 @@ func foldBinary(op token.Token, a, b float64) (Num, bool) {
 }
 
 func applyUnary(gen *ir.IDGen, op token.Token, a Num) (Num, bool) {
+	if !a.IsScalar() {
+		return Num{}, false
+	}
 	switch op {
 	case token.ADD:
 		return a, true
