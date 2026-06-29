@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -19,7 +20,8 @@ import (
 // returning the CompiledEngine bundle with the shared configuration.
 // Go has no GIL, so this scales to all available cores — a structural advantage
 // over the Python reference which requires no-GIL builds for parallelism.
-func compileAllModes(src string) (pack.CompiledEngine, error) {
+// If stats is true, per-mode compilation times are printed to stdout.
+func compileAllModes(src string, stats bool) (pack.CompiledEngine, error) {
 	var c pack.CompiledEngine
 
 	var (
@@ -32,6 +34,10 @@ func compileAllModes(src string) (pack.CompiledEngine, error) {
 		watchErr     error
 		previewErr   error
 		tutorialErr  error
+		playDur      time.Duration
+		watchDur     time.Duration
+		previewDur   time.Duration
+		tutorialDur  time.Duration
 	)
 
 	var wg sync.WaitGroup
@@ -39,22 +45,39 @@ func compileAllModes(src string) (pack.CompiledEngine, error) {
 
 	go func() {
 		defer wg.Done()
+		t0 := time.Now()
 		playData, playCfg, playErr = engine.CompilePlayFile(src)
+		playDur = time.Since(t0)
 	}()
 	go func() {
 		defer wg.Done()
+		t0 := time.Now()
 		watchData, watchErr = engine.CompileWatchFile(src)
+		watchDur = time.Since(t0)
 	}()
 	go func() {
 		defer wg.Done()
+		t0 := time.Now()
 		previewData, previewErr = engine.CompilePreviewFile(src)
+		previewDur = time.Since(t0)
 	}()
 	go func() {
 		defer wg.Done()
+		t0 := time.Now()
 		tutorialData, tutorialErr = engine.CompileTutorialFile(src)
+		tutorialDur = time.Since(t0)
 	}()
 
 	wg.Wait()
+
+	if stats {
+		fmt.Printf("Compilation times (4-mode parallel):\n")
+		fmt.Printf("  play:     %s\n", playDur.Round(time.Millisecond))
+		fmt.Printf("  watch:    %s\n", watchDur.Round(time.Millisecond))
+		fmt.Printf("  preview:  %s\n", previewDur.Round(time.Millisecond))
+		fmt.Printf("  tutorial: %s\n", tutorialDur.Round(time.Millisecond))
+		fmt.Printf("  total:    %s\n", (playDur + watchDur + previewDur + tutorialDur).Round(time.Millisecond))
+	}
 
 	if playErr != nil {
 		return c, fmt.Errorf("play: %w", playErr)
@@ -88,7 +111,7 @@ func runPack(srcPath string, author string) error {
 
 	// 1. Compile all 4 modes.
 	fmt.Printf("compiling %s...\n", engineName)
-	c, err := compileAllModes(string(src))
+	c, err := compileAllModes(string(src), false) // stats only for build command
 	if err != nil {
 		return err
 	}

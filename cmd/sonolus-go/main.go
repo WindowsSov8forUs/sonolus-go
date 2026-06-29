@@ -35,6 +35,7 @@ func main() {
 		flag.PrintDefaults()
 	}
 	versionFlag := flag.Bool("version", false, "print version and exit")
+	statsFlag := flag.Bool("stats", false, "print per-mode compilation timing")
 	outDir := flag.String("o", "dist", "output directory")
 	modeFlag := flag.String("m", "play", "engine mode: play, watch, preview, tutorial, all")
 	romFlag := flag.String("rom", "", "path to raw float32 ROM file (optional)")
@@ -162,7 +163,7 @@ func main() {
 
 	// Compile and package each requested mode.
 	if mode == ModeAll {
-		c, err := compileAllModes(string(src))
+		c, err := compileAllModes(string(src), *statsFlag)
 		if err != nil {
 			fatalf("compiling: %v", err)
 		}
