@@ -17,15 +17,12 @@ import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 //
 // Port of sonolus.py licm.LoopInvariantCodeMotion.
 type LICM struct {
-	Oracle BlockOracle
+	Oracle ir.BlockSet
 }
 
 func (LICM) Name() string { return "LICM" }
 
 func (l LICM) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
-	if l.Oracle == nil {
-		panic("LICM: Oracle is nil — pass ir.Blocks(mode) or provide a BlockOracle")
-	}
 	dom := ComputeDominance(entry)
 	blocks := ir.ReversePostorder(entry)
 
@@ -41,7 +38,7 @@ func (l LICM) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	return entry
 }
 
-func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle BlockOracle) {
+func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle ir.BlockSet) {
 	var preheader *ir.BasicBlock
 	var nonBack []*ir.FlowEdge
 	for _, e := range lp.Header.Incoming {
@@ -108,7 +105,7 @@ func licmDefsInLoop(body map[*ir.BasicBlock]bool) map[ir.SSAPlace]bool {
 	return defs
 }
 
-func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID *int, hoisted map[cseKeyType]bool, oracle BlockOracle) {
+func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID *int, hoisted map[cseKeyType]bool, oracle ir.BlockSet) {
 	instr, ok := n.(ir.Instr)
 	if !ok || !ir.Pure(instr.Op) || ir.SideEffects(instr.Op) {
 		return
@@ -129,7 +126,7 @@ func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]boo
 	preheader.Statements = append(preheader.Statements, ir.Set{Place: p, Value: instr})
 }
 
-func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle BlockOracle) bool {
+func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle ir.BlockSet) bool {
 	for _, a := range instr.Args {
 		if !licmArgInvariant(a, defs, oracle) {
 			return false
@@ -138,7 +135,7 @@ func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle BlockOrac
 	return true
 }
 
-func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle BlockOracle) bool {
+func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle ir.BlockSet) bool {
 	switch t := n.(type) {
 	case ir.Const:
 		return true
@@ -158,7 +155,7 @@ func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle BlockOracle) 
 		// A concrete-block load is invariant if the block oracle says the block
 		// is not writable (or is runtime-constant). Both conditions hold for
 		// ROM, shared memory, and other read-only blocks.
-		if bp, ok := t.Place.(ir.BlockPlace); ok && oracle != nil {
+		if bp, ok := t.Place.(ir.BlockPlace); ok {
 			if c, ok := bp.Block.(ir.Const); ok {
 				blockID := int(float64(c))
 				if !oracle.Writable(blockID, "") || oracle.RuntimeConstant(blockID) {

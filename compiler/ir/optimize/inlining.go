@@ -2,31 +2,15 @@ package optimize
 
 import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 
-// BlockOracle answers questions about concrete memory blocks needed to decide
-// whether a memory read may be inlined. A full per-mode block model is
-// implemented in ir/blocks.go; pass a mode-specific oracle to InlineVars for
-// correct inlining behaviour.
-type BlockOracle interface {
-	Writable(blockID int, callback string) bool
-	RuntimeConstant(blockID int) bool
-}
-
 // InlineVars inlines SSA value definitions into their uses, collapsing read-once
 // temporaries and copies. Port of sonolus.py inlining.InlineVars.
 type InlineVars struct {
 	Aggressive bool
 	Callback   string
-	Oracle     BlockOracle
+	Oracle     ir.BlockSet
 }
 
 func (InlineVars) Name() string { return "InlineVars" }
-
-func (v InlineVars) oracle() BlockOracle {
-	if v.Oracle == nil {
-		panic("InlineVars: Oracle is nil — pass ir.Blocks(mode) or provide a BlockOracle; conservativeOracle silently disables inlining and is not a valid production default")
-	}
-	return v.Oracle
-}
 
 func (v InlineVars) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	blocks := ir.Preorder(entry)
@@ -309,7 +293,7 @@ func (v InlineVars) isInlinable(n ir.Node) bool {
 		if !ok {
 			return false
 		}
-		return !v.oracle().Writable(id, v.Callback) && v.isInlinableIndex(bp.Index)
+		return !v.Oracle.Writable(id, v.Callback) && v.isInlinableIndex(bp.Index)
 	default:
 		return false
 	}
@@ -367,7 +351,7 @@ func (v InlineVars) isRuntimeConstant(n ir.Node) bool {
 			return false
 		}
 		_, idxConst := bp.Index.(ir.Const)
-		return !v.oracle().Writable(id, v.Callback) && v.oracle().RuntimeConstant(id) && idxConst
+		return !v.Oracle.Writable(id, v.Callback) && v.Oracle.RuntimeConstant(id) && idxConst
 	default:
 		return false
 	}
