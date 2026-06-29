@@ -12,6 +12,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/play"
 )
 
@@ -104,7 +105,10 @@ func CompilePlayFile(src string) (*resource.EnginePlayData, *resource.EngineConf
 		}
 	}
 
-	r := buildResources(resourceASTs)
+	r, err := buildResources(resourceASTs)
+	if err != nil {
+		return nil, nil, err
+	}
 	return compileParsed(fset, archetypes, order, funcs, r)
 }
 
@@ -173,6 +177,7 @@ func compileParsed(
 	funcs map[string]*ast.FuncDecl,
 	r parsedResources,
 ) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
+	gen := ir.NewIDGen()
 	defs := make([]play.ArchetypeDef, len(order))
 	bindings := make([]map[string]frontend.Binding, len(order))
 	for i, name := range order {
@@ -217,7 +222,7 @@ func compileParsed(
 
 	data := play.BuildPlayData(r.skin, r.effect, r.particle, r.buckets, defs)
 
-	var results []*play.CompileResult
+	var results []*modecompile.Result
 	for i, name := range order {
 		a := archetypes[name]
 		names := frontend.ModeAccessors(ir.ModePlay)
@@ -230,12 +235,15 @@ func compileParsed(
 				Accessors: frontend.ModeAccessors(ir.ModePlay),
 				Mode:      ir.ModePlay,
 			}
-			entry, err := frontend.CompileBlock(fset, m.body, env)
+			entry, err := frontend.CompileBlock(fset, gen, m.body, env)
 			if err != nil {
 				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
 			}
-			entry = optimize.Optimize(entry, ir.ModePlay, string(m.callback), ir.DefaultTempMemoryBlock)
-			results = append(results, play.CompileCallback(i, m.callback, ir.CFGToSNode(entry), 0))
+			entry, err = optimize.Optimize(gen, entry, ir.ModePlay, string(m.callback), ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+			if err != nil {
+				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
+			}
+			results = append(results, play.CompileCallback(i, m.callback, ir.CFGToSNode(gen, entry)))
 		}
 	}
 

@@ -171,7 +171,11 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := buildResources(resources)
+	gen := ir.NewIDGen()
+	r, err := buildResources(resources)
+	if err != nil {
+		return nil, err
+	}
 	accessors := frontend.ModeAccessors(ir.ModeWatch)
 	nodes := []resource.EngineDataNode{}
 	app := snode.NewAppender(&nodes)
@@ -191,12 +195,15 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 				continue
 			}
 			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
-			entry, err := frontend.CompileBlock(fset, m.body, env)
+			entry, err := frontend.CompileBlock(fset, gen, m.body, env)
 			if err != nil {
 				return nil, fmt.Errorf("archetype %q: %w", name, err)
 			}
-			entry = optimize.Optimize(entry, ir.ModeWatch, m.methodName, ir.DefaultTempMemoryBlock)
-			idx, _ := app.Append(ir.CFGToSNode(entry))
+			entry, err = optimize.Optimize(gen, entry, ir.ModeWatch, m.methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+			if err != nil {
+				return nil, fmt.Errorf("archetype %q callback %s: %w", name, m.methodName, err)
+			}
+			idx, _ := app.Append(ir.CFGToSNode(gen, entry))
 			c := resource.EngineWatchDataArchetypeCallback{Index: idx}
 			switch cb {
 			case "preprocess":
@@ -218,9 +225,27 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 		outArcs = append(outArcs, arc)
 	}
 
+	// Global callbacks (UpdateSpawn).
+	var updateSpawn int
+	for _, d := range funcs {
+		if d.Name.Name == "UpdateSpawn" && d.Body != nil {
+			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
+			entry, err := frontend.CompileBlock(fset, gen, d.Body, env)
+			if err != nil {
+				return nil, fmt.Errorf("UpdateSpawn: %w", err)
+			}
+			entry, err = optimize.Optimize(gen, entry, ir.ModeWatch, "UpdateSpawn", ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+			if err != nil {
+				return nil, fmt.Errorf("UpdateSpawn: %w", err)
+			}
+			updateSpawn, _ = app.Append(ir.CFGToSNode(gen, entry))
+			break
+		}
+	}
+
 	return &resource.EngineWatchData{
 		Skin: r.skin, Effect: r.effect, Particle: r.particle, Buckets: r.buckets,
-		Archetypes: outArcs, Nodes: nodes,
+		Archetypes: outArcs, Nodes: nodes, UpdateSpawn: updateSpawn,
 	}, nil
 }
 
@@ -229,7 +254,11 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := buildResources(resources)
+	gen := ir.NewIDGen()
+	r, err := buildResources(resources)
+	if err != nil {
+		return nil, err
+	}
 	accessors := frontend.ModeAccessors(ir.ModePreview)
 	nodes := []resource.EngineDataNode{}
 	app := snode.NewAppender(&nodes)
@@ -249,12 +278,15 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 				continue
 			}
 			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModePreview}
-			entry, err := frontend.CompileBlock(fset, m.body, env)
+			entry, err := frontend.CompileBlock(fset, gen, m.body, env)
 			if err != nil {
 				return nil, fmt.Errorf("archetype %q: %w", name, err)
 			}
-			entry = optimize.Optimize(entry, ir.ModePreview, m.methodName, ir.DefaultTempMemoryBlock)
-			idx, _ := app.Append(ir.CFGToSNode(entry))
+			entry, err = optimize.Optimize(gen, entry, ir.ModePreview, m.methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+			if err != nil {
+				return nil, fmt.Errorf("archetype %q callback %s: %w", name, m.methodName, err)
+			}
+			idx, _ := app.Append(ir.CFGToSNode(gen, entry))
 			c := resource.EnginePreviewDataArchetypeCallback{Index: idx}
 			switch cb {
 			case "preprocess":
@@ -274,7 +306,11 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := buildResources(resources)
+	gen := ir.NewIDGen()
+	r, err := buildResources(resources)
+	if err != nil {
+		return nil, err
+	}
 	accessors := frontend.ModeAccessors(ir.ModeTutorial)
 	nodes := []resource.EngineDataNode{}
 	app := snode.NewAppender(&nodes)
@@ -296,12 +332,15 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 			continue
 		}
 		env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeTutorial}
-		entry, err := frontend.CompileBlock(fset, d.Body, env)
+		entry, err := frontend.CompileBlock(fset, gen, d.Body, env)
 		if err != nil {
 			return nil, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
 		}
-		entry = optimize.Optimize(entry, ir.ModeTutorial, d.Name.Name, ir.DefaultTempMemoryBlock)
-		idx, _ := app.Append(ir.CFGToSNode(entry))
+		entry, err = optimize.Optimize(gen, entry, ir.ModeTutorial, d.Name.Name, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+		if err != nil {
+			return nil, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
+		}
+		idx, _ := app.Append(ir.CFGToSNode(gen, entry))
 		switch cb {
 		case "Preprocess":
 			pp = idx
@@ -313,7 +352,7 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 	}
 
 	return &resource.EngineTutorialData{
-		Skin: r.skin, Effect: r.effect, Particle: r.particle,
+		Skin: r.skin, Effect: r.effect, Particle: r.particle, Instruction: r.instruction,
 		Preprocess: pp, Navigate: nav, Update: upd, Nodes: nodes,
 	}, nil
 }
