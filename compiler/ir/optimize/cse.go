@@ -2,8 +2,8 @@ package optimize
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"hash"
+	"hash/fnv"
 	"math"
 	"sort"
 	"strconv"
@@ -37,7 +37,7 @@ var cseCommutative = map[ir.Op]bool{
 }
 
 // cseKeyType is the map key type for the CSE expression table.
-type cseKeyType = [sha256.Size]byte
+type cseKeyType = [16]byte // fnv.New128a produces 16 bytes
 
 type cseState struct {
 	table  map[cseKeyType]ir.SSAPlace
@@ -148,9 +148,11 @@ func cseCanonicalize(n ir.Node) ir.Node {
 // SHA-256 hashing (matching the pattern in [ir.HashCFG]) to avoid the
 // allocation overhead of recursive string concatenation.
 func cseKey(n ir.Node) cseKeyType {
-	h := sha256.New()
+	h := fnv.New128a()
 	cseHash(n, h)
-	return cseKeyType(h.Sum(nil))
+	var out cseKeyType
+	h.Sum(out[:0])
+	return out
 }
 
 func cseHash(n ir.Node, h hash.Hash) {

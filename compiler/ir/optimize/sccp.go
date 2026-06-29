@@ -1,6 +1,7 @@
 package optimize
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -114,6 +115,7 @@ type sccpState struct {
 	reachable       map[*ir.BasicBlock]bool
 	flowWork        []*ir.FlowEdge
 	ssaWork         []sccpNode
+	err             error
 }
 
 func (s *sccpState) val(n sccpNode) lat {
@@ -127,6 +129,9 @@ func (SCCP) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	s := newSCCPState()
 	s.init(entry)
 	s.propagate(entry)
+	if s.err != nil {
+		panic(s.err)
+	}
 	s.rewrite(entry)
 	return entry
 }
@@ -197,7 +202,8 @@ func (s *sccpState) propagate(entry *ir.BasicBlock) {
 	s.flowWork = []*ir.FlowEdge{{Src: entry, Dst: entry, Cond: nil}}
 	for iter := 0; len(s.flowWork) > 0 || len(s.ssaWork) > 0; iter++ {
 		if iter >= maxIter {
-			panic("sccp: iteration limit exceeded — lattice convergence failure")
+			s.err = fmt.Errorf("sccp: iteration limit exceeded — lattice convergence failure")
+			return
 		}
 		s.drainFlowWork()
 		s.drainSSAWork()
