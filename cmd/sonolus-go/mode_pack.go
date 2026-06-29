@@ -1,0 +1,137 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/pack"
+	"github.com/WindowsSov8forUs/sonolus-pack-go/packer"
+)
+
+// compileAllModes compiles the engine source for all four modes in parallel,
+// returning the CompiledEngine bundle with the shared configuration.
+// Go has no GIL, so this scales to all available cores — a structural advantage
+// over the Python reference which requires no-GIL builds for parallelism.
+func compileAllModes(src string) (pack.CompiledEngine, error) {
+	var c pack.CompiledEngine
+
+	var (
+		playData     *resource.EnginePlayData
+		playCfg      *resource.EngineConfiguration
+		watchData    *resource.EngineWatchData
+		previewData  *resource.EnginePreviewData
+		tutorialData *resource.EngineTutorialData
+		playErr      error
+		watchErr     error
+		previewErr   error
+		tutorialErr  error
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+
+	go func() {
+		defer wg.Done()
+		playData, playCfg, playErr = engine.CompilePlayFile(src)
+	}()
+	go func() {
+		defer wg.Done()
+		watchData, watchErr = engine.CompileWatchFile(src)
+	}()
+	go func() {
+		defer wg.Done()
+		previewData, previewErr = engine.CompilePreviewFile(src)
+	}()
+	go func() {
+		defer wg.Done()
+		tutorialData, tutorialErr = engine.CompileTutorialFile(src)
+	}()
+
+	wg.Wait()
+
+	if playErr != nil {
+		return c, fmt.Errorf("play: %w", playErr)
+	}
+	if watchErr != nil {
+		return c, fmt.Errorf("watch: %w", watchErr)
+	}
+	if previewErr != nil {
+		return c, fmt.Errorf("preview: %w", previewErr)
+	}
+	if tutorialErr != nil {
+		return c, fmt.Errorf("tutorial: %w", tutorialErr)
+	}
+
+	c.PlayData = *playData
+	c.Configuration = *playCfg
+	c.WatchData = *watchData
+	c.PreviewData = *previewData
+	c.TutorialData = *tutorialData
+
+	return c, nil
+}
+
+func runPack(srcPath string, author string) error {
+	src, err := os.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", srcPath, err)
+	}
+
+	engineName := engineNameFromPath(srcPath)
+
+	// 1. Compile all 4 modes.
+	fmt.Printf("compiling %s...\n", engineName)
+	c, err := compileAllModes(string(src))
+	if err != nil {
+		return err
+	}
+
+	// 2. Build ROM.
+	rom, err := build.DefaultROMBytes()
+	if err != nil {
+		return fmt.Errorf("building ROM: %w", err)
+	}
+	c.ROM = rom
+
+	// 3. Emit pack-go source tree.
+	sourceDir := filepath.Join(os.TempDir(), "sonolus-pack-source", engineName)
+	if err := os.RemoveAll(sourceDir); err != nil {
+		return err
+	}
+
+	meta := pack.EngineItemMeta{
+		Title:      engineName,
+		Subtitle:   "",
+		Author:     author,
+		Skin:       "default",
+		Background: "default",
+		Effect:     "default",
+		Particle:   "default",
+	}
+	if err := pack.EmitPackSource(sourceDir, engineName, c, meta); err != nil {
+		return fmt.Errorf("emitting source tree: %w", err)
+	}
+	if err := pack.EmitDefaultItems(sourceDir, engineName); err != nil {
+		return fmt.Errorf("emitting default items: %w", err)
+	}
+
+	// 4. Run pack-go to produce db.json + repository/<hash>.
+	packDir := filepath.Join("dist", engineName+"-pack")
+	fmt.Printf("packing to %s...\n", packDir)
+	if err := packer.Pack(context.Background(), packer.Options{
+		Input:  sourceDir,
+		Output: packDir,
+	}); err != nil {
+		return fmt.Errorf("pack: %w", err)
+	}
+
+	fmt.Printf("packed %s to %s/\n", engineName, packDir)
+	return nil
+}
