@@ -6,13 +6,11 @@ import (
 	"go/parser"
 	"go/token"
 	"reflect"
-	"time"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/play"
 )
@@ -138,37 +136,38 @@ func receiverInfo(field *ast.Field) (typeName, recvName string) {
 }
 
 func parseFields(a *parsedArchetype, st *ast.StructType) error {
+	tc := &tagCollector{
+		imported: &a.imported,
+		memory:   &a.memory,
+		data:     &a.data,
+		shared:   &a.shared,
+		input:    &a.input,
+		despawn:  &a.despawn,
+		info:     &a.info,
+	}
 	for _, f := range st.Fields.List {
+		unknown := collectSonolusTags(f, tc)
+		if unknown != "" {
+			// The first name in the field carries the tag.
+			name := ""
+			if len(f.Names) > 0 {
+				name = f.Names[0].Name
+			}
+			return fmt.Errorf("archetype %q field %q: unknown sonolus tag %q", a.name, name, unknown)
+		}
 		if f.Tag == nil || len(f.Names) == 0 {
 			continue
 		}
 		tag := reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus")
-		for _, name := range f.Names {
-			switch tag {
-			case "imported":
-				a.imported = append(a.imported, ImportedField{Name: name.Name})
-			case "memory":
-				a.memory = append(a.memory, name.Name)
-			case "exported":
+		switch tag {
+		case "exported":
+			for _, name := range f.Names {
 				a.exported = append(a.exported, name.Name)
-			case "data":
-				a.data = append(a.data, name.Name)
-			case "shared":
-				a.shared = append(a.shared, name.Name)
-			case "input":
-				a.input = append(a.input, name.Name)
-			case "despawn":
-				a.despawn = append(a.despawn, name.Name)
-			case "info":
-				a.info = append(a.info, name.Name)
-			case "scored":
-				a.scored = true
-			case "lifed":
-				a.lifed = true
-			case "":
-			default:
-				return fmt.Errorf("archetype %q field %q: unknown sonolus tag %q", a.name, name.Name, tag)
 			}
+		case "scored":
+			a.scored = true
+		case "lifed":
+			a.lifed = true
 		}
 	}
 	return nil
@@ -220,21 +219,9 @@ func compileParsed(
 				Accessors: frontend.ModeAccessors(ir.ModePlay),
 				Mode:      ir.ModePlay,
 			}
-			t0 := time.Now()
-			entry, err := frontend.CompileBlock(fset, gen, m.body, env)
+			sn, err := compileCallbackBlock(gen, fset, m.body, env, string(m.callback), ir.ModePlay, opts)
 			if err != nil {
 				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
-			}
-			entry, err = optimize.Optimize(gen, entry, ir.ModePlay, string(m.callback), ir.DefaultTempMemoryBlock, optimize.LevelStandard)
-			if err != nil {
-				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
-			}
-			sn, err := ir.CFGToSNode(gen, entry)
-			if err != nil {
-				return nil, nil, fmt.Errorf("archetype %q callback %s: %w", name, m.callback, err)
-			}
-			if opts != nil && opts.Stats != nil {
-				opts.Stats.Record(string(m.callback), time.Since(t0))
 			}
 			results = append(results, play.CompileCallback(i, m.callback, sn))
 		}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"reflect"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -12,6 +13,54 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
+
+// tagCollector gathers field names grouped by sonolus struct tag. It is used by
+// both parseFields (Play mode, which also handles exported/scored/lifed) and
+// parseModeFile (Watch/Preview/Tutorial modes).
+type tagCollector struct {
+	imported *[]ImportedField
+	memory   *[]string
+	data     *[]string
+	shared   *[]string
+	input    *[]string
+	despawn  *[]string
+	info     *[]string
+}
+
+// collectSonolusTags reads sonolus struct tags from a field and appends field
+// names to the appropriate collector slices. It returns false for tags that are
+// mode-specific (exported, scored, lifed) so callers can handle them separately.
+// An empty tag is silently skipped. Any other unrecognized tag is reported via
+// unknownTag (empty string means no unknown tag).
+func collectSonolusTags(field *ast.Field, tc *tagCollector) (unknownTag string) {
+	if field.Tag == nil || len(field.Names) == 0 {
+		return ""
+	}
+	tag := reflect.StructTag(stringLit(field.Tag.Value)).Get("sonolus")
+	for _, name := range field.Names {
+		switch tag {
+		case "imported":
+			*tc.imported = append(*tc.imported, ImportedField{Name: name.Name})
+		case "memory":
+			*tc.memory = append(*tc.memory, name.Name)
+		case "data":
+			*tc.data = append(*tc.data, name.Name)
+		case "shared":
+			*tc.shared = append(*tc.shared, name.Name)
+		case "input":
+			*tc.input = append(*tc.input, name.Name)
+		case "despawn":
+			*tc.despawn = append(*tc.despawn, name.Name)
+		case "info":
+			*tc.info = append(*tc.info, name.Name)
+		case "exported", "scored", "lifed", "":
+			// mode-specific or empty — caller handles
+		default:
+			return tag
+		}
+	}
+	return ""
+}
 
 // buildBindings builds the name→Binding map and imports slice for an archetype
 // from its parsed field lists. It is shared by play-mode compilation (parse.go)
@@ -58,6 +107,17 @@ func buildBindings(
 }
 
 // archetypeData holds the per-archetype metadata produced by callback
+// parsedModeFile holds the parsed state of a Watch/Preview/Tutorial mode engine
+// source file: the file set (for error positions), archetypes in declaration order,
+// free functions, and resource struct definitions.
+type parsedModeFile struct {
+	fset      *token.FileSet
+	arcs      map[string]*modeArch
+	order     []string
+	funcs     map[string]*ast.FuncDecl
+	resources map[string]*ast.StructType
+}
+
 // compilation, ready to be wrapped in a mode-specific archetype struct
 // (EngineWatchDataArchetype, EnginePreviewDataArchetype, etc.).
 type archetypeData struct {

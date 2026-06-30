@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"reflect"
 	"sort"
 	"time"
 
@@ -15,7 +14,9 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/preview"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/watch"
 )
 
 type modeMethod struct {
@@ -46,11 +47,11 @@ var previewCBs = map[string]string{
 	"Preprocess": "preprocess", "Render": "render",
 }
 
-func parseModeFile(src string) (*token.FileSet, map[string]*modeArch, []string, map[string]*ast.FuncDecl, map[string]*ast.StructType, error) {
+func parseModeFile(src string) (*parsedModeFile, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "engine.go", src, 0)
 	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("parse: %w", err)
+		return nil, fmt.Errorf("parse: %w", err)
 	}
 
 	arcs := map[string]*modeArch{}
@@ -85,40 +86,17 @@ func parseModeFile(src string) (*token.FileSet, map[string]*modeArch, []string, 
 					continue
 				}
 				a := get(ts.Name.Name)
+				tc := &tagCollector{
+					imported: &a.imported,
+					memory:   &a.memory,
+					data:     &a.data,
+					shared:   &a.shared,
+					input:    &a.input,
+					despawn:  &a.despawn,
+					info:     &a.info,
+				}
 				for _, f := range st.Fields.List {
-					if f.Tag == nil || len(f.Names) == 0 {
-						continue
-					}
-					switch reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus") {
-					case "imported":
-						for _, n := range f.Names {
-							a.imported = append(a.imported, ImportedField{Name: n.Name})
-						}
-					case "memory":
-						for _, n := range f.Names {
-							a.memory = append(a.memory, n.Name)
-						}
-					case "data":
-						for _, n := range f.Names {
-							a.data = append(a.data, n.Name)
-						}
-					case "shared":
-						for _, n := range f.Names {
-							a.shared = append(a.shared, n.Name)
-						}
-					case "input":
-						for _, n := range f.Names {
-							a.input = append(a.input, n.Name)
-						}
-					case "despawn":
-						for _, n := range f.Names {
-							a.despawn = append(a.despawn, n.Name)
-						}
-					case "info":
-						for _, n := range f.Names {
-							a.info = append(a.info, n.Name)
-						}
-					}
+					collectSonolusTags(f, tc)
 				}
 			}
 		case *ast.FuncDecl:
@@ -138,7 +116,7 @@ func parseModeFile(src string) (*token.FileSet, map[string]*modeArch, []string, 
 			}
 		}
 	}
-	return fset, arcs, order, funcs, resources, nil
+	return &parsedModeFile{fset: fset, arcs: arcs, order: order, funcs: funcs, resources: resources}, nil
 }
 
 func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string]frontend.Binding) {
@@ -174,19 +152,19 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 // CompileWatchFileWithStats compiles a Go Watch-mode engine source file.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.EngineWatchData, error) {
-	fset, arcs, order, funcs, resources, err := parseModeFile(src)
+	pf, err := parseModeFile(src)
 	if err != nil {
 		return nil, err
 	}
 	gen := ir.NewIDGen()
-	r, err := buildResources(resources)
+	r, err := buildResources(pf.resources)
 	if err != nil {
 		return nil, err
 	}
 	accessors := frontend.ModeAccessors(ir.ModeWatch)
 	nodes := []resource.EngineDataNode{}
 
-	arcData, results, err := compileArchetypeCallbacks(gen, fset, arcs, order, funcs, accessors, watchCBs, ir.ModeWatch, opts)
+	arcData, results, err := compileArchetypeCallbacks(gen, pf.fset, pf.arcs, pf.order, pf.funcs, accessors, watchCBs, ir.ModeWatch, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -197,10 +175,10 @@ func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.Engi
 	}
 
 	var updateSpawn int
-	for _, d := range funcs {
+	for _, d := range pf.funcs {
 		if d.Name.Name == "UpdateSpawn" && d.Body != nil {
-			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
-			sn, err := compileCallbackBlock(gen, fset, d.Body, env, "UpdateSpawn", ir.ModeWatch, opts)
+			env := frontend.Env{Names: accessors, Funcs: pf.funcs, Accessors: accessors, Mode: ir.ModeWatch}
+			sn, err := compileCallbackBlock(gen, pf.fset, d.Body, env, "UpdateSpawn", ir.ModeWatch, opts)
 			if err != nil {
 				return nil, fmt.Errorf("UpdateSpawn: %w", err)
 			}
@@ -215,27 +193,7 @@ func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.Engi
 		}
 	}
 
-	setCb := func(arc *resource.EngineWatchDataArchetype, callback string, index int) error {
-		c := resource.EngineWatchDataArchetypeCallback{Index: index}
-		switch callback {
-		case "preprocess":
-			arc.Preprocess = &c
-		case "spawnTime":
-			arc.SpawnTime = &c
-		case "despawnTime":
-			arc.DespawnTime = &c
-		case "initialize":
-			arc.Initialize = &c
-		case "updateSequential":
-			arc.UpdateSequential = &c
-		case "updateParallel":
-			arc.UpdateParallel = &c
-		case "terminate":
-			arc.Terminate = &c
-		}
-		return nil
-	}
-	if err := modecompile.Assemble(&nodes, outArcs, results, setCb); err != nil {
+	if err := modecompile.Assemble(&nodes, outArcs, results, watch.SetWatchCallback); err != nil {
 		return nil, err
 	}
 
@@ -253,19 +211,19 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 // CompilePreviewFileWithStats compiles a Go Preview-mode engine source file.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.EnginePreviewData, error) {
-	fset, arcs, order, funcs, resources, err := parseModeFile(src)
+	pf, err := parseModeFile(src)
 	if err != nil {
 		return nil, err
 	}
 	gen := ir.NewIDGen()
-	r, err := buildResources(resources)
+	r, err := buildResources(pf.resources)
 	if err != nil {
 		return nil, err
 	}
 	accessors := frontend.ModeAccessors(ir.ModePreview)
 	nodes := []resource.EngineDataNode{}
 
-	arcData, results, err := compileArchetypeCallbacks(gen, fset, arcs, order, funcs, accessors, previewCBs, ir.ModePreview, opts)
+	arcData, results, err := compileArchetypeCallbacks(gen, pf.fset, pf.arcs, pf.order, pf.funcs, accessors, previewCBs, ir.ModePreview, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -275,17 +233,7 @@ func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.En
 		outArcs[i] = resource.EnginePreviewDataArchetype{Name: ad.name, Imports: ad.imports}
 	}
 
-	setCb := func(arc *resource.EnginePreviewDataArchetype, callback string, index int) error {
-		c := resource.EnginePreviewDataArchetypeCallback{Index: index}
-		switch callback {
-		case "preprocess":
-			arc.Preprocess = &c
-		case "render":
-			arc.Render = &c
-		}
-		return nil
-	}
-	if err := modecompile.Assemble(&nodes, outArcs, results, setCb); err != nil {
+	if err := modecompile.Assemble(&nodes, outArcs, results, preview.SetPreviewCallback); err != nil {
 		return nil, err
 	}
 
@@ -300,12 +248,12 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 // CompileTutorialFileWithStats compiles a Go Tutorial-mode engine source file.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.EngineTutorialData, error) {
-	fset, _, _, funcs, resources, err := parseModeFile(src)
+	pf, err := parseModeFile(src)
 	if err != nil {
 		return nil, err
 	}
 	gen := ir.NewIDGen()
-	r, err := buildResources(resources)
+	r, err := buildResources(pf.resources)
 	if err != nil {
 		return nil, err
 	}
@@ -314,8 +262,8 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 	app := snode.NewAppender(&nodes)
 
 	// Sort for deterministic output.
-	sortedFuncs := make([]*ast.FuncDecl, 0, len(funcs))
-	for _, d := range funcs {
+	sortedFuncs := make([]*ast.FuncDecl, 0, len(pf.funcs))
+	for _, d := range pf.funcs {
 		sortedFuncs = append(sortedFuncs, d)
 	}
 	sort.Slice(sortedFuncs, func(i, j int) bool {
@@ -338,7 +286,7 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 		if d.Body == nil {
 			continue
 		}
-		idx, err := compileTutorialCallback(gen, fset, d, funcs, accessors, cb, ir.ModeTutorial, app, opts)
+		idx, err := compileTutorialCallback(gen, pf.fset, d, pf.funcs, accessors, cb, ir.ModeTutorial, app, opts)
 		if err != nil {
 			return nil, err
 		}
