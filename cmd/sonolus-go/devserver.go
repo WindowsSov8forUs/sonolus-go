@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
-	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -29,7 +29,6 @@ type devServer struct {
 	wd          *resource.EngineWatchData
 	pv          *resource.EnginePreviewData
 	tut         *resource.EngineTutorialData
-	modTimeUnix atomic.Int64  // UnixNano timestamp of last known source file mod time
 	modeErrors  map[string]string // mode → last compile error (watch/preview/tutorial)
 }
 
@@ -145,14 +144,18 @@ func (s *devServer) serveInfo(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	info := map[string]any{
-		"engine":      filepath.Base(s.src),
-		"nodes":       len(s.data.Nodes),
-		"arches":      len(s.data.Archetypes),
-		"options":     len(s.cfg.Options),
-		"hasWatch":    s.wd != nil,
-		"hasPreview":  s.pv != nil,
-		"hasTutorial": s.tut != nil,
+		"engine": filepath.Base(s.src),
 	}
+	if s.data != nil {
+		info["nodes"] = len(s.data.Nodes)
+		info["arches"] = len(s.data.Archetypes)
+	}
+	if s.cfg != nil {
+		info["options"] = len(s.cfg.Options)
+	}
+	info["hasWatch"] = s.wd != nil
+	info["hasPreview"] = s.pv != nil
+	info["hasTutorial"] = s.tut != nil
 	if len(s.modeErrors) > 0 {
 		info["errors"] = s.modeErrors
 	}
@@ -179,10 +182,6 @@ func runDevServer(srcPath string, addr string) error {
 	defer cancel()
 
 	srv := &devServer{src: srcPath, cache: engine.NewCache()}
-	// Initialize modTimeUnix from the current file state so the watch loop has a baseline.
-	if info, err := os.Stat(srcPath); err == nil {
-		srv.modTimeUnix.Store(info.ModTime().UnixNano())
-	}
 	if err := srv.recompile(); err != nil {
 		return err
 	}
@@ -196,26 +195,29 @@ func runDevServer(srcPath string, addr string) error {
 	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.tut }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveRom)
 
-	// Watch loop for auto-recompile. Polls the source file mtime every 500ms
-	// and triggers recompile when it changes. Cancelled when runDevServer returns.
+	// Watch for source file changes using fsnotify (event-driven, no polling).
+	// Triggers recompile on Write/Create events. Cancelled when runDevServer returns.
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("fsnotify: %w", err)
+	}
+	defer watcher.Close()
+	if err := watcher.Add(srcPath); err != nil {
+		return fmt.Errorf("fsnotify add: %w", err)
+	}
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				info, err := os.Stat(srcPath)
-				if err != nil {
-					continue
-				}
-				if info.ModTime().UnixNano() > srv.modTimeUnix.Load() {
-					srv.modTimeUnix.Store(info.ModTime().UnixNano())
+			case event := <-watcher.Events:
+				if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 					if err := srv.recompile(); err != nil {
 						fmt.Fprintf(os.Stderr, "[dev] recompile error: %v\n", err)
 					}
 				}
+			case err := <-watcher.Errors:
+				fmt.Fprintf(os.Stderr, "[dev] watcher error: %v\n", err)
 			}
 		}
 	}()
