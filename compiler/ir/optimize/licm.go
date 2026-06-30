@@ -23,7 +23,11 @@ type LICM struct {
 func (LICM) Name() string { return "LICM" }
 
 func (l LICM) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
-	dom := ComputeDominance(entry)
+	return l.RunWithDom(gen, entry, &DominanceCache{})
+}
+
+func (l LICM) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *DominanceCache) *ir.BasicBlock {
+	dom := dc.Get(entry)
 	blocks := ir.ReversePostorder(entry)
 
 	loops := FindLoops(blocks, dom)

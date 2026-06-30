@@ -28,6 +28,14 @@ type Pass interface {
 	Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock
 }
 
+// PassWithDom is an optional interface for passes that benefit from a cached
+// dominance tree. Passes that modify CFG structure should call
+// dom.Invalidate() to force recomputation on the next access.
+type PassWithDom interface {
+	Pass
+	RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dom *DominanceCache) *ir.BasicBlock
+}
+
 // ManagedPass extends Pass with analysis dependency declarations.
 // Passes that implement this interface can be validated by VerifyPasses.
 type ManagedPass interface {
@@ -38,9 +46,16 @@ type ManagedPass interface {
 }
 
 // RunPasses runs passes in order, threading the entry block through each.
+// Passes that implement PassWithDom receive a cached dominance tree that is
+// shared across the pipeline, avoiding redundant O(N²) recomputation.
 func RunPasses(gen *ir.IDGen, entry *ir.BasicBlock, passes ...Pass) *ir.BasicBlock {
+	dom := &DominanceCache{}
 	for _, p := range passes {
-		entry = p.Run(gen, entry)
+		if pd, ok := p.(PassWithDom); ok {
+			entry = pd.RunWithDom(gen, entry, dom)
+		} else {
+			entry = p.Run(gen, entry)
+		}
 	}
 	return entry
 }

@@ -1,6 +1,62 @@
 package optimize
 
-import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+import (
+	"fmt"
+	"hash/fnv"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+)
+
+// DominanceCache caches the dominance tree across multiple passes within a
+// single Optimize() invocation. It invalidates automatically when the CFG
+// structure changes (detected via structural hash).
+type DominanceCache struct {
+	dom  *Dominance
+	hash uint64
+}
+
+// Get returns the cached dominance tree, recomputing it if the CFG structure
+// has changed since the last call.
+func (c *DominanceCache) Get(entry *ir.BasicBlock) *Dominance {
+	h := cfgStructuralHash(entry)
+	if c.dom != nil && c.hash == h {
+		return c.dom
+	}
+	c.dom = ComputeDominance(entry)
+	c.hash = h
+	return c.dom
+}
+
+// Invalidate forces the next Get to recompute the dominance tree regardless
+// of CFG structure changes. Call after passes that modify the CFG structurally.
+func (c *DominanceCache) Invalidate() {
+	c.dom = nil
+}
+
+// cfgStructuralHash computes a fast hash of the CFG topology (blocks + edges).
+// It uses block pointer identity and edge targets; instruction content is ignored
+// since dominance depends only on graph shape.
+func cfgStructuralHash(entry *ir.BasicBlock) uint64 {
+	h := fnv.New64()
+	for i, b := range ir.Preorder(entry) {
+		// Mix block preorder index (monotonically assigned) and edge targets.
+		fmt.Fprintf(h, "%d", i)
+		for _, e := range b.Outgoing {
+			fmt.Fprintf(h, "%d", preorderIndex(e.Dst, entry))
+		}
+	}
+	return h.Sum64()
+}
+
+// preorderIndex returns the preorder index of b within the CFG rooted at entry.
+func preorderIndex(b *ir.BasicBlock, entry *ir.BasicBlock) int {
+	for i, blk := range ir.Preorder(entry) {
+		if blk == b {
+			return i
+		}
+	}
+	return -1
+}
 
 // Dominance holds dominator information for a CFG: reverse-postorder, block
 // numbering, immediate dominators, the dominator-tree children, and dominance

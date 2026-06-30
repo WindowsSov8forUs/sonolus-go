@@ -18,7 +18,11 @@ type CSE struct{}
 func (CSE) Name() string { return "CSE" }
 
 func (CSE) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
-	dom := ComputeDominance(entry)
+	return (CSE{}).RunWithDom(gen, entry, &DominanceCache{})
+}
+
+func (CSE) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *DominanceCache) *ir.BasicBlock {
+	dom := dc.Get(entry)
 
 	for _, b := range ir.Preorder(entry) {
 		for i, s := range b.Statements {

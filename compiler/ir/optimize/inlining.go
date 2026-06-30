@@ -13,8 +13,12 @@ type InlineVars struct {
 func (InlineVars) Name() string { return "InlineVars" }
 
 func (v InlineVars) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
+	return v.RunWithDom(gen, entry, &DominanceCache{})
+}
+
+func (v InlineVars) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *DominanceCache) *ir.BasicBlock {
 	blocks := ir.Preorder(entry)
-	defBlocks, crossesLoop := v.computeLoopInfo(entry, blocks)
+	defBlocks, crossesLoop := v.computeLoopInfo(entry, blocks, dc.Get(entry))
 
 	useCounts, definitions, defOrder := v.collectDefsAndUses(blocks)
 
@@ -62,14 +66,13 @@ func (v InlineVars) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	return entry
 }
 
-// computeLoopInfo builds the dominance tree, detects loops, and returns a
-// map from SSA place to its defining block plus a helper that reports whether
+// computeLoopInfo uses the provided dominance tree to detect loops and returns
+// a map from SSA place to its defining block plus a helper that reports whether
 // a use at useBlock crosses a loop boundary relative to the definition.
-func (v InlineVars) computeLoopInfo(entry *ir.BasicBlock, blocks []*ir.BasicBlock) (
+func (v InlineVars) computeLoopInfo(_ *ir.BasicBlock, blocks []*ir.BasicBlock, dom *Dominance) (
 	map[ir.SSAPlace]*ir.BasicBlock,
 	func(ir.SSAPlace, *ir.BasicBlock) bool,
 ) {
-	dom := ComputeDominance(entry)
 	loops := FindLoops(blocks, dom)
 	loopBodies := make([]map[*ir.BasicBlock]bool, len(loops))
 	for i, l := range loops {

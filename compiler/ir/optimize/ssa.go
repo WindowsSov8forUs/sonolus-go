@@ -19,7 +19,11 @@ type ToSSA struct{}
 func (ToSSA) Name() string { return "ToSSA" }
 
 func (ToSSA) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
-	dom := ComputeDominance(entry)
+	return (ToSSA{}).RunWithDom(gen, entry, &DominanceCache{})
+}
+
+func (ToSSA) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *DominanceCache) *ir.BasicBlock {
+	dom := dc.Get(entry)
 
 	order, defBlocks := defsToBlocks(entry)
 	insertPhis(order, defBlocks, dom)
