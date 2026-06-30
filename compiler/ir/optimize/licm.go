@@ -21,7 +21,7 @@ import (
 //
 // Port of sonolus.py licm.LoopInvariantCodeMotion.
 type LICM struct {
-	Oracle ir.BlockSet
+	Oracle BlockOracle
 }
 
 func (LICM) Name() string { return "LICM" }
@@ -46,7 +46,7 @@ func (l LICM) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *DominanceCache
 	return entry
 }
 
-func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle ir.BlockSet) {
+func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle BlockOracle) {
 	var preheader *ir.BasicBlock
 	var nonBack []*ir.FlowEdge
 	for _, e := range lp.Header.Incoming {
@@ -113,7 +113,7 @@ func licmDefsInLoop(body map[*ir.BasicBlock]bool) map[ir.SSAPlace]bool {
 	return defs
 }
 
-func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID *int, hoisted map[cseKeyType]bool, oracle ir.BlockSet) {
+func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID *int, hoisted map[cseKeyType]bool, oracle BlockOracle) {
 	instr, ok := n.(ir.Instr)
 	if !ok || !ir.Pure(instr.Op) || ir.SideEffects(instr.Op) {
 		return
@@ -135,7 +135,7 @@ func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]boo
 	preheader.Statements = append(preheader.Statements, ir.Set{Place: p, Value: instr})
 }
 
-func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle ir.BlockSet) bool {
+func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle BlockOracle) bool {
 	for _, a := range instr.Args {
 		if !licmArgInvariant(a, defs, oracle) {
 			return false
@@ -144,7 +144,7 @@ func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle ir.BlockS
 	return true
 }
 
-func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle ir.BlockSet) bool {
+func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle BlockOracle) bool {
 	switch t := n.(type) {
 	case ir.Const:
 		return true
@@ -177,3 +177,12 @@ func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle ir.BlockSet) 
 		return false
 	}
 }
+
+// Requires implements ManagedPass — LICM uses dominance via DominanceCache (RunWithDom).
+func (LICM) Requires() []Analysis { return nil }
+
+// Preserves implements ManagedPass.
+func (LICM) Preserves() []Analysis { return nil }
+
+// Destroys implements ManagedPass.
+func (LICM) Destroys() []Analysis { return nil }

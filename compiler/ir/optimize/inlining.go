@@ -7,7 +7,7 @@ import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 type InlineVars struct {
 	Aggressive bool
 	Callback   string
-	Oracle     ir.BlockSet
+	Oracle     BlockOracle
 }
 
 func (InlineVars) Name() string { return "InlineVars" }

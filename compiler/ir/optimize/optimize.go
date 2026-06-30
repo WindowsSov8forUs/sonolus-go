@@ -45,6 +45,14 @@ type ManagedPass interface {
 	Destroys() []Analysis
 }
 
+// BlockOracle answers queries about Sonolus memory blocks that the optimizer
+// needs. Implementations are provided by the IR layer (ir.BlockSet) and can be
+// mocked for testing.
+type BlockOracle interface {
+	Writable(block int, callback string) bool
+	RuntimeConstant(block int) bool
+}
+
 // RunPasses runs passes in order, threading the entry block through each.
 // Passes that implement PassWithDom receive a cached dominance tree that is
 // shared across the pipeline, avoiding redundant O(N²) recomputation.
