@@ -328,7 +328,8 @@ func filterHardErrors(err error) error {
 		return nil
 	}
 	// Try structured inspection first (go/types errors carry optional codes).
-	if te := new(types.Error); errors.As(err, te) {
+	var te *types.Error
+	if errors.As(err, &te) {
 		msg := te.Msg
 		if strings.Contains(msg, "undeclared name") ||
 			strings.Contains(msg, "not enough arguments") ||
