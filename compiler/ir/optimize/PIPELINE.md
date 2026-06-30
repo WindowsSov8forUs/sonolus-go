@@ -63,18 +63,18 @@ regardless of the allocation strategy. This is important for Go's
 `AllocateLive` which uses liveness-based linear scan rather than
 interference-graph allocation.
 
-### 6. Allocation Strategy: AllocateLive for All Levels
+### 6. Allocation Strategy
 
 | Level | Python | Go |
 |-------|--------|-----|
-| MINIMAL | `AllocateBasic` (sequential, no liveness) | `AllocateLive` (full liveness-based) |
-| FAST | `TryAllocateBasic` (sequential with fallback) | `AllocateLive` (full liveness-based) |
-| STANDARD | `Allocate` (liveness-aware) | `AllocateLive` (full liveness-based) |
+| MINIMAL | `AllocateBasic` (sequential, no liveness) | `AllocateBasic` (sequential, no liveness) |
+| FAST | `TryAllocateBasic` (sequential with fallback) | `AllocateBasic` (sequential, no liveness) |
+| STANDARD | `Allocate` (liveness-aware) | `AllocateLive` (liveness-based linear scan) |
 
-**Rationale:** Go uses `AllocateLive` uniformly for correctness. Python's
-lighter allocators (`AllocateBasic`, `AllocateFast`) are optimization wins for
-compilation speed but produce more memory usage. Implementing Python-style
-tiered allocation in Go is tracked as P2 step 2-1.
+**Rationale:** Go uses `AllocateBasic` for MINIMAL/FAST to keep compilation
+fast, and `AllocateLive` (interval-packing linear scan) for STANDARD to produce
+compact output. Python's `AllocateFast` and `TryAllocateBasic` tiered
+strategies are not yet implemented; implementing them is tracked as P2 step 2-1.
 
 ## Analysis Pass Model Difference
 
@@ -89,8 +89,8 @@ per pipeline (up to 6× in Standard: `ToSSA` ×1, `InlineVars` ×3, `LICM` ×1,
 
 ## Pass Count Summary
 
-| Pipeline | Python Passes | Go Passes (pipeline + AllocateLive) |
-|----------|---------------|-------------------------------------|
+| Pipeline | Python Passes | Go Passes (pipeline + allocator) |
+|----------|---------------|----------------------------------|
 | Standard | 37 | 44 |
 | Fast | 4 | 26 |
 | Minimal | 3 | 6 |
