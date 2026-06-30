@@ -6,26 +6,29 @@ import "github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 // Each optimizer mirrors the corresponding TypeScript file one-to-one so that,
 // given the same SNode tree, the optimized result is byte-identical.
 
+// Canonical short aliases for runtime functions. These match the naming in
+// ir/opsconst.go (ir.OpAdd, ir.OpGet, ...) but are defined locally because ir
+// imports snode, so snode cannot import ir without a cycle.
 const (
-	rfAdd                      = resource.RuntimeFunctionAdd
-	rfSubtract                 = resource.RuntimeFunctionSubtract
-	rfMultiply                 = resource.RuntimeFunctionMultiply
-	rfDivide                   = resource.RuntimeFunctionDivide
-	rfMod                      = resource.RuntimeFunctionMod
-	rfRem                      = resource.RuntimeFunctionRem
-	rfPower                    = resource.RuntimeFunctionPower
-	rfIf                       = resource.RuntimeFunctionIf
-	rfAnd                      = resource.RuntimeFunctionAnd
-	rfGet                      = resource.RuntimeFunctionGet
-	rfGetShifted               = resource.RuntimeFunctionGetShifted
-	rfSet                      = resource.RuntimeFunctionSet
-	rfSetShifted               = resource.RuntimeFunctionSetShifted
-	rfExecute                  = resource.RuntimeFunctionExecute
-	rfWhile                    = resource.RuntimeFunctionWhile
-	rfSwitch                   = resource.RuntimeFunctionSwitch
-	rfSwitchInteger            = resource.RuntimeFunctionSwitchInteger
-	rfSwitchIntegerWithDefault = resource.RuntimeFunctionSwitchIntegerWithDefault
-	rfSwitchWithDefault        = resource.RuntimeFunctionSwitchWithDefault
+	OpAdd                      = resource.RuntimeFunctionAdd
+	OpSubtract                 = resource.RuntimeFunctionSubtract
+	OpMultiply                 = resource.RuntimeFunctionMultiply
+	OpDivide                   = resource.RuntimeFunctionDivide
+	OpMod                      = resource.RuntimeFunctionMod
+	OpRem                      = resource.RuntimeFunctionRem
+	OpPower                    = resource.RuntimeFunctionPower
+	OpIf                       = resource.RuntimeFunctionIf
+	OpAnd                      = resource.RuntimeFunctionAnd
+	OpGet                      = resource.RuntimeFunctionGet
+	OpGetShifted               = resource.RuntimeFunctionGetShifted
+	OpSet                      = resource.RuntimeFunctionSet
+	OpSetShifted               = resource.RuntimeFunctionSetShifted
+	OpExecute                  = resource.RuntimeFunctionExecute
+	OpWhile                    = resource.RuntimeFunctionWhile
+	OpSwitch                   = resource.RuntimeFunctionSwitch
+	OpSwitchInteger            = resource.RuntimeFunctionSwitchInteger
+	OpSwitchIntegerWithDefault = resource.RuntimeFunctionSwitchIntegerWithDefault
+	OpSwitchWithDefault        = resource.RuntimeFunctionSwitchWithDefault
 )
 
 // maxSafeInteger is JS Number.MAX_SAFE_INTEGER (2^53 - 1).
@@ -47,33 +50,33 @@ func Peephole(snode SNode) SNode {
 	n := Func{Op: f.Op, Args: args}
 
 	switch n.Op {
-	case rfAdd:
+	case OpAdd:
 		return optimizeArith(n, cfgAdd)
-	case rfSubtract:
+	case OpSubtract:
 		return optimizeArith(n, cfgSubtract)
-	case rfMultiply:
+	case OpMultiply:
 		return optimizeArith(n, cfgMultiply)
-	case rfDivide:
+	case OpDivide:
 		return optimizeArith(n, cfgDivide)
-	case rfMod:
-		return optimizeFlatten(n, rfMod)
-	case rfRem:
-		return optimizeFlatten(n, rfRem)
-	case rfPower:
-		return optimizeFlatten(n, rfPower)
-	case rfGet:
+	case OpMod:
+		return optimizeFlatten(n, OpMod)
+	case OpRem:
+		return optimizeFlatten(n, OpRem)
+	case OpPower:
+		return optimizeFlatten(n, OpPower)
+	case OpGet:
 		return optimizeGet(n)
-	case rfGetShifted:
+	case OpGetShifted:
 		return optimizeGetShifted(n)
-	case rfIf:
+	case OpIf:
 		return optimizeIf(n)
-	case rfSet:
+	case OpSet:
 		return optimizeSet(n)
-	case rfSetShifted:
+	case OpSetShifted:
 		return optimizeSetShifted(n)
-	case rfSwitchWithDefault:
+	case OpSwitchWithDefault:
 		return optimizeSwitchWithDefault(n)
-	case rfWhile:
+	case OpWhile:
 		return optimizeWhile(n)
 	default:
 		return n

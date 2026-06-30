@@ -62,7 +62,7 @@ func isEquivalent(a, b SNode) bool {
 	if len(af.Args) != len(bf.Args) {
 		return false
 	}
-	if af.Op != rfGet && af.Op != rfGetShifted {
+	if af.Op != OpGet && af.Op != OpGetShifted {
 		return false
 	}
 	for i := range af.Args {
@@ -93,23 +93,23 @@ func isSafeInteger(f float64) bool {
 // pattern shared by Add / Subtract / Multiply / Divide.
 var (
 	cfgAdd = arithConfig{
-		op: rfAdd, identity: 0,
+		op: OpAdd, identity: 0,
 		combine:     func(a, b float64) float64 { return a + b },
 		commutative: true,
 	}
 	cfgSubtract = arithConfig{
-		op: rfSubtract, identity: 0,
+		op: OpSubtract, identity: 0,
 		combine:     func(a, b float64) float64 { return a + b },
 		commutative: false,
 	}
 	cfgMultiply = arithConfig{
-		op: rfMultiply, identity: 1,
+		op: OpMultiply, identity: 1,
 		combine:          func(a, b float64) float64 { return a * b },
 		commutative:      true,
 		zeroAnnihilates:  true,
 	}
 	cfgDivide = arithConfig{
-		op: rfDivide, identity: 1,
+		op: OpDivide, identity: 1,
 		combine:     func(a, b float64) float64 { return a * b },
 		commutative: false,
 	}
@@ -160,7 +160,7 @@ func optimizeCommutative(args []SNode, cfg arithConfig) SNode {
 	}
 	if cfg.zeroAnnihilates && constants == 0 {
 		// Preserve side effects: evaluate dynamics, then yield 0.
-		return Func{Op: rfExecute, Args: append(append([]SNode{}, dynamics...), Value(0))}
+		return Func{Op: OpExecute, Args: append(append([]SNode{}, dynamics...), Value(0))}
 	}
 	if constants == cfg.identity {
 		if len(dynamics) == 1 {

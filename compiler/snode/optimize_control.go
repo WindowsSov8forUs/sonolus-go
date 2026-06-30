@@ -13,8 +13,8 @@ func optimizeSwitchWithDefault(s Func) SNode {
 	removeDefault := isValueEq(defaultCase, 0)
 
 	if a, d, ok := tryNormalize(cases); ok {
-		normalizedDiscriminant := Peephole(Func{Op: rfDivide, Args: []SNode{
-			Func{Op: rfSubtract, Args: []SNode{discriminant, Value(a)}},
+		normalizedDiscriminant := Peephole(Func{Op: OpDivide, Args: []SNode{
+			Func{Op: OpSubtract, Args: []SNode{discriminant, Value(a)}},
 			Value(d),
 		}})
 
@@ -24,13 +24,13 @@ func optimizeSwitchWithDefault(s Func) SNode {
 		}
 
 		if removeDefault {
-			return Func{Op: rfSwitchInteger, Args: append([]SNode{normalizedDiscriminant}, consequences...)}
+			return Func{Op: OpSwitchInteger, Args: append([]SNode{normalizedDiscriminant}, consequences...)}
 		}
-		return Func{Op: rfSwitchIntegerWithDefault, Args: append(append([]SNode{normalizedDiscriminant}, consequences...), defaultCase)}
+		return Func{Op: OpSwitchIntegerWithDefault, Args: append(append([]SNode{normalizedDiscriminant}, consequences...), defaultCase)}
 	}
 
 	if removeDefault {
-		return Func{Op: rfSwitch, Args: append([]SNode{discriminant}, cases...)}
+		return Func{Op: OpSwitch, Args: append([]SNode{discriminant}, cases...)}
 	}
 	return s
 }
@@ -76,7 +76,7 @@ func optimizeWhile(s Func) SNode {
 	if len(s.Args) < 2 {
 		return s
 	}
-	body, ok := asFunc(s.Args[1], rfExecute)
+	body, ok := asFunc(s.Args[1], OpExecute)
 	if !ok || len(body.Args) == 0 {
 		return s
 	}
@@ -85,10 +85,10 @@ func optimizeWhile(s Func) SNode {
 	}
 
 	if len(body.Args) == 2 {
-		return Func{Op: rfWhile, Args: []SNode{s.Args[0], body.Args[0]}}
+		return Func{Op: OpWhile, Args: []SNode{s.Args[0], body.Args[0]}}
 	}
-	return Func{Op: rfWhile, Args: []SNode{
+	return Func{Op: OpWhile, Args: []SNode{
 		s.Args[0],
-		Func{Op: rfExecute, Args: append([]SNode{}, body.Args[:len(body.Args)-1]...)},
+		Func{Op: OpExecute, Args: append([]SNode{}, body.Args[:len(body.Args)-1]...)},
 	}}
 }

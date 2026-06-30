@@ -4,23 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
-)
-
-// Ops used during finalization.
-const (
-	opAdd                      = resource.RuntimeFunctionAdd
-	opGet                      = resource.RuntimeFunctionGet
-	opSet                      = resource.RuntimeFunctionSet
-	opIf                       = resource.RuntimeFunctionIf
-	opEqual                    = resource.RuntimeFunctionEqual
-	opExecute                  = resource.RuntimeFunctionExecute
-	opBlock                    = resource.RuntimeFunctionBlock
-	opJumpLoop                 = resource.RuntimeFunctionJumpLoop
-	opSwitchWithDefault        = resource.RuntimeFunctionSwitchWithDefault
-	opSwitchIntegerWithDefault = resource.RuntimeFunctionSwitchIntegerWithDefault
 )
 
 // BlockEngineRom (defined in ir.go) is the EngineRom memory block; non-finite
@@ -52,11 +36,11 @@ func CFGToSNode(gen *IDGen, entry *BasicBlock) (snode.SNode, error) {
 			return nil, err
 		}
 		stmts = append(stmts, cf)
-		blockStatements = append(blockStatements, snode.Call(opExecute, stmts...))
+		blockStatements = append(blockStatements, snode.Call(OpExecute, stmts...))
 	}
 	blockStatements = append(blockStatements, snode.Val(0))
 
-	return snode.Call(opBlock, snode.Call(opJumpLoop, blockStatements...)), nil
+	return snode.Call(OpBlock, snode.Call(OpJumpLoop, blockStatements...)), nil
 }
 
 // condEdge is one non-default outgoing edge.
@@ -92,18 +76,18 @@ func controlFlow(gen *IDGen, b *BasicBlock, index map[*BasicBlock]int, exit int)
 		if err != nil {
 			return nil, err
 		}
-		return snode.Call(opIf,
+		return snode.Call(OpIf,
 			test,
 			snode.Val(float64(index[defaultDst])),
 			snode.Val(float64(index[conds[0].dst])),
 		), nil
 
 	case defaultDst != nil && len(conds) == 1:
-		test, err := Lower(gen.PureInstr(opEqual, b.Test, Const(conds[0].cond)))
+		test, err := Lower(gen.PureInstr(OpEqual, b.Test, Const(conds[0].cond)))
 		if err != nil {
 			return nil, err
 		}
-		return snode.Call(opIf,
+		return snode.Call(OpIf,
 			test,
 			snode.Val(float64(index[conds[0].dst])),
 			snode.Val(float64(index[defaultDst])),
@@ -142,7 +126,7 @@ func switchNode(test Node, conds []condEdge, defaultDst *BasicBlock, index map[*
 			args = append(args, snode.Val(float64(index[c.dst])))
 		}
 		args = append(args, snode.Val(float64(def)))
-		return snode.Call(opSwitchIntegerWithDefault, args...), nil
+		return snode.Call(OpSwitchIntegerWithDefault, args...), nil
 	}
 
 	lowered, err := Lower(test)
@@ -155,7 +139,7 @@ func switchNode(test Node, conds []condEdge, defaultDst *BasicBlock, index map[*
 		args = append(args, snode.Val(c.cond), snode.Val(float64(index[c.dst])))
 	}
 	args = append(args, snode.Val(float64(def)))
-	return snode.Call(opSwitchWithDefault, args...), nil
+	return snode.Call(OpSwitchWithDefault, args...), nil
 }
 
 // Lower converts a single IR node into an snode.SNode. Port of
@@ -190,7 +174,7 @@ func Lower(n Node) (snode.SNode, error) {
 			return nil, err
 		}
 		args := append(append([]snode.SNode{}, placeFunc.Args...), val)
-		return snode.Call(opSet, args...), nil
+		return snode.Call(OpSet, args...), nil
 	case BlockPlace:
 		return blockPlaceToSNode(t)
 	case *TempBlock:
@@ -209,11 +193,11 @@ func Lower(n Node) (snode.SNode, error) {
 func numeric(v float64) snode.SNode {
 	switch {
 	case math.IsInf(v, 1):
-		return snode.Call(opGet, snode.Val(BlockEngineRom), snode.Val(1))
+		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(1))
 	case math.IsInf(v, -1):
-		return snode.Call(opGet, snode.Val(BlockEngineRom), snode.Val(2))
+		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(2))
 	case math.IsNaN(v):
-		return snode.Call(opGet, snode.Val(BlockEngineRom), snode.Val(0))
+		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(0))
 	default:
 		return snode.Val(v)
 	}
@@ -235,13 +219,13 @@ func blockPlaceToSNode(p BlockPlace) (snode.SNode, error) {
 		if err != nil {
 			return nil, err
 		}
-		index = snode.Call(opAdd, pi, snode.Val(float64(p.Offset)))
+		index = snode.Call(OpAdd, pi, snode.Val(float64(p.Offset)))
 	}
 	blk, err := Lower(orZero(p.Block))
 	if err != nil {
 		return nil, err
 	}
-	return snode.Call(opGet, blk, index), nil
+	return snode.Call(OpGet, blk, index), nil
 }
 
 func orZero(n Node) Node {

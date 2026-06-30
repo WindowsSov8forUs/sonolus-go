@@ -10,21 +10,21 @@ func optimizeSet(s Func) SNode {
 	}
 	id, index, value := s.Args[0], s.Args[1], s.Args[2]
 
-	if add, ok := asFunc(index, rfAdd); ok && len(add.Args) == 2 {
-		if mul, ok := asFunc(add.Args[1], rfMultiply); ok && len(mul.Args) == 2 {
-			return Peephole(Func{Op: rfSetShifted, Args: []SNode{id, add.Args[0], mul.Args[0], mul.Args[1], value}})
+	if add, ok := asFunc(index, OpAdd); ok && len(add.Args) == 2 {
+		if mul, ok := asFunc(add.Args[1], OpMultiply); ok && len(mul.Args) == 2 {
+			return Peephole(Func{Op: OpSetShifted, Args: []SNode{id, add.Args[0], mul.Args[0], mul.Args[1], value}})
 		}
 	}
 
-	if vf, ok := asFuncs(value, rfAdd, rfSubtract, rfMultiply, rfDivide, rfRem, rfMod, rfPower); ok && len(vf.Args) == 2 {
-		if g, ok := asFunc(vf.Args[0], rfGet); ok && len(g.Args) >= 2 &&
+	if vf, ok := asFuncs(value, OpAdd, OpSubtract, OpMultiply, OpDivide, OpRem, OpMod, OpPower); ok && len(vf.Args) == 2 {
+		if g, ok := asFunc(vf.Args[0], OpGet); ok && len(g.Args) >= 2 &&
 			isEquivalent(g.Args[0], id) && isEquivalent(g.Args[1], index) {
 			return Func{Op: setFunc(vf.Op), Args: []SNode{id, index, vf.Args[1]}}
 		}
 	}
 
-	if vf, ok := asFuncs(value, rfAdd, rfMultiply); ok && len(vf.Args) == 2 {
-		if g, ok := asFunc(vf.Args[1], rfGet); ok && len(g.Args) >= 2 &&
+	if vf, ok := asFuncs(value, OpAdd, OpMultiply); ok && len(vf.Args) == 2 {
+		if g, ok := asFunc(vf.Args[1], OpGet); ok && len(g.Args) >= 2 &&
 			isEquivalent(g.Args[0], id) && isEquivalent(g.Args[1], index) {
 			return Func{Op: setFunc(vf.Op), Args: []SNode{id, index, vf.Args[0]}}
 		}
@@ -44,21 +44,21 @@ func optimizeSetShifted(s Func) SNode {
 	if yv, ok := asValue(y); ok {
 		if sv, ok := asValue(sh); ok {
 			if xv, ok := asValue(x); ok {
-				return Peephole(Func{Op: rfSet, Args: []SNode{id, Value(xv + yv*sv), value}})
+				return Peephole(Func{Op: OpSet, Args: []SNode{id, Value(xv + yv*sv), value}})
 			}
 			if yv == 0 && sv == 0 {
-				return Peephole(Func{Op: rfSet, Args: []SNode{id, x, value}})
+				return Peephole(Func{Op: OpSet, Args: []SNode{id, x, value}})
 			}
 		}
 	}
 
-	if vf, ok := asFuncs(value, rfAdd, rfSubtract, rfMultiply, rfDivide, rfRem, rfMod, rfPower); ok && len(vf.Args) == 2 {
-		if g, ok := asFunc(vf.Args[0], rfGetShifted); ok && len(g.Args) >= 4 &&
+	if vf, ok := asFuncs(value, OpAdd, OpSubtract, OpMultiply, OpDivide, OpRem, OpMod, OpPower); ok && len(vf.Args) == 2 {
+		if g, ok := asFunc(vf.Args[0], OpGetShifted); ok && len(g.Args) >= 4 &&
 			isEquivalent(g.Args[0], id) && isEquivalent(g.Args[1], x) &&
 			isEquivalent(g.Args[2], y) && isEquivalent(g.Args[3], sh) {
 			return Func{Op: setShiftedFunc(vf.Op), Args: []SNode{id, x, y, sh, vf.Args[1]}}
 		}
-		if g, ok := asFunc(vf.Args[1], rfGetShifted); ok && len(g.Args) >= 4 &&
+		if g, ok := asFunc(vf.Args[1], OpGetShifted); ok && len(g.Args) >= 4 &&
 			isEquivalent(g.Args[0], id) && isEquivalent(g.Args[1], x) &&
 			isEquivalent(g.Args[2], y) && isEquivalent(g.Args[3], sh) {
 			return Func{Op: setShiftedFunc(vf.Op), Args: []SNode{id, x, y, sh, vf.Args[0]}}
