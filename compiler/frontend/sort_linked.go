@@ -206,9 +206,6 @@ func sortLinkedEntitiesCall(t *tracer, args []Num) (Num, error) {
 
 	t.enter(rewireExit)
 	// Return the new head (indices[0]).
-	if countNode := ir.GetPlace(countPlace); true {
-		_ = countNode
-	}
 	return exprNum(ir.GetPlace(ir.BlockPlace{Block: idxTB, Index: ir.Const(0), Offset: 0})), nil
 }
 
