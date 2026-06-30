@@ -8,5 +8,5 @@ import (
 
 // Assemble folds compiled callbacks into the watch-data skeleton.
 func Assemble(data *resource.EngineWatchData, results []*modecompile.Result) error {
-	return modecompile.Assemble(&data.Nodes, data.Archetypes, results, setWatchCallback)
+	return modecompile.Assemble(&data.Nodes, data.Archetypes, results, SetWatchCallback)
 }

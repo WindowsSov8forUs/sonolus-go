@@ -25,7 +25,9 @@ func CompileCallback(archetypeIndex int, cb Callback, node snode.SNode) *modecom
 	return modecompile.CompileCallback(archetypeIndex, string(cb), node, nil)
 }
 
-func setPreviewCallback(arch *resource.EnginePreviewDataArchetype, cb string, index int) error {
+// SetPreviewCallback assigns a compiled callback index to the matching typed field
+// on a Preview-mode archetype. It satisfies modecompile.SetCallback[*EnginePreviewDataArchetype].
+func SetPreviewCallback(arch *resource.EnginePreviewDataArchetype, cb string, index int) error {
 	value := resource.EnginePreviewDataArchetypeCallback{Index: index}
 	switch Callback(cb) {
 	case CallbackPreprocess:

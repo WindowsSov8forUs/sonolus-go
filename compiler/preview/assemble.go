@@ -8,5 +8,5 @@ import (
 
 // Assemble folds compiled callbacks into the preview-data skeleton.
 func Assemble(data *resource.EnginePreviewData, results []*modecompile.Result) error {
-	return modecompile.Assemble(&data.Nodes, data.Archetypes, results, setPreviewCallback)
+	return modecompile.Assemble(&data.Nodes, data.Archetypes, results, SetPreviewCallback)
 }

@@ -37,7 +37,9 @@ func CompileCallback(archetypeIndex int, cb Callback, node snode.SNode) *modecom
 	return modecompile.CompileCallback(archetypeIndex, string(cb), node, watchOmit)
 }
 
-func setWatchCallback(arch *resource.EngineWatchDataArchetype, cb string, index int) error {
+// SetWatchCallback assigns a compiled callback index to the matching typed field
+// on a Watch-mode archetype. It satisfies modecompile.SetCallback[*EngineWatchDataArchetype].
+func SetWatchCallback(arch *resource.EngineWatchDataArchetype, cb string, index int) error {
 	value := resource.EngineWatchDataArchetypeCallback{Index: index}
 	switch Callback(cb) {
 	case CallbackPreprocess:
