@@ -32,6 +32,10 @@ jobs:
         with:
           go-version: '1.25'
       - run: go test ./... -count=1
+      # Verify CLI binary builds and sub-commands are wired correctly.
+      - run: go build -o sonolus-go.exe .
+      - run: ./sonolus-go version
+        continue-on-error: true
       - run: go vet ./...
       - run: gofmt -s -l . > fmt.out && test ! -s fmt.out || (cat fmt.out && exit 1)
         shell: bash

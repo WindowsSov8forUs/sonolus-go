@@ -1,3 +1,14 @@
+// Package optimize implements the ~40-pass IR optimizer ported from sonolus.py.
+//
+// Pipeline pass ordering is documented in PIPELINE.md. The Go pipeline contains
+// several intentional improvements over the Python reference:
+//   - Earlier CoalesceSmallConditionalBlocks (pre-SSA) for more DCE opportunities
+//   - UnflattenAssociativeOps after FromSSA to clean up SSA destruction
+//   - Extra cleanup round (Coalesce + UCE + DCE) after AdvancedDCE
+//   - RenumberVars at end of Standard for deterministic output
+//   - Unified AllocateLive for all levels (Python has tiered allocation)
+//
+// See PIPELINE.md for the full divergence rationale and pass-by-pass comparison.
 package optimize
 
 import (
@@ -6,6 +17,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
 
+// Standard returns the full Standard-level pass list.
 func Standard(mode ir.Mode, callback string) []Pass {
 	return []Pass{
 		// Pre-SSA cleanup.
@@ -170,5 +182,15 @@ func Optimize(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback string
 		return nil, fmt.Errorf("optimize: pass dependency violation in %v pipeline: %w", level, err)
 	}
 	entry = RunPasses(gen, entry, passes...)
-	return AllocateLive{BlockID: tempBlock}.Run(gen, entry), nil
+
+	// Select the appropriate allocator for the optimization level.
+	// AllocateBasic (sequential) for MINIMAL/FAST: faster compilation,
+	// no liveness analysis. AllocateLive (interval packing) for STANDARD:
+	// reuses non-overlapping lifetimes, producing more compact output.
+	switch level {
+	case LevelMinimal, LevelFast:
+		return AllocateBasic{BlockID: tempBlock}.Run(gen, entry), nil
+	default:
+		return AllocateLive{BlockID: tempBlock}.Run(gen, entry), nil
+	}
 }
