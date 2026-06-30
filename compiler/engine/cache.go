@@ -74,6 +74,7 @@ func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg 
 	if c.MaxEntries > 0 && len(c.play) >= c.MaxEntries {
 		for k := range c.play {
 			delete(c.play, k)
+			delete(c.config, k)
 			break
 		}
 	}
