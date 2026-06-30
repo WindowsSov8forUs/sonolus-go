@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -224,6 +227,57 @@ func TestBuildWithStats(t *testing.T) {
 	// Stats.Total() may be zero if compilation is sub-nanosecond, which is fine.
 	_ = stats.Total()
 	_ = playCfg
+}
+
+func TestServeCommand(t *testing.T) {
+	// Start the dev server on a random port, send a GET to /sonolus/engines/info,
+	// and verify the JSON response contains expected keys.
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "engine.go")
+	src := "package engine\n\ntype Skin struct{}\ntype Archetype struct{}\n\nfunc (a Archetype) UpdateParallel(dt float64) {}\n"
+	if err := os.WriteFile(srcPath, []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// runDevServer blocks, so we start it in a goroutine and probe it.
+	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	if err := srv.recompile(); err != nil {
+		t.Fatalf("recompile: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
+	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func() any { return srv.cfg }))
+	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func() any { return srv.data }))
+
+	testSrv := httptest.NewServer(mux)
+	defer testSrv.Close()
+
+	// /sonolus/engines/info
+	resp, err := http.Get(testSrv.URL + "/sonolus/engines/info")
+	if err != nil {
+		t.Fatalf("GET info: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("info status = %d, want 200", resp.StatusCode)
+	}
+	var info map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		t.Fatalf("decode info: %v", err)
+	}
+	if _, ok := info["engine"]; !ok {
+		t.Error("info missing 'engine' key")
+	}
+
+	// /sonolus/engine/play-data
+	resp2, err := http.Get(testSrv.URL + "/sonolus/engine/play-data")
+	if err != nil {
+		t.Fatalf("GET play-data: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != 200 {
+		t.Errorf("play-data status = %d, want 200", resp2.StatusCode)
+	}
 }
 
 func TestCLIErrorPaths(t *testing.T) {
