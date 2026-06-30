@@ -211,6 +211,9 @@ func validateFieldType(expr ast.Expr, fieldName string) error {
 // compile callback methods directly from a parsed engine file (the body keeps
 // its original positions in fset for error messages).
 func CompileBlock(fset *token.FileSet, gen *ir.IDGen, body *ast.BlockStmt, env Env) (*ir.BasicBlock, error) {
+	if body == nil {
+		return nil, ErrNilBody
+	}
 	t := &tracer{
 		fset:     fset,
 		gen:      gen,
