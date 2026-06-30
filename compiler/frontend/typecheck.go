@@ -31,6 +31,19 @@ func PreludeSource(pkg string, records map[string][]string) string {
 	b.WriteString("type Box struct { val float64 }\n")
 	b.WriteString("type FrozenNumSet struct { _size float64; _array []float64 }\n")
 
+	// Handle types — thin records wrapping runtime resource IDs.
+	b.WriteString("type LoopedEffectHandle struct { id float64 }\n")
+	b.WriteString("type ScheduledLoopedEffectHandle struct { id float64 }\n")
+	b.WriteString("type ParticleHandle struct { id float64 }\n")
+
+	// LoopedEffectHandle methods
+	b.WriteString("func (h LoopedEffectHandle) stop() {}\n")
+	// ScheduledLoopedEffectHandle methods
+	b.WriteString("func (h ScheduledLoopedEffectHandle) stop(endTime float64) {}\n")
+	// ParticleHandle methods
+	b.WriteString("func (h ParticleHandle) move(quad Quad) {}\n")
+	b.WriteString("func (h ParticleHandle) destroy() {}\n")
+
 	// User-defined records — type declarations are already in the user source.
 	// The prelude generates constructor stubs with lowercase names to avoid
 	// colliding with the uppercase type name in the user source.

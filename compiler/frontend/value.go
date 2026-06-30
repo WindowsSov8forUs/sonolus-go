@@ -429,6 +429,12 @@ func knownRecordFields(name string, userRecords map[string][]string) ([]string, 
 		return boxFields, true
 	case "frozenNumSet":
 		return frozenNumSetFields, true
+	case "loopedEffectHandle":
+		return loopedEffectHandleFields, true
+	case "scheduledLoopedEffectHandle":
+		return scheduledLoopedEffectHandleFields, true
+	case "particleHandle":
+		return particleHandleFields, true
 	default:
 		if f, ok := userRecords[name]; ok {
 			return f, true
@@ -908,10 +914,23 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"draw": {fn: spriteDraw, minArity: 0},
 	},
 	"effect": {
-		"play": {fn: effectPlay, minArity: 1},
+		"play":         {fn: effectPlay, minArity: 1},
+		"schedule":     {fn: effectSchedule, minArity: 2},
+		"loop":         {fn: effectLoop, minArity: 0},
+		"scheduleLoop": {fn: effectScheduleLoop, minArity: 1},
 	},
 	"particle": {
 		"spawn": {fn: particleSpawn, minArity: 0},
+	},
+	"loopedEffectHandle": {
+		"stop": {fn: loopedEffectHandleStop, minArity: 0},
+	},
+	"scheduledLoopedEffectHandle": {
+		"stop": {fn: scheduledLoopedEffectHandleStop, minArity: 1},
+	},
+	"particleHandle": {
+		"move":    {fn: particleHandleMove, minArity: 1, compositeArgAt: []int{0}},
+		"destroy": {fn: particleHandleDestroy, minArity: 0},
 	},
 	"pair": {
 		"lt":    {fn: pairLt, minArity: 1, compositeArgAt: []int{0}},
@@ -967,6 +986,9 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 var spriteFields = []string{"id"}
 var effectFields = []string{"id"}
 var particleFields = []string{"id"}
+var loopedEffectHandleFields = []string{"id"}
+var scheduledLoopedEffectHandleFields = []string{"id"}
+var particleHandleFields = []string{"id"}
 
 // EntityRef wraps an entity index, enabling cross-entity data access.
 var entityRefFields = []string{"index"}
@@ -1016,14 +1038,77 @@ func effectPlay(t *tracer, e Num, args []Num) (Num, error) {
 	)), nil
 }
 
-// particleSpawn implements Particle.spawn(args...) → native SpawnParticleEffect(id, args...).
+// effectSchedule implements Effect.schedule(time, distance) → native PlayScheduled(id, time, distance).
+func effectSchedule(t *tracer, e Num, args []Num) (Num, error) {
+	return exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionPlayScheduled,
+		e.Field("id").mustNode(),
+		args[0].mustNode(),
+		args[1].mustNode(),
+	)), nil
+}
+
+// effectLoop implements Effect.loop() → LoopedEffectHandle.
+func effectLoop(t *tracer, e Num, args []Num) (Num, error) {
+	id := exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionPlayLooped,
+		e.Field("id").mustNode(),
+	))
+	return compNum(map[string]Num{"id": id}), nil
+}
+
+// effectScheduleLoop implements Effect.scheduleLoop(startTime) → ScheduledLoopedEffectHandle.
+func effectScheduleLoop(t *tracer, e Num, args []Num) (Num, error) {
+	id := exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionPlayLoopedScheduled,
+		e.Field("id").mustNode(),
+		args[0].mustNode(),
+	))
+	return compNum(map[string]Num{"id": id}), nil
+}
+
+// particleSpawn implements Particle.spawn(args...) → ParticleHandle.
 func particleSpawn(t *tracer, p Num, args []Num) (Num, error) {
 	nodes := make([]ir.Node, 1+len(args))
 	nodes[0] = p.Field("id").mustNode()
 	for i, a := range args {
 		nodes[i+1] = a.mustNode()
 	}
-	return exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionSpawnParticleEffect, nodes...)), nil
+	id := exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionSpawnParticleEffect, nodes...))
+	return compNum(map[string]Num{"id": id}), nil
+}
+
+// loopedEffectHandleStop implements LoopedEffectHandle.stop() → native StopLooped(id).
+func loopedEffectHandleStop(t *tracer, h Num, args []Num) (Num, error) {
+	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionStopLooped,
+		h.Field("id").mustNode(),
+	))
+	return constNum(0), nil
+}
+
+// scheduledLoopedEffectHandleStop implements ScheduledLoopedEffectHandle.stop(endTime) → native StopLoopedScheduled(id, endTime).
+func scheduledLoopedEffectHandleStop(t *tracer, h Num, args []Num) (Num, error) {
+	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionStopLoopedScheduled,
+		h.Field("id").mustNode(),
+		args[0].mustNode(),
+	))
+	return constNum(0), nil
+}
+
+// particleHandleMove implements ParticleHandle.move(quad) → native MoveParticleEffect(id, quad...).
+func particleHandleMove(t *tracer, h Num, args []Num) (Num, error) {
+	quad := args[0]
+	nodes := []ir.Node{h.Field("id").mustNode()}
+	for _, f := range quadFields {
+		nodes = append(nodes, quad.Field(f).mustNode())
+	}
+	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionMoveParticleEffect, nodes...))
+	return constNum(0), nil
+}
+
+// particleHandleDestroy implements ParticleHandle.destroy() → native DestroyParticleEffect(id).
+func particleHandleDestroy(t *tracer, h Num, args []Num) (Num, error) {
+	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionDestroyParticleEffect,
+		h.Field("id").mustNode(),
+	))
+	return constNum(0), nil
 }
 
 var judgmentWindowFields = []string{
