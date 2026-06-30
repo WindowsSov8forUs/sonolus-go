@@ -26,9 +26,11 @@ type Result struct {
 // constant values but keep other constants.
 type OmitFunc func(node snode.SNode, callback string) (omit, handled bool)
 
-// SetCallback stores a compiled callback index on an archetype.
-// The archetype type parameter A is the mode-specific archetype struct.
-type SetCallback[A any] func(arch *A, callback string, index int) error
+// SetCallback stores a compiled callback index and declaration order on an
+// archetype. The archetype type parameter A is the mode-specific archetype struct.
+// order is the 0-based declaration index of this callback within the archetype,
+// matching sonolus.js-compiler's {callback}Order convention.
+type SetCallback[A any] func(arch *A, callback string, index int, order int) error
 
 // CompileCallback optimizes one archetype callback's SNode tree and applies the
 // caller-supplied omission rules. It returns nil when the callback should be
@@ -73,6 +75,12 @@ func Assemble[A any](
 ) error {
 	app := snode.NewAppender(nodes)
 
+	// Track the next Order value per archetype. sonolus.js-compiler sets
+	// {callback}Order from the archetype's {callback}Order property, which
+	// is the declaration order of callbacks. We approximate this by
+	// assigning Order in the order callbacks appear in results.
+	orders := make(map[int]int)
+
 	for _, c := range results {
 		if c == nil {
 			continue
@@ -86,12 +94,29 @@ func Assemble[A any](
 			return fmt.Errorf("assemble: archetype %d callback %s: %w", c.ArchetypeIndex, c.Callback, err)
 		}
 
-		if err := setCb(&archetypes[c.ArchetypeIndex], c.Callback, index); err != nil {
+		order := orders[c.ArchetypeIndex]
+		orders[c.ArchetypeIndex] = order + 1
+
+		if err := setCb(&archetypes[c.ArchetypeIndex], c.Callback, index, order); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// NewCallbackSetter creates a SetCallback from a map of callback names to field
+// setters. Each setter stores a properly-typed callback value (with the given
+// index and order) into the correct field on the archetype.
+func NewCallbackSetter[T any](setters map[string]func(*T, int, int)) SetCallback[T] {
+	return func(arch *T, cb string, index int, order int) error {
+		set, ok := setters[cb]
+		if !ok {
+			return fmt.Errorf("assemble: unknown callback %q", cb)
+		}
+		set(arch, index, order)
+		return nil
+	}
 }
 
 // NormalizeSlice returns a non-nil slice so that JSON serialization produces []

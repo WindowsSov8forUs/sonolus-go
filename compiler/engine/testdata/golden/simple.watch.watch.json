@@ -29,10 +29,12 @@
         "index": 7
       },
       "initialize": {
-        "index": 13
+        "index": 13,
+        "order": 1
       },
       "updateParallel": {
-        "index": 19
+        "index": 19,
+        "order": 2
       }
     }
   ],

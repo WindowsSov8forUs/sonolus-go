@@ -2,8 +2,6 @@
 package preview
 
 import (
-	"fmt"
-
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
@@ -25,17 +23,12 @@ func CompileCallback(archetypeIndex int, cb Callback, node snode.SNode) *modecom
 	return modecompile.CompileCallback(archetypeIndex, string(cb), node, nil)
 }
 
-// SetPreviewCallback assigns a compiled callback index to the matching typed field
-// on a Preview-mode archetype. It satisfies modecompile.SetCallback[*EnginePreviewDataArchetype].
-func SetPreviewCallback(arch *resource.EnginePreviewDataArchetype, cb string, index int) error {
-	value := resource.EnginePreviewDataArchetypeCallback{Index: index}
-	switch Callback(cb) {
-	case CallbackPreprocess:
-		arch.Preprocess = &value
-	case CallbackRender:
-		arch.Render = &value
-	default:
-		return fmt.Errorf("assemble: unknown preview callback %q", cb)
-	}
-	return nil
+// previewSetters maps each Preview callback name to its archetype field setter.
+var previewSetters = map[string]func(*resource.EnginePreviewDataArchetype, int, int){
+	"preprocess": func(a *resource.EnginePreviewDataArchetype, i, o int) { a.Preprocess = &resource.EnginePreviewDataArchetypeCallback{Index: i, Order: o} },
+	"render":     func(a *resource.EnginePreviewDataArchetype, i, o int) { a.Render = &resource.EnginePreviewDataArchetypeCallback{Index: i, Order: o} },
 }
+
+// SetPreviewCallback is the modecompile.SetCallback for Preview mode, created from
+// the previewSetters dispatch table.
+var SetPreviewCallback = modecompile.NewCallbackSetter(previewSetters)

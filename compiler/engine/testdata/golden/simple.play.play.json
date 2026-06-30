@@ -30,7 +30,8 @@
         "index": 9
       },
       "updateParallel": {
-        "index": 15
+        "index": 15,
+        "order": 1
       }
     }
   ],

@@ -1,8 +1,6 @@
 package play
 
 import (
-	"fmt"
-
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
@@ -42,28 +40,18 @@ func CompileCallback(archetypeIndex int, cb Callback, node snode.SNode) *modecom
 	return modecompile.CompileCallback(archetypeIndex, string(cb), node, playOmit)
 }
 
-// setPlayCallback assigns a compiled callback to the matching typed field.
-func setPlayCallback(arch *resource.EnginePlayDataArchetype, cb string, index int) error {
-	value := resource.EnginePlayDataArchetypeCallback{Index: index}
-	switch Callback(cb) {
-	case CallbackPreprocess:
-		arch.Preprocess = &value
-	case CallbackSpawnOrder:
-		arch.SpawnOrder = &value
-	case CallbackShouldSpawn:
-		arch.ShouldSpawn = &value
-	case CallbackInitialize:
-		arch.Initialize = &value
-	case CallbackUpdateSequential:
-		arch.UpdateSequential = &value
-	case CallbackTouch:
-		arch.Touch = &value
-	case CallbackUpdateParallel:
-		arch.UpdateParallel = &value
-	case CallbackTerminate:
-		arch.Terminate = &value
-	default:
-		return fmt.Errorf("assemble: unknown play callback %q", cb)
-	}
-	return nil
+// playSetters maps each Play callback name to its archetype field setter.
+var playSetters = map[string]func(*resource.EnginePlayDataArchetype, int, int){
+	"preprocess":       func(a *resource.EnginePlayDataArchetype, i, o int) { a.Preprocess = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+	"spawnOrder":       func(a *resource.EnginePlayDataArchetype, i, o int) { a.SpawnOrder = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+	"shouldSpawn":      func(a *resource.EnginePlayDataArchetype, i, o int) { a.ShouldSpawn = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+	"initialize":       func(a *resource.EnginePlayDataArchetype, i, o int) { a.Initialize = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+	"updateSequential": func(a *resource.EnginePlayDataArchetype, i, o int) { a.UpdateSequential = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+	"touch":            func(a *resource.EnginePlayDataArchetype, i, o int) { a.Touch = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+	"updateParallel":   func(a *resource.EnginePlayDataArchetype, i, o int) { a.UpdateParallel = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+	"terminate":        func(a *resource.EnginePlayDataArchetype, i, o int) { a.Terminate = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
 }
+
+// setPlayCallback is the modecompile.SetCallback for Play mode, created from the
+// playSetters dispatch table.
+var setPlayCallback = modecompile.NewCallbackSetter(playSetters)

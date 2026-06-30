@@ -140,4 +140,4 @@ func TestIgnoreReturn(t *testing.T) {
 // testArch is a minimal archetype for Assemble tests.
 type testArch struct{}
 
-func testSetCb(arch *testArch, cb string, index int) error { return nil }
+func testSetCb(arch *testArch, cb string, index int, order int) error { return nil }
