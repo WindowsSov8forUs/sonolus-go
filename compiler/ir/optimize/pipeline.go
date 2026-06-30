@@ -12,6 +12,7 @@
 package optimize
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -169,6 +170,12 @@ const (
 // instead of panicking — this indicates a programming error in the pipeline
 // definition and should be treated as a fatal error by callers.
 func Optimize(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback string, tempBlock int, level Level) (*ir.BasicBlock, error) {
+	return OptimizeCtx(gen, entry, mode, callback, tempBlock, level, nil)
+}
+
+// OptimizeCtx is like Optimize but checks ctx after every pass for cancellation.
+// If ctx is nil, cancellation is skipped (same behavior as Optimize).
+func OptimizeCtx(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback string, tempBlock int, level Level, ctx context.Context) (*ir.BasicBlock, error) {
 	var passes []Pass
 	switch level {
 	case LevelMinimal:
@@ -181,7 +188,7 @@ func Optimize(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback string
 	if err := VerifyPasses(passes...); err != nil {
 		return nil, fmt.Errorf("optimize: pass dependency violation in %v pipeline: %w", level, err)
 	}
-	entry = RunPasses(gen, entry, passes...)
+	entry = runPassesCtx(gen, entry, ctx, passes...)
 
 	// Select the appropriate allocator for the optimization level.
 	// AllocateBasic (sequential) for MINIMAL/FAST: faster compilation,

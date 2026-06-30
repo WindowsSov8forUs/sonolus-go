@@ -23,6 +23,7 @@ type devServer struct {
 	mu          sync.RWMutex
 	src         string
 	cache       *engine.CompileCache
+	ctx         context.Context // passed to CompileOptions for cancellation support
 	data        *resource.EnginePlayData
 	cfg         *resource.EngineConfiguration
 	rom         []byte
@@ -47,7 +48,7 @@ func (s *devServer) recompile() error {
 		s.data = d
 		s.cfg = cfg
 	} else {
-		playData, cfg, err := engine.CompilePlayFile(srcStr)
+		playData, cfg, err := engine.CompilePlayFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx})
 		if err != nil {
 			return fmt.Errorf("compile play: %w", err)
 		}
@@ -67,7 +68,7 @@ func (s *devServer) recompile() error {
 	if d := s.cache.GetWatch(watchKey); d != nil {
 		s.wd = d
 		delete(s.modeErrors, "watch")
-	} else if watchData, err := engine.CompileWatchFile(srcStr); err != nil {
+	} else if watchData, err := engine.CompileWatchFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] watch compile: %v\n", err)
 		if s.modeErrors == nil {
 			s.modeErrors = map[string]string{}
@@ -84,7 +85,7 @@ func (s *devServer) recompile() error {
 	if d := s.cache.GetPreview(previewKey); d != nil {
 		s.pv = d
 		delete(s.modeErrors, "preview")
-	} else if previewData, err := engine.CompilePreviewFile(srcStr); err != nil {
+	} else if previewData, err := engine.CompilePreviewFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] preview compile: %v\n", err)
 		if s.modeErrors == nil {
 			s.modeErrors = map[string]string{}
@@ -101,7 +102,7 @@ func (s *devServer) recompile() error {
 	if d := s.cache.GetTutorial(tutorialKey); d != nil {
 		s.tut = d
 		delete(s.modeErrors, "tutorial")
-	} else if tutorialData, err := engine.CompileTutorialFile(srcStr); err != nil {
+	} else if tutorialData, err := engine.CompileTutorialFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] tutorial compile: %v\n", err)
 		if s.modeErrors == nil {
 			s.modeErrors = map[string]string{}
@@ -181,7 +182,7 @@ func runDevServer(srcPath string, addr string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv := &devServer{src: srcPath, cache: engine.NewCache(), ctx: ctx}
 	if err := srv.recompile(); err != nil {
 		return err
 	}

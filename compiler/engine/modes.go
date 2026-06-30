@@ -133,7 +133,7 @@ func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStm
 	if err != nil {
 		return nil, err
 	}
-	entry, err = optimize.Optimize(gen, entry, mode, methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+	entry, err = optimize.OptimizeCtx(gen, entry, mode, methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard, optsCtx(opts))
 	if err != nil {
 		return nil, err
 	}

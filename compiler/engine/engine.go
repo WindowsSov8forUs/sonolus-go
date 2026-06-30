@@ -14,12 +14,27 @@
 // durations.
 package engine
 
-import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+import (
+	"context"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+)
 
 // CompileOptions holds optional compilation parameters. nil is equivalent to
-// default options (no stats collection, standard optimization level).
+// default options (no stats collection, standard optimization level, no
+// cancellation).
 type CompileOptions struct {
-	Stats *CompileStats // if non-nil, per-callback compilation timing is recorded
+	Context context.Context // if non-nil, checked between optimization passes for cancellation
+	Stats   *CompileStats   // if non-nil, per-callback compilation timing is recorded
+}
+
+// optsCtx extracts the context from opts, returning nil if opts is nil (safe
+// for callers that pass nil CompileOptions).
+func optsCtx(opts *CompileOptions) context.Context {
+	if opts == nil {
+		return nil
+	}
+	return opts.Context
 }
 
 // ImportedField describes one imported field of an archetype. Name is the Go

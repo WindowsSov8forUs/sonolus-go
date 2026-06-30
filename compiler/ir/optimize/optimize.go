@@ -4,6 +4,7 @@
 package optimize
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -57,12 +58,29 @@ type BlockOracle interface {
 // Passes that implement PassWithDom receive a cached dominance tree that is
 // shared across the pipeline, avoiding redundant O(N²) recomputation.
 func RunPasses(gen *ir.IDGen, entry *ir.BasicBlock, passes ...Pass) *ir.BasicBlock {
+	return runPassesCtx(gen, entry, nil, passes...)
+}
+
+// RunPassesCtx is like RunPasses but checks ctx after every pass. If ctx is
+// nil or ctx.Done() is nil, cancellation is skipped entirely (zero overhead).
+func RunPassesCtx(gen *ir.IDGen, entry *ir.BasicBlock, ctx context.Context, passes ...Pass) *ir.BasicBlock {
+	return runPassesCtx(gen, entry, ctx, passes...)
+}
+
+func runPassesCtx(gen *ir.IDGen, entry *ir.BasicBlock, ctx context.Context, passes ...Pass) *ir.BasicBlock {
 	dom := &DominanceCache{}
 	for _, p := range passes {
 		if pd, ok := p.(PassWithDom); ok {
 			entry = pd.RunWithDom(gen, entry, dom)
 		} else {
 			entry = p.Run(gen, entry)
+		}
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return entry
+			default:
+			}
 		}
 	}
 	return entry
