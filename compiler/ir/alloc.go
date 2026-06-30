@@ -28,9 +28,17 @@ func allocateTempBlocks(entry *BasicBlock, blockID int) *BasicBlock {
 	// Pass 2: rewrite all nodes to use concrete cells.
 	for _, b := range traverseReversePostorder(entry) {
 		for i, s := range b.Statements {
-			b.Statements[i] = a.rewrite(s)
+			rw, err := a.rewrite(s)
+			if err != nil {
+				return nil
+			}
+			b.Statements[i] = rw
 		}
-		b.Test = a.rewrite(b.Test)
+		rw, err := a.rewrite(b.Test)
+		if err != nil {
+			return nil
+		}
+		b.Test = rw
 	}
 	return entry
 }
@@ -80,50 +88,82 @@ func (a *allocator) collectPlace(p Place) {
 	a.collect(bp.Index)
 }
 
-func (a *allocator) rewrite(n Node) Node {
+func (a *allocator) rewrite(n Node) (Node, error) {
 	switch t := n.(type) {
 	case nil:
-		return nil
+		return nil, nil
 	case Const, SSAPlace:
-		return t
+		return t, nil
 	case *TempBlock:
 		// A bare temp block as a node resolves to its base cell id.
-		return Const(a.blockID)
+		return Const(a.blockID), nil
 	case Instr:
 		args := make([]Node, len(t.Args))
 		for i, arg := range t.Args {
-			args[i] = a.rewrite(arg)
+			rw, err := a.rewrite(arg)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = rw
 		}
-		return Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure}
+		return Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure}, nil
 	case Get:
-		return Get{Place: a.rewritePlace(t.Place)}
+		rp, err := a.rewritePlace(t.Place)
+		if err != nil {
+			return nil, err
+		}
+		return Get{Place: rp}, nil
 	case Set:
-		return Set{ID: t.ID, Place: a.rewritePlace(t.Place), Value: a.rewrite(t.Value)}
+		rp, err := a.rewritePlace(t.Place)
+		if err != nil {
+			return nil, err
+		}
+		rv, err := a.rewrite(t.Value)
+		if err != nil {
+			return nil, err
+		}
+		return Set{ID: t.ID, Place: rp, Value: rv}, nil
 	case BlockPlace:
-		return a.rewritePlace(t)
+		rp, err := a.rewritePlace(t)
+		if err != nil {
+			return nil, err
+		}
+		return rp, nil
 	default:
-		panic(fmt.Sprintf("ir: allocator cannot rewrite %T", n))
+		return nil, fmt.Errorf("ir: allocator cannot rewrite %T", n)
 	}
 }
 
-func (a *allocator) rewritePlace(p Place) Place {
+func (a *allocator) rewritePlace(p Place) (Place, error) {
 	bp, ok := p.(BlockPlace)
 	if !ok {
-		return p
+		return p, nil
 	}
 	if tb, ok := bp.Block.(*TempBlock); ok {
 		base := a.slotOf(tb) + bp.Offset
 		// A constant index folds into the slot; a dynamic index (array access)
 		// becomes an offset added at runtime.
 		if bp.Index == nil {
-			return BlockPlace{Block: Const(a.blockID), Index: Const(base), Offset: 0}
+			return BlockPlace{Block: Const(a.blockID), Index: Const(base), Offset: 0}, nil
 		}
 		if c, ok := bp.Index.(Const); ok {
-			return BlockPlace{Block: Const(a.blockID), Index: Const(base + int(c)), Offset: 0}
+			return BlockPlace{Block: Const(a.blockID), Index: Const(base + int(c)), Offset: 0}, nil
 		}
-		return BlockPlace{Block: Const(a.blockID), Index: a.rewrite(bp.Index), Offset: base}
+		rw, err := a.rewrite(bp.Index)
+		if err != nil {
+			return nil, err
+		}
+		return BlockPlace{Block: Const(a.blockID), Index: rw, Offset: base}, nil
 	}
-	return BlockPlace{Block: a.rewrite(bp.Block), Index: a.rewrite(bp.Index), Offset: bp.Offset}
+	rwBlock, err := a.rewrite(bp.Block)
+	if err != nil {
+		return nil, err
+	}
+	rwIndex, err := a.rewrite(bp.Index)
+	if err != nil {
+		return nil, err
+	}
+	return BlockPlace{Block: rwBlock, Index: rwIndex, Offset: bp.Offset}, nil
 }
 
 // AllocateTestBlocks is the exported test-only wrapper around allocateTempBlocks.
