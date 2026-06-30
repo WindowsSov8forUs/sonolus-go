@@ -719,12 +719,10 @@ func (s *sccpState) substitutePlace(p ir.Place) ir.Place {
 	return p
 }
 
+// appendNode adds n to the nodes slice. Deduplication is unnecessary because
+// the SCCP lattice has finite height (3 states per node), so duplicate
+// worklist entries cause at most one redundant but convergent re-evaluation.
 func appendNode(nodes []sccpNode, n sccpNode) []sccpNode {
-	for _, x := range nodes {
-		if x == n {
-			return nodes
-		}
-	}
 	return append(nodes, n)
 }
 

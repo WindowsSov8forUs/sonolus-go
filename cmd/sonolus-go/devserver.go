@@ -18,19 +18,25 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
 )
 
+// devServerState holds the in-memory compiled engine state. It is swapped
+// atomically under devServer.mu so that compilation does not block HTTP reads.
+type devServerState struct {
+	data       *resource.EnginePlayData
+	cfg        *resource.EngineConfiguration
+	rom        []byte
+	wd         *resource.EngineWatchData
+	pv         *resource.EnginePreviewData
+	tut        *resource.EngineTutorialData
+	modeErrors map[string]string // mode → last compile error (watch/preview/tutorial)
+}
+
 // devServer holds the in-memory compiled engine state and serves it over HTTP.
 type devServer struct {
-	mu          sync.RWMutex
-	src         string
-	cache       *engine.CompileCache
-	ctx         context.Context // passed to CompileOptions for cancellation support
-	data        *resource.EnginePlayData
-	cfg         *resource.EngineConfiguration
-	rom         []byte
-	wd          *resource.EngineWatchData
-	pv          *resource.EnginePreviewData
-	tut         *resource.EngineTutorialData
-	modeErrors  map[string]string // mode → last compile error (watch/preview/tutorial)
+	mu    sync.RWMutex
+	src   string
+	cache *engine.CompileCache
+	ctx   context.Context // passed to CompileOptions for cancellation support
+	state devServerState
 }
 
 func (s *devServer) recompile() error {
@@ -39,21 +45,22 @@ func (s *devServer) recompile() error {
 		return fmt.Errorf("reading source: %w", err)
 	}
 	srcStr := string(src)
-	s.mu.Lock()
-	defer s.mu.Unlock()
+
+	// Compile to local variables first; only swap pointers under the lock.
+	newState := devServerState{modeErrors: map[string]string{}}
 
 	// ── Play mode ──
 	playKey := engine.NewCacheKey("play", srcStr)
 	if d, cfg := s.cache.GetPlay(playKey); d != nil {
-		s.data = d
-		s.cfg = cfg
+		newState.data = d
+		newState.cfg = cfg
 	} else {
 		playData, cfg, err := engine.CompilePlayFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx})
 		if err != nil {
 			return fmt.Errorf("compile play: %w", err)
 		}
-		s.data = playData
-		s.cfg = cfg
+		newState.data = playData
+		newState.cfg = cfg
 		s.cache.PutPlay(playKey, playData, cfg)
 	}
 
@@ -61,61 +68,51 @@ func (s *devServer) recompile() error {
 	if err != nil {
 		return fmt.Errorf("build rom: %w", err)
 	}
-	s.rom = rom
+	newState.rom = rom
 
 	// ── Watch mode ──
 	watchKey := engine.NewCacheKey("watch", srcStr)
 	if d := s.cache.GetWatch(watchKey); d != nil {
-		s.wd = d
-		delete(s.modeErrors, "watch")
+		newState.wd = d
 	} else if watchData, err := engine.CompileWatchFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] watch compile: %v\n", err)
-		if s.modeErrors == nil {
-			s.modeErrors = map[string]string{}
-		}
-		s.modeErrors["watch"] = err.Error()
+		newState.modeErrors["watch"] = err.Error()
 	} else {
-		s.wd = watchData
+		newState.wd = watchData
 		s.cache.PutWatch(watchKey, watchData)
-		delete(s.modeErrors, "watch")
 	}
 
 	// ── Preview mode ──
 	previewKey := engine.NewCacheKey("preview", srcStr)
 	if d := s.cache.GetPreview(previewKey); d != nil {
-		s.pv = d
-		delete(s.modeErrors, "preview")
+		newState.pv = d
 	} else if previewData, err := engine.CompilePreviewFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] preview compile: %v\n", err)
-		if s.modeErrors == nil {
-			s.modeErrors = map[string]string{}
-		}
-		s.modeErrors["preview"] = err.Error()
+		newState.modeErrors["preview"] = err.Error()
 	} else {
-		s.pv = previewData
+		newState.pv = previewData
 		s.cache.PutPreview(previewKey, previewData)
-		delete(s.modeErrors, "preview")
 	}
 
 	// ── Tutorial mode ──
 	tutorialKey := engine.NewCacheKey("tutorial", srcStr)
 	if d := s.cache.GetTutorial(tutorialKey); d != nil {
-		s.tut = d
-		delete(s.modeErrors, "tutorial")
+		newState.tut = d
 	} else if tutorialData, err := engine.CompileTutorialFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] tutorial compile: %v\n", err)
-		if s.modeErrors == nil {
-			s.modeErrors = map[string]string{}
-		}
-		s.modeErrors["tutorial"] = err.Error()
+		newState.modeErrors["tutorial"] = err.Error()
 	} else {
-		s.tut = tutorialData
+		newState.tut = tutorialData
 		s.cache.PutTutorial(tutorialKey, tutorialData)
-		delete(s.modeErrors, "tutorial")
 	}
 
+	// Atomic pointer swap — the only part that needs the write lock.
+	s.mu.Lock()
+	s.state = newState
+	s.mu.Unlock()
+
 	fmt.Printf("[dev] recompiled: %d nodes, %d archetypes, %d options\n",
-		len(s.data.Nodes), len(s.data.Archetypes), len(s.cfg.Options))
+		len(newState.data.Nodes), len(newState.data.Archetypes), len(newState.cfg.Options))
 	return nil
 }
 
@@ -136,7 +133,7 @@ func (s *devServer) serveRom(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.RUnlock()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Encoding", "gzip")
-	if _, err := w.Write(s.rom); err != nil {
+	if _, err := w.Write(s.state.rom); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] write rom: %v\n", err)
 	}
 }
@@ -147,18 +144,18 @@ func (s *devServer) serveInfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]any{
 		"engine": filepath.Base(s.src),
 	}
-	if s.data != nil {
-		info["nodes"] = len(s.data.Nodes)
-		info["arches"] = len(s.data.Archetypes)
+	if s.state.data != nil {
+		info["nodes"] = len(s.state.data.Nodes)
+		info["arches"] = len(s.state.data.Archetypes)
 	}
-	if s.cfg != nil {
-		info["options"] = len(s.cfg.Options)
+	if s.state.cfg != nil {
+		info["options"] = len(s.state.cfg.Options)
 	}
-	info["hasWatch"] = s.wd != nil
-	info["hasPreview"] = s.pv != nil
-	info["hasTutorial"] = s.tut != nil
-	if len(s.modeErrors) > 0 {
-		info["errors"] = s.modeErrors
+	info["hasWatch"] = s.state.wd != nil
+	info["hasPreview"] = s.state.pv != nil
+	info["hasTutorial"] = s.state.tut != nil
+	if len(s.state.modeErrors) > 0 {
+		info["errors"] = s.state.modeErrors
 	}
 	if err := json.NewEncoder(w).Encode(info); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] encode info: %v\n", err)
@@ -189,11 +186,11 @@ func runDevServer(srcPath string, addr string) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
-	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func() any { return srv.cfg }))
-	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func() any { return srv.data }))
-	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func() any { return srv.wd }))
-	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func() any { return srv.pv }))
-	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.tut }))
+	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func() any { return srv.state.cfg }))
+	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func() any { return srv.state.data }))
+	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func() any { return srv.state.wd }))
+	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func() any { return srv.state.pv }))
+	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.state.tut }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveRom)
 
 	// Watch for source file changes using fsnotify (event-driven, no polling).

@@ -33,11 +33,11 @@ func (n N) Initialize() {}
 	// Register handlers exactly as serve mode does.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
-	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func() any { return srv.cfg }))
-	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func() any { return srv.data }))
-	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func() any { return srv.wd }))
-	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func() any { return srv.pv }))
-	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.tut }))
+	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func() any { return srv.state.cfg }))
+	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func() any { return srv.state.data }))
+	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func() any { return srv.state.wd }))
+	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func() any { return srv.state.pv }))
+	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.state.tut }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveRom)
 
 	tests := []struct {
@@ -87,26 +87,26 @@ func (n N) Initialize() {
 	}
 
 	// Verify non-empty output.
-	if srv.data == nil {
+	if srv.state.data == nil {
 		t.Fatal("play data is nil after recompile")
 	}
-	if srv.cfg == nil {
+	if srv.state.cfg == nil {
 		t.Fatal("config is nil after recompile")
 	}
-	if len(srv.data.Archetypes) != 1 {
-		t.Fatalf("expected 1 archetype, got %d", len(srv.data.Archetypes))
+	if len(srv.state.data.Archetypes) != 1 {
+		t.Fatalf("expected 1 archetype, got %d", len(srv.state.data.Archetypes))
 	}
-	if len(srv.data.Nodes) == 0 {
+	if len(srv.state.data.Nodes) == 0 {
 		t.Fatal("expected non-empty nodes")
 	}
 
 	// Verify JSON serialization works (all modes serialize as gzip JSON).
 	for label, v := range map[string]any{
-		"play":     srv.data,
-		"config":   srv.cfg,
-		"watch":    srv.wd,
-		"preview":  srv.pv,
-		"tutorial": srv.tut,
+		"play":     srv.state.data,
+		"config":   srv.state.cfg,
+		"watch":    srv.state.wd,
+		"preview":  srv.state.pv,
+		"tutorial": srv.state.tut,
 	} {
 		if v == nil {
 			t.Errorf("%s data is nil", label)

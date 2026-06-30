@@ -52,6 +52,6 @@ var playSetters = map[string]func(*resource.EnginePlayDataArchetype, int, int){
 	"terminate":        func(a *resource.EnginePlayDataArchetype, i, o int) { a.Terminate = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
 }
 
-// setPlayCallback is the modecompile.SetCallback for Play mode, created from the
+// SetPlayCallback is the modecompile.SetCallback for Play mode, created from the
 // playSetters dispatch table.
-var setPlayCallback = modecompile.NewCallbackSetter(playSetters)
+var SetPlayCallback = modecompile.NewCallbackSetter(playSetters)

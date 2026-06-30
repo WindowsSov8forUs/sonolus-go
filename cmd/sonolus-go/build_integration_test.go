@@ -246,8 +246,8 @@ func TestServeCommand(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
-	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func() any { return srv.cfg }))
-	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func() any { return srv.data }))
+	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func() any { return srv.state.cfg }))
+	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func() any { return srv.state.data }))
 
 	testSrv := httptest.NewServer(mux)
 	defer testSrv.Close()
