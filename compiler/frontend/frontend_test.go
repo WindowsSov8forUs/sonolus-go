@@ -2235,3 +2235,250 @@ func TestVec2RotateAbout(t *testing.T) {
 		t.Errorf("Vec2.rotateAbout failed: %s", got)
 	}
 }
+
+// --- Debug / judge / sort / stack runtime function tests ---
+
+func TestDebugTerminate(t *testing.T) {
+	src := `package p
+	func f() {
+		debugTerminate()
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("debugTerminate failed: %s", got)
+	}
+}
+
+func TestDebugLog(t *testing.T) {
+	src := `package p
+	func f() {
+		debugLog(1)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("debugLog failed: %s", got)
+	}
+}
+
+func TestDebugPause(t *testing.T) {
+	src := `package p
+	func f() {
+		debugPause()
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("debugPause failed: %s", got)
+	}
+}
+
+func TestDebugError(t *testing.T) {
+	src := `package p
+	func f() {
+		debugError(1)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("debugError failed: %s", got)
+	}
+}
+
+func TestDebugRequireCall(t *testing.T) {
+	src := `package p
+	func f() {
+		debugRequire(1, 1)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("debugRequire failed: %s", got)
+	}
+}
+
+func TestDebugAssertTrueCall(t *testing.T) {
+	src := `package p
+	func f() {
+		debugAssertTrue(1, 1)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("debugAssertTrue failed: %s", got)
+	}
+}
+
+func TestDebugAssertFalseCall(t *testing.T) {
+	src := `package p
+	func f() {
+		debugAssertFalse(1, 1)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("debugAssertFalse failed: %s", got)
+	}
+}
+
+func TestJudgeSimple(t *testing.T) {
+	src := `package p
+	func f() {
+		judgeSimple(0, 0, 0)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("judgeSimple failed: %s", got)
+	}
+}
+
+func TestJudge(t *testing.T) {
+	src := `package p
+	func f() {
+		judge(0, 0, 0)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("judge failed: %s", got)
+	}
+}
+
+func TestSortLinkedEntities(t *testing.T) {
+	src := `package p
+	func f() {
+		sortLinkedEntities(0, 0, 0)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("sortLinkedEntities failed: %s", got)
+	}
+}
+
+func TestStackEnterLeave(t *testing.T) {
+	src := `package p
+	func f() {
+		stackEnter(0, 0, 0)
+		stackLeave()
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("stackEnter/stackLeave failed: %s", got)
+	}
+}
+
+func TestEasingInOut(t *testing.T) {
+	src := `package p
+	func f() {
+		t := get(0, 0)
+		a := easeInOutCubic(t)
+		b := easeInOutSine(t)
+		set(0, 1, a + b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("easeInOutCubic/easeInOutSine failed: %s", got)
+	}
+}
+
+func TestBeatToTime(t *testing.T) {
+	src := `package p
+	func f() {
+		v := beatToTime(0)
+		set(0, 0, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("beatToTime failed: %s", got)
+	}
+}
+
+func TestTimeToScaledTime(t *testing.T) {
+	src := `package p
+	func f() {
+		v := timeToScaledTime(1)
+		set(0, 0, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("timeToScaledTime failed: %s", got)
+	}
+}
+
+func TestPrint(t *testing.T) {
+	src := `package p
+	func f() {
+		print(42)
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("print failed: %s", got)
+	}
+}
+
+func TestHasSkinSprite(t *testing.T) {
+	src := `package p
+	func f() {
+		b := hasSkinSprite(0)
+		set(0, 0, b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("hasSkinSprite failed: %s", got)
+	}
+}
+
+func TestHasEffectClip(t *testing.T) {
+	src := `package p
+	func f() {
+		b := hasEffectClip(0)
+		set(0, 0, b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("hasEffectClip failed: %s", got)
+	}
+}
+
+func TestDrawCurved(t *testing.T) {
+	src := `package p
+	func f() {
+		drawCurvedB(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("drawCurvedB failed: %s", got)
+	}
+}
+
+func TestPlayLoopedScheduled(t *testing.T) {
+	src := `package p
+	func f() {
+		playLooped(0, 0)
+		playLoopedScheduled(0, 0, 0)
+		stopLoopedScheduled(0, 0)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("playLooped/stopLoopedScheduled failed: %s", got)
+	}
+}
+
+func TestSpawnParticle(t *testing.T) {
+	src := `package p
+	func f() {
+		spawn(0, 0, 0, 0, 0, 0, 0, 0)
+		spawnParticle(0, 0, 0, 0, 0)
+		moveParticle(0, 0, 0, 0, 0)
+		destroyParticle(0)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("spawn/spawnParticle/moveParticle/destroyParticle failed: %s", got)
+	}
+}
