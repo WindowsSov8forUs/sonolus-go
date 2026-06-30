@@ -161,7 +161,7 @@ func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.Engi
 	if err != nil {
 		return nil, err
 	}
-	accessors := frontend.ModeAccessors(ir.ModeWatch)
+	accessors := frontend.ModeAccessorsReadOnly(ir.ModeWatch)
 	nodes := []resource.EngineDataNode{}
 
 	arcData, results, err := compileArchetypeCallbacks(gen, pf.fset, pf.arcs, pf.order, pf.funcs, accessors, watchCBs, ir.ModeWatch, opts)
@@ -220,7 +220,7 @@ func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.En
 	if err != nil {
 		return nil, err
 	}
-	accessors := frontend.ModeAccessors(ir.ModePreview)
+	accessors := frontend.ModeAccessorsReadOnly(ir.ModePreview)
 	nodes := []resource.EngineDataNode{}
 
 	arcData, results, err := compileArchetypeCallbacks(gen, pf.fset, pf.arcs, pf.order, pf.funcs, accessors, previewCBs, ir.ModePreview, opts)
@@ -257,7 +257,7 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 	if err != nil {
 		return nil, err
 	}
-	accessors := frontend.ModeAccessors(ir.ModeTutorial)
+	accessors := frontend.ModeAccessorsReadOnly(ir.ModeTutorial)
 	nodes := []resource.EngineDataNode{}
 	app := snode.NewAppender(&nodes)
 

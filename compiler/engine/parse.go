@@ -216,7 +216,7 @@ func compileParsed(
 		for _, m := range a.methods {
 			env := frontend.Env{
 				Names: names, Receiver: m.receiver, Funcs: funcs, Methods: a.helpers,
-				Accessors: frontend.ModeAccessors(ir.ModePlay),
+				Accessors: frontend.ModeAccessorsReadOnly(ir.ModePlay),
 				Mode:      ir.ModePlay,
 			}
 			sn, err := compileCallbackBlock(gen, fset, m.body, env, string(m.callback), ir.ModePlay, opts)
