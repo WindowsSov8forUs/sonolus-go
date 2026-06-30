@@ -420,7 +420,7 @@ func (t *tracer) callWithArgs(fn *ast.Ident, n *ast.CallExpr, args []Num) (Num, 
 		if len(args) != 1 {
 			return Num{}, t.errf(n, "debugError expects 1 argument (message)")
 		}
-		msgNode, err := args[0].node()
+		msgNode, err := args[0].Node()
 		if err != nil {
 			return Num{}, t.errf(n, "debugError: %v", err)
 		}
@@ -461,7 +461,7 @@ func (t *tracer) callWithArgs(fn *ast.Ident, n *ast.CallExpr, args []Num) (Num, 
 			}
 			nodes := make([]ir.Node, len(args))
 			for i, a := range args {
-				nd, err := a.node()
+				nd, err := a.Node()
 				if err != nil {
 					return Num{}, t.errf(n, "argument %d: %v", i, err)
 				}

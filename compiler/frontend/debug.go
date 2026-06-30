@@ -24,7 +24,7 @@ func (t *tracer) debugRequire(cond, msg Num) {
 			return // condition is truthy → no-op
 		}
 		// Condition is statically false → unconditional error.
-		msgNode, err := msg.node()
+		msgNode, err := msg.Node()
 		if err != nil {
 			// msg should always be a string literal; fall back to a generic message.
 			msgNode = ir.Const(0)
@@ -44,7 +44,7 @@ func (t *tracer) debugRequire(cond, msg Num) {
 	condBlock.ConnectTo(errorBlock, ir.Cond(0)) // false → error
 
 	t.enter(errorBlock)
-	msgNode, err := msg.node()
+	msgNode, err := msg.Node()
 	if err != nil {
 		msgNode = ir.Const(0)
 	}
