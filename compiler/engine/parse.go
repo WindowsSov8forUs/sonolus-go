@@ -46,6 +46,8 @@ type parsedMethod struct {
 	body     *ast.BlockStmt
 }
 
+// CompilePlayFile compiles a Go Play-mode engine source file and returns the
+// EnginePlayData and EngineConfiguration.
 func CompilePlayFile(src string) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
 	return CompilePlayFileWithStats(src, nil)
 }

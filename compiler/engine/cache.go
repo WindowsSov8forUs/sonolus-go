@@ -50,6 +50,8 @@ func NewCache() *CompileCache {
 	}
 }
 
+// GetPlay returns cached Play-mode compilation results for the given key, or nil
+// if not cached.
 func (c *CompileCache) GetPlay(key CacheKey) (*resource.EnginePlayData, *resource.EngineConfiguration) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -64,6 +66,7 @@ func (c *CompileCache) GetPlay(key CacheKey) (*resource.EnginePlayData, *resourc
 	return d, cfg
 }
 
+// PutPlay stores Play-mode compilation results in the cache.
 func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg *resource.EngineConfiguration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -103,6 +106,8 @@ func putKeyed[T any](c *CompileCache, m map[CacheKey]T, key CacheKey, data T) {
 	m[key] = data
 }
 
+// GetWatch returns cached Watch-mode compilation results for the given key, or nil
+// if not cached.
 func (c *CompileCache) GetWatch(key CacheKey) *resource.EngineWatchData {
 	d, ok := getKeyed(c, c.watch, key)
 	if !ok {
@@ -111,10 +116,13 @@ func (c *CompileCache) GetWatch(key CacheKey) *resource.EngineWatchData {
 	return d
 }
 
+// PutWatch stores Watch-mode compilation results in the cache.
 func (c *CompileCache) PutWatch(key CacheKey, data *resource.EngineWatchData) {
 	putKeyed(c, c.watch, key, data)
 }
 
+// GetPreview returns cached Preview-mode compilation results for the given key,
+// or nil if not cached.
 func (c *CompileCache) GetPreview(key CacheKey) *resource.EnginePreviewData {
 	d, ok := getKeyed(c, c.preview, key)
 	if !ok {
@@ -123,10 +131,13 @@ func (c *CompileCache) GetPreview(key CacheKey) *resource.EnginePreviewData {
 	return d
 }
 
+// PutPreview stores Preview-mode compilation results in the cache.
 func (c *CompileCache) PutPreview(key CacheKey, data *resource.EnginePreviewData) {
 	putKeyed(c, c.preview, key, data)
 }
 
+// GetTutorial returns cached Tutorial-mode compilation results for the given key,
+// or nil if not cached.
 func (c *CompileCache) GetTutorial(key CacheKey) *resource.EngineTutorialData {
 	d, ok := getKeyed(c, c.tutorial, key)
 	if !ok {
@@ -135,6 +146,7 @@ func (c *CompileCache) GetTutorial(key CacheKey) *resource.EngineTutorialData {
 	return d
 }
 
+// PutTutorial stores Tutorial-mode compilation results in the cache.
 func (c *CompileCache) PutTutorial(key CacheKey, data *resource.EngineTutorialData) {
 	putKeyed(c, c.tutorial, key, data)
 }

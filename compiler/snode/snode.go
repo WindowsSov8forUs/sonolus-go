@@ -23,7 +23,10 @@ type Func struct {
 
 func (f Func) isSNode() {}
 
+// Val creates a constant number Value node.
 func Val(v float64) Value { return Value(v) }
+
+// Call creates a function call Func node with the given runtime function and arguments.
 func Call(op resource.RuntimeFunction, args ...SNode) Func {
 	return Func{Op: op, Args: args}
 }
