@@ -235,6 +235,14 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 		if valName != "" {
 			delete(t.vars, valName)
 		}
+		// Create merge block so subsequent statements are reachable.
+		// If the unrolled body terminated (e.g. return), the merge has
+		// no incoming edges and is treated as dead — matching the runtime
+		// loop behaviour.
+		merge := ir.NewBlock()
+		t.fallthroughTo(merge)
+		t.enter(merge)
+		t.terminated = len(merge.Incoming) == 0
 		return nil
 	}
 

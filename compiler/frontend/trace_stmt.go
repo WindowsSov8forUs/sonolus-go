@@ -299,6 +299,10 @@ func (t *tracer) arrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 // creates a recordInfo for field tracking (so method dispatch works), and stores
 // a containerInfo for methods that need the backing array.
 func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
+	fnIdent, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return t.errf(call, "varArray/arrayMap constructor must be called by name, not expression")
+	}
 	if len(call.Args) != 1 {
 		return t.errf(call, "varArray expects exactly 1 argument (capacity)")
 	}
@@ -311,7 +315,7 @@ func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 	}
 	capacity := int(capVal.c)
 	elemSize := 1
-	if call.Fun.(*ast.Ident).Name == "arrayMap" {
+	if fnIdent.Name == "arrayMap" {
 		elemSize = 2 // key + value per entry
 	}
 	totalSlots := 1 + capacity*elemSize // slot 0 = _size, rest = elements
@@ -332,12 +336,12 @@ func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 		fields:   map[string]int{"_size": 0, "_array": 1},
 		order:    []string{"_size", "_array"},
 		val:      compNum(fields),
-		typeName: call.Fun.(*ast.Ident).Name, // "varArray" or "arrayMap"
+		typeName: fnIdent.Name, // "varArray" or "arrayMap"
 	}
 	t.records[fnName.Name] = ri
 
 	es := 1
-	if call.Fun.(*ast.Ident).Name == "arrayMap" {
+	if fnIdent.Name == "arrayMap" {
 		es = 2 // key + value slots per entry
 	}
 	ci := &containerInfo{
@@ -495,10 +499,14 @@ func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
 // reserves a temp with one slot per field, stores the initializers, and tracks
 // each field as an individual Num for scalar-replaceable reads.
 func (t *tracer) recordDecl(fnName *ast.Ident, call *ast.CallExpr, fields []string) error {
-	if len(call.Args) != len(fields) {
-		return t.errf(call, "%s expects %d arguments", call.Fun.(*ast.Ident).Name, len(fields))
+	fnIdent, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return t.errf(call, "record constructor must be called by name, not expression")
 	}
-	typeName := call.Fun.(*ast.Ident).Name
+	if len(call.Args) != len(fields) {
+		return t.errf(call, "%s expects %d arguments", fnIdent.Name, len(fields))
+	}
+	typeName := fnIdent.Name
 	rec := &recordInfo{
 		tb:       &ir.TempBlock{Name: fnName.Name, Size: len(fields)},
 		fields:   map[string]int{},
