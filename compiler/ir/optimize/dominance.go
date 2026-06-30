@@ -1,7 +1,7 @@
 package optimize
 
 import (
-	"fmt"
+	"encoding/binary"
 	"hash/fnv"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -35,27 +35,32 @@ func (c *DominanceCache) Invalidate() {
 
 // cfgStructuralHash computes a fast hash of the CFG topology (blocks + edges).
 // It uses block pointer identity and edge targets; instruction content is ignored
-// since dominance depends only on graph shape.
+// since dominance depends only on graph shape. The block → preorder-index map is
+// built once and reused for all edges, avoiding repeated Preorder calls and
+// fmt.Fprintf allocations.
 func cfgStructuralHash(entry *ir.BasicBlock) uint64 {
+	order := ir.Preorder(entry)
+	indexOf := make(map[*ir.BasicBlock]int, len(order))
+	for i, b := range order {
+		indexOf[b] = i
+	}
+
 	h := fnv.New64()
-	for i, b := range ir.Preorder(entry) {
-		// Mix block preorder index (monotonically assigned) and edge targets.
-		fmt.Fprintf(h, "%d", i)
+	var buf [8]byte
+	notFound := ^uint64(0)
+	for _, b := range order {
+		binary.LittleEndian.PutUint64(buf[:], uint64(indexOf[b]))
+		h.Write(buf[:])
 		for _, e := range b.Outgoing {
-			fmt.Fprintf(h, "%d", preorderIndex(e.Dst, entry))
+			if idx, ok := indexOf[e.Dst]; ok {
+				binary.LittleEndian.PutUint64(buf[:], uint64(idx))
+			} else {
+				binary.LittleEndian.PutUint64(buf[:], notFound)
+			}
+			h.Write(buf[:])
 		}
 	}
 	return h.Sum64()
-}
-
-// preorderIndex returns the preorder index of b within the CFG rooted at entry.
-func preorderIndex(b *ir.BasicBlock, entry *ir.BasicBlock) int {
-	for i, blk := range ir.Preorder(entry) {
-		if blk == b {
-			return i
-		}
-	}
-	return -1
 }
 
 // Dominance holds dominator information for a CFG: reverse-postorder, block

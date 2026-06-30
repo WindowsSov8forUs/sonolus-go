@@ -28,21 +28,20 @@ func (RenumberVars) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 		return n
 	}
 
-	// First pass: collect temps via Map (identity transform, side-effect is collection).
-	collect := func(n ir.Node) ir.Node {
+	// First pass: collect temps via Walk (read-only; avoids allocations from Map).
+	collect := func(n ir.Node) {
 		if tb, ok := n.(*ir.TempBlock); ok {
 			if _, seen := renumber[tb]; !seen {
 				renumber[tb] = &ir.TempBlock{Name: nextName(), Size: tb.Size}
 			}
 		}
-		return n
 	}
 	for _, b := range blocks {
 		for _, s := range b.Statements {
-			ir.Map(s, collect)
+			ir.Walk(s, collect)
 		}
 		if b.Test != nil {
-			ir.Map(b.Test, collect)
+			ir.Walk(b.Test, collect)
 		}
 	}
 	if len(renumber) == 0 {

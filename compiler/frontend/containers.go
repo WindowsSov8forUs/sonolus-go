@@ -510,8 +510,8 @@ var arraySetFields = []string{"_values"}
 // Box wraps a single numeric value for uniform Num/non-Num handling.
 var boxFields = []string{"val"}
 
-// FrozenNumSet fields: a sorted array of nums + size. Uses binary search
-// for contains() when size >= 16, linear search otherwise.
+// FrozenNumSet fields: a sorted array of nums + size. Contains uses
+// linear search; binary search for large sets is deferred to a future phase.
 var frozenNumSetFields = []string{"_size", "_array"}
 
 // containerSelf returns the receiver Num itself. Used by ArrayMap keys/values/items
