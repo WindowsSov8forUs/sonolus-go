@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -28,7 +29,8 @@ type devServer struct {
 	wd          *resource.EngineWatchData
 	pv          *resource.EnginePreviewData
 	tut         *resource.EngineTutorialData
-	modTimeUnix atomic.Int64 // UnixNano timestamp of last known source file mod time
+	modTimeUnix atomic.Int64  // UnixNano timestamp of last known source file mod time
+	modeErrors  map[string]string // mode → last compile error (watch/preview/tutorial)
 }
 
 func (s *devServer) recompile() error {
@@ -65,33 +67,51 @@ func (s *devServer) recompile() error {
 	watchKey := engine.NewCacheKey("watch", srcStr)
 	if d := s.cache.GetWatch(watchKey); d != nil {
 		s.wd = d
+		delete(s.modeErrors, "watch")
 	} else if watchData, err := engine.CompileWatchFile(srcStr); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] watch compile: %v\n", err)
+		if s.modeErrors == nil {
+			s.modeErrors = map[string]string{}
+		}
+		s.modeErrors["watch"] = err.Error()
 	} else {
 		s.wd = watchData
 		s.cache.PutWatch(watchKey, watchData)
+		delete(s.modeErrors, "watch")
 	}
 
 	// ── Preview mode ──
 	previewKey := engine.NewCacheKey("preview", srcStr)
 	if d := s.cache.GetPreview(previewKey); d != nil {
 		s.pv = d
+		delete(s.modeErrors, "preview")
 	} else if previewData, err := engine.CompilePreviewFile(srcStr); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] preview compile: %v\n", err)
+		if s.modeErrors == nil {
+			s.modeErrors = map[string]string{}
+		}
+		s.modeErrors["preview"] = err.Error()
 	} else {
 		s.pv = previewData
 		s.cache.PutPreview(previewKey, previewData)
+		delete(s.modeErrors, "preview")
 	}
 
 	// ── Tutorial mode ──
 	tutorialKey := engine.NewCacheKey("tutorial", srcStr)
 	if d := s.cache.GetTutorial(tutorialKey); d != nil {
 		s.tut = d
+		delete(s.modeErrors, "tutorial")
 	} else if tutorialData, err := engine.CompileTutorialFile(srcStr); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] tutorial compile: %v\n", err)
+		if s.modeErrors == nil {
+			s.modeErrors = map[string]string{}
+		}
+		s.modeErrors["tutorial"] = err.Error()
 	} else {
 		s.tut = tutorialData
 		s.cache.PutTutorial(tutorialKey, tutorialData)
+		delete(s.modeErrors, "tutorial")
 	}
 
 	fmt.Printf("[dev] recompiled: %d nodes, %d archetypes, %d options\n",
@@ -133,6 +153,9 @@ func (s *devServer) serveInfo(w http.ResponseWriter, r *http.Request) {
 		"hasPreview":  s.pv != nil,
 		"hasTutorial": s.tut != nil,
 	}
+	if len(s.modeErrors) > 0 {
+		info["errors"] = s.modeErrors
+	}
 	if err := json.NewEncoder(w).Encode(info); err != nil {
 		fmt.Fprintf(os.Stderr, "[dev] encode info: %v\n", err)
 	}
@@ -152,6 +175,9 @@ func serveGzip(w http.ResponseWriter, data any) {
 }
 
 func runDevServer(srcPath string, addr string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	srv := &devServer{src: srcPath, cache: engine.NewCache()}
 	// Initialize modTimeUnix from the current file state so the watch loop has a baseline.
 	if info, err := os.Stat(srcPath); err == nil {
@@ -170,21 +196,27 @@ func runDevServer(srcPath string, addr string) error {
 	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.tut }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveRom)
 
-	// Watch loop for auto-recompile.
+	// Watch loop for auto-recompile. Polls the source file mtime every 500ms
+	// and triggers recompile when it changes. Cancelled when runDevServer returns.
 	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
 		for {
-			info, err := os.Stat(srcPath)
-			if err != nil {
-				time.Sleep(time.Second)
-				continue
-			}
-			if info.ModTime().UnixNano() > srv.modTimeUnix.Load() {
-				srv.modTimeUnix.Store(info.ModTime().UnixNano())
-				if err := srv.recompile(); err != nil {
-					fmt.Fprintf(os.Stderr, "[dev] recompile error: %v\n", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				info, err := os.Stat(srcPath)
+				if err != nil {
+					continue
+				}
+				if info.ModTime().UnixNano() > srv.modTimeUnix.Load() {
+					srv.modTimeUnix.Store(info.ModTime().UnixNano())
+					if err := srv.recompile(); err != nil {
+						fmt.Fprintf(os.Stderr, "[dev] recompile error: %v\n", err)
+					}
 				}
 			}
-			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 

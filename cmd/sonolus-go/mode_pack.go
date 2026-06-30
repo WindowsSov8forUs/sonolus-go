@@ -160,6 +160,7 @@ func runPack(srcPath string, author string) error {
 	if err := os.RemoveAll(sourceDir); err != nil {
 		return err
 	}
+	defer os.RemoveAll(sourceDir)
 
 	meta := pack.EngineItemMeta{
 		Title:      engineName,
