@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"reflect"
+	"time"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -46,6 +47,13 @@ type parsedMethod struct {
 }
 
 func CompilePlayFile(src string) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
+	return CompilePlayFileWithStats(src, nil)
+}
+
+// CompilePlayFileWithStats compiles a Go Play-mode engine source file. If opts
+// is non-nil and opts.Stats is non-nil, per-callback compilation timing is
+// recorded.
+func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "engine.go", src, 0)
 	if err != nil {
@@ -109,7 +117,7 @@ func CompilePlayFile(src string) (*resource.EnginePlayData, *resource.EngineConf
 	if err != nil {
 		return nil, nil, err
 	}
-	return compileParsed(fset, archetypes, order, funcs, r)
+	return compileParsed(fset, archetypes, order, funcs, r, opts)
 }
 
 func receiverInfo(field *ast.Field) (typeName, recvName string) {
@@ -176,6 +184,7 @@ func compileParsed(
 	archetypes map[string]*parsedArchetype, order []string,
 	funcs map[string]*ast.FuncDecl,
 	r parsedResources,
+	opts *CompileOptions,
 ) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
 	gen := ir.NewIDGen()
 	defs := make([]play.ArchetypeDef, len(order))
@@ -235,6 +244,7 @@ func compileParsed(
 				Accessors: frontend.ModeAccessors(ir.ModePlay),
 				Mode:      ir.ModePlay,
 			}
+			t0 := time.Now()
 			entry, err := frontend.CompileBlock(fset, gen, m.body, env)
 			if err != nil {
 				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
@@ -244,10 +254,13 @@ func compileParsed(
 				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
 			}
 			sn, err := ir.CFGToSNode(gen, entry)
-				if err != nil {
-					return nil, nil, fmt.Errorf("archetype %q callback %s: %w", name, m.callback, err)
-				}
-				results = append(results, play.CompileCallback(i, m.callback, sn))
+			if err != nil {
+				return nil, nil, fmt.Errorf("archetype %q callback %s: %w", name, m.callback, err)
+			}
+			if opts != nil && opts.Stats != nil {
+				opts.Stats.Record(string(m.callback), time.Since(t0))
+			}
+			results = append(results, play.CompileCallback(i, m.callback, sn))
 		}
 	}
 

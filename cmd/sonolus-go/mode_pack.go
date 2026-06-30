@@ -46,26 +46,58 @@ func compileAllModes(src string, stats bool) (pack.CompiledEngine, error) {
 	go func() {
 		defer wg.Done()
 		t0 := time.Now()
-		playData, playCfg, playErr = engine.CompilePlayFile(src)
-		playDur = time.Since(t0)
+		if stats {
+			stats := &engine.CompileStats{}
+			opts := &engine.CompileOptions{Stats: stats}
+			playData, playCfg, playErr = engine.CompilePlayFileWithStats(src, opts)
+			playDur = time.Since(t0)
+			stats.WriteSummary(os.Stderr, "play")
+		} else {
+			playData, playCfg, playErr = engine.CompilePlayFile(src)
+			playDur = time.Since(t0)
+		}
 	}()
 	go func() {
 		defer wg.Done()
 		t0 := time.Now()
-		watchData, watchErr = engine.CompileWatchFile(src)
-		watchDur = time.Since(t0)
+		if stats {
+			stats := &engine.CompileStats{}
+			opts := &engine.CompileOptions{Stats: stats}
+			watchData, watchErr = engine.CompileWatchFileWithStats(src, opts)
+			watchDur = time.Since(t0)
+			stats.WriteSummary(os.Stderr, "watch")
+		} else {
+			watchData, watchErr = engine.CompileWatchFile(src)
+			watchDur = time.Since(t0)
+		}
 	}()
 	go func() {
 		defer wg.Done()
 		t0 := time.Now()
-		previewData, previewErr = engine.CompilePreviewFile(src)
-		previewDur = time.Since(t0)
+		if stats {
+			stats := &engine.CompileStats{}
+			opts := &engine.CompileOptions{Stats: stats}
+			previewData, previewErr = engine.CompilePreviewFileWithStats(src, opts)
+			previewDur = time.Since(t0)
+			stats.WriteSummary(os.Stderr, "preview")
+		} else {
+			previewData, previewErr = engine.CompilePreviewFile(src)
+			previewDur = time.Since(t0)
+		}
 	}()
 	go func() {
 		defer wg.Done()
 		t0 := time.Now()
-		tutorialData, tutorialErr = engine.CompileTutorialFile(src)
-		tutorialDur = time.Since(t0)
+		if stats {
+			stats := &engine.CompileStats{}
+			opts := &engine.CompileOptions{Stats: stats}
+			tutorialData, tutorialErr = engine.CompileTutorialFileWithStats(src, opts)
+			tutorialDur = time.Since(t0)
+			stats.WriteSummary(os.Stderr, "tutorial")
+		} else {
+			tutorialData, tutorialErr = engine.CompileTutorialFile(src)
+			tutorialDur = time.Since(t0)
+		}
 	}()
 
 	wg.Wait()

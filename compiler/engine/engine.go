@@ -8,9 +8,19 @@
 // containing archetype structs (tagged with sonolus:"imported"/"memory"/etc.)
 // and callback methods, then compiles them to the corresponding Engine*Data
 // output.
+//
+// For compilation timing, use the *WithStats variants (e.g.
+// CompilePlayFileWithStats) which populate a CompileStats with per-callback
+// durations.
 package engine
 
 import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+
+// CompileOptions holds optional compilation parameters. nil is equivalent to
+// default options (no stats collection, standard optimization level).
+type CompileOptions struct {
+	Stats *CompileStats // if non-nil, per-callback compilation timing is recorded
+}
 
 // ImportedField describes one imported field of an archetype. Name is the Go
 // field name; Def is an optional default value (0.0 when absent).
