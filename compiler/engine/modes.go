@@ -3,16 +3,17 @@ package engine
 import (
 	"fmt"
 	"go/ast"
-	"sort"
 	"go/parser"
 	"go/token"
 	"reflect"
+	"sort"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
 
@@ -167,6 +168,21 @@ func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string
 	return imports, b
 }
 
+// compileCallbackBlock is the shared compile+optimize+lower pipeline for a single
+// callback body. It is used by all non-Play modes (Play uses parse.go which goes
+// through the play sub-package).
+func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStmt, env frontend.Env, methodName string, mode ir.Mode) (snode.SNode, error) {
+	entry, err := frontend.CompileBlock(fset, gen, body, env)
+	if err != nil {
+		return nil, err
+	}
+	entry, err = optimize.Optimize(gen, entry, mode, methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+	if err != nil {
+		return nil, err
+	}
+	return ir.CFGToSNode(gen, entry)
+}
+
 func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 	fset, arcs, order, funcs, resources, err := parseModeFile(src)
 	if err != nil {
@@ -179,10 +195,10 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 	}
 	accessors := frontend.ModeAccessors(ir.ModeWatch)
 	nodes := []resource.EngineDataNode{}
-	app := snode.NewAppender(&nodes)
 	outArcs := make([]resource.EngineWatchDataArchetype, 0, len(order))
+	var results []*modecompile.Result
 
-	for _, name := range order {
+	for i, name := range order {
 		a := arcs[name]
 		imports, b := modeBindings(a)
 		arc := resource.EngineWatchDataArchetype{Name: resource.EngineArchetypeName(name), Imports: imports}
@@ -196,52 +212,59 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 				continue
 			}
 			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
-			entry, err := frontend.CompileBlock(fset, gen, m.body, env)
-			if err != nil {
-				return nil, fmt.Errorf("archetype %q: %w", name, err)
-			}
-			entry, err = optimize.Optimize(gen, entry, ir.ModeWatch, m.methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+			sn, err := compileCallbackBlock(gen, fset, m.body, env, m.methodName, ir.ModeWatch)
 			if err != nil {
 				return nil, fmt.Errorf("archetype %q callback %s: %w", name, m.methodName, err)
 			}
-			idx, _ := app.Append(ir.CFGToSNode(gen, entry))
-			c := resource.EngineWatchDataArchetypeCallback{Index: idx}
-			switch cb {
-			case "preprocess":
-				arc.Preprocess = &c
-			case "spawnTime":
-				arc.SpawnTime = &c
-			case "despawnTime":
-				arc.DespawnTime = &c
-			case "initialize":
-				arc.Initialize = &c
-			case "updateSequential":
-				arc.UpdateSequential = &c
-			case "updateParallel":
-				arc.UpdateParallel = &c
-			case "terminate":
-				arc.Terminate = &c
+			if r := modecompile.CompileCallback(i, cb, sn, nil); r != nil {
+				results = append(results, r)
 			}
 		}
 		outArcs = append(outArcs, arc)
 	}
 
-	// Global callbacks (UpdateSpawn).
+	// Global callbacks (UpdateSpawn) — handled separately since they have no
+	// owning archetype and don't fit the modecompile.Assemble pattern.
 	var updateSpawn int
 	for _, d := range funcs {
 		if d.Name.Name == "UpdateSpawn" && d.Body != nil {
 			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
-			entry, err := frontend.CompileBlock(fset, gen, d.Body, env)
+			sn, err := compileCallbackBlock(gen, fset, d.Body, env, "UpdateSpawn", ir.ModeWatch)
 			if err != nil {
 				return nil, fmt.Errorf("UpdateSpawn: %w", err)
 			}
-			entry, err = optimize.Optimize(gen, entry, ir.ModeWatch, "UpdateSpawn", ir.DefaultTempMemoryBlock, optimize.LevelStandard)
-			if err != nil {
-				return nil, fmt.Errorf("UpdateSpawn: %w", err)
+			// Apply peephole optimization and standard omission rules.
+			if r := modecompile.CompileCallback(-1, "UpdateSpawn", sn, nil); r != nil {
+				updateSpawn, _ = snode.NewAppender(&nodes).Append(r.Node)
 			}
-			updateSpawn, _ = app.Append(ir.CFGToSNode(gen, entry))
 			break
 		}
+	}
+
+	// Assemble archetype callbacks: append SNode trees with shared dedup,
+	// assign indices to archetype callback fields.
+	setCb := func(arc *resource.EngineWatchDataArchetype, callback string, index int) error {
+		c := resource.EngineWatchDataArchetypeCallback{Index: index}
+		switch callback {
+		case "preprocess":
+			arc.Preprocess = &c
+		case "spawnTime":
+			arc.SpawnTime = &c
+		case "despawnTime":
+			arc.DespawnTime = &c
+		case "initialize":
+			arc.Initialize = &c
+		case "updateSequential":
+			arc.UpdateSequential = &c
+		case "updateParallel":
+			arc.UpdateParallel = &c
+		case "terminate":
+			arc.Terminate = &c
+		}
+		return nil
+	}
+	if err := modecompile.Assemble(&nodes, outArcs, results, setCb); err != nil {
+		return nil, err
 	}
 
 	return &resource.EngineWatchData{
@@ -262,10 +285,10 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 	}
 	accessors := frontend.ModeAccessors(ir.ModePreview)
 	nodes := []resource.EngineDataNode{}
-	app := snode.NewAppender(&nodes)
 	outArcs := make([]resource.EnginePreviewDataArchetype, 0, len(order))
+	var results []*modecompile.Result
 
-	for _, name := range order {
+	for i, name := range order {
 		a := arcs[name]
 		imports, b := modeBindings(a)
 		arc := resource.EnginePreviewDataArchetype{Name: resource.EngineArchetypeName(name), Imports: imports}
@@ -279,24 +302,29 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 				continue
 			}
 			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModePreview}
-			entry, err := frontend.CompileBlock(fset, gen, m.body, env)
-			if err != nil {
-				return nil, fmt.Errorf("archetype %q: %w", name, err)
-			}
-			entry, err = optimize.Optimize(gen, entry, ir.ModePreview, m.methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
+			sn, err := compileCallbackBlock(gen, fset, m.body, env, m.methodName, ir.ModePreview)
 			if err != nil {
 				return nil, fmt.Errorf("archetype %q callback %s: %w", name, m.methodName, err)
 			}
-			idx, _ := app.Append(ir.CFGToSNode(gen, entry))
-			c := resource.EnginePreviewDataArchetypeCallback{Index: idx}
-			switch cb {
-			case "preprocess":
-				arc.Preprocess = &c
-			case "render":
-				arc.Render = &c
+			if r := modecompile.CompileCallback(i, cb, sn, nil); r != nil {
+				results = append(results, r)
 			}
 		}
 		outArcs = append(outArcs, arc)
+	}
+
+	setCb := func(arc *resource.EnginePreviewDataArchetype, callback string, index int) error {
+		c := resource.EnginePreviewDataArchetypeCallback{Index: index}
+		switch callback {
+		case "preprocess":
+			arc.Preprocess = &c
+		case "render":
+			arc.Render = &c
+		}
+		return nil
+	}
+	if err := modecompile.Assemble(&nodes, outArcs, results, setCb); err != nil {
+		return nil, err
 	}
 
 	return &resource.EnginePreviewData{Skin: r.skin, Archetypes: outArcs, Nodes: nodes}, nil
@@ -340,22 +368,21 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 			continue
 		}
 		env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeTutorial}
-		entry, err := frontend.CompileBlock(fset, gen, d.Body, env)
+		sn, err := compileCallbackBlock(gen, fset, d.Body, env, d.Name.Name, ir.ModeTutorial)
 		if err != nil {
 			return nil, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
 		}
-		entry, err = optimize.Optimize(gen, entry, ir.ModeTutorial, d.Name.Name, ir.DefaultTempMemoryBlock, optimize.LevelStandard)
-		if err != nil {
-			return nil, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
-		}
-		idx, _ := app.Append(ir.CFGToSNode(gen, entry))
-		switch cb {
-		case "Preprocess":
-			pp = idx
-		case "Navigate":
-			nav = idx
-		case "Update":
-			upd = idx
+		// Apply peephole optimization and standard omission rules.
+		if r := modecompile.CompileCallback(-1, cb, sn, nil); r != nil {
+			idx, _ := app.Append(r.Node)
+			switch cb {
+			case "Preprocess":
+				pp = idx
+			case "Navigate":
+				nav = idx
+			case "Update":
+				upd = idx
+			}
 		}
 	}
 

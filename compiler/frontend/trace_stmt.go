@@ -114,68 +114,12 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 	}
 
 	// Composite declarations: a := array(n) / v := vec2(x, y).
+	// If the constructor is not recognized, fall through to regular assignment.
 	if call, ok := n.Rhs[0].(*ast.CallExpr); ok {
 		if fn, ok := call.Fun.(*ast.Ident); ok {
-			// D3: use types.Info to resolve record constructors by return type.
-			if info := t.env.Info; info != nil {
-				if obj, ok2 := info.Uses[fn]; ok2 {
-					if fobj, ok3 := obj.(*types.Func); ok3 {
-						if sig, ok4 := fobj.Type().(*types.Signature); ok4 {
-							if named, ok5 := sig.Results().At(0).Type().(*types.Named); ok5 {
-								if st, ok6 := named.Underlying().(*types.Struct); ok6 {
-									// Container types need specialised handlers.
-									typeName := named.Obj().Name()
-									if typeName == "VarArray" || typeName == "ArrayMap" || typeName == "FrozenNumSet" {
-										return t.varArrayDecl(fnName, call)
-									}
-									if typeName == "ArraySet" {
-										return t.arraySetDecl(fnName, call)
-									}
-									fields := make([]string, st.NumFields())
-									for i := range st.NumFields() {
-										fields[i] = st.Field(i).Name()
-									}
-									return t.recordDecl(fnName, call, fields)
-								}
-							}
-						}
-					}
-				}
-			}
-			// Fallback: name-based dispatch (when Info is nil or type lookup fails).
-			switch fn.Name {
-			case "array":
-				return t.arrayDecl(fnName, call)
-			case "vec2":
-				return t.recordDecl(fnName, call, vec2Fields)
-			case "quad":
-				return t.recordDecl(fnName, call, quadFields)
-			case "mat":
-				return t.recordDecl(fnName, call, matFields)
-			case "rect":
-				return t.recordDecl(fnName, call, rectFields)
-			case "trans":
-				return t.recordDecl(fnName, call, transFields)
-			case "judgmentWindow":
-				return t.recordDecl(fnName, call, judgmentWindowFields)
-			case "sprite":
-				return t.recordDecl(fnName, call, spriteFields)
-			case "effect":
-				return t.recordDecl(fnName, call, effectFields)
-			case "particle":
-				return t.recordDecl(fnName, call, particleFields)
-			case "entityRef":
-				return t.recordDecl(fnName, call, entityRefFields)
-			case "pair":
-				return t.recordDecl(fnName, call, pairFields)
-			case "box":
-				return t.recordDecl(fnName, call, boxFields)
-			case "frozenNumSet":
-				return t.varArrayDecl(fnName, call)
-			case "varArray", "arrayMap":
-				return t.varArrayDecl(fnName, call)
-			case "arraySet":
-				return t.arraySetDecl(fnName, call)
+			handled, err := t.compositeDecl(fnName, fn, call)
+			if handled {
+				return err
 			}
 		}
 	}
@@ -213,6 +157,75 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 	}
 	t.emit(t.gen.SetPlace(t.cell(tb), val.mustNode()))
 	return nil
+}
+
+// compositeDecl handles `x := constructor(args)` declarations where the RHS is
+// a call to a known record/container constructor. It dispatches via D3 type
+// resolution (types.Info) when available, falling back to name-based lookup.
+// The first return value reports whether the constructor was recognized (handled).
+// If false, the caller should fall through to regular assignment.
+func (t *tracer) compositeDecl(fnName *ast.Ident, fn *ast.Ident, call *ast.CallExpr) (handled bool, _ error) {
+	// D3: use types.Info to resolve record constructors by return type.
+	if info := t.env.Info; info != nil {
+		if obj, ok := info.Uses[fn]; ok {
+			if fobj, ok := obj.(*types.Func); ok {
+				if sig, ok := fobj.Type().(*types.Signature); ok {
+					if named, ok := sig.Results().At(0).Type().(*types.Named); ok {
+						if st, ok := named.Underlying().(*types.Struct); ok {
+							typeName := named.Obj().Name()
+							if typeName == "VarArray" || typeName == "ArrayMap" || typeName == "FrozenNumSet" {
+								return true, t.varArrayDecl(fnName, call)
+							}
+							if typeName == "ArraySet" {
+								return true, t.arraySetDecl(fnName, call)
+							}
+							fields := make([]string, st.NumFields())
+							for i := range st.NumFields() {
+								fields[i] = st.Field(i).Name()
+							}
+							return true, t.recordDecl(fnName, call, fields)
+						}
+					}
+				}
+			}
+		}
+	}
+	// Fallback: name-based dispatch (when Info is nil or type lookup fails).
+	switch fn.Name {
+	case "array":
+		return true, t.arrayDecl(fnName, call)
+	case "vec2":
+		return true, t.recordDecl(fnName, call, vec2Fields)
+	case "quad":
+		return true, t.recordDecl(fnName, call, quadFields)
+	case "mat":
+		return true, t.recordDecl(fnName, call, matFields)
+	case "rect":
+		return true, t.recordDecl(fnName, call, rectFields)
+	case "trans":
+		return true, t.recordDecl(fnName, call, transFields)
+	case "judgmentWindow":
+		return true, t.recordDecl(fnName, call, judgmentWindowFields)
+	case "sprite":
+		return true, t.recordDecl(fnName, call, spriteFields)
+	case "effect":
+		return true, t.recordDecl(fnName, call, effectFields)
+	case "particle":
+		return true, t.recordDecl(fnName, call, particleFields)
+	case "entityRef":
+		return true, t.recordDecl(fnName, call, entityRefFields)
+	case "pair":
+		return true, t.recordDecl(fnName, call, pairFields)
+	case "box":
+		return true, t.recordDecl(fnName, call, boxFields)
+	case "frozenNumSet":
+		return true, t.varArrayDecl(fnName, call)
+	case "varArray", "arrayMap":
+		return true, t.varArrayDecl(fnName, call)
+	case "arraySet":
+		return true, t.arraySetDecl(fnName, call)
+	}
+	return false, nil
 }
 
 func (t *tracer) incDec(n *ast.IncDecStmt) error {

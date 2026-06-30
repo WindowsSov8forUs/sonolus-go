@@ -32,7 +32,7 @@
         "index": 13
       },
       "updateParallel": {
-        "index": 21
+        "index": 19
       }
     }
   ],
@@ -87,8 +87,8 @@
     {
       "func": "Multiply",
       "args": [
-        3,
-        8
+        8,
+        3
       ]
     },
     {
@@ -120,55 +120,41 @@
       ]
     },
     {
-      "func": "Get",
-      "args": [
-        0,
-        1
-      ]
-    },
-    {
       "value": 1001
     },
     {
       "func": "Get",
       "args": [
-        15,
+        14,
         1
       ]
     },
     {
-      "func": "Add",
-      "args": [
-        14,
-        16
-      ]
-    },
-    {
-      "func": "Set",
+      "func": "SetAdd",
       "args": [
         0,
         1,
-        17
+        15
       ]
     },
     {
       "func": "Execute",
       "args": [
-        18,
+        16,
         1
       ]
     },
     {
       "func": "JumpLoop",
       "args": [
-        19,
+        17,
         2
       ]
     },
     {
       "func": "Block",
       "args": [
-        20
+        18
       ]
     }
   ]
