@@ -7,10 +7,7 @@ import (
 )
 
 // ArchetypeDef is the static metadata for one watch-mode archetype.
-type ArchetypeDef struct {
-	Name    string
-	Imports []resource.EngineDataArchetypeImport
-}
+type ArchetypeDef = modecompile.ArchetypeDef
 
 // BuildWatchData builds the static EngineWatchData skeleton: skin/effect/particle/
 // buckets metadata, archetype metadata with no callbacks yet, and an empty nodes

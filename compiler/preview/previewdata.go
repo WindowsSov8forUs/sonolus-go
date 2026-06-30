@@ -7,10 +7,7 @@ import (
 )
 
 // ArchetypeDef is the static metadata for one preview-mode archetype.
-type ArchetypeDef struct {
-	Name    string
-	Imports []resource.EngineDataArchetypeImport
-}
+type ArchetypeDef = modecompile.ArchetypeDef
 
 // BuildPreviewData builds the static EnginePreviewData skeleton.
 func BuildPreviewData(

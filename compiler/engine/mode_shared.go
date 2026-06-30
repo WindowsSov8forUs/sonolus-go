@@ -201,3 +201,35 @@ func compileTutorialCallback(
 	}
 	return 0, nil
 }
+
+// compileUpdateSpawn compiles the standalone UpdateSpawn global function for
+// Watch mode. It returns the appended SNode index, or 0 if the function is
+// absent or compiles to a no-op.
+func compileUpdateSpawn(
+	gen *ir.IDGen,
+	fset *token.FileSet,
+	funcs map[string]*ast.FuncDecl,
+	accessors map[string]frontend.Binding,
+	opts *CompileOptions,
+	nodes *[]resource.EngineDataNode,
+) (int, error) {
+	for _, d := range funcs {
+		if d.Name.Name == "UpdateSpawn" && d.Body != nil {
+			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
+			sn, err := compileCallbackBlock(gen, fset, d.Body, env, "UpdateSpawn", ir.ModeWatch, opts)
+			if err != nil {
+				return 0, fmt.Errorf("UpdateSpawn: %w", err)
+			}
+			if r := modecompile.CompileCallback(-1, "UpdateSpawn", sn, nil); r != nil {
+				app := snode.NewAppender(nodes)
+				idx, err := app.Append(r.Node)
+				if err != nil {
+					return 0, fmt.Errorf("UpdateSpawn append: %w", err)
+				}
+				return idx, nil
+			}
+			break
+		}
+	}
+	return 0, nil
+}

@@ -11,12 +11,7 @@ import (
 
 // ArchetypeDef is the static metadata for one play-mode archetype, used to seed
 // the EnginePlayData skeleton before callbacks are folded in.
-type ArchetypeDef struct {
-	Name     string
-	HasInput bool
-	Imports  []resource.EngineDataArchetypeImport
-	Exports  []resource.EngineArchetypeDataName
-}
+type ArchetypeDef = modecompile.ArchetypeDef
 
 // BuildPlayData builds the static EnginePlayData skeleton: skin/effect/particle/
 // buckets metadata, archetype metadata with no callbacks yet, and an empty nodes

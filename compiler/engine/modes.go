@@ -174,23 +174,9 @@ func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.Engi
 		outArcs[i] = resource.EngineWatchDataArchetype{Name: ad.name, Imports: ad.imports}
 	}
 
-	var updateSpawn int
-	for _, d := range pf.funcs {
-		if d.Name.Name == "UpdateSpawn" && d.Body != nil {
-			env := frontend.Env{Names: accessors, Funcs: pf.funcs, Accessors: accessors, Mode: ir.ModeWatch}
-			sn, err := compileCallbackBlock(gen, pf.fset, d.Body, env, "UpdateSpawn", ir.ModeWatch, opts)
-			if err != nil {
-				return nil, fmt.Errorf("UpdateSpawn: %w", err)
-			}
-			if r := modecompile.CompileCallback(-1, "UpdateSpawn", sn, nil); r != nil {
-				var err error
-				updateSpawn, err = snode.NewAppender(&nodes).Append(r.Node)
-				if err != nil {
-					return nil, fmt.Errorf("UpdateSpawn append: %w", err)
-				}
-			}
-			break
-		}
+	updateSpawn, err := compileUpdateSpawn(gen, pf.fset, pf.funcs, accessors, opts, &nodes)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := modecompile.Assemble(&nodes, outArcs, results, watch.SetWatchCallback); err != nil {
