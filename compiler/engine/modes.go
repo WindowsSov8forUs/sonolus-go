@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"reflect"
 	"sort"
+	"time"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -171,7 +172,9 @@ func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string
 // compileCallbackBlock is the shared compile+optimize+lower pipeline for a single
 // callback body. It is used by all non-Play modes (Play uses parse.go which goes
 // through the play sub-package).
-func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStmt, env frontend.Env, methodName string, mode ir.Mode) (snode.SNode, error) {
+// If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
+func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStmt, env frontend.Env, methodName string, mode ir.Mode, opts *CompileOptions) (snode.SNode, error) {
+	t0 := time.Now()
 	entry, err := frontend.CompileBlock(fset, gen, body, env)
 	if err != nil {
 		return nil, err
@@ -180,10 +183,21 @@ func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStm
 	if err != nil {
 		return nil, err
 	}
-	return ir.CFGToSNode(gen, entry)
+	sn, err := ir.CFGToSNode(gen, entry)
+	if opts != nil && opts.Stats != nil {
+		opts.Stats.Record(methodName, time.Since(t0))
+	}
+	return sn, err
 }
 
+// CompileWatchFile compiles a Go Watch-mode engine source file.
 func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
+	return CompileWatchFileWithStats(src, nil)
+}
+
+// CompileWatchFileWithStats compiles a Go Watch-mode engine source file.
+// If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
+func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.EngineWatchData, error) {
 	fset, arcs, order, funcs, resources, err := parseModeFile(src)
 	if err != nil {
 		return nil, err
@@ -195,45 +209,25 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 	}
 	accessors := frontend.ModeAccessors(ir.ModeWatch)
 	nodes := []resource.EngineDataNode{}
-	outArcs := make([]resource.EngineWatchDataArchetype, 0, len(order))
-	var results []*modecompile.Result
 
-	for i, name := range order {
-		a := arcs[name]
-		imports, b := modeBindings(a)
-		arc := resource.EngineWatchDataArchetype{Name: resource.EngineArchetypeName(name), Imports: imports}
-		names := copyBC(accessors)
-		for k, v := range b {
-			names[k] = v
-		}
-		for _, m := range a.methods {
-			cb, ok := watchCBs[m.methodName]
-			if !ok {
-				continue
-			}
-			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
-			sn, err := compileCallbackBlock(gen, fset, m.body, env, m.methodName, ir.ModeWatch)
-			if err != nil {
-				return nil, fmt.Errorf("archetype %q callback %s: %w", name, m.methodName, err)
-			}
-			if r := modecompile.CompileCallback(i, cb, sn, nil); r != nil {
-				results = append(results, r)
-			}
-		}
-		outArcs = append(outArcs, arc)
+	arcData, results, err := compileArchetypeCallbacks(gen, fset, arcs, order, funcs, accessors, watchCBs, ir.ModeWatch, opts)
+	if err != nil {
+		return nil, err
 	}
 
-	// Global callbacks (UpdateSpawn) — handled separately since they have no
-	// owning archetype and don't fit the modecompile.Assemble pattern.
+	outArcs := make([]resource.EngineWatchDataArchetype, len(arcData))
+	for i, ad := range arcData {
+		outArcs[i] = resource.EngineWatchDataArchetype{Name: ad.name, Imports: ad.imports}
+	}
+
 	var updateSpawn int
 	for _, d := range funcs {
 		if d.Name.Name == "UpdateSpawn" && d.Body != nil {
 			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
-			sn, err := compileCallbackBlock(gen, fset, d.Body, env, "UpdateSpawn", ir.ModeWatch)
+			sn, err := compileCallbackBlock(gen, fset, d.Body, env, "UpdateSpawn", ir.ModeWatch, opts)
 			if err != nil {
 				return nil, fmt.Errorf("UpdateSpawn: %w", err)
 			}
-			// Apply peephole optimization and standard omission rules.
 			if r := modecompile.CompileCallback(-1, "UpdateSpawn", sn, nil); r != nil {
 				updateSpawn, _ = snode.NewAppender(&nodes).Append(r.Node)
 			}
@@ -241,8 +235,6 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 		}
 	}
 
-	// Assemble archetype callbacks: append SNode trees with shared dedup,
-	// assign indices to archetype callback fields.
 	setCb := func(arc *resource.EngineWatchDataArchetype, callback string, index int) error {
 		c := resource.EngineWatchDataArchetypeCallback{Index: index}
 		switch callback {
@@ -273,7 +265,14 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 	}, nil
 }
 
+// CompilePreviewFile compiles a Go Preview-mode engine source file.
 func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
+	return CompilePreviewFileWithStats(src, nil)
+}
+
+// CompilePreviewFileWithStats compiles a Go Preview-mode engine source file.
+// If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
+func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.EnginePreviewData, error) {
 	fset, arcs, order, funcs, resources, err := parseModeFile(src)
 	if err != nil {
 		return nil, err
@@ -285,32 +284,15 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 	}
 	accessors := frontend.ModeAccessors(ir.ModePreview)
 	nodes := []resource.EngineDataNode{}
-	outArcs := make([]resource.EnginePreviewDataArchetype, 0, len(order))
-	var results []*modecompile.Result
 
-	for i, name := range order {
-		a := arcs[name]
-		imports, b := modeBindings(a)
-		arc := resource.EnginePreviewDataArchetype{Name: resource.EngineArchetypeName(name), Imports: imports}
-		names := copyBC(accessors)
-		for k, v := range b {
-			names[k] = v
-		}
-		for _, m := range a.methods {
-			cb, ok := previewCBs[m.methodName]
-			if !ok {
-				continue
-			}
-			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: ir.ModePreview}
-			sn, err := compileCallbackBlock(gen, fset, m.body, env, m.methodName, ir.ModePreview)
-			if err != nil {
-				return nil, fmt.Errorf("archetype %q callback %s: %w", name, m.methodName, err)
-			}
-			if r := modecompile.CompileCallback(i, cb, sn, nil); r != nil {
-				results = append(results, r)
-			}
-		}
-		outArcs = append(outArcs, arc)
+	arcData, results, err := compileArchetypeCallbacks(gen, fset, arcs, order, funcs, accessors, previewCBs, ir.ModePreview, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	outArcs := make([]resource.EnginePreviewDataArchetype, len(arcData))
+	for i, ad := range arcData {
+		outArcs[i] = resource.EnginePreviewDataArchetype{Name: ad.name, Imports: ad.imports}
 	}
 
 	setCb := func(arc *resource.EnginePreviewDataArchetype, callback string, index int) error {
@@ -330,7 +312,14 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 	return &resource.EnginePreviewData{Skin: r.skin, Archetypes: outArcs, Nodes: nodes}, nil
 }
 
+// CompileTutorialFile compiles a Go Tutorial-mode engine source file.
 func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
+	return CompileTutorialFileWithStats(src, nil)
+}
+
+// CompileTutorialFileWithStats compiles a Go Tutorial-mode engine source file.
+// If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
+func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.EngineTutorialData, error) {
 	fset, _, _, funcs, resources, err := parseModeFile(src)
 	if err != nil {
 		return nil, err
@@ -344,7 +333,7 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 	nodes := []resource.EngineDataNode{}
 	app := snode.NewAppender(&nodes)
 
-	var pp, nav, upd int
+	// Sort for deterministic output.
 	sortedFuncs := make([]*ast.FuncDecl, 0, len(funcs))
 	for _, d := range funcs {
 		sortedFuncs = append(sortedFuncs, d)
@@ -352,8 +341,10 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 	sort.Slice(sortedFuncs, func(i, j int) bool {
 		return sortedFuncs[i].Name.Name < sortedFuncs[j].Name.Name
 	})
+
+	var pp, nav, upd int
 	for _, d := range sortedFuncs {
-		cb := ""
+		var cb string
 		switch d.Name.Name {
 		case "Preprocess":
 			cb = "Preprocess"
@@ -367,22 +358,17 @@ func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 		if d.Body == nil {
 			continue
 		}
-		env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeTutorial}
-		sn, err := compileCallbackBlock(gen, fset, d.Body, env, d.Name.Name, ir.ModeTutorial)
+		idx, err := compileTutorialCallback(gen, fset, d, funcs, accessors, cb, ir.ModeTutorial, app, opts)
 		if err != nil {
-			return nil, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
+			return nil, err
 		}
-		// Apply peephole optimization and standard omission rules.
-		if r := modecompile.CompileCallback(-1, cb, sn, nil); r != nil {
-			idx, _ := app.Append(r.Node)
-			switch cb {
-			case "Preprocess":
-				pp = idx
-			case "Navigate":
-				nav = idx
-			case "Update":
-				upd = idx
-			}
+		switch cb {
+		case "Preprocess":
+			pp = idx
+		case "Navigate":
+			nav = idx
+		case "Update":
+			upd = idx
 		}
 	}
 
