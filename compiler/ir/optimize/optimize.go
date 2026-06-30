@@ -88,14 +88,18 @@ func VerifyPasses(passes ...Pass) error {
 // --- edge-set helpers (Incoming/Outgoing are treated as sets keyed by pointer) ---
 
 // removeEdge filters out a specific edge from a slice (identity comparison).
+// Returns the original slice unchanged when the edge is not found (zero-allocation
+// fast path matching the addEdge pattern).
 func removeEdge(edges []*ir.FlowEdge, e *ir.FlowEdge) []*ir.FlowEdge {
-	out := make([]*ir.FlowEdge, 0, len(edges))
-	for _, x := range edges {
-		if x != e {
-			out = append(out, x)
+	for i, x := range edges {
+		if x == e {
+			out := make([]*ir.FlowEdge, len(edges)-1)
+			copy(out, edges[:i])
+			copy(out[i:], edges[i+1:])
+			return out
 		}
 	}
-	return out
+	return edges
 }
 
 func addEdge(edges []*ir.FlowEdge, e *ir.FlowEdge) []*ir.FlowEdge {

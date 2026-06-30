@@ -1,6 +1,10 @@
 package optimize
 
-import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+import (
+	"hash/fnv"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+)
 
 // LICM hoists loop-invariant expressions out of loop bodies into pre-headers.
 // Loop detection uses dominance-tree back-edges (FindLoops in optimize.go):
@@ -114,7 +118,8 @@ func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]boo
 	if !ok || !ir.Pure(instr.Op) || ir.SideEffects(instr.Op) {
 		return
 	}
-	k := cseKey(instr)
+	h := fnv.New128a()
+	k := cseKey(instr, h)
 	if hoisted[k] {
 		return
 	}

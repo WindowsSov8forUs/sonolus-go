@@ -58,15 +58,16 @@ func (c *cseState) newSSA() ir.SSAPlace {
 func (c *cseState) process(block *ir.BasicBlock, dom *Dominance) {
 	var added []cseKeyType
 	var stmts []ir.Node
+	h := fnv.New128a()
 
 	for _, s := range block.Statements {
 		var pre []ir.Node
-		s2 := c.rewrite(s, &pre, &added)
+		s2 := c.rewrite(s, &pre, &added, h)
 		stmts = append(stmts, pre...)
 		stmts = append(stmts, s2)
 	}
 	var pre []ir.Node
-	block.Test = c.rewrite(block.Test, &pre, &added)
+	block.Test = c.rewrite(block.Test, &pre, &added, h)
 	stmts = append(stmts, pre...)
 	block.Statements = stmts
 
@@ -78,16 +79,16 @@ func (c *cseState) process(block *ir.BasicBlock, dom *Dominance) {
 	}
 }
 
-func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]cseKeyType) ir.Node {
+func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]cseKeyType, h hash.Hash) ir.Node {
 	switch t := n.(type) {
 	case ir.Instr:
-		k := cseKey(t)
+		k := cseKey(t, h)
 		if p, ok := c.table[k]; ok {
 			return ir.Get{Place: p}
 		}
 		args := make([]ir.Node, len(t.Args))
 		for i, a := range t.Args {
-			args[i] = c.rewrite(a, pre, added)
+			args[i] = c.rewrite(a, pre, added, h)
 		}
 		n2 := ir.Instr{ID: t.ID, Op: t.Op, Args: args, Pure: t.Pure || ir.Pure(t.Op)}
 		if ir.Pure(t.Op) && !ir.SideEffects(t.Op) && exprCost(n2) >= inlineCostThreshold {
@@ -104,8 +105,8 @@ func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]cseKeyType) ir.No
 		if !ok {
 			return t
 		}
-		nb := c.rewrite(bp.Block, pre, added)
-		ni := c.rewrite(bp.Index, pre, added)
+		nb := c.rewrite(bp.Block, pre, added, h)
+		ni := c.rewrite(bp.Index, pre, added, h)
 		if nb != bp.Block || ni != bp.Index {
 			return ir.Get{Place: ir.BlockPlace{Block: nb, Index: ni, Offset: bp.Offset}}
 		}
@@ -113,8 +114,8 @@ func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]cseKeyType) ir.No
 
 	case ir.Set:
 		if bp, ok := t.Place.(ir.BlockPlace); ok {
-			p2 := ir.BlockPlace{Block: c.rewrite(bp.Block, pre, added), Index: c.rewrite(bp.Index, pre, added), Offset: bp.Offset}
-			v2 := c.rewrite(t.Value, pre, added)
+			p2 := ir.BlockPlace{Block: c.rewrite(bp.Block, pre, added, h), Index: c.rewrite(bp.Index, pre, added, h), Offset: bp.Offset}
+			v2 := c.rewrite(t.Value, pre, added, h)
 			return ir.Set{ID: t.ID, Place: p2, Value: v2}
 		}
 		return t
@@ -134,9 +135,10 @@ func cseCanonicalize(n ir.Node) ir.Node {
 		key cseKeyType
 	}
 	pairs := make([]argKey, len(t.Args))
+	h := fnv.New128a()
 	for i, a := range t.Args {
 		pairs[i].arg = cseCanonicalize(a)
-		pairs[i].key = cseKey(pairs[i].arg)
+		pairs[i].key = cseKey(pairs[i].arg, h)
 	}
 	sort.Slice(pairs, func(i, j int) bool {
 		return bytes.Compare(pairs[i].key[:], pairs[j].key[:]) < 0
@@ -149,10 +151,11 @@ func cseCanonicalize(n ir.Node) ir.Node {
 }
 
 // cseKey returns a hash-based key for the given IR node. It uses incremental
-// SHA-256 hashing (matching the pattern in [ir.HashCFG]) to avoid the
-// allocation overhead of recursive string concatenation.
-func cseKey(n ir.Node) cseKeyType {
-	h := fnv.New128a()
+// FNV-128 hashing to avoid the allocation overhead of recursive string
+// concatenation. The caller provides a pre-allocated hasher; it is reset
+// before use so a single hasher can be reused across the hot loop.
+func cseKey(n ir.Node, h hash.Hash) cseKeyType {
+	h.Reset()
 	cseHash(n, h)
 	var out cseKeyType
 	h.Sum(out[:0])
