@@ -374,6 +374,9 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return compNum(map[string]Num{
 			"_values": constNum(0), // placeholder — wraps VarArray internally
 		}), true, nil
+	case "debugTerminate":
+		t.terminated = true
+		return constNum(0), true, nil
 	}
 	return Num{}, false, nil
 }
@@ -413,6 +416,40 @@ func (t *tracer) callWithArgs(fn *ast.Ident, n *ast.CallExpr, args []Num) (Num, 
 			return Num{}, t.errf(n, "sortLinkedEntities expects (head, sortKeyOffset, nextOffset[, prevOffset])")
 		}
 		return sortLinkedEntitiesCall(t, args)
+	case "debugError":
+		if len(args) != 1 {
+			return Num{}, t.errf(n, "debugError expects 1 argument (message)")
+		}
+		msgNode, err := args[0].node()
+		if err != nil {
+			return Num{}, t.errf(n, "debugError: %v", err)
+		}
+		t.debugError(msgNode)
+		return constNum(0), nil
+	case "debugRequire":
+		if len(args) != 2 {
+			return Num{}, t.errf(n, "debugRequire expects 2 arguments (condition, message)")
+		}
+		t.debugRequire(args[0], args[1])
+		return constNum(0), nil
+	case "debugAssertTrue":
+		if len(args) != 2 {
+			return Num{}, t.errf(n, "debugAssertTrue expects 2 arguments (condition, message)")
+		}
+		t.debugRequire(args[0], args[1])
+		return constNum(0), nil
+	case "debugAssertFalse":
+		if len(args) != 2 {
+			return Num{}, t.errf(n, "debugAssertFalse expects 2 arguments (condition, message)")
+		}
+		// assertFalse(cond, msg) ≡ assertTrue(cond == 0, msg)
+		zero := constNum(0)
+		eq, ok := applyBinary(t.gen, token.EQL, args[0], zero)
+		if !ok {
+			return Num{}, t.errf(n, "debugAssertFalse: cannot compare condition")
+		}
+		t.debugRequire(eq, args[1])
+		return constNum(0), nil
 	default:
 		// User-defined record constructor: TypeName(val1, val2, ...)
 		if fields, ok := t.env.Records[fn.Name]; ok {
