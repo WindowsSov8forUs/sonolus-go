@@ -2180,3 +2180,58 @@ func TestRectCenter(t *testing.T) {
 		t.Errorf("Rect.center failed: %s", got)
 	}
 }
+
+func TestVec2NormalizeOrZero(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(3, 4)
+		n := v.normalizeOrZero()
+		set(0, 0, n.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.normalizeOrZero failed: %s", got)
+	}
+}
+
+func TestVec2AngleDiff(t *testing.T) {
+	src := `package p
+	func f() {
+		a := vec2(1, 0)
+		b := vec2(0, 1)
+		d := a.angleDiff(b)
+		set(0, 0, d)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.angleDiff failed: %s", got)
+	}
+}
+
+func TestVec2SignedAngleDiff(t *testing.T) {
+	src := `package p
+	func f() {
+		a := vec2(1, 0)
+		b := vec2(0, 1)
+		d := a.signedAngleDiff(b)
+		set(0, 0, d)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.signedAngleDiff failed: %s", got)
+	}
+}
+
+func TestVec2RotateAbout(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(1, 0)
+		c := vec2(0, 0)
+		r := v.rotateAbout(c, 1.57)
+		set(0, 0, r.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.rotateAbout failed: %s", got)
+	}
+}
