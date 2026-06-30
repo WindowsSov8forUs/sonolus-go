@@ -1285,3 +1285,634 @@ func TestDeeplyNestedExpr(t *testing.T) {
 		t.Errorf("deeply nested expr failed: %s", got)
 	}
 }
+
+// --- Runtime function tests (trace_call.go / builtins_fn.go coverage) ---
+
+func TestRuntimeFloorCeil(t *testing.T) {
+	src := `package p
+	func f() {
+		a := floor(3.7)
+		b := ceil(2.1)
+		set(0, 0, a + b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("floor/ceil failed: %s", got)
+	}
+}
+
+func TestRuntimeRoundFrac(t *testing.T) {
+	src := `package p
+	func f() {
+		a := round(3.5)
+		b := frac(3.7)
+		set(0, 0, a + b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("round/frac failed: %s", got)
+	}
+}
+
+func TestRuntimeSignAbs(t *testing.T) {
+	src := `package p
+	func f() {
+		a := sign(-5)
+		b := abs(-5)
+		set(0, 0, a + b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("sign/abs failed: %s", got)
+	}
+}
+
+func TestRuntimeTrig(t *testing.T) {
+	src := `package p
+	func f() {
+		a := sin(0.5)
+		b := cos(0.5)
+		c := tan(0.3)
+		set(0, 0, a + b + c)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("sin/cos/tan failed: %s", got)
+	}
+}
+
+func TestRuntimeHyperbolic(t *testing.T) {
+	src := `package p
+	func f() {
+		a := sinh(1.0)
+		b := cosh(1.0)
+		c := tanh(0.5)
+		set(0, 0, a + b + c)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("sinh/cosh/tanh failed: %s", got)
+	}
+}
+
+func TestRuntimeArcTrig(t *testing.T) {
+	src := `package p
+	func f() {
+		a := asin(0.5)
+		b := acos(0.5)
+		c := atan(1.0)
+		d := atan2(1.0, 1.0)
+		set(0, 0, a + b + c + d)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("asin/acos/atan/atan2 failed: %s", got)
+	}
+}
+
+func TestRuntimeRadianDegree(t *testing.T) {
+	src := `package p
+	func f() {
+		r := radian(180)
+		d := degree(3.14159)
+		set(0, 0, r + d)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("radian/degree failed: %s", got)
+	}
+}
+
+func TestRuntimeLogPow(t *testing.T) {
+	src := `package p
+	func f() {
+		a := log(10)
+		b := power(2, 8)
+		set(0, 0, a + b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("log/power failed: %s", got)
+	}
+}
+
+func TestRuntimeRemap(t *testing.T) {
+	src := `package p
+	func f() {
+		v := remap(0.5, 0, 1, 0, 100)
+		w := remapClamped(0.5, 0, 1, 0, 100)
+		set(0, 0, v + w)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("remap/remapClamped failed: %s", got)
+	}
+}
+
+func TestRuntimeLerp(t *testing.T) {
+	src := `package p
+	func f() {
+		v := lerp(0, 100, 0.5)
+		w := lerpClamped(0, 100, 0.5)
+		set(0, 0, v + w)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("lerp/lerpClamped failed: %s", got)
+	}
+}
+
+func TestRuntimePowerMod(t *testing.T) {
+	src := `package p
+	func f() {
+		a := power(2, 3)
+		b := mod(10, 3)
+		c := rem(10, 3)
+		set(0, 0, a + b + c)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("power/mod/rem failed: %s", got)
+	}
+}
+
+func TestRuntimeComparisonOps(t *testing.T) {
+	src := `package p
+	func f() {
+		a := get(0, 0)
+		b := get(0, 1)
+		if a < b {
+			set(0, 2, 1)
+		}
+		if a >= b {
+			set(0, 2, 2)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("comparison ops failed: %s", got)
+	}
+}
+
+// --- VarArray method tests (containers.go coverage) ---
+
+func TestVarArrayLenAndCapacity(t *testing.T) {
+	src := `package p
+	func f() {
+		arr := varArray(8)
+		arr.append(10)
+		l := arr.len()
+		c := arr.capacity()
+		set(0, 0, l)
+		set(0, 1, c)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("VarArray len/capacity failed: %s", got)
+	}
+}
+
+func TestVarArrayIsFull(t *testing.T) {
+	src := `package p
+	func f() {
+		arr := varArray(1)
+		arr.append(42)
+		if arr.isFull() {
+			set(0, 0, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("VarArray isFull failed: %s", got)
+	}
+}
+
+func TestVarArrayPopAndClear(t *testing.T) {
+	src := `package p
+	func f() {
+		arr := varArray(8)
+		arr.append(10)
+		arr.append(20)
+		v := arr.pop()
+		arr.clear()
+		set(0, 0, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("VarArray pop/clear failed: %s", got)
+	}
+}
+
+func TestVarArrayRemoveAt(t *testing.T) {
+	src := `package p
+	func f() {
+		arr := varArray(8)
+		arr.append(10)
+		arr.append(20)
+		arr.append(30)
+		arr.remove(1)
+		set(0, 0, arr.len())
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("VarArray remove failed: %s", got)
+	}
+}
+
+// --- ArrayMap method tests ---
+
+func TestArrayMapGetSet(t *testing.T) {
+	src := `package p
+	func f() {
+		m := arrayMap(4)
+		m.set(2, 99)
+		v := m.get(2)
+		set(0, 0, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("ArrayMap get/set failed: %s", got)
+	}
+}
+
+func TestArrayMapContains(t *testing.T) {
+	src := `package p
+	func f() {
+		m := arrayMap(4)
+		m.set(2, 99)
+		if m.contains(2) {
+			set(0, 0, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("ArrayMap contains failed: %s", got)
+	}
+}
+
+// --- ArraySet method test ---
+
+func TestArraySetAddContains(t *testing.T) {
+	src := `package p
+	func f() {
+		s := arraySet(4)
+		s.add(10)
+		if s.contains(10) {
+			set(0, 0, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("ArraySet add/contains failed: %s", got)
+	}
+}
+
+// --- FrozenNumSet test ---
+
+func TestFrozenNumSetContainsMultiple(t *testing.T) {
+	src := `package p
+	func f() {
+		fs := frozenNumSet(8)
+		if fs.contains(8) {
+			set(0, 0, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("FrozenNumSet contains failed: %s", got)
+	}
+}
+
+// --- Pair tuple test ---
+
+func TestPairValues(t *testing.T) {
+	src := `package p
+	func f() {
+		p := pair(42, 99)
+		a := p.first
+		b := p.second
+		set(0, 0, a + b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Pair first/second failed: %s", got)
+	}
+}
+
+// --- For-range iteration tests ---
+
+func TestVarArrayRangeBreak(t *testing.T) {
+	src := `package p
+	func f() {
+		arr := varArray(4)
+		arr.append(1)
+		arr.append(2)
+		arr.append(3)
+		for i, v := range arr {
+			set(0, 0, v)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("VarArray range failed: %s", got)
+	}
+}
+
+func TestArrayMapRange(t *testing.T) {
+	src := `package p
+	func f() {
+		m := arrayMap(4)
+		m.set(0, 10)
+		m.set(1, 20)
+		for k, v := range m {
+			set(0, k, v)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("ArrayMap range failed: %s", got)
+	}
+}
+
+// --- Record field write tests ---
+
+func TestRecordFieldWrite(t *testing.T) {
+	src := `package p
+	func f() {
+		r := rect(get(0, 0), get(0, 1), get(0, 2), get(0, 3))
+		r.l = 10.0
+		set(0, 4, r.l)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Record field write failed: %s", got)
+	}
+}
+
+// --- Return with value test ---
+
+func TestReturnWithValue(t *testing.T) {
+	src := `package p
+	func f() {
+		if get(0, 0) > 5 {
+			set(0, 0, 1)
+			return
+		}
+		set(0, 0, 0)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("return with value failed: %s", got)
+	}
+}
+
+// --- Arithmetic assignment tests ---
+
+func TestAddAssign(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		x += 5
+		set(0, 1, x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("add assign failed: %s", got)
+	}
+}
+
+func TestMulAssign(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		x *= 2
+		set(0, 1, x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("mul assign failed: %s", got)
+	}
+}
+
+// --- Increment/decrement tests ---
+
+func TestIncrement(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		x++
+		set(0, 1, x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("increment failed: %s", got)
+	}
+}
+
+func TestDecrement(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		x--
+		set(0, 1, x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("decrement failed: %s", got)
+	}
+}
+
+// --- Integer literal test ---
+
+func TestIntegerLiteral(t *testing.T) {
+	src := `package p
+	func f() {
+		set(0, 0, 42)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("integer literal failed: %s", got)
+	}
+}
+
+// --- Boolean literal test ---
+
+func TestBooleanLiteral(t *testing.T) {
+	src := `package p
+	func f() {
+		if true {
+			set(0, 0, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("boolean literal failed: %s", got)
+	}
+}
+
+// --- Float literal test ---
+
+func TestFloatLiteral(t *testing.T) {
+	src := `package p
+	func f() {
+		set(0, 0, 3.14159)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("float literal failed: %s", got)
+	}
+}
+
+// --- Vec2 composite literal test ---
+
+func TestVec2CompositeLiteral(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2{3, 4}
+		set(0, 0, v.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2 composite literal failed: %s", got)
+	}
+}
+
+// --- Additional coverage tests for statement/expression paths ---
+
+func TestWhileLoopWithBreak(t *testing.T) {
+	src := `package p
+	func f() {
+		x := 0
+		for {
+			if x > 5 {
+				break
+			}
+			x = x + 1
+		}
+		set(0, 0, x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("while loop with break failed: %s", got)
+	}
+}
+
+func TestIfElseNestedAssign(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		y := 0
+		if x > 10 {
+			y = 100
+		} else if x > 5 {
+			y = 50
+		}
+		set(0, 1, y)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("nested if-else assign failed: %s", got)
+	}
+}
+
+func TestSubAssign(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		x -= 3
+		set(0, 1, x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("sub assign failed: %s", got)
+	}
+}
+
+func TestDivAssign(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		if x == 0 {
+			x = 1
+		}
+		x /= 2
+		set(0, 1, x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("div assign failed: %s", got)
+	}
+}
+
+func TestLogicalNotExpr(t *testing.T) {
+	src := `package p
+	func f() {
+		a := get(0, 0)
+		if !(a > 0) {
+			set(0, 1, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("logical not failed: %s", got)
+	}
+}
+
+func TestRecordZeroValue(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(0, 0)
+		set(0, 0, v.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("vec2 zero value failed: %s", got)
+	}
+}
+
+func TestNestedRecordAccess(t *testing.T) {
+	src := `package p
+	func f() {
+		r := rect(get(0, 0), get(0, 1), get(0, 2), get(0, 3))
+		set(0, 4, r.l)
+		set(0, 5, r.b)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("nested record access failed: %s", got)
+	}
+}
+
+func TestComplexArithExpr(t *testing.T) {
+	src := `package p
+	func f() {
+		a := get(0, 0)
+		b := get(0, 1)
+		c := ((a + b) * (a - b)) / (a + 1)
+		set(0, 2, c)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("complex arith expr failed: %s", got)
+	}
+}
+
+func TestMultipleReturns(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		if x < 0 {
+			set(0, 1, -1)
+			return
+		}
+		if x == 0 {
+			set(0, 1, 0)
+			return
+		}
+		set(0, 1, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("multiple returns failed: %s", got)
+	}
+}
