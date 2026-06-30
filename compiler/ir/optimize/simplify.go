@@ -57,7 +57,7 @@ func (CoalesceSmallConditionalBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *
 			}
 		}
 	}
-	for _, b := range allBlocks(entry) {
+	for _, b := range ir.Preorder(entry) {
 		for _, e := range b.Incoming {
 			if !reachable[e.Src] {
 				b.Incoming = removeEdge(b.Incoming, e)
@@ -140,25 +140,6 @@ func sameArgs(a, b []ir.Node) bool {
 		}
 	}
 	return true
-}
-
-func allBlocks(entry *ir.BasicBlock) []*ir.BasicBlock {
-	var out []*ir.BasicBlock
-	seen := map[*ir.BasicBlock]bool{}
-	stack := []*ir.BasicBlock{entry}
-	for len(stack) > 0 {
-		b := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if seen[b] {
-			continue
-		}
-		seen[b] = true
-		out = append(out, b)
-		for _, e := range b.Outgoing {
-			stack = append(stack, e.Dst)
-		}
-	}
-	return out
 }
 
 var flattenOps = map[ir.Op]bool{opAdd: true, opMultiply: true, opMod: true, opRem: true}
