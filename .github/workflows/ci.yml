@@ -36,6 +36,27 @@ jobs:
       - run: go build -o sonolus-go.exe .
       - run: ./sonolus-go version
         continue-on-error: true
+      # Smoke-test pack command: compile a minimal engine and verify output.
+      - name: Smoke test pack
+        run: |
+          mkdir -p testdata/ci_engine
+          printf 'package p\ntype N struct {}\nfunc (n N) Initialize() {}\n' > testdata/ci_engine/engine.go
+          ./sonolus-go pack -i testdata/ci_engine -o testdata/ci_pack_out
+          test -d testdata/ci_pack_out || (echo "pack: output directory missing" && exit 1)
+        shell: bash
+      # Smoke-test host command: start server briefly and verify endpoints respond.
+      - name: Smoke test host
+        run: |
+          mkdir -p testdata/ci_engine
+          printf 'package p\ntype N struct {}\nfunc (n N) Initialize() {}\n' > testdata/ci_engine/engine.go
+          ./sonolus-go host -i testdata/ci_engine -p 19876 &
+          sleep 3
+          curl -sSf http://localhost:19876/sonolus/engines/info > /dev/null || (echo "host: /info failed" && exit 1)
+          curl -sSf http://localhost:19876/sonolus/engine/configuration > /dev/null || (echo "host: /configuration failed" && exit 1)
+          curl -sSf http://localhost:19876/sonolus/engine/play-data > /dev/null || (echo "host: /play-data failed" && exit 1)
+          kill %1 2>/dev/null || true
+        shell: bash
+        continue-on-error: true
       - run: go vet ./...
       - run: gofmt -s -l . > fmt.out && test ! -s fmt.out || (cat fmt.out && exit 1)
         shell: bash
