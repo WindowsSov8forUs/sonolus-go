@@ -997,3 +997,291 @@ func TestVarArraySort(t *testing.T) {
 		t.Errorf("VarArray sort failed: %s", got)
 	}
 }
+
+// --- Statement type tests (trace_stmt.go coverage) ---
+
+func TestSwitchStatement(t *testing.T) {
+	// switch with multiple cases lowers to if-else chain.
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		switch x {
+		case 1:
+			set(0, 1, 2)
+		case 2:
+			set(0, 1, 3)
+		default:
+			set(0, 1, 0)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("switch statement failed to compile")
+	}
+	if !strings.Contains(got, "If") {
+		t.Errorf("expected If in switch output: %s", got)
+	}
+}
+
+func TestForLoopWithCondition(t *testing.T) {
+	src := `package p
+	func f() {
+		x := 0
+		for x < 10 {
+			set(0, 0, x)
+			x = x + 1
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("for loop with condition failed to compile")
+	}
+	// for x < 10 { ... } lowers to a header block with If test and jumpback.
+}
+
+func TestForLoopInfinite(t *testing.T) {
+	src := `package p
+	func f() {
+		for {
+			set(0, 0, 1)
+			break
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("infinite for loop failed to compile")
+	}
+}
+
+func TestReturnStatement(t *testing.T) {
+	src := `package p
+	func f() {
+		if get(0, 0) {
+			return
+		}
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("return statement failed to compile")
+	}
+}
+
+func TestShortVarDecl(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		y := x + 1
+		set(0, 0, y)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("short var decl failed to compile")
+	}
+}
+
+// --- Expression type tests (trace_control.go coverage) ---
+
+func TestMinMaxFunctions(t *testing.T) {
+	src := `package p
+	func f() {
+		a := get(0, 0)
+		b := get(0, 1)
+		set(0, 2, max(a, b))
+		set(0, 3, min(a, b))
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("min/max failed: %s", got)
+	}
+}
+
+func TestClampLerp(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		v := clamp(x, 0, 1)
+		w := lerp(0, 100, v)
+		set(0, 1, w)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("clamp/lerp failed: %s", got)
+	}
+}
+
+func TestLogicalAndShortCircuit(t *testing.T) {
+	src := `package p
+	func f() {
+		a := get(0, 0)
+		b := get(0, 1)
+		if a > 0 && b > 0 {
+			set(0, 2, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("logical AND short-circuit failed to compile")
+	}
+}
+
+func TestLogicalOrShortCircuit(t *testing.T) {
+	src := `package p
+	func f() {
+		a := get(0, 0)
+		b := get(0, 1)
+		if a > 0 || b > 0 {
+			set(0, 2, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("logical OR short-circuit failed to compile")
+	}
+}
+
+func TestUnaryNegation(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		set(0, 1, -x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("unary negation failed: %s", got)
+	}
+}
+
+func TestVec2Add(t *testing.T) {
+	src := `package p
+	func f() {
+		a := vec2(get(0, 0), get(0, 1))
+		b := vec2(get(0, 2), get(0, 3))
+		c := a.add(b)
+		set(0, 4, c.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.add failed: %s", got)
+	}
+}
+
+func TestVec2Sub(t *testing.T) {
+	src := `package p
+	func f() {
+		a := vec2(get(0, 0), get(0, 1))
+		b := vec2(get(0, 2), get(0, 3))
+		c := a.sub(b)
+		set(0, 4, c.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.sub failed: %s", got)
+	}
+}
+
+func TestVec2Mul(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(3.0, 4.0)
+		s := v.mul(2.0)
+		set(0, 0, s.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.mul failed: %s", got)
+	}
+}
+
+func TestRectFields(t *testing.T) {
+	src := `package p
+	func f() {
+		r := rect(get(0, 0), get(0, 1), get(0, 2), get(0, 3))
+		set(0, 8, r.l)
+		set(0, 9, r.r)
+		set(0, 10, r.b)
+		set(0, 11, r.t)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Rect field access failed: %s", got)
+	}
+}
+
+func TestVec2Div(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(get(0, 0), get(0, 1))
+		d := v.div(2.0)
+		set(0, 2, d.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.div failed: %s", got)
+	}
+}
+
+// --- Control flow combination tests ---
+
+func TestNestedIfInFor(t *testing.T) {
+	src := `package p
+	func f() {
+		x := 0
+		for x < 5 {
+			if x > 2 {
+				set(0, x, 1)
+			}
+			x = x + 1
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("nested if in for failed to compile")
+	}
+}
+
+func TestIfElseIfChain(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		if x < 0 {
+			set(0, 1, -1)
+		} else if x == 0 {
+			set(0, 1, 0)
+		} else {
+			set(0, 1, 1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("if-else-if chain failed to compile")
+	}
+}
+
+// --- Error path tests ---
+
+func TestUnusedVariableCompiles(t *testing.T) {
+	// An unused variable should still compile (it's a warning, not an error).
+	src := `package p
+	func f() {
+		x := 5
+		set(0, 0, 1)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("unused variable should compile")
+	}
+}
+
+func TestDeeplyNestedExpr(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		y := (x + 1) * (x - 2) + (x * 3) - (x / 2)
+		set(0, 1, y)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("deeply nested expr failed: %s", got)
+	}
+}
