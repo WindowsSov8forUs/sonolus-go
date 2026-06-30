@@ -129,6 +129,108 @@ func (n Note) UpdateParallel() {
 	}
 }
 
+// TestConcurrentCompilationNonPlay verifies deterministic output when compiling
+// Watch, Preview, and Tutorial mode engine sources concurrently from multiple
+// goroutines. Each mode uses a source that is valid for that mode so that no
+// compilation is skipped.
+func TestConcurrentCompilationNonPlay(t *testing.T) {
+	const watchSrc = `package test
+
+type Skin struct {
+	Note float64
+}
+
+type Note struct {
+	Time float64 ` + "`sonolus:\"memory\"`" + `
+}
+
+func (n Note) Initialize() {
+	n.Time = 1
+}
+
+func (n Note) UpdateSequential() {}
+`
+	const previewSrc = `package test
+
+type Skin struct {
+	Note float64
+}
+
+type Note struct {
+	T float64 ` + "`sonolus:\"memory\"`" + `
+}
+
+func (n Note) Render() {}
+`
+	const tutorialSrc = `package test
+
+type Skin struct {
+	Note float64
+}
+
+func Preprocess() {}
+func Navigate()   {}
+func Update()     {}
+`
+
+	const N = 4
+
+	// Single-threaded baselines.
+	watchBase, watchErr := CompileWatchFile(watchSrc)
+	if watchErr != nil {
+		t.Fatalf("watch baseline: %v", watchErr)
+	}
+	previewBase, previewErr := CompilePreviewFile(previewSrc)
+	if previewErr != nil {
+		t.Fatalf("preview baseline: %v", previewErr)
+	}
+	tutorialBase, tutorialErr := CompileTutorialFile(tutorialSrc)
+	if tutorialErr != nil {
+		t.Fatalf("tutorial baseline: %v", tutorialErr)
+	}
+	watchB := mustJSON(t, watchBase)
+	previewB := mustJSON(t, previewBase)
+	tutorialB := mustJSON(t, tutorialBase)
+
+	errs := make(chan error, N*3)
+	var wg sync.WaitGroup
+	for range N {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w, wErr := CompileWatchFile(watchSrc)
+			if wErr != nil {
+				errs <- wErr
+				return
+			}
+			if wb := mustJSON(t, w); !bytes.Equal(wb, watchB) {
+				errs <- fmt.Errorf("watch mismatch")
+			}
+			p, pErr := CompilePreviewFile(previewSrc)
+			if pErr != nil {
+				errs <- pErr
+				return
+			}
+			if pb := mustJSON(t, p); !bytes.Equal(pb, previewB) {
+				errs <- fmt.Errorf("preview mismatch")
+			}
+			tu, tuErr := CompileTutorialFile(tutorialSrc)
+			if tuErr != nil {
+				errs <- tuErr
+				return
+			}
+			if tub := mustJSON(t, tu); !bytes.Equal(tub, tutorialB) {
+				errs <- fmt.Errorf("tutorial mismatch")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		t.Error(e)
+	}
+}
+
 // TestConcurrentCompilationComplex verifies deterministic output when compiling
 // a complex engine source (multiple archetypes, control flow, arithmetic) from
 // many concurrent goroutines.

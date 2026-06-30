@@ -139,6 +139,61 @@ func TestROMTruncatedFile(t *testing.T) {
 	}
 }
 
+func TestDefaultROMBytes(t *testing.T) {
+	b, err := DefaultROMBytes()
+	if err != nil {
+		t.Fatalf("DefaultROMBytes: %v", err)
+	}
+	if len(b) == 0 {
+		t.Error("DefaultROMBytes returned empty bytes")
+	}
+}
+
+func TestPackageNonPlay_Write(t *testing.T) {
+	cfg := &resource.EngineConfiguration{}
+	rom, err := DefaultROMBytes()
+	if err != nil {
+		t.Fatalf("DefaultROMBytes: %v", err)
+	}
+
+	// Preview mode
+	previewData := &resource.EnginePreviewData{
+		Skin: resource.EngineSkinData{},
+		Nodes: []resource.EngineDataNode{},
+	}
+	pkg, err := PackageNonPlay(cfg, rom, previewData, FilePreviewData)
+	if err != nil {
+		t.Fatalf("PackageNonPlay(preview): %v", err)
+	}
+	dir := filepath.Join(t.TempDir(), "preview-engine")
+	if err := pkg.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{FileConfiguration, FilePreviewData, FileROM} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("missing %s in non-play package: %v", name, err)
+		}
+	}
+}
+
+func TestBuildROMFromFile_Valid(t *testing.T) {
+	dir := t.TempDir()
+	romPath := filepath.Join(dir, "valid.rom")
+	// Write 8 bytes (2 float32 values).
+	data := []byte{0, 0, 0x80, 0x3F, 0, 0, 0, 0x40} // 1.0, 2.0 in little-endian
+	if err := os.WriteFile(romPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rom, err := BuildROMFromFile(romPath)
+	if err != nil {
+		t.Fatalf("BuildROMFromFile: %v", err)
+	}
+	// BuildROMFromFile returns gzipped bytes, not raw float32 values.
+	if len(rom) == 0 {
+		t.Fatal("ROM bytes should not be empty")
+	}
+}
+
 func TestDefaultROM(t *testing.T) {
 	rom := DefaultROM()
 	if len(rom) == 0 {

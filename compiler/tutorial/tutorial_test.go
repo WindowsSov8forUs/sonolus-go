@@ -69,6 +69,72 @@ func TestAssembleEmpty(t *testing.T) {
 	}
 }
 
+func TestAssemble_Direct(t *testing.T) {
+	data := BuildTutorialData(
+		resource.EngineSkinData{},
+		resource.EngineEffectData{},
+		resource.EngineParticleData{},
+		resource.EngineInstructionData{},
+	)
+	Assemble(data, 1, 2, 3)
+
+	if data.Preprocess != 1 {
+		t.Errorf("Preprocess = %d, want 1", data.Preprocess)
+	}
+	if data.Navigate != 2 {
+		t.Errorf("Navigate = %d, want 2", data.Navigate)
+	}
+	if data.Update != 3 {
+		t.Errorf("Update = %d, want 3", data.Update)
+	}
+}
+
+func TestAssemble_ZeroIndices(t *testing.T) {
+	data := BuildTutorialData(
+		resource.EngineSkinData{},
+		resource.EngineEffectData{},
+		resource.EngineParticleData{},
+		resource.EngineInstructionData{},
+	)
+	// Zero indices mean "no callback" per Sonolus convention.
+	Assemble(data, 0, 0, 0)
+
+	if data.Preprocess != 0 || data.Navigate != 0 || data.Update != 0 {
+		t.Error("all indices should be zero")
+	}
+}
+
+func TestCompileCallback_Peephole(t *testing.T) {
+	// CompileCallback should run peephole optimization and apply
+	// pure-constant/trailing-zero stripping.
+	zero := snode.Val(0)
+	r := CompileCallback(-1, CallbackPreprocess, zero)
+	if r != nil {
+		t.Error("pure constant zero should be stripped")
+	}
+
+	nonZero := snode.Val(42)
+	r = CompileCallback(-1, CallbackNavigate, nonZero)
+	if r != nil {
+		t.Error("pure constant non-zero should be stripped")
+	}
+}
+
+func TestCompileCallback_Dynamic(t *testing.T) {
+	// A dynamic node should not be stripped.
+	dyn := snode.Call(resource.RuntimeFunctionDebugLog, snode.Val(1))
+	r := CompileCallback(-1, CallbackUpdate, dyn)
+	if r == nil {
+		t.Fatal("dynamic callback should not be stripped")
+	}
+	if r.Callback != "update" {
+		t.Errorf("callback = %q, want \"update\"", r.Callback)
+	}
+	if r.ArchetypeIndex != -1 {
+		t.Errorf("archetypeIndex = %d, want -1", r.ArchetypeIndex)
+	}
+}
+
 func TestBuildTutorialData(t *testing.T) {
 	skin := resource.EngineSkinData{Sprites: []resource.EngineSkinDataSprite{
 		{Name: "note"}, {Name: "stage"},

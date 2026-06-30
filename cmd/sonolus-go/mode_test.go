@@ -59,3 +59,36 @@ func TestAllModeNames(t *testing.T) {
 		}
 	}
 }
+
+func TestMode_String(t *testing.T) {
+	tests := []struct {
+		mode Mode
+		want string
+	}{
+		{ModePlay, "play"},
+		{ModeWatch, "watch"},
+		{ModePreview, "preview"},
+		{ModeTutorial, "tutorial"},
+		{ModeAll, "all"},
+	}
+	for _, tt := range tests {
+		if got := tt.mode.String(); got != tt.want {
+			t.Errorf("Mode(%q).String() = %q, want %q", tt.mode, got, tt.want)
+		}
+	}
+}
+
+func TestEngineNameFromPath(t *testing.T) {
+	tests := []struct{ path, want string }{
+		{"engines/my-engine.go", "my-engine"},
+		{"engine.go", "engine"},
+		{`a\b\c.go`, "c"},
+		{"no-ext", "no-ext"},
+		{"/absolute/path/to/test.go", "test"},
+	}
+	for _, tt := range tests {
+		if got := engineNameFromPath(tt.path); got != tt.want {
+			t.Errorf("engineNameFromPath(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}

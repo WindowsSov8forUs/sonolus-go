@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
@@ -42,5 +44,80 @@ func TestCompileCachePutGet(t *testing.T) {
 	d, cfg := c.GetPlay(key)
 	if d != dummy || cfg != nil {
 		t.Error("cache returned wrong value after put")
+	}
+}
+
+func TestCompileCacheConcurrent(t *testing.T) {
+	c := NewCache()
+	c.MaxEntries = 16
+
+	const N = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, N)
+	for i := range N {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			key := NewCacheKey("play", fmt.Sprintf("src-%d", n))
+			data := &resource.EnginePlayData{}
+			cfg := &resource.EngineConfiguration{}
+			c.PutPlay(key, data, cfg)
+			got, gotCfg := c.GetPlay(key)
+			if got == nil {
+				errs <- fmt.Errorf("concurrent: get returned nil for %d", n)
+				return
+			}
+			if gotCfg == nil {
+				errs <- fmt.Errorf("concurrent: config returned nil for %d", n)
+				return
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		t.Error(e)
+	}
+}
+
+func TestCompileCacheEviction(t *testing.T) {
+	c := NewCache()
+	c.MaxEntries = 2
+
+	c.PutPlay(NewCacheKey("play", "a"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
+	c.PutPlay(NewCacheKey("play", "b"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
+	c.PutPlay(NewCacheKey("play", "c"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
+
+	// The most recently inserted key should still be present.
+	if _, cfg := c.GetPlay(NewCacheKey("play", "c")); cfg == nil {
+		t.Error("most recently inserted key should be present after eviction")
+	}
+}
+
+func TestCompileCacheNonPlayRoundTrip(t *testing.T) {
+	c := NewCache()
+
+	watchKey := NewCacheKey("watch", "test")
+	if d := c.GetWatch(watchKey); d != nil {
+		t.Error("empty cache returned non-nil for watch")
+	}
+	dummy := &resource.EngineWatchData{}
+	c.PutWatch(watchKey, dummy)
+	if got := c.GetWatch(watchKey); got != dummy {
+		t.Error("watch cache returned wrong value")
+	}
+
+	previewKey := NewCacheKey("preview", "test")
+	dummyP := &resource.EnginePreviewData{}
+	c.PutPreview(previewKey, dummyP)
+	if got := c.GetPreview(previewKey); got != dummyP {
+		t.Error("preview cache returned wrong value")
+	}
+
+	tutorialKey := NewCacheKey("tutorial", "test")
+	dummyT := &resource.EngineTutorialData{}
+	c.PutTutorial(tutorialKey, dummyT)
+	if got := c.GetTutorial(tutorialKey); got != dummyT {
+		t.Error("tutorial cache returned wrong value")
 	}
 }
