@@ -1916,3 +1916,267 @@ func TestMultipleReturns(t *testing.T) {
 		t.Errorf("multiple returns failed: %s", got)
 	}
 }
+
+// --- Runtime dispatch path tests (builtins_fn.go / trace_call.go coverage) ---
+
+func TestRuntimeOffsetAdjustedTime(t *testing.T) {
+	src := `package p
+	func f() {
+		t := offsetAdjustedTime()
+		set(0, 0, t)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("offsetAdjustedTime() failed: %s", got)
+	}
+}
+
+func TestRuntimePrevTime(t *testing.T) {
+	src := `package p
+	func f() {
+		t := prevTime()
+		set(0, 0, t)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("prevTime() failed: %s", got)
+	}
+}
+
+func TestRuntimeTouchId(t *testing.T) {
+	src := `package p
+	func f() {
+		v := touchId(0)
+		set(0, 0, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("touchId() failed: %s", got)
+	}
+}
+
+func TestRuntimeTouchStarted(t *testing.T) {
+	src := `package p
+	func f() {
+		v := touchStarted(0)
+		set(0, 0, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("touchStarted() failed: %s", got)
+	}
+}
+
+func TestRuntimeTouchEnded(t *testing.T) {
+	src := `package p
+	func f() {
+		v := touchEnded(0)
+		set(0, 0, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("touchEnded() failed: %s", got)
+	}
+}
+
+func TestRuntimeTouchXY(t *testing.T) {
+	src := `package p
+	func f() {
+		x := touchX(0)
+		y := touchY(0)
+		set(0, 0, x + y)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("touchX/touchY failed: %s", got)
+	}
+}
+
+func TestRuntimePnPoly(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(get(0, 0), get(0, 1))
+		q := quad(get(0, 2), get(0, 3), get(0, 4), get(0, 5),
+			get(0, 6), get(0, 7), get(0, 8), get(0, 9))
+		r := pnpoly(v, q)
+		set(0, 10, r)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("pnpoly() failed: %s", got)
+	}
+}
+
+func TestRuntimePerspectiveApproach(t *testing.T) {
+	src := `package p
+	func f() {
+		x := get(0, 0)
+		y := get(0, 1)
+		v := perspectiveApproach(x, y)
+		set(0, 2, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("perspectiveApproach() failed: %s", got)
+	}
+}
+
+func TestRuntimeEasing(t *testing.T) {
+	src := `package p
+	func f() {
+		t := get(0, 0)
+		v := easeInCubic(t)
+		set(0, 1, v)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("easeInCubic failed: %s", got)
+	}
+}
+
+func TestRuntimePlayScheduled(t *testing.T) {
+	src := `package p
+	func f() {
+		playScheduled(0, 0, 0)
+		stopLooped(0)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("playScheduled/stopLooped failed: %s", got)
+	}
+}
+
+func TestRuntimeTruncUnlerp(t *testing.T) {
+	src := `package p
+	func f() {
+		a := trunc(3.7)
+		b := unlerp(25, 0, 100)
+		c := unlerpClamped(25, 0, 100)
+		set(0, 0, a + b + c)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("trunc/unlerp failed: %s", got)
+	}
+}
+
+func TestRuntimeInterpAliases(t *testing.T) {
+	src := `package p
+	func f() {
+		v := interp(0, 100, 0.5)
+		w := interpClamped(0, 100, 0.5)
+		set(0, 0, v + w)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("interp/interpClamped failed: %s", got)
+	}
+}
+
+// --- Record method tests (value_vec2.go / value_rect.go / value_quad.go coverage) ---
+
+func TestVec2Magnitude(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(3, 4)
+		m := v.magnitude()
+		set(0, 0, m)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.magnitude failed: %s", got)
+	}
+}
+
+func TestVec2Dot(t *testing.T) {
+	src := `package p
+	func f() {
+		a := vec2(1, 2)
+		b := vec2(3, 4)
+		d := a.dot(b)
+		set(0, 0, d)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.dot failed: %s", got)
+	}
+}
+
+func TestVec2Normalize(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(3, 4)
+		n := v.normalize()
+		set(0, 0, n.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.normalize failed: %s", got)
+	}
+}
+
+func TestVec2Angle(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(1, 1)
+		a := v.angle()
+		set(0, 0, a)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.angle failed: %s", got)
+	}
+}
+
+func TestVec2Rotate(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(1, 0)
+		r := v.rotate(3.14159)
+		set(0, 0, r.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.rotate failed: %s", got)
+	}
+}
+
+func TestVec2Orthogonal(t *testing.T) {
+	src := `package p
+	func f() {
+		v := vec2(1, 2)
+		o := v.orthogonal()
+		set(0, 0, o.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Vec2.orthogonal failed: %s", got)
+	}
+}
+
+func TestRectWAndH(t *testing.T) {
+	src := `package p
+	func f() {
+		r := rect(10, 20, 30, 40)
+		w := r.w()
+		h := r.h()
+		set(0, 0, w + h)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Rect.w/h failed: %s", got)
+	}
+}
+
+func TestRectCenter(t *testing.T) {
+	src := `package p
+	func f() {
+		r := rect(0, 10, 0, 10)
+		c := r.center()
+		set(0, 0, c.x)
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("Rect.center failed: %s", got)
+	}
+}
