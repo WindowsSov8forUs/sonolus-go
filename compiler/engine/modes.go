@@ -229,7 +229,11 @@ func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.Engi
 				return nil, fmt.Errorf("UpdateSpawn: %w", err)
 			}
 			if r := modecompile.CompileCallback(-1, "UpdateSpawn", sn, nil); r != nil {
-				updateSpawn, _ = snode.NewAppender(&nodes).Append(r.Node)
+				var err error
+				updateSpawn, err = snode.NewAppender(&nodes).Append(r.Node)
+				if err != nil {
+					return nil, fmt.Errorf("UpdateSpawn append: %w", err)
+				}
 			}
 			break
 		}
