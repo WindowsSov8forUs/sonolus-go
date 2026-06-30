@@ -52,7 +52,9 @@ func (Instr) irNode() {}
 // compilation entry point creates one IDGen and threads it through the frontend
 // tracer, optimizer pipeline, and finalizer. This eliminates shared mutable state,
 // making concurrent compilations safe.
-type IDGen struct{ n int }
+type IDGen struct {
+	n int // next ID to assign; monotonically incremented by Next()
+}
 
 // NewIDGen returns a fresh ID generator starting at 1.
 func NewIDGen() *IDGen { return &IDGen{} }
