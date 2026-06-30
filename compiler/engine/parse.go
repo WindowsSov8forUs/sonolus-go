@@ -193,37 +193,11 @@ func compileParsed(
 	bindings := make([]map[string]frontend.Binding, len(order))
 	for i, name := range order {
 		a := archetypes[name]
-		imports := make([]resource.EngineDataArchetypeImport, len(a.imported))
 		exports := make([]resource.EngineArchetypeDataName, len(a.exported))
-		b := map[string]frontend.Binding{}
-		for j, f := range a.imported {
-			imports[j] = resource.EngineDataArchetypeImport{
-				Name: resource.EngineArchetypeDataName(f.Name), Index: j, Def: f.Def,
-			}
-			b[f.Name] = frontend.Binding{Block: entityMemoryBlock, Index: j, Writable: false}
-		}
-		for k, m := range a.memory {
-			b[m] = frontend.Binding{Block: entityMemoryBlock, Index: len(a.imported) + k, Writable: true}
-		}
-		for ek, en := range a.exported {
-			exports[ek] = resource.EngineArchetypeDataName(en)
-			b[en] = frontend.Binding{Block: -1, Index: ek, Writable: true}
-		}
-		for di, dn := range a.data {
-			b[dn] = frontend.Binding{Block: entityDataBlock, Index: di, Writable: false}
-		}
-		for si, sn := range a.shared {
-			b[sn] = frontend.Binding{Block: entitySharedBlock, Index: si, Writable: true}
-		}
-		for ii, in := range a.input {
-			b[in] = frontend.Binding{Block: entityInputBlock, Index: ii, Writable: true}
-		}
-		for di, dn := range a.despawn {
-			b[dn] = frontend.Binding{Block: entityDespawnBlock, Index: di, Writable: true}
-		}
-		for ii, in := range a.info {
-			b[in] = frontend.Binding{Block: entityInfoBlock, Index: ii, Writable: false}
-		}
+		imports, b := buildBindings(a.imported, a.memory, a.exported, a.data, a.shared, a.input, a.despawn, a.info,
+				func(name string, idx int) {
+					exports[idx] = resource.EngineArchetypeDataName(name)
+				})
 		if a.scored || a.lifed {
 			ArchetypeScoreLife(b, a.scored, a.lifed)
 		}

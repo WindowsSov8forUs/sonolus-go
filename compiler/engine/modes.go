@@ -142,31 +142,7 @@ func parseModeFile(src string) (*token.FileSet, map[string]*modeArch, []string, 
 }
 
 func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string]frontend.Binding) {
-	imports := make([]resource.EngineDataArchetypeImport, len(a.imported))
-	b := map[string]frontend.Binding{}
-	for j, f := range a.imported {
-		imports[j] = resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(f.Name), Index: j, Def: f.Def}
-		b[f.Name] = frontend.Binding{Block: entityMemoryBlock, Index: j, Writable: false}
-	}
-	for k, m := range a.memory {
-		b[m] = frontend.Binding{Block: entityMemoryBlock, Index: len(a.imported) + k, Writable: true}
-	}
-	for di, dn := range a.data {
-		b[dn] = frontend.Binding{Block: entityDataBlock, Index: di, Writable: false}
-	}
-	for si, sn := range a.shared {
-		b[sn] = frontend.Binding{Block: entitySharedBlock, Index: si, Writable: true}
-	}
-	for ii, in := range a.input {
-		b[in] = frontend.Binding{Block: entityInputBlock, Index: ii, Writable: true}
-	}
-	for di, dn := range a.despawn {
-		b[dn] = frontend.Binding{Block: entityDespawnBlock, Index: di, Writable: true}
-	}
-	for ii, in := range a.info {
-		b[in] = frontend.Binding{Block: entityInfoBlock, Index: ii, Writable: false}
-	}
-	return imports, b
+	return buildBindings(a.imported, a.memory, nil, a.data, a.shared, a.input, a.despawn, a.info, nil)
 }
 
 // compileCallbackBlock is the shared compile+optimize+lower pipeline for a single
@@ -380,12 +356,4 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 		Skin: r.skin, Effect: r.effect, Particle: r.particle, Instruction: r.instruction,
 		Preprocess: pp, Navigate: nav, Update: upd, Nodes: nodes,
 	}, nil
-}
-
-func copyBC(src map[string]frontend.Binding) map[string]frontend.Binding {
-	out := map[string]frontend.Binding{}
-	for k, v := range src {
-		out[k] = v
-	}
-	return out
 }

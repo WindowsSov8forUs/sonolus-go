@@ -400,7 +400,7 @@ func knownRecordFields(name string, userRecords map[string][]string) ([]string, 
 	case "vec2":
 		return []string{"x", "y"}, true
 	case "quad":
-		return []string{"blx", "bly", "tlx", "tly", "trx", "try", "brx", "bry"}, true
+		return quadFields, true
 	case "mat":
 		return matFields, true
 	case "rect":

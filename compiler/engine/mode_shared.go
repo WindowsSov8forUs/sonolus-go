@@ -13,6 +13,50 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
 
+// buildBindings builds the name→Binding map and imports slice for an archetype
+// from its parsed field lists. It is shared by play-mode compilation (parse.go)
+// and watch/preview-mode compilation (modes.go). The optional onExport callback
+// is invoked for each exported field (play-mode only).
+func buildBindings(
+	imported []ImportedField,
+	memory, exported, data, shared, input, despawn, info []string,
+	onExport func(name string, idx int),
+) ([]resource.EngineDataArchetypeImport, map[string]frontend.Binding) {
+	imports := make([]resource.EngineDataArchetypeImport, len(imported))
+	b := map[string]frontend.Binding{}
+	for j, f := range imported {
+		imports[j] = resource.EngineDataArchetypeImport{
+			Name: resource.EngineArchetypeDataName(f.Name), Index: j, Def: f.Def,
+		}
+		b[f.Name] = frontend.Binding{Block: entityMemoryBlock, Index: j, Writable: false}
+	}
+	for k, m := range memory {
+		b[m] = frontend.Binding{Block: entityMemoryBlock, Index: len(imported) + k, Writable: true}
+	}
+	for ek, en := range exported {
+		if onExport != nil {
+			onExport(en, ek)
+		}
+		b[en] = frontend.Binding{Block: -1, Index: ek, Writable: true}
+	}
+	for di, dn := range data {
+		b[dn] = frontend.Binding{Block: entityDataBlock, Index: di, Writable: false}
+	}
+	for si, sn := range shared {
+		b[sn] = frontend.Binding{Block: entitySharedBlock, Index: si, Writable: true}
+	}
+	for ii, in := range input {
+		b[in] = frontend.Binding{Block: entityInputBlock, Index: ii, Writable: true}
+	}
+	for di, dn := range despawn {
+		b[dn] = frontend.Binding{Block: entityDespawnBlock, Index: di, Writable: true}
+	}
+	for ii, in := range info {
+		b[in] = frontend.Binding{Block: entityInfoBlock, Index: ii, Writable: false}
+	}
+	return imports, b
+}
+
 // archetypeData holds the per-archetype metadata produced by callback
 // compilation, ready to be wrapped in a mode-specific archetype struct
 // (EngineWatchDataArchetype, EnginePreviewDataArchetype, etc.).
@@ -49,7 +93,7 @@ func compileArchetypeCallbacks(
 			name:    resource.EngineArchetypeName(name),
 			imports: imports,
 		}
-		names := copyBC(accessors)
+		names := frontend.CloneBindings(accessors)
 		for k, v := range b {
 			names[k] = v
 		}
