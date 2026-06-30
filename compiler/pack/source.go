@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-core-go/database"
@@ -46,6 +47,11 @@ func EmitPackSource(dir string, name string, c CompiledEngine, meta EngineItemMe
 		return fmt.Errorf("creating engine dir: %w", err)
 	}
 
+	// Write thumbnail (required by sonolus-pack-go; a minimal 1x1 PNG).
+	if err := os.WriteFile(filepath.Join(engineDir, "thumbnail"), minPNG, 0644); err != nil {
+		return fmt.Errorf("writing engine thumbnail: %w", err)
+	}
+
 	// Write raw JSON data files (pack-go gzips them itself).
 	writeJSON := func(filename string, v any) error {
 		data, err := json.MarshalIndent(v, "", "\t")
@@ -70,9 +76,19 @@ func EmitPackSource(dir string, name string, c CompiledEngine, meta EngineItemMe
 		return err
 	}
 
-	// ROM is optional binary.
+	// ROM is optional binary. If the ROM bytes are gzip-compressed (as produced
+	// by build.BuildROM), decompress them so sonolus-pack-go can gzip them once.
+	// Raw (uncompressed) ROM bytes pass through unchanged.
 	if len(c.ROM) > 0 {
-		if err := os.WriteFile(filepath.Join(engineDir, "rom"), c.ROM, 0644); err != nil {
+		romData := c.ROM
+		if len(romData) >= 2 && romData[0] == 0x1f && romData[1] == 0x8b {
+			rawROM, err := codec.Decompress[[]byte](romData)
+			if err != nil {
+				return fmt.Errorf("decompressing ROM for pack source: %w", err)
+			}
+			romData = rawROM
+		}
+		if err := os.WriteFile(filepath.Join(engineDir, "rom"), romData, 0644); err != nil {
 			return err
 		}
 	}

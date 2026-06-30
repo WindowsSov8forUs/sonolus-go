@@ -32,7 +32,7 @@ func TestEmitPackSource(t *testing.T) {
 
 	engineDir := filepath.Join(dir, "engines", "test")
 
-	for _, f := range []string{"configuration", "playData", "watchData", "previewData", "tutorialData", "item.json"} {
+	for _, f := range []string{"thumbnail", "configuration", "playData", "watchData", "previewData", "tutorialData", "item.json"} {
 		path := filepath.Join(engineDir, f)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("expected file %s: %v", f, err)
