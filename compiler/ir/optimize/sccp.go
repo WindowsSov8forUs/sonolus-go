@@ -2,6 +2,7 @@ package optimize
 
 import (
 	"fmt"
+	"log"
 	"math"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -130,7 +131,12 @@ func (SCCP) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	s.init(entry)
 	s.propagate(entry)
 	if s.err != nil {
-		panic(s.err)
+		// Lattice convergence failure is mathematically impossible
+		// (finite-height lattice: undef → const/frozenset → NAC,
+		// at most 3 states per node). Log a warning and return the
+		// entry unchanged rather than crashing the process.
+		log.Printf("sccp: lattice convergence warning: %v (returning entry unchanged)", s.err)
+		return entry
 	}
 	s.rewrite(entry)
 	return entry

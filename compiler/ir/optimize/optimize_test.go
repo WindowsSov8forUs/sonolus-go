@@ -19,6 +19,14 @@ import (
 var testGen = ir.NewIDGen()
 var canon = modecompile.Canon
 
+// mustLower calls CFGToSNode and panics on error. Test helper.
+func mustLower(sn snode.SNode, err error) snode.SNode {
+	if err != nil {
+		panic(err)
+	}
+	return sn
+}
+
 // --- case builders, mirroring testdata/harness.py exactly ---
 
 func set(b, i, v int) ir.Node { return testGen.SetPlace(ir.Cell(b, i), ir.Const(v)) }
@@ -96,13 +104,13 @@ func TestOptimizeGolden(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			// Parity: our CFG finalizes identically to sonolus.py's before passes.
-			if got := canon(ir.CFGToSNode(testGen, build())); got != want.Before {
+			if got := canon(mustLower(ir.CFGToSNode(testGen, build()))); got != want.Before {
 				t.Fatalf("before mismatch (CFG diverged)\n got: %s\nwant: %s", got, want.Before)
 			}
-			if got := canon(ir.CFGToSNode(testGen, UnreachableCodeElimination{}.Run(testGen, build()))); got != want.AfterUCE {
+			if got := canon(mustLower(ir.CFGToSNode(testGen, UnreachableCodeElimination{}.Run(testGen, build())))); got != want.AfterUCE {
 				t.Errorf("afterUCE mismatch\n got: %s\nwant: %s", got, want.AfterUCE)
 			}
-			if got := canon(ir.CFGToSNode(testGen, CoalesceFlow{}.Run(testGen, build()))); got != want.AfterCoalesce {
+			if got := canon(mustLower(ir.CFGToSNode(testGen, CoalesceFlow{}.Run(testGen, build())))); got != want.AfterCoalesce {
 				t.Errorf("afterCoalesce mismatch\n got: %s\nwant: %s", got, want.AfterCoalesce)
 			}
 		})
@@ -590,7 +598,7 @@ func f() {
 		CoalesceFlow{}, DeadCodeElimination{},
 	)
 	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
-	got := canon(ir.CFGToSNode(testGen, entry))
+	got := canon(mustLower(ir.CFGToSNode(testGen, entry)))
 	// x := 3 is inlined and the dead store removed: just Set(0,0,3).
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#3),#1),#0))"
 	if got != want {
@@ -660,7 +668,7 @@ func f() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := canon(snode.Peephole(ir.CFGToSNode(testGen, entry)))
+	got := canon(snode.Peephole(mustLower(ir.CFGToSNode(testGen, entry))))
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#5),#1),#0))"
 	if got != want {
 		t.Errorf("pipeline output\n got:  %s\nwant: %s", got, want)
@@ -692,7 +700,7 @@ func f() {
 		UnreachableCodeElimination{}, CoalesceFlow{}, DeadCodeElimination{},
 	)
 	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
-	got := canon(ir.CFGToSNode(testGen, entry))
+	got := canon(mustLower(ir.CFGToSNode(testGen, entry)))
 	// Only the taken branch (set 0,0,1) survives.
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#1),#1),#0))"
 	if got != want {
@@ -715,7 +723,7 @@ func f() {
 	entry = DeadCodeElimination{}.Run(testGen, entry)
 	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
 
-	got := canon(ir.CFGToSNode(testGen, entry))
+	got := canon(mustLower(ir.CFGToSNode(testGen, entry)))
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#1),#1),#0))"
 	if got != want {
 		t.Errorf("dead local not removed\n got: %s\nwant: %s", got, want)
@@ -742,7 +750,7 @@ func f() {
 	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
 
 	var nodes []resource.EngineDataNode
-	if _, err := snode.NewAppender(&nodes).Append(ir.CFGToSNode(testGen, entry)); err != nil {
+	if _, err := snode.NewAppender(&nodes).Append(mustLower(ir.CFGToSNode(testGen, entry))); err != nil {
 		t.Fatal(err)
 	}
 	if len(nodes) == 0 {
@@ -840,7 +848,7 @@ func TestPipelineNodeCount(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			nodes := snode2Nodes(ir.CFGToSNode(testGen, entry))
+			nodes := snode2Nodes(mustLower(ir.CFGToSNode(testGen, entry)))
 			nodeCount := len(nodes)
 
 			// Record the count as a baseline metric.
@@ -887,7 +895,7 @@ func f() {
 	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
 
 	var nodes []resource.EngineDataNode
-	if _, err := snode.NewAppender(&nodes).Append(ir.CFGToSNode(testGen, entry)); err != nil {
+	if _, err := snode.NewAppender(&nodes).Append(mustLower(ir.CFGToSNode(testGen, entry))); err != nil {
 		t.Fatalf("finalize after SSA round trip: %v", err)
 	}
 	if len(nodes) == 0 {
@@ -920,7 +928,7 @@ func TestLICMHoistsLoopInvariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sn := snode.Peephole(ir.CFGToSNode(testGen, result))
+	sn := snode.Peephole(mustLower(ir.CFGToSNode(testGen, result)))
 	got := canon(sn)
 	if got == "" {
 		t.Error("LICM pipeline produced empty output")
@@ -952,7 +960,7 @@ func TestLICMRespectsWrittenBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sn := snode.Peephole(ir.CFGToSNode(testGen, result))
+	sn := snode.Peephole(mustLower(ir.CFGToSNode(testGen, result)))
 	got := canon(sn)
 	if got == "" {
 		t.Error("LICM pipeline produced empty output for writable-block case")
@@ -985,7 +993,7 @@ func TestAllocateLiveReusesSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sn := snode.Peephole(ir.CFGToSNode(testGen, result))
+	sn := snode.Peephole(mustLower(ir.CFGToSNode(testGen, result)))
 	got := canon(sn)
 	if got == "" {
 		t.Error("AllocateLive pipeline produced empty output")

@@ -29,11 +29,7 @@ const (
 // CFGToSNode lowers an (optimized) CFG into a single snode.SNode tree, encoding
 // inter-block control flow as a Block(JumpLoop(...)) of per-block Execute nodes.
 // Port of sonolus.py finalize.cfg_to_engine_node.
-//
-// This function may panic on internal invariant violations (e.g., TempBlock
-// that escaped allocateTempBlocks). Callers should recover at the top-level
-// API boundary (see engine.compileCallbackBlock).
-func CFGToSNode(gen *IDGen, entry *BasicBlock) snode.SNode {
+func CFGToSNode(gen *IDGen, entry *BasicBlock) (snode.SNode, error) {
 	order := traverseReversePostorder(entry)
 	index := make(map[*BasicBlock]int, len(order))
 	for i, b := range order {
@@ -45,14 +41,22 @@ func CFGToSNode(gen *IDGen, entry *BasicBlock) snode.SNode {
 	for _, b := range order {
 		stmts := make([]snode.SNode, 0, len(b.Statements)+1)
 		for _, s := range b.Statements {
-			stmts = append(stmts, Lower(s))
+			lowered, err := Lower(s)
+			if err != nil {
+				return nil, err
+			}
+			stmts = append(stmts, lowered)
 		}
-		stmts = append(stmts, controlFlow(gen, b, index, exit))
+		cf, err := controlFlow(gen, b, index, exit)
+		if err != nil {
+			return nil, err
+		}
+		stmts = append(stmts, cf)
 		blockStatements = append(blockStatements, snode.Call(opExecute, stmts...))
 	}
 	blockStatements = append(blockStatements, snode.Val(0))
 
-	return snode.Call(opBlock, snode.Call(opJumpLoop, blockStatements...))
+	return snode.Call(opBlock, snode.Call(opJumpLoop, blockStatements...)), nil
 }
 
 // condEdge is one non-default outgoing edge.
@@ -63,7 +67,7 @@ type condEdge struct {
 
 // controlFlow encodes a block's outgoing edges as the trailing node of its
 // Execute body: a fallthrough index, an If, or a Switch.
-func controlFlow(gen *IDGen, b *BasicBlock, index map[*BasicBlock]int, exit int) snode.SNode {
+func controlFlow(gen *IDGen, b *BasicBlock, index map[*BasicBlock]int, exit int) (snode.SNode, error) {
 	edges := sortedOutgoing(b)
 
 	var defaultDst *BasicBlock
@@ -78,28 +82,32 @@ func controlFlow(gen *IDGen, b *BasicBlock, index map[*BasicBlock]int, exit int)
 
 	switch {
 	case len(edges) == 0:
-		// No successors: jump past the last block to terminate the loop.
-		return snode.Val(float64(exit))
+		return snode.Val(float64(exit)), nil
 
 	case len(conds) == 0 && defaultDst != nil:
-		// Unconditional edge.
-		return snode.Val(float64(index[defaultDst]))
+		return snode.Val(float64(index[defaultDst])), nil
 
 	case defaultDst != nil && len(conds) == 1 && conds[0].cond == 0:
-		// {0: false, default: true} -> If(test, true, false).
+		test, err := Lower(b.Test)
+		if err != nil {
+			return nil, err
+		}
 		return snode.Call(opIf,
-			Lower(b.Test),
+			test,
 			snode.Val(float64(index[defaultDst])),
 			snode.Val(float64(index[conds[0].dst])),
-		)
+		), nil
 
 	case defaultDst != nil && len(conds) == 1:
-		// {cond: branch, default} -> If(test == cond, branch, default).
+		test, err := Lower(gen.PureInstr(opEqual, b.Test, Const(conds[0].cond)))
+		if err != nil {
+			return nil, err
+		}
 		return snode.Call(opIf,
-			Lower(gen.PureInstr(opEqual, b.Test, Const(conds[0].cond))),
+			test,
 			snode.Val(float64(index[conds[0].dst])),
 			snode.Val(float64(index[defaultDst])),
-		)
+		), nil
 
 	default:
 		return switchNode(b.Test, conds, defaultDst, index, exit)
@@ -109,7 +117,7 @@ func controlFlow(gen *IDGen, b *BasicBlock, index map[*BasicBlock]int, exit int)
 // switchNode emits SwitchIntegerWithDefault when the conditions are a dense
 // 0..n-1 integer range, otherwise SwitchWithDefault. Conditions arrive sorted
 // ascending (default handled separately).
-func switchNode(test Node, conds []condEdge, defaultDst *BasicBlock, index map[*BasicBlock]int, exit int) snode.SNode {
+func switchNode(test Node, conds []condEdge, defaultDst *BasicBlock, index map[*BasicBlock]int, exit int) (snode.SNode, error) {
 	dense := len(conds) > 0
 	for i, c := range conds {
 		if c.cond != float64(i) {
@@ -124,55 +132,75 @@ func switchNode(test Node, conds []condEdge, defaultDst *BasicBlock, index map[*
 	}
 
 	if dense {
+		lowered, err := Lower(test)
+		if err != nil {
+			return nil, err
+		}
 		args := make([]snode.SNode, 0, len(conds)+2)
-		args = append(args, Lower(test))
+		args = append(args, lowered)
 		for _, c := range conds {
 			args = append(args, snode.Val(float64(index[c.dst])))
 		}
 		args = append(args, snode.Val(float64(def)))
-		return snode.Call(opSwitchIntegerWithDefault, args...)
+		return snode.Call(opSwitchIntegerWithDefault, args...), nil
 	}
 
+	lowered, err := Lower(test)
+	if err != nil {
+		return nil, err
+	}
 	args := make([]snode.SNode, 0, len(conds)*2+2)
-	args = append(args, Lower(test))
+	args = append(args, lowered)
 	for _, c := range conds {
 		args = append(args, snode.Val(c.cond), snode.Val(float64(index[c.dst])))
 	}
 	args = append(args, snode.Val(float64(def)))
-	return snode.Call(opSwitchWithDefault, args...)
+	return snode.Call(opSwitchWithDefault, args...), nil
 }
 
 // Lower converts a single IR node into an snode.SNode. Port of
 // finalize.ir_to_engine_node.
-func Lower(n Node) snode.SNode {
+func Lower(n Node) (snode.SNode, error) {
 	switch t := n.(type) {
 	case Const:
-		return numeric(float64(t))
+		return numeric(float64(t)), nil
 	case Instr:
 		args := make([]snode.SNode, len(t.Args))
 		for i, a := range t.Args {
-			args[i] = Lower(a)
+			var err error
+			args[i], err = Lower(a)
+			if err != nil {
+				return nil, err
+			}
 		}
-		return snode.Call(t.Op, args...)
+		return snode.Call(t.Op, args...), nil
 	case Get:
 		return Lower(t.Place)
 	case Set:
-		place, ok := Lower(t.Place).(snode.Func)
-		if !ok {
-			panic("ir: Set place did not lower to a function node")
+		place, err := Lower(t.Place)
+		if err != nil {
+			return nil, err
 		}
-		args := append(append([]snode.SNode{}, place.Args...), Lower(t.Value))
-		return snode.Call(opSet, args...)
+		placeFunc, ok := place.(snode.Func)
+		if !ok {
+			return nil, fmt.Errorf("ir: Set place did not lower to a function node")
+		}
+		val, err := Lower(t.Value)
+		if err != nil {
+			return nil, err
+		}
+		args := append(append([]snode.SNode{}, placeFunc.Args...), val)
+		return snode.Call(opSet, args...), nil
 	case BlockPlace:
 		return blockPlaceToSNode(t)
 	case *TempBlock:
-		panic("ir: TempBlock reached finalize (AllocateTempBlocks not run)")
+		return nil, fmt.Errorf("ir: TempBlock reached finalize (AllocateTempBlocks not run)")
 	case SSAPlace:
-		panic("ir: SSAPlace reached finalize (register allocation not run)")
+		return nil, fmt.Errorf("ir: SSAPlace reached finalize (register allocation not run)")
 	case nil:
-		panic("ir: cannot lower nil node")
+		return nil, fmt.Errorf("ir: cannot lower nil node")
 	default:
-		panic(fmt.Sprintf("ir: cannot lower %T", n))
+		return nil, fmt.Errorf("ir: cannot lower %T", n)
 	}
 }
 
@@ -191,17 +219,29 @@ func numeric(v float64) snode.SNode {
 	}
 }
 
-func blockPlaceToSNode(p BlockPlace) snode.SNode {
+func blockPlaceToSNode(p BlockPlace) (snode.SNode, error) {
 	var index snode.SNode
 	switch {
 	case p.Offset == 0:
-		index = Lower(orZero(p.Index))
+		var err error
+		index, err = Lower(orZero(p.Index))
+		if err != nil {
+			return nil, err
+		}
 	case isZeroIndex(p.Index):
 		index = snode.Val(float64(p.Offset))
 	default:
-		index = snode.Call(opAdd, Lower(p.Index), snode.Val(float64(p.Offset)))
+		pi, err := Lower(p.Index)
+		if err != nil {
+			return nil, err
+		}
+		index = snode.Call(opAdd, pi, snode.Val(float64(p.Offset)))
 	}
-	return snode.Call(opGet, Lower(orZero(p.Block)), index)
+	blk, err := Lower(orZero(p.Block))
+	if err != nil {
+		return nil, err
+	}
+	return snode.Call(opGet, blk, index), nil
 }
 
 func orZero(n Node) Node {

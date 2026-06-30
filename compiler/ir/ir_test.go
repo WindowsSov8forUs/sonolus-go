@@ -11,6 +11,15 @@ import (
 
 var canon = modecompile.Canon
 
+// mustLower calls CFGToSNode and panics on error. This is a test helper;
+// CFGToSNode failures indicate an invariant violation in the test setup.
+func mustLower(sn snode.SNode, err error) snode.SNode {
+	if err != nil {
+		panic(err)
+	}
+	return sn
+}
+
 // TestFinalizeSingleBlockBreak reproduces the pydori should_spawn node shape:
 // a single block whose body is Break(1,1), terminating the JumpLoop.
 func TestFinalizeSingleBlockBreak(t *testing.T) {
@@ -18,7 +27,7 @@ func TestFinalizeSingleBlockBreak(t *testing.T) {
 	b := NewBlock()
 	b.Statements = []Node{gen.ImpureInstr(resource.RuntimeFunctionBreak, Const(1), Const(1))}
 
-	got := canon(CFGToSNode(gen, b))
+	got := canon(mustLower(CFGToSNode(gen, b)))
 	want := "Block(JumpLoop(Execute(Break(#1,#1),#1),#0))"
 	if got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
@@ -30,7 +39,7 @@ func TestFinalizeSetFallthrough(t *testing.T) {
 	b := NewBlock()
 	b.Statements = []Node{gen.SetPlace(Cell(0, 0), Const(5))}
 
-	got := canon(CFGToSNode(gen, b))
+	got := canon(mustLower(CFGToSNode(gen, b)))
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#5),#1),#0))"
 	if got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
@@ -46,7 +55,7 @@ func TestFinalizeConditional(t *testing.T) {
 	b0.ConnectTo(bFalse, Cond(0))
 	b0.ConnectTo(bTrue, nil)
 
-	got := canon(CFGToSNode(gen, b0))
+	got := canon(mustLower(CFGToSNode(gen, b0)))
 	// order: b0=0, bTrue=1, bFalse=2; exit=3; both leaves jump to 3 and dedup.
 	want := "Block(JumpLoop(Execute(If(Get(#1,#0),#1,#2)),Execute(#3),Execute(#3),#0))"
 	if got != want {
@@ -64,7 +73,7 @@ func TestFinalizeSwitchIntegerDense(t *testing.T) {
 	b0.ConnectTo(b3, Cond(2))
 	b0.ConnectTo(bDef, nil)
 
-	got := canon(CFGToSNode(gen, b0))
+	got := canon(mustLower(CFGToSNode(gen, b0)))
 	// order: b0=0, bDef=1, b3=2, b2=3, b1=4; default index=1.
 	want := "Block(JumpLoop(" +
 		"Execute(SwitchIntegerWithDefault(Get(#0,#0),#4,#3,#2,#1))," +
@@ -84,7 +93,7 @@ func TestFinalizeSwitchSparse(t *testing.T) {
 	b0.ConnectTo(b3, Cond(5))
 	b0.ConnectTo(bDef, nil)
 
-	got := canon(CFGToSNode(gen, b0))
+	got := canon(mustLower(CFGToSNode(gen, b0)))
 	// order: b0=0, bDef=1, b3=2, b2=3, b1=4.
 	want := "Block(JumpLoop(" +
 		"Execute(SwitchWithDefault(Get(#0,#0),#0,#4,#2,#3,#5,#2,#1))," +
@@ -102,7 +111,7 @@ func TestFinalizeEqualBranch(t *testing.T) {
 	b0.ConnectTo(b1, Cond(3))
 	b0.ConnectTo(bDef, nil)
 
-	got := canon(CFGToSNode(gen, b0))
+	got := canon(mustLower(CFGToSNode(gen, b0)))
 	// order: b0=0, bDef=1, b1=2.
 	want := "Block(JumpLoop(Execute(If(Equal(Get(#0,#0),#3),#2,#1)),Execute(#3),Execute(#3),#0))"
 	if got != want {
@@ -119,7 +128,7 @@ func TestFinalizeToNodes(t *testing.T) {
 	b.Statements = []Node{gen.ImpureInstr(resource.RuntimeFunctionBreak, Const(1), Const(1))}
 
 	var nodes []resource.EngineDataNode
-	root, err := snode.NewAppender(&nodes).Append(CFGToSNode(gen, b))
+	root, err := snode.NewAppender(&nodes).Append(mustLower(CFGToSNode(gen, b)))
 	if err != nil {
 		t.Fatal(err)
 	}

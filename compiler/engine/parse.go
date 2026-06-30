@@ -243,7 +243,11 @@ func compileParsed(
 			if err != nil {
 				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
 			}
-			results = append(results, play.CompileCallback(i, m.callback, ir.CFGToSNode(gen, entry)))
+			sn, err := ir.CFGToSNode(gen, entry)
+				if err != nil {
+					return nil, nil, fmt.Errorf("archetype %q callback %s: %w", name, m.callback, err)
+				}
+				results = append(results, play.CompileCallback(i, m.callback, sn))
 		}
 	}
 

@@ -143,6 +143,23 @@ func Compile(src string, env Env) (*ir.BasicBlock, *ir.IDGen, error) {
 				env.Funcs[f.Name.Name] = f
 			}
 		}
+		// Validate struct field types: reject map, chan, func, and interface
+		// types that the Sonolus engine memory model cannot represent.
+		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+			for _, spec := range g.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				if err := validateStructFields(st); err != nil {
+					return nil, nil, fmt.Errorf("struct %s: %w", ts.Name.Name, err)
+				}
+			}
+		}
 	}
 	if fn == nil {
 		return nil, nil, fmt.Errorf("no function with a body found")
@@ -150,6 +167,44 @@ func Compile(src string, env Env) (*ir.BasicBlock, *ir.IDGen, error) {
 
 	entry, err := CompileBlock(fset, gen, fn.Body, env)
 	return entry, gen, err
+}
+
+// validateStructFields checks that all fields in a struct have types supported
+// by the Sonolus engine memory model. The engine only supports float64 scalar
+// fields and named record/container types. Map, chan, func, and interface types
+// are rejected.
+func validateStructFields(st *ast.StructType) error {
+	for _, field := range st.Fields.List {
+		if len(field.Names) == 0 {
+			continue // embedded field — handled separately by the type checker
+		}
+		if err := validateFieldType(field.Type, field.Names[0].Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateFieldType checks a single field's AST type expression. It rejects
+// types that cannot be represented in the Sonolus engine memory model.
+func validateFieldType(expr ast.Expr, fieldName string) error {
+	switch t := expr.(type) {
+	case *ast.MapType:
+		return fmt.Errorf("map type in field %q is not supported (engine memory model only supports float64 scalars)", fieldName)
+	case *ast.ChanType:
+		return fmt.Errorf("chan type in field %q is not supported (engine memory model only supports float64 scalars)", fieldName)
+	case *ast.FuncType:
+		return fmt.Errorf("func type in field %q is not supported (engine memory model only supports float64 scalars)", fieldName)
+	case *ast.InterfaceType:
+		return fmt.Errorf("interface type in field %q is not supported (engine memory model only supports float64 scalars)", fieldName)
+	case *ast.ArrayType:
+		// Slices ([]float64) are not supported; arrays ([N]float64) are
+		// handled by the container system and are OK.
+		if _, isEllipsis := t.Len.(*ast.Ellipsis); t.Len == nil || isEllipsis {
+			return fmt.Errorf("slice type in field %q is not supported (use fixed-size array or varArray)", fieldName)
+		}
+	}
+	return nil
 }
 
 // CompileBlock traces an already-parsed function body into a CFG. It is used to

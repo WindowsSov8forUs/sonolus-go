@@ -117,6 +117,11 @@ func (n Num) TryField(name string) (Num, bool) {
 // Field returns the Num for a named field of a record, or panics.
 // For user-reachable code paths that may receive non-record values,
 // use TryField which returns ok=false instead.
+//
+// Field is safe to call in record-method implementations because the D2/D3
+// type-driven dispatch system validates the receiver type before the method
+// runs, guaranteeing both that the receiver is a record and that the named
+// field exists.
 func (n Num) Field(name string) Num {
 	v, ok := n.TryField(name)
 	if !ok {
@@ -149,10 +154,11 @@ func (n Num) node() (ir.Node, error) {
 	return n.e, nil
 }
 
-// mustNode is like node() but panics on error. It is intended for internal use
-// in code paths where the Num has already been validated as scalar (e.g.,
-// after IsScalar() checks or in record-method implementations that destructure
-// fields individually). Third-party callers should use node() and handle errors.
+// mustNode returns the IR node for a scalar value, or panics.
+// It is intended for internal use in code paths where the Num has already been
+// validated as scalar (e.g., after IsScalar() checks or in record-method
+// implementations that destructure fields individually). Callers that may
+// receive non-scalar values should use node() and handle errors.
 func (n Num) mustNode() ir.Node {
 	nd, err := n.node()
 	if err != nil {

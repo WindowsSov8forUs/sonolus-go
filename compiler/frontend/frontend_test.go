@@ -45,7 +45,11 @@ func compileToCanon(t *testing.T, src string) string {
 		t.Fatalf("compile: %v", err)
 	}
 	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
-	return canon(ir.CFGToSNode(gen, entry))
+	sn, err := ir.CFGToSNode(gen, entry)
+	if err != nil {
+		panic(err)
+	}
+	return canon(sn)
 }
 
 var testGen = ir.NewIDGen()
@@ -338,7 +342,11 @@ func TestModeAccessors(t *testing.T) {
 			return "", err
 		}
 		entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
-		return canon(ir.CFGToSNode(testGen, entry)), nil
+		sn, err := ir.CFGToSNode(testGen, entry)
+		if err != nil {
+			return "", err
+		}
+		return canon(sn), nil
 	}
 
 	cases := []struct {
@@ -427,7 +435,11 @@ func f() {
 		t.Fatal(err)
 	}
 	var nodes []resource.EngineDataNode
-	root, err := snode.NewAppender(&nodes).Append(ir.CFGToSNode(testGen, entry))
+	sn, err := ir.CFGToSNode(testGen, entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := snode.NewAppender(&nodes).Append(sn)
 	if err != nil {
 		t.Fatal(err)
 	}
