@@ -121,6 +121,7 @@ func buildResources(typeSpecs map[string]*ast.StructType) (parsedResources, erro
 
 func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
 	var opts []resource.EngineConfigurationOption
+	var replayFallbackNames []core.Text
 	for _, f := range st.Fields.List {
 		if f.Tag == nil || len(f.Names) == 0 {
 			continue
@@ -130,14 +131,18 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
 			continue
 		}
 		tagVals := splitTag(tag)
+		name := core.Text(f.Names[0].Name)
 		base := resource.EngineConfigurationOptionBase{
-			Name:     core.Text(f.Names[0].Name),
+			Name:     name,
 			Standard: true,
 			Advanced: hasTag(tagVals, "advanced"),
 			Scope:    tagVal(tagVals, "scope"),
 		}
 
 		switch kind := tagVals[0]; kind {
+		case "replayFallback":
+			replayFallbackNames = append(replayFallbackNames, name)
+			continue
 		case "slider":
 			min, err := parseFloatParam(tagVals, "min", 0)
 			if err != nil {
@@ -193,7 +198,7 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
 			})
 		}
 	}
-	return resource.EngineConfiguration{Options: opts, UI: defaultUI()}, nil
+	return resource.EngineConfiguration{Options: opts, UI: defaultUI(), ReplayFallbackOptionNames: replayFallbackNames}, nil
 }
 
 func hasTag(tags []string, key string) bool {

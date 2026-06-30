@@ -167,6 +167,26 @@ func TestBuildConfig_MultipleOptions(t *testing.T) {
 	}
 }
 
+func TestBuildConfig_ReplayFallbackOptionNames(t *testing.T) {
+	st := parseStructType(t, `type C struct {
+		Speed       float64 `+"`sonolus:\"slider,min=0,max=2,def=1\"`"+`
+		ReplaySpeed string  `+"`sonolus:\"replayFallback\"`"+`
+	}`)
+	cfg, err := buildConfig(st)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
+	if len(cfg.Options) != 1 {
+		t.Errorf("expected 1 option, got %d", len(cfg.Options))
+	}
+	if len(cfg.ReplayFallbackOptionNames) != 1 {
+		t.Fatalf("expected 1 replay fallback name, got %d", len(cfg.ReplayFallbackOptionNames))
+	}
+	if cfg.ReplayFallbackOptionNames[0] != "ReplaySpeed" {
+		t.Errorf("replay fallback name = %q, want ReplaySpeed", cfg.ReplayFallbackOptionNames[0])
+	}
+}
+
 // --- buildUI tests ---
 
 func TestBuildUI_Empty(t *testing.T) {
