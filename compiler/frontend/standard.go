@@ -117,3 +117,24 @@ const (
 	StandardImportACCURACY   = "#ACCURACY"
 	StandardImportBPM_CHANGE = "#BPM_CHANGE"
 )
+
+// HapticType values for entity input block offset 4 (EntityInput, block 4005).
+// Usage in engine source: haptic = HapticLight assigns haptic feedback intensity
+// for the current touch entity.
+// Reference: sonolus.js-compiler src/lib/play/enums/HapticType.ts
+const (
+	HapticNone   = 0
+	HapticLight  = 1
+	HapticMedium = 2
+	HapticHeavy  = 3
+	HapticLong   = 4
+)
+
+// EntityState values for entity info block offset 2 (EntityInfo, block 4003).
+// Usage in engine source: if info[2] == EntityStateDespawned { ... }
+// Reference: sonolus.js-compiler src/lib/play/enums/EntityState.ts
+const (
+	EntityStateWaiting   = 0
+	EntityStateActive    = 1
+	EntityStateDespawned = 2
+)
