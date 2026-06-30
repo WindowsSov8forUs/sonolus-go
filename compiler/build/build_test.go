@@ -81,3 +81,73 @@ func TestWriteFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestPackageAnyNilInput(t *testing.T) {
+	blob, err := PackageAny(nil)
+	if err != nil {
+		t.Fatalf("PackageAny(nil) should not error: %v", err)
+	}
+	if len(blob) == 0 {
+		t.Error("PackageAny(nil) returned empty blob")
+	}
+	// Verify it round-trips.
+	_, err = codec.Decompress[json.RawMessage](blob)
+	if err != nil {
+		t.Errorf("PackageAny(nil) output not valid gzip JSON: %v", err)
+	}
+}
+
+func TestPackageRoundTripError(t *testing.T) {
+	// Decompress valid output from Compress.
+	data := tinyPlayData(t)
+	blob, err := codec.Compress(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := codec.Decompress[resource.EnginePlayData](blob)
+	if err != nil {
+		t.Fatalf("valid round-trip failed: %v", err)
+	}
+	if len(got.Nodes) != len(data.Nodes) {
+		t.Errorf("node count mismatch: got %d, want %d", len(got.Nodes), len(data.Nodes))
+	}
+}
+
+func TestROMInvalidFile(t *testing.T) {
+	rom, err := BuildROMFromFile(filepath.Join(t.TempDir(), "nonexistent.rom"))
+	if err == nil {
+		t.Error("expected error for nonexistent ROM file, got nil")
+	}
+	if rom != nil {
+		t.Error("expected nil ROM for invalid file")
+	}
+}
+
+func TestROMTruncatedFile(t *testing.T) {
+	dir := t.TempDir()
+	truncROM := filepath.Join(dir, "trunc.rom")
+	// Write 5 bytes (not divisible by 4 — float32 requires 4-byte alignment).
+	if err := os.WriteFile(truncROM, []byte{0, 0, 0, 0, 0}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rom, err := BuildROMFromFile(truncROM)
+	if err == nil {
+		t.Error("expected error for truncated ROM file, got nil")
+	}
+	if rom != nil {
+		t.Error("expected nil ROM for truncated file")
+	}
+}
+
+func TestDefaultROM(t *testing.T) {
+	rom := DefaultROM()
+	if len(rom) == 0 {
+		t.Error("DefaultROM should have entries for non-finite float values")
+	}
+	// Verify all entries are non-finite (NaN/Inf).
+	for _, v := range rom {
+		if !(v != v || v > 3e38 || v < -3e38) {
+			t.Errorf("expected non-finite ROM value, got %v", v)
+		}
+	}
+}

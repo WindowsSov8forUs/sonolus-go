@@ -388,9 +388,6 @@ func f() {
 	}
 }
 
-func TestCompositeReturnAndParam(t *testing.T) {
-	t.Skip("composite value infrastructure verified by engine-level real_engine_test.go")
-}
 
 func TestForBreak(t *testing.T) {
 	src := `package p
