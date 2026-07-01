@@ -95,6 +95,8 @@ func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg 
 				oldest := c.configOrder[0]
 				c.configOrder = c.configOrder[1:]
 				delete(c.config, oldest)
+				delete(c.play, oldest)
+				c.playOrder = removeFromOrder(c.playOrder, oldest)
 			}
 			c.configOrder = append(c.configOrder, key)
 		}
