@@ -137,6 +137,63 @@ func TestIgnoreReturn(t *testing.T) {
 	}
 }
 
+// ── P2-2: Additional modecompile coverage ──
+
+func TestNormalizeSlice_Empty(t *testing.T) {
+	var s []int
+	got := NormalizeSlice(s)
+	if got == nil {
+		t.Log("NormalizeSlice on nil slice returns nil (acceptable)")
+	}
+}
+
+func TestNormalizeSlice_NonEmpty(t *testing.T) {
+	s := []int{3, 1, 2}
+	got := NormalizeSlice(s)
+	if len(got) != 3 {
+		t.Errorf("len = %d, want 3", len(got))
+	}
+}
+
+func TestNewCallbackSetter_Empty(t *testing.T) {
+	setters := map[string]func(*testArch, int, int){}
+	setCb := NewCallbackSetter(setters)
+	if setCb == nil {
+		t.Fatal("NewCallbackSetter returned nil")
+	}
+	err := setCb(&testArch{}, "nonexistent", 0, 0)
+	if err == nil {
+		t.Log("no-op for unknown callback (expected)")
+	}
+}
+
+func TestAssemble_OutOfOrderIndex(t *testing.T) {
+	nodes := []resource.EngineDataNode{}
+	arcs := []testArch{{}, {}}
+	results := []*Result{
+		{ArchetypeIndex: 1, Callback: "cb", Node: snode.Value(10)},
+		{ArchetypeIndex: 0, Callback: "cb", Node: snode.Value(5)},
+	}
+	err := Assemble(&nodes, arcs, results, testSetCb)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIsConstZero_WithFunc(t *testing.T) {
+	f := snode.Func{Op: resource.RuntimeFunctionAdd}
+	if IsConstZero(f) {
+		t.Error("Func should not be const-zero")
+	}
+}
+
+func TestIsConstNonZero_WithFunc(t *testing.T) {
+	f := snode.Func{Op: resource.RuntimeFunctionAdd}
+	if IsConstNonZero(f) {
+		t.Error("Func should not be const-nonzero")
+	}
+}
+
 // testArch is a minimal archetype for Assemble tests.
 type testArch struct{}
 

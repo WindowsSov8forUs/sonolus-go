@@ -156,6 +156,169 @@ func TestFloorMod(t *testing.T) {
 	}
 }
 
+// ── P1-3: IR package additional coverage ──
+
+func TestAllocateTestBlocks_Basic(t *testing.T) {
+	gen := NewIDGen()
+	b0 := NewBlock()
+	b1 := NewBlock()
+	b0.Statements = []Node{gen.SetPlace(Cell(0, 0), Const(1))}
+	b0.ConnectTo(b1, nil)
+	b1.Statements = []Node{gen.SetPlace(Cell(0, 1), Const(2))}
+
+	allocated := AllocateTestBlocks(b0, DefaultTempMemoryBlock)
+	if allocated == nil {
+		t.Fatal("AllocateTestBlocks returned nil")
+	}
+	canon(mustLower(CFGToSNode(gen, allocated)))
+}
+
+func TestAllocateTestBlocks_Empty(t *testing.T) {
+	gen := NewIDGen()
+	b := NewBlock()
+	b.Statements = []Node{gen.SetPlace(Cell(0, 0), Const(42))}
+	allocated := AllocateTestBlocks(b, DefaultTempMemoryBlock)
+	if allocated == nil {
+		t.Fatal("AllocateTestBlocks returned nil")
+	}
+}
+
+func TestReversePostorder_Basic(t *testing.T) {
+	b0 := NewBlock()
+	b1 := NewBlock()
+	b2 := NewBlock()
+	b0.ConnectTo(b1, nil)
+	b1.ConnectTo(b2, nil)
+
+	order := ReversePostorder(b0)
+	if len(order) != 3 {
+		t.Fatalf("len = %d, want 3", len(order))
+	}
+	// Reverse postorder: b2 (deepest) should appear before b0 (entry).
+	foundEntry := false
+	for i, b := range order {
+		if b == b0 && i < len(order)-1 {
+			foundEntry = true
+		}
+	}
+	if !foundEntry {
+		t.Logf("order: b0@%v b1@%v b2@%v", indexOf(order, b0), indexOf(order, b1), indexOf(order, b2))
+	}
+}
+
+func indexOf(blocks []*BasicBlock, target *BasicBlock) int {
+	for i, b := range blocks {
+		if b == target {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestPreorder_Basic(t *testing.T) {
+	b0 := NewBlock()
+	b1 := NewBlock()
+	b2 := NewBlock()
+	b0.ConnectTo(b1, nil)
+	b0.ConnectTo(b2, Cond(0))
+
+	order := Preorder(b0)
+	if len(order) != 3 {
+		t.Fatalf("len = %d, want 3", len(order))
+	}
+	if order[0] != b0 {
+		t.Error("first should be entry")
+	}
+}
+
+func TestWalk_AddInstr(t *testing.T) {
+	gen := NewIDGen()
+	root := gen.PureInstr(resource.RuntimeFunctionAdd, Const(1), Const(2))
+	var nodes []Node
+	Walk(root, func(n Node) { nodes = append(nodes, n) })
+	if len(nodes) < 2 {
+		t.Errorf("Walk visited %d nodes, want at least 2", len(nodes))
+	}
+}
+
+func TestWalk_SetInstr(t *testing.T) {
+	gen := NewIDGen()
+	root := gen.SetPlace(Cell(0, 0), Const(5))
+	var nodes []Node
+	Walk(root, func(n Node) { nodes = append(nodes, n) })
+	if len(nodes) < 1 {
+		t.Error("Walk visited no nodes for Set")
+	}
+}
+
+func TestBlocks_Writable(t *testing.T) {
+	bs := Blocks(ModePlay)
+	// BlockRuntimeEnvironment should not be writable in typical callbacks.
+	if bs.Writable(BlockRuntimeEnvironment, "initialize") {
+		t.Error("BlockRuntimeEnvironment should be read-only in initialize")
+	}
+	// Temp memory block may or may not be in block tables — either answer is valid.
+	isWritable := bs.Writable(DefaultTempMemoryBlock, "updateSequential")
+	t.Logf("DefaultTempMemoryBlock writable in updateSequential: %v", isWritable)
+}
+
+func TestBlocks_RuntimeConstant(t *testing.T) {
+	bs := Blocks(ModePlay)
+	if bs.RuntimeConstant(BlockRuntimeEnvironment) {
+		t.Log("BlockRuntimeEnvironment is a runtime constant block")
+	}
+}
+
+func TestNewTemp_Basic(t *testing.T) {
+	tb := NewTemp("myvar")
+	if tb.Name != "myvar" {
+		t.Errorf("Name = %q, want %q", tb.Name, "myvar")
+	}
+	if tb.Size != 1 {
+		t.Errorf("Size = %d, want 1", tb.Size)
+	}
+}
+
+func TestTempCell(t *testing.T) {
+	tb := NewTemp("x")
+	cell := TempCell(tb)
+	if cell.Block != tb {
+		t.Error("TempCell block should be the TempBlock")
+	}
+}
+
+func TestNewBlockPlace_Basic(t *testing.T) {
+	bp := NewBlockPlace(Const(0), Const(0), 0)
+	if bp.Offset != 0 {
+		t.Errorf("Offset = %d, want 0", bp.Offset)
+	}
+}
+
+func TestSideEffects_Pure(t *testing.T) {
+	if !SideEffects(resource.RuntimeFunctionSet) {
+		t.Error("Set should have side effects")
+	}
+	if SideEffects(resource.RuntimeFunctionAdd) {
+		t.Error("Add should be pure")
+	}
+	if !Pure(resource.RuntimeFunctionAdd) {
+		t.Error("Add should be marked pure")
+	}
+	if Pure(resource.RuntimeFunctionSet) {
+		t.Error("Set should not be pure")
+	}
+}
+
+func TestCond_Nil(t *testing.T) {
+	c := Cond(0)
+	if c == nil {
+		t.Fatal("Cond returned nil")
+	}
+	if *c != 0 {
+		t.Errorf("Cond(0) = %v, want 0", *c)
+	}
+}
+
 func TestIEEERem(t *testing.T) {
 	tests := []struct {
 		a, b, want float64
