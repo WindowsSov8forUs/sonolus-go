@@ -11,9 +11,11 @@ const DefaultTempMemoryBlock = BlockTempMemory
 // the given memory block, assigning each distinct temp its own slot (no reuse).
 // Temps are assigned slots in deterministic first-seen order over the CFG.
 //
-// This is test-only scaffolding. The production pipeline uses
-// optimize.AllocateLive (linear-scan, liveness-aware) in [optimize.Standard] / advanced.go.
-// Use [AllocateTestBlocks] for the exported test-only wrapper.
+// This is a simple sequential allocator used by AllocateTestBlocks for unit tests
+// that call the frontend tracer directly (pre-SSA, pre-optimize). The production
+// pipeline uses optimize.AllocateLive (linear-scan, liveness-aware) or
+// optimize.AllocateBasic (sequential, for Fast/Minimal levels).
+// Use [AllocateTestBlocks] for the exported test helper.
 func allocateTempBlocks(entry *BasicBlock, blockID int) *BasicBlock {
 	a := &allocator{blockID: blockID, slot: map[*TempBlock]int{}}
 

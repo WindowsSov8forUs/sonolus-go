@@ -511,7 +511,9 @@ var arraySetFields = []string{"_values"}
 var boxFields = []string{"val"}
 
 // FrozenNumSet fields: a sorted array of nums + size. Contains uses
-// linear search; binary search for large sets is deferred to a future phase.
+// linear search at runtime; for typical set sizes (<20 elements) this is
+// acceptable. Compile-time constant folding eliminates the runtime search
+// entirely when both the set and the search value are known constants.
 var frozenNumSetFields = []string{"_size", "_array"}
 
 // containerSelf returns the receiver Num itself. Used by ArrayMap keys/values/items
@@ -521,7 +523,9 @@ func containerSelf(t *tracer, v Num, args []Num) (Num, error) {
 }
 
 // frozenNumSetContainsCI implements contains() for FrozenNumSet using linear
-// search (binary search for large sets deferred to a future phase).
+// search in generated runtime CFG code. For optimization, compile-time
+// constant folding handles the common case where the search target is a
+// known constant, eliminating the runtime search entirely.
 func frozenNumSetContainsCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, error) {
 	target := args[0].mustNode()
 	result := emitLinearSearch(t, ci, target,

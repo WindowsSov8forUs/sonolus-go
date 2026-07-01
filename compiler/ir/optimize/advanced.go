@@ -433,7 +433,6 @@ func tempSetEq(a, b map[*ir.TempBlock]bool) bool {
 	return true
 }
 
-
 // Requires implements ManagedPass — AdvancedDCE operates on liveness data.
 func (AdvancedDCE) Requires() []Analysis { return nil }
 
