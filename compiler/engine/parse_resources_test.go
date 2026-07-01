@@ -187,6 +187,49 @@ func TestBuildConfig_ReplayFallbackOptionNames(t *testing.T) {
 	}
 }
 
+// --- isInstructionIcon tests ---
+
+func TestIsInstructionIcon_SelectorExpr(t *testing.T) {
+	// Parse a selector expression: sonolus.InstructionIconName
+	expr, err := parser.ParseExpr("sonolus.InstructionIconName")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isInstructionIcon(expr) {
+		t.Error("expected SelectorExpr with InstructionIconName to be recognized")
+	}
+}
+
+func TestIsInstructionIcon_Ident(t *testing.T) {
+	expr, err := parser.ParseExpr("InstructionIconName")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isInstructionIcon(expr) {
+		t.Error("expected Ident with InstructionIconName to be recognized")
+	}
+}
+
+func TestIsInstructionIcon_NotIcon(t *testing.T) {
+	expr, err := parser.ParseExpr("RegularFloat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isInstructionIcon(expr) {
+		t.Error("expected RegularFloat to NOT be recognized as instruction icon")
+	}
+}
+
+func TestIsInstructionIcon_WrongSelector(t *testing.T) {
+	expr, err := parser.ParseExpr("sonolus.NotAnIcon")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isInstructionIcon(expr) {
+		t.Error("expected wrong selector to NOT be recognized as instruction icon")
+	}
+}
+
 // --- buildUI tests ---
 
 func TestBuildUI_Empty(t *testing.T) {
@@ -259,5 +302,68 @@ func TestBuildBuckets_SingleBucket(t *testing.T) {
 	}
 	if buckets[0].Unit != "" {
 		t.Logf("unit = %q", buckets[0].Unit)
+	}
+}
+
+func TestBuildBuckets_SpriteCoordinates(t *testing.T) {
+	// Verify sprite tag parsing: sprite name, coordinates, fallback, and bucket unit.
+	st := parseStructType(t, `type B struct {
+		Notes struct {
+			Head float64 `+"`sonolus:\"sprite=NOTE_HEAD_NEUTRAL,x=100,y=200,w=64,h=64,rotation=45,fallback=NOTE_TICK_NEUTRAL\"`"+`
+		} `+"`sonolus:\"bucket,unit=#BPM\"`"+`
+	}`)
+	skinST := parseStructType(t, `type S struct {
+		NOTE_HEAD_NEUTRAL float64 `+"`sonolus:\"sprite\"`"+`
+		NOTE_TICK_NEUTRAL float64 `+"`sonolus:\"sprite\"`"+`
+	}`)
+	buckets, err := buildBuckets(st, skinST)
+	if err != nil {
+		t.Fatalf("buildBuckets: %v", err)
+	}
+	if len(buckets) != 1 {
+		t.Fatalf("expected 1 bucket, got %d", len(buckets))
+	}
+	b := buckets[0]
+	if b.Unit != "#BPM" {
+		t.Errorf("unit = %q, want #BPM", b.Unit)
+	}
+	if len(b.Sprites) != 1 {
+		t.Fatalf("expected 1 sprite, got %d", len(b.Sprites))
+	}
+	s := b.Sprites[0]
+	if s.ID != 0 {
+		t.Errorf("sprite ID = %d, want 0 (NOTE_HEAD_NEUTRAL)", s.ID)
+	}
+	if s.FallbackID != 1 {
+		t.Errorf("fallback sprite ID = %d, want 1 (NOTE_TICK_NEUTRAL)", s.FallbackID)
+	}
+	if s.X != 100 || s.Y != 200 || s.W != 64 || s.H != 64 {
+		t.Errorf("rect = (%.0f,%.0f,%.0f,%.0f), want (100,200,64,64)", s.X, s.Y, s.W, s.H)
+	}
+	if s.Rotation != 45 {
+		t.Errorf("rotation = %.0f, want 45", s.Rotation)
+	}
+}
+
+func TestBuildBuckets_MultipleSprites(t *testing.T) {
+	st := parseStructType(t, `type B struct {
+		Notes struct {
+			Head float64 `+"`sonolus:\"sprite=NOTE_HEAD_NEUTRAL,x=0,y=0\"`"+`
+			Tail float64 `+"`sonolus:\"sprite=NOTE_TAIL_NEUTRAL,x=64,y=0\"`"+`
+		} `+"`sonolus:\"bucket\"`"+`
+	}`)
+	skinST := parseStructType(t, `type S struct {
+		NOTE_HEAD_NEUTRAL float64 `+"`sonolus:\"sprite\"`"+`
+		NOTE_TAIL_NEUTRAL float64 `+"`sonolus:\"sprite\"`"+`
+	}`)
+	buckets, err := buildBuckets(st, skinST)
+	if err != nil {
+		t.Fatalf("buildBuckets: %v", err)
+	}
+	if len(buckets) != 1 {
+		t.Fatalf("expected 1 bucket, got %d", len(buckets))
+	}
+	if len(buckets[0].Sprites) != 2 {
+		t.Fatalf("expected 2 sprites, got %d", len(buckets[0].Sprites))
 	}
 }

@@ -45,6 +45,87 @@ func TestAdvancedDCEStandalone(t *testing.T) {
 	}
 }
 
+// TestPreprocessArraysMultiSlot verifies that preprocessArrays correctly
+// identifies the first write to a multi-slot TempBlock (size > 1), enabling
+// per-element liveness tracking for arrays.
+func TestPreprocessArraysMultiSlot(t *testing.T) {
+	// Build a simple CFG: entry sets a multi-slot temp, then reads from it.
+	// A multi-slot temp has size > 1 and is used for arrays/records.
+	multiTB := &ir.TempBlock{Name: "arr", Size: 4}
+	entry := ir.NewBlock()
+	exit := ir.NewBlock()
+
+	setStmt := testGen.SetPlace(
+		ir.BlockPlace{Block: multiTB, Index: ir.Const(0), Offset: 0},
+		ir.Const(42),
+	)
+	getStmt := ir.GetPlace(
+		ir.BlockPlace{Block: multiTB, Index: ir.Const(0), Offset: 0},
+	)
+	entry.Statements = []ir.Node{setStmt}
+	// Use the get in a second statement so the multi-slot temp has a use.
+	entry.Statements = append(entry.Statements,
+		testGen.SetPlace(ir.Cell(0, 0), getStmt))
+	entry.ConnectTo(exit, nil)
+
+	blocks := ir.Preorder(entry)
+	arrayInit := map[int]map[*ir.TempBlock]bool{}
+	for _, b := range blocks {
+		for _, s := range b.Statements {
+			id := stmtID(s)
+			arrayInit[id] = map[*ir.TempBlock]bool{}
+		}
+	}
+	preprocessArrays(entry, blocks, arrayInit)
+
+	// The first Set to the multi-slot temp should be marked as array init.
+	found := false
+	for id, temps := range arrayInit {
+		if temps[multiTB] {
+			found = true
+			// Verify this is the ID of the first Set statement.
+			if id != setStmt.ID {
+				t.Errorf("arrayInit marked stmt %d instead of first Set %d", id, setStmt.ID)
+			}
+		}
+	}
+	if !found {
+		t.Error("preprocessArrays did not mark any statement as first write to multi-slot temp")
+	}
+}
+
+// TestPreprocessArraysSingleSlot verifies that single-slot temps (size=1)
+// are NOT marked as array init, only multi-slot temps.
+func TestPreprocessArraysSingleSlot(t *testing.T) {
+	singleTB := &ir.TempBlock{Name: "x", Size: 1}
+	entry := ir.NewBlock()
+	exit := ir.NewBlock()
+
+	setStmt := testGen.SetPlace(
+		ir.BlockPlace{Block: singleTB, Index: ir.Const(0), Offset: 0},
+		ir.Const(7),
+	)
+	entry.Statements = []ir.Node{setStmt}
+	entry.ConnectTo(exit, nil)
+
+	blocks := ir.Preorder(entry)
+	arrayInit := map[int]map[*ir.TempBlock]bool{}
+	for _, b := range blocks {
+		for _, s := range b.Statements {
+			id := stmtID(s)
+			arrayInit[id] = map[*ir.TempBlock]bool{}
+		}
+	}
+	preprocessArrays(entry, blocks, arrayInit)
+
+	// No single-slot temp should be marked as array init.
+	for _, temps := range arrayInit {
+		if len(temps) > 0 {
+			t.Error("single-slot temp was incorrectly marked as array init")
+		}
+	}
+}
+
 // --- SCCP pass tests ---
 func TestSCCPConstFoldArith(t *testing.T) {
 	src := "package p\nfunc f() {\n\tset(0, 0, 2 + 3*4)\n}\n"

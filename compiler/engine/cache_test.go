@@ -94,6 +94,44 @@ func TestCompileCacheEviction(t *testing.T) {
 	}
 }
 
+func TestCompileCacheNonPlayEviction(t *testing.T) {
+	c := NewCache()
+	c.MaxEntries = 2
+
+	// Watch eviction.
+	for i := range 3 {
+		c.PutWatch(NewCacheKey("watch", fmt.Sprintf("w%d", i)), &resource.EngineWatchData{})
+	}
+	if d := c.GetWatch(NewCacheKey("watch", "w0")); d != nil {
+		t.Error("watch: oldest entry should have been evicted")
+	}
+	if d := c.GetWatch(NewCacheKey("watch", "w2")); d == nil {
+		t.Error("watch: most recent entry should still be present")
+	}
+
+	// Preview eviction.
+	for i := range 3 {
+		c.PutPreview(NewCacheKey("preview", fmt.Sprintf("p%d", i)), &resource.EnginePreviewData{})
+	}
+	if d := c.GetPreview(NewCacheKey("preview", "p0")); d != nil {
+		t.Error("preview: oldest entry should have been evicted")
+	}
+	if d := c.GetPreview(NewCacheKey("preview", "p2")); d == nil {
+		t.Error("preview: most recent entry should still be present")
+	}
+
+	// Tutorial eviction.
+	for i := range 3 {
+		c.PutTutorial(NewCacheKey("tutorial", fmt.Sprintf("t%d", i)), &resource.EngineTutorialData{})
+	}
+	if d := c.GetTutorial(NewCacheKey("tutorial", "t0")); d != nil {
+		t.Error("tutorial: oldest entry should have been evicted")
+	}
+	if d := c.GetTutorial(NewCacheKey("tutorial", "t2")); d == nil {
+		t.Error("tutorial: most recent entry should still be present")
+	}
+}
+
 func TestCompileCacheNonPlayRoundTrip(t *testing.T) {
 	c := NewCache()
 

@@ -173,3 +173,18 @@ func TestCompileWatchWithUpdateSpawn(t *testing.T) {
 		t.Fatalf("UpdateSpawn = %d, expected positive node index", data.UpdateSpawn)
 	}
 }
+
+func TestCompileWatchWithoutUpdateSpawn(t *testing.T) {
+	src := "package p\n" +
+		"type Note struct {\n" +
+		"\tBeat float64 `sonolus:\"imported\"`\n" +
+		"}\n" +
+		"func (n Note) Preprocess() { set(2000, 0, n.Beat) }\n"
+	data, err := CompileWatchFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.UpdateSpawn != 0 {
+		t.Fatalf("UpdateSpawn = %d, expected 0 (absent)", data.UpdateSpawn)
+	}
+}
