@@ -27,9 +27,8 @@ const (
 )
 
 // frozensetMax is the maximum number of distinct constants tracked in a
-// frozenset before collapsing to NAC. Exceeding 8 elements is pathological
-// for engine callbacks.
-const frozensetMax = 8
+// frozenset before collapsing to NAC. Aligned with sonolus.py (100).
+const frozensetMax = 100
 
 type lat struct {
 	kind   latKind
