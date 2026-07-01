@@ -58,6 +58,12 @@ func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.Engin
 		return nil, nil, err
 	}
 
+	// Run type checking for early diagnostics (D1 layer): catch undeclared
+	// identifiers and wrong argument counts before compilation.
+	if _, _, _, err := frontend.TypeCheck(src, nil); err != nil {
+		return nil, nil, fmt.Errorf("typecheck: %w", err)
+	}
+
 	archetypes := map[string]*parsedArchetype{}
 	var order []string
 

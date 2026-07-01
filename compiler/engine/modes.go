@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"sort"
@@ -49,6 +50,12 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 	pes, err := parseEngineSource(src)
 	if err != nil {
 		return nil, err
+	}
+
+	// Run type checking for early diagnostics (D1 layer): catch undeclared
+	// identifiers and wrong argument counts before compilation.
+	if _, _, _, err := frontend.TypeCheck(src, nil); err != nil {
+		return nil, fmt.Errorf("typecheck: %w", err)
 	}
 
 	arcs := map[string]*modeArch{}
@@ -227,7 +234,7 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 		return sortedFuncs[i].Name.Name < sortedFuncs[j].Name.Name
 	})
 
-	var pp, nav, upd int
+	var ppIdxs, navIdxs, updIdxs []int
 	for _, d := range sortedFuncs {
 		var cb string
 		switch d.Name.Name {
@@ -247,15 +254,22 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 		if err != nil {
 			return nil, err
 		}
+		if idx == 0 {
+			continue
+		}
 		switch cb {
 		case "Preprocess":
-			pp = idx
+			ppIdxs = append(ppIdxs, idx)
 		case "Navigate":
-			nav = idx
+			navIdxs = append(navIdxs, idx)
 		case "Update":
-			upd = idx
+			updIdxs = append(updIdxs, idx)
 		}
 	}
+
+	pp := composeOrFirst(ppIdxs, &nodes)
+	nav := composeOrFirst(navIdxs, &nodes)
+	upd := composeOrFirst(updIdxs, &nodes)
 
 	return &resource.EngineTutorialData{
 		Skin: r.skin, Effect: r.effect, Particle: r.particle, Instruction: r.instruction,

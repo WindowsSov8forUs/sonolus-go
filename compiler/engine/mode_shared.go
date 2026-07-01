@@ -233,3 +233,29 @@ func compileUpdateSpawn(
 	}
 	return 0, nil
 }
+
+// composeOrFirst composes multiple callback node indices into a single Execute
+// node when there is more than one, matching sonolus.js-compiler's behaviour of
+// composing multiple tutorial callback functions of the same type. When there is
+// exactly one index, it is returned directly. When the slice is empty, 0 is
+// returned (the callback is omitted).
+func composeOrFirst(idxs []int, nodes *[]resource.EngineDataNode) int {
+	if len(idxs) == 0 {
+		return 0
+	}
+	if len(idxs) == 1 {
+		return idxs[0]
+	}
+	// Compose: Execute(idx1, idx2, ..., 0) — the trailing 0 discards the return
+	// value of the last callback, matching the existing Execute convention in
+	// modecompile.ignoreReturn.
+	args := make([]int, len(idxs)+1)
+	copy(args, idxs)
+	args[len(args)-1] = 0
+	node := resource.EngineDataFunctionNode{
+		Func: resource.RuntimeFunctionExecute,
+		Args: args,
+	}
+	*nodes = append(*nodes, node)
+	return len(*nodes) - 1
+}
