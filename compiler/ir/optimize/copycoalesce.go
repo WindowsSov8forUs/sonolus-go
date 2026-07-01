@@ -15,6 +15,10 @@ func (CopyCoalesce) Name() string { return "CopyCoalesce" }
 func (CopyCoalesce) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	blocks := ir.Preorder(entry)
 
+	// Compute liveness once to augment the def-count guard below,
+	// matching Python's liveness-based copy coalescing.
+	liveness := analyzeLiveness(entry)
+
 	// Count definitions per temp: how many Set(tb, ...) exist in the CFG.
 	defCount := map[*ir.TempBlock]int{}
 	for _, b := range blocks {
@@ -58,14 +62,14 @@ func (CopyCoalesce) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 			if dst == src {
 				continue
 			}
-			// Conservative guard: only coalesce on edge blocks (single pred+succ,
-			// no other statements). This avoids interference between simultaneously
-			// live temps. Aligned with sonolus.py copy_coalesce.py edge-block assumption.
-			// Coalesce on edge blocks (single predecessor) unconditionally.
-			// For multi-predecessor blocks, only coalesce if the destination
-			// temp has a single definition.
+			// Guard: for multi-predecessor blocks, only coalesce if the
+			// destination temp has a single definition OR is not live
+			// after the copy (no interference with other definitions).
 			if len(b.Incoming) > 1 && defCount[dst] > 1 {
-				continue
+				liveAfter := liveness.Live[set.ID]
+				if liveAfter != nil && liveAfter[dst] {
+					continue
+				}
 			}
 			copies = append(copies, copyPair{dst, src, b, i})
 		}
