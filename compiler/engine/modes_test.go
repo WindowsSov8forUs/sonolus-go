@@ -1,6 +1,10 @@
 package engine
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+)
 
 func TestCompileWatchFile(t *testing.T) {
 	src := "package p\n" +
@@ -115,6 +119,40 @@ func TestCompileTutorialWithInstruction(t *testing.T) {
 	}
 	if data.Instruction.Texts[1].ID != 1 || data.Instruction.Texts[1].Name != "Info" {
 		t.Fatalf("text[1] = %+v, want {Info 1}", data.Instruction.Texts[1])
+	}
+}
+
+func TestComposeOrFirst(t *testing.T) {
+	// Empty slice → 0 (omitted).
+	if got := composeOrFirst(nil, &[]resource.EngineDataNode{}); got != 0 {
+		t.Errorf("nil slice: got %d, want 0", got)
+	}
+	// Single element → returned directly.
+	nodes := []resource.EngineDataNode{
+		resource.EngineDataValueNode{Value: 42},
+	}
+	if got := composeOrFirst([]int{0}, &nodes); got != 0 {
+		t.Errorf("single element: got %d, want 0", got)
+	}
+	// Multiple elements → Execute composition.
+	multiNodes := []resource.EngineDataNode{
+		resource.EngineDataValueNode{Value: 1},
+		resource.EngineDataValueNode{Value: 2},
+	}
+	got := composeOrFirst([]int{0, 1}, &multiNodes)
+	if got != 2 {
+		t.Errorf("multiple elements: got %d, want 2 (index of new Execute node)", got)
+	}
+	if len(multiNodes) != 3 {
+		t.Fatalf("expected 3 nodes after composition, got %d", len(multiNodes))
+	}
+	fn, ok := multiNodes[2].(resource.EngineDataFunctionNode)
+	if !ok || fn.Func != resource.RuntimeFunctionExecute {
+		t.Fatalf("expected Execute function node, got %T %v", multiNodes[2], fn.Func)
+	}
+	// Args: [0, 1, 0] — trailing 0 discards return value.
+	if len(fn.Args) != 3 || fn.Args[0] != 0 || fn.Args[1] != 1 || fn.Args[2] != 0 {
+		t.Errorf("args = %v, want [0, 1, 0]", fn.Args)
 	}
 }
 
