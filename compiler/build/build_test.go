@@ -158,7 +158,7 @@ func TestPackageNonPlay_Write(t *testing.T) {
 
 	// Preview mode
 	previewData := &resource.EnginePreviewData{
-		Skin: resource.EngineSkinData{},
+		Skin:  resource.EngineSkinData{},
 		Nodes: []resource.EngineDataNode{},
 	}
 	pkg, err := PackageNonPlay(cfg, rom, previewData, FilePreviewData)

@@ -14,6 +14,6 @@ func (n N) Initialize() {
 
 func (n N) UpdateSequential() {
 	n.X = (3 + 5) * (2 + 1)
-	n.Y = n.X * 2 - 4
+	n.Y = n.X*2 - 4
 	n.Z = n.X + n.Y
 }

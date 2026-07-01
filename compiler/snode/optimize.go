@@ -42,7 +42,10 @@ func Peephole(snode SNode) SNode {
 		return snode
 	}
 
-	f := snode.(Func)
+	f, ok := snode.(Func)
+	if !ok {
+		return snode // non-Func nodes are returned as-is
+	}
 	args := make([]SNode, len(f.Args))
 	for i, a := range f.Args {
 		args[i] = Peephole(a)

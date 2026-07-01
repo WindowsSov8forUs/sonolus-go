@@ -5,12 +5,13 @@
 // and comparing normalized SNode output.
 //
 // Prerequisites (tests auto-skip if unmet):
-//   1. sonolus.js-compiler repo at ../../sonolus.js-compiler
-//   2. Node.js >= 18 available on PATH
-//   3. cd ../../sonolus.js-compiler && npm install && npm run build
+//  1. sonolus.js-compiler repo at ../../sonolus.js-compiler
+//  2. Node.js >= 18 available on PATH
+//  3. cd ../../sonolus.js-compiler && npm install && npm run build
 //
 // Run with:
-//   SONOLUS_JS_COMPILER=1 go test ./compiler/engine/ -run TestReference -v
+//
+//	SONOLUS_JS_COMPILER=1 go test ./compiler/engine/ -run TestReference -v
 package engine
 
 import (

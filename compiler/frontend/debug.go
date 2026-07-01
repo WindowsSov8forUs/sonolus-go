@@ -40,7 +40,7 @@ func (t *tracer) debugRequire(cond, msg Num) {
 	errorBlock := ir.NewBlock()
 	merge := ir.NewBlock()
 
-	condBlock.ConnectTo(merge, nil)         // true → continue normally
+	condBlock.ConnectTo(merge, nil)             // true → continue normally
 	condBlock.ConnectTo(errorBlock, ir.Cond(0)) // false → error
 
 	t.enter(errorBlock)

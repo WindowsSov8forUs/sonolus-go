@@ -11,6 +11,11 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/database"
 )
 
+const (
+	defaultFileMode = 0644
+	defaultDirMode  = 0755
+)
+
 // minPNG is a 1x1 transparent PNG pixel (the smallest valid PNG).
 var minPNG = []byte{
 	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
@@ -51,7 +56,7 @@ func writeItemJSON(dir string, item map[string]any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "item.json"), data, 0644)
+	return os.WriteFile(filepath.Join(dir, "item.json"), data, defaultFileMode)
 }
 
 // EmitDefaultItems writes minimal placeholder items for skin, background, effect,
@@ -85,13 +90,13 @@ func EmitDefaultItems(dir string, engineName string) error {
 
 func emitDefaultSkin(dir, name string) error {
 	d := filepath.Join(dir, "skins", name)
-	if err := os.MkdirAll(d, 0755); err != nil {
+	if err := os.MkdirAll(d, defaultDirMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, defaultFileMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "texture"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "texture"), minPNG, defaultFileMode); err != nil {
 		return err
 	}
 	data, err := json.Marshal(resource.EngineSkinData{
@@ -103,7 +108,7 @@ func emitDefaultSkin(dir, name string) error {
 	if err != nil {
 		return fmt.Errorf("marshal skin data: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(d, "data"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
 	}
 	return writeItemJSON(d, map[string]any{
@@ -117,27 +122,27 @@ func emitDefaultSkin(dir, name string) error {
 
 func emitDefaultBackground(dir, name string) error {
 	d := filepath.Join(dir, "backgrounds", name)
-	if err := os.MkdirAll(d, 0755); err != nil {
+	if err := os.MkdirAll(d, defaultDirMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, defaultFileMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "image"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "image"), minPNG, defaultFileMode); err != nil {
 		return err
 	}
 	data, err := json.Marshal(resource.BackgroundData{Fit: resource.FitWidth, Color: "#000000"})
 	if err != nil {
 		return fmt.Errorf("marshal background data: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(d, "data"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
 	}
 	cfg, err := json.Marshal(resource.BackgroundConfiguration{Blur: 0, Mask: "#000000"})
 	if err != nil {
 		return fmt.Errorf("marshal background config: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(d, "configuration"), cfg, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "configuration"), cfg, defaultFileMode); err != nil {
 		return err
 	}
 	return writeItemJSON(d, map[string]any{
@@ -151,22 +156,22 @@ func emitDefaultBackground(dir, name string) error {
 
 func emitDefaultEffect(dir, name string) error {
 	d := filepath.Join(dir, "effects", name)
-	if err := os.MkdirAll(d, 0755); err != nil {
+	if err := os.MkdirAll(d, defaultDirMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, defaultFileMode); err != nil {
 		return err
 	}
 	// Audio is required by pack-go for effect items (type "zip").
 	// Write a minimal silent MP3 as a placeholder, matching the level BGM pattern.
-	if err := os.WriteFile(filepath.Join(d, "audio"), minMP3, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "audio"), minMP3, defaultFileMode); err != nil {
 		return err
 	}
 	data, err := json.Marshal(resource.EngineEffectData{})
 	if err != nil {
 		return fmt.Errorf("marshal effect data: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(d, "data"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
 	}
 	return writeItemJSON(d, map[string]any{
@@ -180,10 +185,10 @@ func emitDefaultEffect(dir, name string) error {
 
 func emitDefaultParticle(dir, name string) error {
 	d := filepath.Join(dir, "particles", name)
-	if err := os.MkdirAll(d, 0755); err != nil {
+	if err := os.MkdirAll(d, defaultDirMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "thumbnail"), minPNG, defaultFileMode); err != nil {
 		return err
 	}
 	data, err := json.Marshal(resource.EngineParticleData{
@@ -194,7 +199,7 @@ func emitDefaultParticle(dir, name string) error {
 	if err != nil {
 		return fmt.Errorf("marshal particle data: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(d, "data"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
 	}
 	return writeItemJSON(d, map[string]any{
@@ -208,20 +213,20 @@ func emitDefaultParticle(dir, name string) error {
 
 func emitDefaultLevel(dir, name, engineName, skin, bg, effect, particle string) error {
 	d := filepath.Join(dir, "levels", name)
-	if err := os.MkdirAll(d, 0755); err != nil {
+	if err := os.MkdirAll(d, defaultDirMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "cover"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "cover"), minPNG, defaultFileMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(d, "bgm"), minMP3, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "bgm"), minMP3, defaultFileMode); err != nil {
 		return err
 	}
 	data, err := json.Marshal(resource.LevelData{})
 	if err != nil {
 		return fmt.Errorf("marshal level data: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(d, "data"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
 	}
 	return writeItemJSON(d, map[string]any{

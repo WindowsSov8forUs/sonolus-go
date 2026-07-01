@@ -99,7 +99,7 @@ func TestRealEngineCompiles(t *testing.T) {
 	t.Logf("total nodes: %d", len(data.Nodes))
 }
 
-func TestCompositeLiterialInCallback(t *testing.T) {
+func TestCompositeLiteralInCallback(t *testing.T) {
 	// vec2 constructor in expression position within a callback body (no helpers).
 	src := "package p\n" +
 		"type Note struct {\n" +

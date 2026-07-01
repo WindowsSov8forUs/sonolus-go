@@ -133,6 +133,7 @@ func writeEngineItem(dir string, meta EngineItemMeta) error {
 	return os.WriteFile(filepath.Join(dir, "item.json"), data, 0644)
 }
 
+// strRef returns s, or "default" when s is empty (sonolus-pack convention).
 func strRef(s string) string {
 	if s == "" {
 		return "default"

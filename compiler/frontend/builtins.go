@@ -130,11 +130,11 @@ var runtimeFns = map[string]runtimeFn{
 	"debugLog":   {resource.RuntimeFunctionDebugLog, false, -1},
 	"debugPause": {resource.RuntimeFunctionDebugPause, false, -1},
 	// Debug/assert — special-cased in trace_call.go (CFG branching).
-	"debugError":      {resource.RuntimeFunctionDebugLog, false, 1},
-	"debugRequire":    {resource.RuntimeFunctionDebugLog, false, 2},
-	"debugAssertTrue": {resource.RuntimeFunctionDebugLog, false, 2},
+	"debugError":       {resource.RuntimeFunctionDebugLog, false, 1},
+	"debugRequire":     {resource.RuntimeFunctionDebugLog, false, 2},
+	"debugAssertTrue":  {resource.RuntimeFunctionDebugLog, false, 2},
 	"debugAssertFalse": {resource.RuntimeFunctionDebugLog, false, 2},
-	"debugTerminate":  {resource.RuntimeFunctionDebugLog, false, 0},
+	"debugTerminate":   {resource.RuntimeFunctionDebugLog, false, 0},
 	// Random (returns value, arity 1 — max value). NOT mathematically pure;
 	// classified as side-effecting in ops_gen.go — RNG state is mutated.
 	"random":        {resource.RuntimeFunctionRandom, true, 1},

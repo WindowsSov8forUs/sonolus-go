@@ -1,6 +1,8 @@
 package frontend
 
 import (
+	"fmt"
+
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -127,12 +129,21 @@ func varArraySortCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, error
 
 // sortLinkedEntitiesCall implements the sortLinkedEntities builtin.
 // Called from callWithArgs with:
-//   args[0] = head EntityRef value (entity index)
-//   args[1] = sortKeyOffset (compile-time constant)
-//   args[2] = nextOffset (compile-time constant)
-//   args[3] = prevOffset (optional, 0 means no prev pointer)
+//
+//	args[0] = head EntityRef value (entity index)
+//	args[1] = sortKeyOffset (compile-time constant)
+//	args[2] = nextOffset (compile-time constant)
+//	args[3] = prevOffset (optional, 0 means no prev pointer)
 func sortLinkedEntitiesCall(t *tracer, args []Num) (Num, error) {
 	headIdx := args[0]
+	// Empty list: return 0 immediately — no entities to sort.
+	if headIdx.isConst && headIdx.c == 0 {
+		return constNum(0), nil
+	}
+	// Offset arguments must be compile-time constants.
+	if !args[1].isConst || !args[2].isConst {
+		return Num{}, fmt.Errorf("sortLinkedEntities: sortKeyOffset and nextOffset must be compile-time constants")
+	}
 	sortKeyOff := int(args[1].c)
 	nextOff := int(args[2].c)
 	prevOff := 0
@@ -230,8 +241,8 @@ func emitEntitySort(t *tracer, idxTB *ir.TempBlock, countTB *ir.TempBlock, sortK
 		getCompare: func(gen *ir.IDGen, idx ir.Node) ir.Node {
 			idxVal := ir.GetPlace(ir.BlockPlace{Block: idxTB, Index: idx, Offset: 0})
 			return ir.GetPlace(ir.BlockPlace{
-				Block: ir.Const(ir.BlockEntityMemory),
-				Index: gen.PureInstr(resource.RuntimeFunctionAdd, idxVal, ir.Const(sortKeyOff)),
+				Block:  ir.Const(ir.BlockEntityMemory),
+				Index:  gen.PureInstr(resource.RuntimeFunctionAdd, idxVal, ir.Const(sortKeyOff)),
 				Offset: 0,
 			})
 		},

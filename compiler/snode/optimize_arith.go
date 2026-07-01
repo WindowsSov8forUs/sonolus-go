@@ -54,8 +54,11 @@ func isEquivalent(a, b SNode) bool {
 		return false
 	}
 
-	af := a.(Func)
-	bf := b.(Func)
+	af, aok := a.(Func)
+	bf, bok := b.(Func)
+	if !aok || !bok {
+		return false // nil or unexpected node types
+	}
 	if af.Op != bf.Op {
 		return false
 	}
@@ -104,9 +107,9 @@ var (
 	}
 	cfgMultiply = arithConfig{
 		op: OpMultiply, identity: 1,
-		combine:          func(a, b float64) float64 { return a * b },
-		commutative:      true,
-		zeroAnnihilates:  true,
+		combine:         func(a, b float64) float64 { return a * b },
+		commutative:     true,
+		zeroAnnihilates: true,
 	}
 	cfgDivide = arithConfig{
 		op: OpDivide, identity: 1,
@@ -118,7 +121,7 @@ var (
 type arithConfig struct {
 	op              resource.RuntimeFunction
 	identity        float64
-	combine         func(a, b float64) float64 // how constants are combined
+	combine         func(a, b float64) float64 // how identity are combined
 	commutative     bool                       // true: flatten all args; false: flatten head only
 	zeroAnnihilates bool                       // Multiply: 0 * x = 0
 }
@@ -145,30 +148,30 @@ func optimizeCommutative(args []SNode, cfg arithConfig) SNode {
 		}
 	}
 
-	constants := cfg.identity
+	identity := cfg.identity
 	var dynamics []SNode
 	for _, arg := range flat {
 		if v, ok := asValue(arg); ok {
-			constants = cfg.combine(constants, v)
+			identity = cfg.combine(identity, v)
 		} else {
 			dynamics = append(dynamics, arg)
 		}
 	}
 
 	if len(dynamics) == 0 {
-		return Value(constants)
+		return Value(identity)
 	}
-	if cfg.zeroAnnihilates && constants == 0 {
+	if cfg.zeroAnnihilates && identity == 0 {
 		// Preserve side effects: evaluate dynamics, then yield 0.
 		return Func{Op: OpExecute, Args: append(append([]SNode{}, dynamics...), Value(0))}
 	}
-	if constants == cfg.identity {
+	if identity == cfg.identity {
 		if len(dynamics) == 1 {
 			return dynamics[0]
 		}
 		return Func{Op: cfg.op, Args: dynamics}
 	}
-	return Func{Op: cfg.op, Args: append([]SNode{Value(constants)}, dynamics...)}
+	return Func{Op: cfg.op, Args: append([]SNode{Value(identity)}, dynamics...)}
 }
 
 func optimizeNonCommutative(args []SNode, cfg arithConfig) SNode {
@@ -182,23 +185,23 @@ func optimizeNonCommutative(args []SNode, cfg arithConfig) SNode {
 		head, rest = args[0], args[1:]
 	}
 
-	constants := cfg.identity
+	identity := cfg.identity
 	var dynamics []SNode
 	for _, arg := range rest {
 		if v, ok := asValue(arg); ok {
-			constants = cfg.combine(constants, v)
+			identity = cfg.combine(identity, v)
 		} else {
 			dynamics = append(dynamics, arg)
 		}
 	}
 
-	if constants == cfg.identity {
+	if identity == cfg.identity {
 		if len(dynamics) == 0 {
 			return head
 		}
 		return Func{Op: cfg.op, Args: append([]SNode{head}, dynamics...)}
 	}
-	return Func{Op: cfg.op, Args: append([]SNode{head, Value(constants)}, dynamics...)}
+	return Func{Op: cfg.op, Args: append([]SNode{head, Value(identity)}, dynamics...)}
 }
 
 // --- Mod / Rem / Power (identical shape) ---

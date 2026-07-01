@@ -24,20 +24,18 @@ func quadCenter(t *tracer, q Num, args []Num) (Num, error) {
 }
 
 func quadTranslate(t *tracer, q Num, args []Num) (Num, error) {
-	dx, dy := args[0], args[0]
-	if len(args) > 1 {
-		dy = args[1]
-	}
+	p := args[0]
+	dx, dy := p.MustField("x").mustNode(), p.MustField("y").mustNode()
 	add := func(n ir.Node, d ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, n, d) }
 	return compNum(map[string]Num{
-		"blx": exprNum(add(q.MustField("blx").mustNode(), dx.mustNode())),
-		"bly": exprNum(add(q.MustField("bly").mustNode(), dy.mustNode())),
-		"tlx": exprNum(add(q.MustField("tlx").mustNode(), dx.mustNode())),
-		"tly": exprNum(add(q.MustField("tly").mustNode(), dy.mustNode())),
-		"trx": exprNum(add(q.MustField("trx").mustNode(), dx.mustNode())),
-		"try": exprNum(add(q.MustField("try").mustNode(), dy.mustNode())),
-		"brx": exprNum(add(q.MustField("brx").mustNode(), dx.mustNode())),
-		"bry": exprNum(add(q.MustField("bry").mustNode(), dy.mustNode())),
+		"blx": exprNum(add(q.MustField("blx").mustNode(), dx)),
+		"bly": exprNum(add(q.MustField("bly").mustNode(), dy)),
+		"tlx": exprNum(add(q.MustField("tlx").mustNode(), dx)),
+		"tly": exprNum(add(q.MustField("tly").mustNode(), dy)),
+		"trx": exprNum(add(q.MustField("trx").mustNode(), dx)),
+		"try": exprNum(add(q.MustField("try").mustNode(), dy)),
+		"brx": exprNum(add(q.MustField("brx").mustNode(), dx)),
+		"bry": exprNum(add(q.MustField("bry").mustNode(), dy)),
 	}), nil
 }
 

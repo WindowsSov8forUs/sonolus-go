@@ -10,6 +10,11 @@ func optimizeSwitchWithDefault(s Func) SNode {
 	cases := s.Args[1 : len(s.Args)-1]
 	defaultCase := s.Args[len(s.Args)-1]
 
+	// Each case is a (value, target) pair; reject malformed input.
+	if len(cases)%2 != 0 {
+		return s
+	}
+
 	removeDefault := isValueEq(defaultCase, 0)
 
 	if a, d, ok := tryNormalize(cases); ok {

@@ -6,6 +6,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
 
+// transFields is the field layout of the built-in Trans record.
 var transFields = []string{"m11", "m12", "m13", "m21", "m22", "m23", "m31", "m32", "m33"}
 
 func transCompose(t *tracer, m Num, args []Num) (Num, error) {

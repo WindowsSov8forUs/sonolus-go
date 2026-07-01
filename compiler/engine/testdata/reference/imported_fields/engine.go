@@ -11,5 +11,5 @@ func (n N) Initialize() {
 }
 
 func (n N) UpdateSequential() {
-	n.Sum = n.Beat * 2 + n.Bpm
+	n.Sum = n.Beat*2 + n.Bpm
 }

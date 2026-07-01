@@ -100,6 +100,10 @@ func PreludeSource(pkg string, records map[string][]string) string {
 
 	// Trans methods
 	b.WriteString("func (t Trans) compose(o Trans) Trans { return t }\n")
+	b.WriteString("func (t Trans) translate(v Vec2) Trans { return t }\n")
+	b.WriteString("func (t Trans) scale(v Vec2) Trans { return t }\n")
+	b.WriteString("func (t Trans) rotate(angle float64) Trans { return t }\n")
+	b.WriteString("func (t Trans) transformVec(v Vec2) Vec2 { return Vec2{} }\n")
 
 	// Pair methods
 	b.WriteString("func (p Pair) lt(o Pair) float64 { return 0 }\n")

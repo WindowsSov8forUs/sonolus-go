@@ -68,29 +68,36 @@ func optimizeSetShifted(s Func) SNode {
 	return s
 }
 
-// setFuncMap maps arithmetic runtime functions to their compound-assignment
-// counterparts (e.g. Add → SetAdd). The table is exhaustive for the arithmetic
-// ops that appear in the Set/SetShifted optimizer paths; string concatenation
-// (matching the JS reference) is kept as a fallback for future op additions.
-var setFuncMap = map[resource.RuntimeFunction]resource.RuntimeFunction{
-	resource.RuntimeFunctionAdd:      resource.RuntimeFunctionSetAdd,
-	resource.RuntimeFunctionSubtract: resource.RuntimeFunctionSetSubtract,
-	resource.RuntimeFunctionMultiply: resource.RuntimeFunctionSetMultiply,
-	resource.RuntimeFunctionDivide:   resource.RuntimeFunctionSetDivide,
-	resource.RuntimeFunctionPower:    resource.RuntimeFunctionSetPower,
-	resource.RuntimeFunctionMod:      resource.RuntimeFunctionSetMod,
-	resource.RuntimeFunctionRem:      resource.RuntimeFunctionSetRem,
+// setFuncOps lists every arithmetic op that has a compound-assignment (Set/SetShifted)
+// counterpart. Both setFuncMap and setShiftedFuncMap are built from this single list.
+var setFuncOps = []resource.RuntimeFunction{
+	resource.RuntimeFunctionAdd,
+	resource.RuntimeFunctionSubtract,
+	resource.RuntimeFunctionMultiply,
+	resource.RuntimeFunctionDivide,
+	resource.RuntimeFunctionPower,
+	resource.RuntimeFunctionMod,
+	resource.RuntimeFunctionRem,
 }
 
+// setFuncMap maps arithmetic ops to their compound-assignment counterparts.
+// Built in init() from setFuncOps so the key set is defined once.
+var setFuncMap = makeSetFuncMap(false)
+
 // setShiftedFuncMap mirrors setFuncMap for the Shifted variants.
-var setShiftedFuncMap = map[resource.RuntimeFunction]resource.RuntimeFunction{
-	resource.RuntimeFunctionAdd:      resource.RuntimeFunctionSetAddShifted,
-	resource.RuntimeFunctionSubtract: resource.RuntimeFunctionSetSubtractShifted,
-	resource.RuntimeFunctionMultiply: resource.RuntimeFunctionSetMultiplyShifted,
-	resource.RuntimeFunctionDivide:   resource.RuntimeFunctionSetDivideShifted,
-	resource.RuntimeFunctionPower:    resource.RuntimeFunctionSetPowerShifted,
-	resource.RuntimeFunctionMod:      resource.RuntimeFunctionSetModShifted,
-	resource.RuntimeFunctionRem:      resource.RuntimeFunctionSetRemShifted,
+// Built in init() from setFuncOps so the key set is defined once.
+var setShiftedFuncMap = makeSetFuncMap(true)
+
+func makeSetFuncMap(shifted bool) map[resource.RuntimeFunction]resource.RuntimeFunction {
+	m := make(map[resource.RuntimeFunction]resource.RuntimeFunction, len(setFuncOps))
+	for _, op := range setFuncOps {
+		if shifted {
+			m[op] = resource.RuntimeFunction("Set" + string(op) + "Shifted")
+		} else {
+			m[op] = resource.RuntimeFunction("Set" + string(op))
+		}
+	}
+	return m
 }
 
 // setFunc maps an arithmetic function to its compound-assignment counterpart,

@@ -6,6 +6,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
 
+// rectFields is the field layout of the built-in Rect record.
 var rectFields = []string{"t", "r", "b", "l"}
 
 func rectW(t *tracer, r Num, args []Num) (Num, error) {
@@ -28,15 +29,13 @@ func rectCenter(t *tracer, r Num, args []Num) (Num, error) {
 }
 
 func rectTranslate(t *tracer, r Num, args []Num) (Num, error) {
-	dx, dy := args[0], args[0]
-	if len(args) > 1 {
-		dy = args[1]
-	}
+	p := args[0]
+	dx, dy := p.MustField("x").mustNode(), p.MustField("y").mustNode()
 	return compNum(map[string]Num{
-		"t": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("t").mustNode(), dy.mustNode())),
-		"r": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("r").mustNode(), dx.mustNode())),
-		"b": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("b").mustNode(), dy.mustNode())),
-		"l": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("l").mustNode(), dx.mustNode())),
+		"t": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("t").mustNode(), dy)),
+		"r": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("r").mustNode(), dx)),
+		"b": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("b").mustNode(), dy)),
+		"l": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("l").mustNode(), dx)),
 	}), nil
 }
 
