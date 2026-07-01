@@ -253,8 +253,8 @@ func TestBuildUI_Metrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildUI: %v", err)
 	}
-	if ui.PrimaryMetric != resource.EngineConfigurationMetricArcade {
-		t.Logf("primaryMetric = %v (expected default arcade)", ui.PrimaryMetric)
+	if ui.PrimaryMetric != resource.EngineConfigurationMetricArcadePercentage {
+		t.Errorf("primaryMetric = %v, want arcadePercentage", ui.PrimaryMetric)
 	}
 }
 

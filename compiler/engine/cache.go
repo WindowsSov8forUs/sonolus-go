@@ -29,18 +29,18 @@ func NewCacheKey(mode, src string) CacheKey {
 // exceeds this limit, the oldest entry (FIFO order) is evicted.
 // Set to 0 to disable eviction (unbounded growth). Default: 256.
 type CompileCache struct {
-	mu         sync.RWMutex
-	MaxEntries int
-	play       map[CacheKey]*resource.EnginePlayData
-	playOrder  []CacheKey // FIFO insertion order for eviction
-	watch      map[CacheKey]*resource.EngineWatchData
-	watchOrder []CacheKey
-	preview    map[CacheKey]*resource.EnginePreviewData
-	previewOrder []CacheKey
-	tutorial   map[CacheKey]*resource.EngineTutorialData
+	mu            sync.RWMutex
+	MaxEntries    int
+	play          map[CacheKey]*resource.EnginePlayData
+	playOrder     []CacheKey // FIFO insertion order for eviction
+	watch         map[CacheKey]*resource.EngineWatchData
+	watchOrder    []CacheKey
+	preview       map[CacheKey]*resource.EnginePreviewData
+	previewOrder  []CacheKey
+	tutorial      map[CacheKey]*resource.EngineTutorialData
 	tutorialOrder []CacheKey
-	config     map[CacheKey]*resource.EngineConfiguration
-	configOrder []CacheKey
+	config        map[CacheKey]*resource.EngineConfiguration
+	configOrder   []CacheKey
 }
 
 // NewCache creates an empty compile cache with the default max entries (256).
@@ -90,14 +90,9 @@ func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg 
 	}
 	c.play[key] = data
 	if cfg != nil {
+		// Config shares the play eviction policy: when an entry is evicted
+		// from play, its config is also removed. No independent eviction here.
 		if _, exists := c.config[key]; !exists {
-			if c.MaxEntries > 0 && len(c.config) >= c.MaxEntries {
-				oldest := c.configOrder[0]
-				c.configOrder = c.configOrder[1:]
-				delete(c.config, oldest)
-				delete(c.play, oldest)
-				c.playOrder = removeFromOrder(c.playOrder, oldest)
-			}
 			c.configOrder = append(c.configOrder, key)
 		}
 		c.config[key] = cfg
