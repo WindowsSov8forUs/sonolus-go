@@ -40,7 +40,7 @@ func compileToCanon(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 	sn, err := ir.CFGToSNode(gen, entry)
 	if err != nil {
 		panic(err)
@@ -337,7 +337,7 @@ func TestModeAccessors(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+		entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 		sn, err := ir.CFGToSNode(testGen, entry)
 		if err != nil {
 			return "", err

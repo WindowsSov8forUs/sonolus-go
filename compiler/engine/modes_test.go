@@ -123,9 +123,9 @@ func TestCompileTutorialWithInstruction(t *testing.T) {
 }
 
 func TestComposeOrFirst(t *testing.T) {
-	// Empty slice → 0 (omitted).
-	if got := composeOrFirst(nil, &[]resource.EngineDataNode{}); got != 0 {
-		t.Errorf("nil slice: got %d, want 0", got)
+	// Empty slice → -1 (omitted).
+	if got := composeOrFirst(nil, &[]resource.EngineDataNode{}); got != -1 {
+		t.Errorf("nil slice: got %d, want -1", got)
 	}
 	// Single element → returned directly.
 	nodes := []resource.EngineDataNode{

@@ -30,7 +30,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "       sonolus-go serve <engine.go>\n")
 		fmt.Fprintf(os.Stderr, "       sonolus-go level <chart.json>\n")
 		fmt.Fprintf(os.Stderr, "       sonolus-go pack  <engine.go> [-author <name>]\n")
-		fmt.Fprintf(os.Stderr, "       sonolus-go host  <engine.go> [-addr <:8080>]\n")
+		fmt.Fprintf(os.Stderr, "       sonolus-go host  <engine.go> [-addr <:8080>] [-author <name>]\n")
 		fmt.Fprintf(os.Stderr, "  build modes: play (default), watch, preview, tutorial, all\n")
 		fmt.Fprintf(os.Stderr, "  opt levels:  0=minimal, 1=fast, 2=standard (default)\n")
 		flag.PrintDefaults()
@@ -94,7 +94,7 @@ func main() {
 	// Host: pack + production server via sonolus-server-go.
 	if flag.Arg(0) == "host" {
 		srcPath := flag.Arg(1)
-		if err := runPackServe(srcPath, *addrFlag); err != nil {
+		if err := runPackServe(srcPath, *addrFlag, *authorFlag); err != nil {
 			fatalf("%v", err)
 		}
 		return

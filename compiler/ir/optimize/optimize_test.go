@@ -268,7 +268,7 @@ func f() {
 		ToSSA{}, InlineVars{}, FromSSA{},
 		CoalesceFlow{}, DeadCodeElimination{},
 	)
-	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 	got := canon(mustLower(ir.CFGToSNode(testGen, entry)))
 	// x := 3 is inlined and the dead store removed: just Set(0,0,3).
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#3),#1),#0))"
@@ -374,7 +374,7 @@ func f() {
 		ToSSA{}, SCCP{}, FromSSA{},
 		UnreachableCodeElimination{}, CoalesceFlow{}, DeadCodeElimination{},
 	)
-	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 	got := canon(mustLower(ir.CFGToSNode(testGen, entry)))
 	// Only the taken branch (set 0,0,1) survives.
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#1),#1),#0))"
@@ -396,7 +396,7 @@ func f() {
 		t.Fatal(err)
 	}
 	entry = DeadCodeElimination{}.Run(testGen, entry)
-	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 
 	got := canon(mustLower(ir.CFGToSNode(testGen, entry)))
 	want := "Block(JumpLoop(Execute(Set(#0,#0,#1),#1),#0))"
@@ -422,7 +422,7 @@ func f() {
 		t.Fatal(err)
 	}
 	entry = RunPasses(testGen, entry, UnreachableCodeElimination{}, CoalesceFlow{}, DeadCodeElimination{})
-	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 
 	var nodes []resource.EngineDataNode
 	if _, err := snode.NewAppender(&nodes).Append(mustLower(ir.CFGToSNode(testGen, entry))); err != nil {
@@ -567,7 +567,7 @@ func f() {
 		ToSSA{}, FromSSA{},
 		CoalesceFlow{}, DeadCodeElimination{},
 	)
-	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 
 	var nodes []resource.EngineDataNode
 	if _, err := snode.NewAppender(&nodes).Append(mustLower(ir.CFGToSNode(testGen, entry))); err != nil {

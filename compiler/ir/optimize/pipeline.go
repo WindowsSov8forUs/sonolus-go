@@ -160,9 +160,9 @@ func Fast(mode ir.Mode, callback string) []Pass {
 type Level int
 
 const (
-	LevelMinimal  Level = iota // only essential cleanup, no SSA
-	LevelFast                  // single SSA round, no LICM/CSE
-	LevelStandard              // full pipeline (~40 passes)
+	LevelMinimal  Level = iota + 1 // only essential cleanup, no SSA
+	LevelFast                      // single SSA round, no LICM/CSE
+	LevelStandard                  // full pipeline (~40 passes)
 )
 
 // Optimize runs the optimization pipeline for the given level and returns the
@@ -182,8 +182,10 @@ func OptimizeCtx(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback str
 		passes = Minimal(mode, callback)
 	case LevelFast:
 		passes = Fast(mode, callback)
-	default:
+	case LevelStandard:
 		passes = Standard(mode, callback)
+	default:
+		return nil, fmt.Errorf("optimize: unknown optimization level %d", level)
 	}
 	if err := VerifyPasses(passes...); err != nil {
 		return nil, fmt.Errorf("optimize: pass dependency violation in %v pipeline: %w", level, err)
@@ -200,7 +202,9 @@ func OptimizeCtx(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback str
 		return AllocateBasic{BlockID: tempBlock}.Run(gen, entry), nil
 	case LevelFast:
 		return TryAllocateBasic{BlockID: tempBlock}.Run(gen, entry), nil
-	default:
+	case LevelStandard:
 		return AllocateLive{BlockID: tempBlock}.Run(gen, entry), nil
+	default:
+		return nil, fmt.Errorf("optimize: unknown optimization level for allocator %d", level)
 	}
 }

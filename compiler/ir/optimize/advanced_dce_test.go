@@ -35,7 +35,7 @@ func TestAdvancedDCEStandalone(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry = AdvancedDCE{}.Run(testGen, entry)
-	entry = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
 	got := canon(mustLower(ir.CFGToSNode(testGen, entry)))
 	if got == "" {
 		t.Error("AdvancedDCE produced empty output")

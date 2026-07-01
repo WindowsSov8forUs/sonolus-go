@@ -28,6 +28,7 @@ type Appender struct {
 	cache map[string]int
 }
 
+// NewAppender creates a new Appender that appends nodes to the given slice.
 func NewAppender(nodes *[]resource.EngineDataNode) *Appender {
 	return &Appender{
 		nodes: nodes,
@@ -35,6 +36,9 @@ func NewAppender(nodes *[]resource.EngineDataNode) *Appender {
 	}
 }
 
+// Append adds an SNode to the node list and returns its deduplicated index.
+// If an equivalent node already exists, Append returns the existing index
+// instead of appending a duplicate.
 func (a *Appender) Append(snode SNode) (int, error) {
 	switch v := snode.(type) {
 	case Value:

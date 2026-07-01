@@ -16,7 +16,7 @@ const DefaultTempMemoryBlock = BlockTempMemory
 // pipeline uses optimize.AllocateLive (linear-scan, liveness-aware) or
 // optimize.AllocateBasic (sequential, for Fast/Minimal levels).
 // Use [AllocateTestBlocks] for the exported test helper.
-func allocateTempBlocks(entry *BasicBlock, blockID int) *BasicBlock {
+func allocateTempBlocks(entry *BasicBlock, blockID int) (*BasicBlock, error) {
 	a := &allocator{blockID: blockID, slot: map[*TempBlock]int{}}
 
 	// Pass 1: assign slots in a deterministic traversal order.
@@ -32,17 +32,17 @@ func allocateTempBlocks(entry *BasicBlock, blockID int) *BasicBlock {
 		for i, s := range b.Statements {
 			rw, err := a.rewrite(s)
 			if err != nil {
-				return nil
+				return nil, err
 			}
 			b.Statements[i] = rw
 		}
 		rw, err := a.rewrite(b.Test)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		b.Test = rw
 	}
-	return entry
+	return entry, nil
 }
 
 type allocator struct {
@@ -176,6 +176,6 @@ func (a *allocator) rewritePlace(p Place) (Place, error) {
 // exported solely for unit tests that need a pre-SSA, pre-optimize allocation,
 // because those tests call the frontend tracer directly and the result contains
 // unresolved TempBlocks.
-func AllocateTestBlocks(entry *BasicBlock, blockID int) *BasicBlock {
+func AllocateTestBlocks(entry *BasicBlock, blockID int) (*BasicBlock, error) {
 	return allocateTempBlocks(entry, blockID)
 }

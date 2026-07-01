@@ -115,17 +115,9 @@ func receiverInfo(field *ast.Field) (typeName, recvName string) {
 }
 
 func parseFields(a *parsedArchetype, st *ast.StructType) error {
-	tc := &tagCollector{
-		imported: &a.imported,
-		memory:   &a.memory,
-		data:     &a.data,
-		shared:   &a.shared,
-		input:    &a.input,
-		despawn:  &a.despawn,
-		info:     &a.info,
-	}
+	tc := &tagCollector{}
 	for _, f := range st.Fields.List {
-		unknown, modeTag := collectSonolusTags(f, tc)
+		unknown, modeTag := tc.collectSonolusTags(f)
 		if unknown != "" {
 			// The first name in the field carries the tag.
 			name := ""
@@ -145,6 +137,13 @@ func parseFields(a *parsedArchetype, st *ast.StructType) error {
 			a.lifed = true
 		}
 	}
+	a.imported = tc.imported
+	a.memory = tc.memory
+	a.data = tc.data
+	a.shared = tc.shared
+	a.input = tc.input
+	a.despawn = tc.despawn
+	a.info = tc.info
 	return nil
 }
 

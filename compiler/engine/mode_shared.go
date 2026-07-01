@@ -35,13 +35,13 @@ func modeName(m ir.Mode) string {
 // both parseFields (Play mode, which also handles exported/scored/lifed) and
 // parseModeFile (Watch/Preview/Tutorial modes).
 type tagCollector struct {
-	imported *[]ImportedField
-	memory   *[]string
-	data     *[]string
-	shared   *[]string
-	input    *[]string
-	despawn  *[]string
-	info     *[]string
+	imported []ImportedField
+	memory   []string
+	data     []string
+	shared   []string
+	input    []string
+	despawn  []string
+	info     []string
 }
 
 // collectSonolusTags reads sonolus struct tags from a field and appends field
@@ -49,7 +49,7 @@ type tagCollector struct {
 // scored, lifed) are reported via modeTag so callers can handle them without
 // re-reading the struct tag. An empty tag is silently skipped. Any other
 // unrecognized tag is reported via unknownTag (empty string means no error).
-func collectSonolusTags(field *ast.Field, tc *tagCollector) (unknownTag, modeTag string) {
+func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTag string) {
 	if field.Tag == nil || len(field.Names) == 0 {
 		return "", ""
 	}
@@ -57,19 +57,19 @@ func collectSonolusTags(field *ast.Field, tc *tagCollector) (unknownTag, modeTag
 	for _, name := range field.Names {
 		switch tag {
 		case "imported":
-			*tc.imported = append(*tc.imported, ImportedField{Name: name.Name})
+			tc.imported = append(tc.imported, ImportedField{Name: name.Name})
 		case "memory":
-			*tc.memory = append(*tc.memory, name.Name)
+			tc.memory = append(tc.memory, name.Name)
 		case "data":
-			*tc.data = append(*tc.data, name.Name)
+			tc.data = append(tc.data, name.Name)
 		case "shared":
-			*tc.shared = append(*tc.shared, name.Name)
+			tc.shared = append(tc.shared, name.Name)
 		case "input":
-			*tc.input = append(*tc.input, name.Name)
+			tc.input = append(tc.input, name.Name)
 		case "despawn":
-			*tc.despawn = append(*tc.despawn, name.Name)
+			tc.despawn = append(tc.despawn, name.Name)
 		case "info":
-			*tc.info = append(*tc.info, name.Name)
+			tc.info = append(tc.info, name.Name)
 		case "exported", "scored", "lifed":
 			modeTag = tag
 		case "":
@@ -125,7 +125,6 @@ func buildBindings(
 	return imports, b
 }
 
-// archetypeData holds the per-archetype metadata produced by callback
 // parsedModeFile holds the parsed state of a Watch/Preview/Tutorial mode engine
 // source file: the file set (for error positions), archetypes in declaration order,
 // free functions, and resource struct definitions.
@@ -137,6 +136,7 @@ type parsedModeFile struct {
 	resources map[string]*ast.StructType
 }
 
+// archetypeData holds the per-archetype metadata produced by callback
 // compilation, ready to be wrapped in a mode-specific archetype struct
 // (EngineWatchDataArchetype, EnginePreviewDataArchetype, etc.).
 type archetypeData struct {
@@ -242,6 +242,45 @@ func compileArchetypeCallbacks(
 	return arcData, results, nil
 }
 
+// nonPlayPipelineResult bundles the common intermediate results produced by
+// runNonPlayPipeline for Watch and Preview mode compilation.
+type nonPlayPipelineResult struct {
+	pf        *parsedModeFile
+	gen       *ir.IDGen
+	r         parsedResources
+	accessors map[string]frontend.Binding
+	nodes     []resource.EngineDataNode
+	arcData   []archetypeData
+	results   []*modecompile.Result
+}
+
+// runNonPlayPipeline executes the shared Watch/Preview compilation pipeline:
+// parse → build resources → compile callbacks. Each mode function then performs
+// mode-specific finalisation (UpdateSpawn for Watch, different output types).
+func runNonPlayPipeline(src string, cbSet map[string]string, mode ir.Mode, opts *CompileOptions) (nonPlayPipelineResult, error) {
+	var res nonPlayPipelineResult
+	pf, err := parseModeFile(src)
+	if err != nil {
+		return res, err
+	}
+	res.pf = pf
+	res.gen = ir.NewIDGen()
+	r, err := buildResources(pf.resources)
+	if err != nil {
+		return res, err
+	}
+	res.r = r
+	res.accessors = frontend.ModeAccessorsReadOnly(mode)
+	res.nodes = []resource.EngineDataNode{}
+	arcData, results, err := compileArchetypeCallbacks(res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
+	if err != nil {
+		return res, err
+	}
+	res.arcData = arcData
+	res.results = results
+	return res, nil
+}
+
 // compileTutorialCallback compiles a single tutorial global callback body
 // (Preprocess, Navigate, or Update) and returns the appended SNode index.
 // It is the per-callback helper used by CompileTutorialFile.
@@ -256,16 +295,15 @@ func (ctx compileCtx) compileTutorialCallback(
 	env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ctx.mode}
 	sn, err := compileCallbackBlock(ctx.gen, ctx.fset, d.Body, env, d.Name.Name, ctx.mode, ctx.opts)
 	if err != nil {
-		return 0, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
+		return -1, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
 	}
 	if r := modecompile.CompileCallbackForMode(-1, callback, sn, "tutorial"); r != nil {
 		return app.Append(r.Node)
 	}
-	return 0, nil
+	return -1, nil
 }
-
 // compileUpdateSpawn compiles the standalone UpdateSpawn global function for
-// Watch mode. It returns the appended SNode index, or 0 if the function is
+// Watch mode. It returns the appended SNode index, or -1 if the function is
 // absent or compiles to a no-op.
 func compileUpdateSpawn(
 	gen *ir.IDGen,
@@ -280,30 +318,30 @@ func compileUpdateSpawn(
 			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
 			sn, err := compileCallbackBlock(gen, fset, d.Body, env, "UpdateSpawn", ir.ModeWatch, opts)
 			if err != nil {
-				return 0, fmt.Errorf("UpdateSpawn: %w", err)
+				return -1, fmt.Errorf("UpdateSpawn: %w", err)
 			}
 			if r := modecompile.CompileCallbackForMode(-1, "UpdateSpawn", sn, "watch"); r != nil {
 				app := snode.NewAppender(nodes)
 				idx, err := app.Append(r.Node)
 				if err != nil {
-					return 0, fmt.Errorf("UpdateSpawn append: %w", err)
+					return -1, fmt.Errorf("UpdateSpawn append: %w", err)
 				}
 				return idx, nil
 			}
 			break
 		}
 	}
-	return 0, nil
+	return -1, nil
 }
 
 // composeOrFirst composes multiple callback node indices into a single Execute
 // node when there is more than one, matching sonolus.js-compiler's behaviour of
 // composing multiple tutorial callback functions of the same type. When there is
-// exactly one index, it is returned directly. When the slice is empty, 0 is
+// exactly one index, it is returned directly. When the slice is empty, -1 is
 // returned (the callback is omitted).
 func composeOrFirst(idxs []int, nodes *[]resource.EngineDataNode) int {
 	if len(idxs) == 0 {
-		return 0
+		return -1
 	}
 	if len(idxs) == 1 {
 		return idxs[0]

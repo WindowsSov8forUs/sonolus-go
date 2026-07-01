@@ -73,17 +73,9 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 
 	for _, td := range pes.typeDecls {
 		a := get(td.name)
-		tc := &tagCollector{
-			imported: &a.imported,
-			memory:   &a.memory,
-			data:     &a.data,
-			shared:   &a.shared,
-			input:    &a.input,
-			despawn:  &a.despawn,
-			info:     &a.info,
-		}
+		tc := &tagCollector{}
 		for _, f := range td.structType.Fields.List {
-			unknown, _ := collectSonolusTags(f, tc)
+			unknown, _ := tc.collectSonolusTags(f)
 			if unknown != "" {
 				name := ""
 				if len(f.Names) > 0 {
@@ -92,6 +84,13 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 				return nil, fmt.Errorf("%s: unknown sonolus tag %q on field %q", td.name, unknown, name)
 			}
 		}
+		a.imported = tc.imported
+		a.memory = tc.memory
+		a.data = tc.data
+		a.shared = tc.shared
+		a.input = tc.input
+		a.despawn = tc.despawn
+		a.info = tc.info
 	}
 
 	for _, m := range pes.methods {
@@ -139,40 +138,31 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 // CompileWatchFileWithStats compiles a Go Watch-mode engine source file.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.EngineWatchData, error) {
-	pf, err := parseModeFile(src)
-	if err != nil {
-		return nil, err
-	}
-	gen := ir.NewIDGen()
-	r, err := buildResources(pf.resources)
-	if err != nil {
-		return nil, err
-	}
-	accessors := frontend.ModeAccessorsReadOnly(ir.ModeWatch)
-	nodes := []resource.EngineDataNode{}
-
-	arcData, results, err := compileArchetypeCallbacks(gen, pf.fset, pf.arcs, pf.order, pf.funcs, accessors, watchCBs, ir.ModeWatch, opts)
+	p, err := runNonPlayPipeline(src, watchCBs, ir.ModeWatch, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	outArcs := make([]resource.EngineWatchDataArchetype, len(arcData))
-	for i, ad := range arcData {
+	outArcs := make([]resource.EngineWatchDataArchetype, len(p.arcData))
+	for i, ad := range p.arcData {
 		outArcs[i] = resource.EngineWatchDataArchetype{Name: ad.name, Imports: ad.imports}
 	}
 
-	updateSpawn, err := compileUpdateSpawn(gen, pf.fset, pf.funcs, accessors, opts, &nodes)
+	updateSpawn, err := compileUpdateSpawn(p.gen, p.pf.fset, p.pf.funcs, p.accessors, opts, &p.nodes)
 	if err != nil {
 		return nil, err
 	}
+	if updateSpawn < 0 {
+		updateSpawn = 0
+	}
 
-	if err := modecompile.Assemble(&nodes, outArcs, results, modecompile.NewCallbackSetter(watch.Setters)); err != nil {
+	if err := modecompile.Assemble(&p.nodes, outArcs, p.results, modecompile.NewCallbackSetter(watch.Setters)); err != nil {
 		return nil, err
 	}
 
 	return &resource.EngineWatchData{
-		Skin: r.skin, Effect: r.effect, Particle: r.particle, Buckets: r.buckets,
-		Archetypes: outArcs, Nodes: nodes, UpdateSpawn: updateSpawn,
+		Skin: p.r.skin, Effect: p.r.effect, Particle: p.r.particle, Buckets: p.r.buckets,
+		Archetypes: outArcs, Nodes: p.nodes, UpdateSpawn: updateSpawn,
 	}, nil
 }
 
@@ -184,33 +174,21 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 // CompilePreviewFileWithStats compiles a Go Preview-mode engine source file.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.EnginePreviewData, error) {
-	pf, err := parseModeFile(src)
-	if err != nil {
-		return nil, err
-	}
-	gen := ir.NewIDGen()
-	r, err := buildResources(pf.resources)
-	if err != nil {
-		return nil, err
-	}
-	accessors := frontend.ModeAccessorsReadOnly(ir.ModePreview)
-	nodes := []resource.EngineDataNode{}
-
-	arcData, results, err := compileArchetypeCallbacks(gen, pf.fset, pf.arcs, pf.order, pf.funcs, accessors, previewCBs, ir.ModePreview, opts)
+	p, err := runNonPlayPipeline(src, previewCBs, ir.ModePreview, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	outArcs := make([]resource.EnginePreviewDataArchetype, len(arcData))
-	for i, ad := range arcData {
+	outArcs := make([]resource.EnginePreviewDataArchetype, len(p.arcData))
+	for i, ad := range p.arcData {
 		outArcs[i] = resource.EnginePreviewDataArchetype{Name: ad.name, Imports: ad.imports}
 	}
 
-	if err := modecompile.Assemble(&nodes, outArcs, results, modecompile.NewCallbackSetter(preview.Setters)); err != nil {
+	if err := modecompile.Assemble(&p.nodes, outArcs, p.results, modecompile.NewCallbackSetter(preview.Setters)); err != nil {
 		return nil, err
 	}
 
-	return &resource.EnginePreviewData{Skin: r.skin, Archetypes: outArcs, Nodes: nodes}, nil
+	return &resource.EnginePreviewData{Skin: p.r.skin, Archetypes: outArcs, Nodes: p.nodes}, nil
 }
 
 // CompileTutorialFile compiles a Go Tutorial-mode engine source file.
@@ -280,6 +258,16 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 	pp := composeOrFirst(ppIdxs, &nodes)
 	nav := composeOrFirst(navIdxs, &nodes)
 	upd := composeOrFirst(updIdxs, &nodes)
+
+	if pp < 0 {
+		pp = 0
+	}
+	if nav < 0 {
+		nav = 0
+	}
+	if upd < 0 {
+		upd = 0
+	}
 
 	return &resource.EngineTutorialData{
 		Skin: r.skin, Effect: r.effect, Particle: r.particle, Instruction: r.instruction,

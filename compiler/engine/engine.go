@@ -27,7 +27,7 @@ import (
 type CompileOptions struct {
 	Context context.Context  // if non-nil, checked between optimization passes for cancellation
 	Stats   *CompileStats    // if non-nil, per-callback compilation timing is recorded
-	Opt     optimize.Level   // optimization level (0 = default = LevelStandard)
+	Opt     optimize.Level   // optimization level (0 = default → LevelStandard)
 }
 
 // optsCtx extracts the context from opts, returning nil if opts is nil (safe
@@ -40,9 +40,10 @@ func optsCtx(opts *CompileOptions) context.Context {
 }
 
 // optsLevel extracts the optimization level from opts. Returns LevelStandard
-// when opts is nil or Opt is zero-valued (the default).
+// when opts is nil or Opt is unset (zero-valued, the default).
+// Level constant values start at iota+1, so zero unambiguously means "not set".
 func optsLevel(opts *CompileOptions) optimize.Level {
-	if opts == nil || opts.Opt == 0 {
+	if opts == nil || opts.Opt <= 0 {
 		return optimize.LevelStandard
 	}
 	return opts.Opt

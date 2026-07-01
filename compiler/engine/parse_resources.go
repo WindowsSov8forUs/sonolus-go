@@ -57,26 +57,17 @@ func buildResources(typeSpecs map[string]*ast.StructType) (parsedResources, erro
 		switch role {
 		case "skin":
 			r.skin.RenderMode = skinRenderMode(st)
-			for _, f := range st.Fields.List {
-				for _, n := range f.Names {
-					r.skin.Sprites = append(r.skin.Sprites,
-						resource.EngineSkinDataSprite{Name: resource.SkinSpriteName(n.Name), ID: len(r.skin.Sprites)})
-				}
-			}
+			r.skin.Sprites = collectFieldItems(st, func(name string, id int) resource.EngineSkinDataSprite {
+				return resource.EngineSkinDataSprite{Name: resource.SkinSpriteName(name), ID: id}
+			})
 		case "effect":
-			for _, f := range st.Fields.List {
-				for _, n := range f.Names {
-					r.effect.Clips = append(r.effect.Clips,
-						resource.EngineEffectDataClip{Name: resource.EffectClipName(n.Name), ID: len(r.effect.Clips)})
-				}
-			}
+			r.effect.Clips = collectFieldItems(st, func(name string, id int) resource.EngineEffectDataClip {
+				return resource.EngineEffectDataClip{Name: resource.EffectClipName(name), ID: id}
+			})
 		case "particle":
-			for _, f := range st.Fields.List {
-				for _, n := range f.Names {
-					r.particle.Effects = append(r.particle.Effects,
-						resource.EngineParticleDataEffect{Name: resource.ParticleEffectName(n.Name), ID: len(r.particle.Effects)})
-				}
-			}
+			r.particle.Effects = collectFieldItems(st, func(name string, id int) resource.EngineParticleDataEffect {
+				return resource.EngineParticleDataEffect{Name: resource.ParticleEffectName(name), ID: id}
+			})
 		case "buckets":
 			var err error
 			r.buckets, err = buildBuckets(st, typeSpecs["Skin"])
@@ -118,6 +109,18 @@ func buildResources(typeSpecs map[string]*ast.StructType) (parsedResources, erro
 		r.config.UI = defaultUI()
 	}
 	return r, nil
+}
+
+// collectFieldItems iterates over the fields of a struct type and builds a slice
+// of T by calling makeItem for each named field with auto-incrementing IDs.
+func collectFieldItems[T any](st *ast.StructType, makeItem func(name string, id int) T) []T {
+	var items []T
+	for _, f := range st.Fields.List {
+		for _, n := range f.Names {
+			items = append(items, makeItem(n.Name, len(items)))
+		}
+	}
+	return items
 }
 
 // ── Tag helpers ───────────────────────────────────────────────────────────────

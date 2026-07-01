@@ -12,8 +12,8 @@ import (
 
 // runPackServe compiles the engine, packs it, then serves it via a real
 // Sonolus server on the given address.
-func runPackServe(srcPath string, addr string) error {
-	if err := runPack(srcPath, "sonolus-go"); err != nil {
+func runPackServe(srcPath string, addr string, author string) error {
+	if err := runPack(srcPath, author); err != nil {
 		return fmt.Errorf("pack: %w", err)
 	}
 

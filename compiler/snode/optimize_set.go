@@ -68,52 +68,35 @@ func optimizeSetShifted(s Func) SNode {
 	return s
 }
 
-// setFuncOps lists every arithmetic op that has a compound-assignment (Set/SetShifted)
-// counterpart. Both setFuncMap and setShiftedFuncMap are built from this single list.
-var setFuncOps = []resource.RuntimeFunction{
-	resource.RuntimeFunctionAdd,
-	resource.RuntimeFunctionSubtract,
-	resource.RuntimeFunctionMultiply,
-	resource.RuntimeFunctionDivide,
-	resource.RuntimeFunctionPower,
-	resource.RuntimeFunctionMod,
-	resource.RuntimeFunctionRem,
+// setFuncMap maps arithmetic ops to their compound-assignment counterparts
+// using explicit sonolus-core-go RuntimeFunction constants.
+var setFuncMap = map[resource.RuntimeFunction]resource.RuntimeFunction{
+	resource.RuntimeFunctionAdd:      resource.RuntimeFunctionSetAdd,
+	resource.RuntimeFunctionSubtract: resource.RuntimeFunctionSetSubtract,
+	resource.RuntimeFunctionMultiply: resource.RuntimeFunctionSetMultiply,
+	resource.RuntimeFunctionDivide:   resource.RuntimeFunctionSetDivide,
+	resource.RuntimeFunctionPower:    resource.RuntimeFunctionSetPower,
+	resource.RuntimeFunctionMod:      resource.RuntimeFunctionSetMod,
+	resource.RuntimeFunctionRem:      resource.RuntimeFunctionSetRem,
 }
-
-// setFuncMap maps arithmetic ops to their compound-assignment counterparts.
-// Built in init() from setFuncOps so the key set is defined once.
-var setFuncMap = makeSetFuncMap(false)
 
 // setShiftedFuncMap mirrors setFuncMap for the Shifted variants.
-// Built in init() from setFuncOps so the key set is defined once.
-var setShiftedFuncMap = makeSetFuncMap(true)
-
-func makeSetFuncMap(shifted bool) map[resource.RuntimeFunction]resource.RuntimeFunction {
-	m := make(map[resource.RuntimeFunction]resource.RuntimeFunction, len(setFuncOps))
-	for _, op := range setFuncOps {
-		if shifted {
-			m[op] = resource.RuntimeFunction("Set" + string(op) + "Shifted")
-		} else {
-			m[op] = resource.RuntimeFunction("Set" + string(op))
-		}
-	}
-	return m
+var setShiftedFuncMap = map[resource.RuntimeFunction]resource.RuntimeFunction{
+	resource.RuntimeFunctionAdd:      resource.RuntimeFunctionSetAddShifted,
+	resource.RuntimeFunctionSubtract: resource.RuntimeFunctionSetSubtractShifted,
+	resource.RuntimeFunctionMultiply: resource.RuntimeFunctionSetMultiplyShifted,
+	resource.RuntimeFunctionDivide:   resource.RuntimeFunctionSetDivideShifted,
+	resource.RuntimeFunctionPower:    resource.RuntimeFunctionSetPowerShifted,
+	resource.RuntimeFunctionMod:      resource.RuntimeFunctionSetModShifted,
+	resource.RuntimeFunctionRem:      resource.RuntimeFunctionSetRemShifted,
 }
 
-// setFunc maps an arithmetic function to its compound-assignment counterpart,
-// e.g. Add -> SetAdd. Uses an explicit mapping table with a string-concat
-// fallback for forward compatibility.
+// setFunc maps an arithmetic function to its compound-assignment counterpart.
 func setFunc(fn resource.RuntimeFunction) resource.RuntimeFunction {
-	if m, ok := setFuncMap[fn]; ok {
-		return m
-	}
-	return resource.RuntimeFunction("Set" + string(fn))
+	return setFuncMap[fn]
 }
 
 // setShiftedFunc mirrors setFunc for the Shifted variants.
 func setShiftedFunc(fn resource.RuntimeFunction) resource.RuntimeFunction {
-	if m, ok := setShiftedFuncMap[fn]; ok {
-		return m
-	}
-	return resource.RuntimeFunction("Set" + string(fn) + "Shifted")
+	return setShiftedFuncMap[fn]
 }

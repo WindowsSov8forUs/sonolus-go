@@ -16,6 +16,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,10 +86,7 @@ func (env *referenceTestEnv) compileJSBridge(tsSource string) (*resource.EngineP
 	cmd.Args = append(cmd.Args, tmpFile.Name())
 	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, &exec.ExitError{Stderr: exitErr.Stderr}
-		}
-		return nil, err
+		return nil, fmt.Errorf("js bridge compile failed: %w", err)
 	}
 
 	var data resource.EnginePlayData

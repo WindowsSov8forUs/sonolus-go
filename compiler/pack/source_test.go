@@ -96,7 +96,10 @@ func TestEmitPackSourceWithROM(t *testing.T) {
 	if _, err := os.Stat(romPath); err != nil {
 		t.Errorf("rom should exist: %v", err)
 	}
-	romData, _ := os.ReadFile(romPath)
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(romData) != 4 || romData[0] != 1 {
 		t.Errorf("rom content mismatch: %v", romData)
 	}
@@ -134,6 +137,7 @@ func TestEmitDefaultItems(t *testing.T) {
 		// Verify item.json is valid JSON with required fields
 		itemJSON, err := os.ReadFile(filepath.Join(d, "item.json"))
 		if err != nil {
+			t.Errorf("%s item.json read: %v", c.desc, err)
 			continue
 		}
 		var item map[string]any
@@ -172,7 +176,10 @@ func TestCDNGeneration(t *testing.T) {
 	}
 
 	// Verify level references the engine
-	itemJSON, _ := os.ReadFile(filepath.Join(dir, "levels", "demo", "item.json"))
+	itemJSON, err := os.ReadFile(filepath.Join(dir, "levels", "demo", "item.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	var item map[string]any
 	if err := json.Unmarshal(itemJSON, &item); err != nil {
 		t.Fatal(err)

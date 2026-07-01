@@ -72,13 +72,5 @@ func mapChildren(n Node, fn func(Node) Node) Node {
 // but returns Place specifically. SSAPlace is returned as-is (it has no
 // children). The caller is responsible for calling fn on the result if needed.
 func mapPlaceChildren(p Place, fn func(Node) Node) Place {
-	if bp, ok := p.(BlockPlace); ok {
-		idx := bp.Index
-		if idx != nil {
-			idx = Map(idx, fn)
-		}
-		return BlockPlace{Block: Map(bp.Block, fn), Index: idx, Offset: bp.Offset}
-	}
-	// SSAPlace — leaf.
-	return p
+	return mapChildren(p, fn).(Place)
 }
