@@ -3,7 +3,6 @@ package engine
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"reflect"
 
@@ -54,16 +53,13 @@ func CompilePlayFile(src string) (*resource.EnginePlayData, *resource.EngineConf
 // is non-nil and opts.Stats is non-nil, per-callback compilation timing is
 // recorded.
 func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "engine.go", src, 0)
+	pes, err := parseEngineSource(src)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parse: %w", err)
+		return nil, nil, err
 	}
 
 	archetypes := map[string]*parsedArchetype{}
 	var order []string
-	funcs := map[string]*ast.FuncDecl{}
-	resourceASTs := map[string]*ast.StructType{}
 
 	get := func(name string) *parsedArchetype {
 		a, ok := archetypes[name]
@@ -75,49 +71,26 @@ func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.Engin
 		return a
 	}
 
-	for _, decl := range file.Decls {
-		switch d := decl.(type) {
-		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				st, ok := ts.Type.(*ast.StructType)
-				if !ok {
-					continue
-				}
-				if resourceRole(ts.Name.Name) != "" {
-					resourceASTs[ts.Name.Name] = st
-				} else if err := parseFields(get(ts.Name.Name), st); err != nil {
-					return nil, nil, err
-				}
-			}
-		case *ast.FuncDecl:
-			if d.Recv == nil || len(d.Recv.List) == 0 {
-				if d.Body != nil {
-					funcs[d.Name.Name] = d
-				}
-				continue
-			}
-			typeName, recvName := receiverInfo(d.Recv.List[0])
-			if typeName == "" {
-				continue
-			}
-			a := get(typeName)
-			if cb, ok := methodCallbacks[d.Name.Name]; ok {
-				a.methods = append(a.methods, parsedMethod{callback: cb, receiver: recvName, body: d.Body})
-			} else if d.Body != nil {
-				a.helpers[d.Name.Name] = d
-			}
+	for _, td := range pes.typeDecls {
+		if err := parseFields(get(td.name), td.structType); err != nil {
+			return nil, nil, err
 		}
 	}
 
-	r, err := buildResources(resourceASTs)
+	for _, m := range pes.methods {
+		a := get(m.receiverType)
+		if cb, ok := methodCallbacks[m.methodName]; ok {
+			a.methods = append(a.methods, parsedMethod{callback: cb, receiver: m.receiverName, body: m.funcDecl.Body})
+		} else if m.funcDecl.Body != nil {
+			a.helpers[m.methodName] = m.funcDecl
+		}
+	}
+
+	r, err := buildResources(pes.resources)
 	if err != nil {
 		return nil, nil, err
 	}
-	return compileParsed(fset, archetypes, order, funcs, r, opts)
+	return compileParsed(pes.fset, archetypes, order, pes.funcs, r, opts)
 }
 
 func receiverInfo(field *ast.Field) (typeName, recvName string) {

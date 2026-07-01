@@ -1,9 +1,7 @@
 package engine
 
 import (
-	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"sort"
 	"time"
@@ -48,16 +46,13 @@ var previewCBs = map[string]string{
 }
 
 func parseModeFile(src string) (*parsedModeFile, error) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "engine.go", src, 0)
+	pes, err := parseEngineSource(src)
 	if err != nil {
-		return nil, fmt.Errorf("parse: %w", err)
+		return nil, err
 	}
 
 	arcs := map[string]*modeArch{}
 	var order []string
-	funcs := map[string]*ast.FuncDecl{}
-	resources := map[string]*ast.StructType{}
 
 	get := func(name string) *modeArch {
 		a, ok := arcs[name]
@@ -69,54 +64,30 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 		return a
 	}
 
-	for _, decl := range file.Decls {
-		switch d := decl.(type) {
-		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				st, ok := ts.Type.(*ast.StructType)
-				if !ok {
-					continue
-				}
-				if resourceRole(ts.Name.Name) != "" {
-					resources[ts.Name.Name] = st
-					continue
-				}
-				a := get(ts.Name.Name)
-				tc := &tagCollector{
-					imported: &a.imported,
-					memory:   &a.memory,
-					data:     &a.data,
-					shared:   &a.shared,
-					input:    &a.input,
-					despawn:  &a.despawn,
-					info:     &a.info,
-				}
-				for _, f := range st.Fields.List {
-					collectSonolusTags(f, tc)
-				}
-			}
-		case *ast.FuncDecl:
-			if d.Recv == nil || len(d.Recv.List) == 0 {
-				if d.Body != nil {
-					funcs[d.Name.Name] = d
-				}
-				continue
-			}
-			typeName, recvName := receiverInfo(d.Recv.List[0])
-			if typeName == "" {
-				continue
-			}
-			a := get(typeName)
-			if d.Body != nil {
-				a.methods = append(a.methods, modeMethod{methodName: d.Name.Name, receiver: recvName, body: d.Body})
-			}
+	for _, td := range pes.typeDecls {
+		a := get(td.name)
+		tc := &tagCollector{
+			imported: &a.imported,
+			memory:   &a.memory,
+			data:     &a.data,
+			shared:   &a.shared,
+			input:    &a.input,
+			despawn:  &a.despawn,
+			info:     &a.info,
+		}
+		for _, f := range td.structType.Fields.List {
+			collectSonolusTags(f, tc)
 		}
 	}
-	return &parsedModeFile{fset: fset, arcs: arcs, order: order, funcs: funcs, resources: resources}, nil
+
+	for _, m := range pes.methods {
+		a := get(m.receiverType)
+		if m.funcDecl.Body != nil {
+			a.methods = append(a.methods, modeMethod{methodName: m.methodName, receiver: m.receiverName, body: m.funcDecl.Body})
+		}
+	}
+
+	return &parsedModeFile{fset: pes.fset, arcs: arcs, order: order, funcs: pes.funcs, resources: pes.resources}, nil
 }
 
 func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string]frontend.Binding) {
