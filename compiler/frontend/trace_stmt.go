@@ -249,7 +249,7 @@ func (t *tracer) incDec(n *ast.IncDecStmt) error {
 // arrayDecl handles `fnName := array(count)` and `fnName := array[Type](count)`:
 // it reserves a multi-slot temp. For record types, each element occupies elemSize
 // slots and can be indexed with `.Field` access.
-func (t *tracer) arrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
+func (t *tracer) arrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 	if len(call.Args) != 1 {
 		return t.errf(call, "array expects a constant size")
 	}
@@ -280,7 +280,7 @@ func (t *tracer) arrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 		}
 	}
 	ai := &arrayInfo{
-		tb:       &ir.TempBlock{Name: fnName.Name, Size: int(size.c) * elemSize},
+		tb:       &ir.TempBlock{Name: arrName.Name, Size: int(size.c) * elemSize},
 		count:    int(size.c),
 		elemSize: elemSize,
 	}
@@ -290,7 +290,7 @@ func (t *tracer) arrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 		elems[i] = exprNum(ir.GetPlace(ir.BlockPlace{Block: ai.tb, Index: ir.Const(i * elemSize), Offset: 0}))
 	}
 	ai.elemNum = arrayNum(elems)
-	t.arrays[fnName.Name] = ai
+	t.arrays[arrName.Name] = ai
 	return nil
 }
 
@@ -298,7 +298,7 @@ func (t *tracer) arrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 // TempBlock of size 1+capacity (slot 0 = _size, slots 1..capacity = elements),
 // creates a recordInfo for field tracking (so method dispatch works), and stores
 // a containerInfo for methods that need the backing array.
-func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
+func (t *tracer) varArrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 	fnIdent, ok := call.Fun.(*ast.Ident)
 	if !ok {
 		return t.errf(call, "varArray/arrayMap constructor must be called by name, not expression")
@@ -320,7 +320,7 @@ func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 	}
 	totalSlots := 1 + capacity*elemSize // slot 0 = _size, rest = elements
 
-	tb := &ir.TempBlock{Name: fnName.Name, Size: totalSlots}
+	tb := &ir.TempBlock{Name: arrName.Name, Size: totalSlots}
 
 	// Build the composite Num: _size=0, _array as a placeholder (indexed access
 	// will use the TempBlock directly via BlockPlace).
@@ -338,7 +338,7 @@ func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 		val:      compNum(fields),
 		typeName: fnIdent.Name, // "varArray" or "arrayMap"
 	}
-	t.records[fnName.Name] = ri
+	t.records[arrName.Name] = ri
 
 	es := 1
 	if fnIdent.Name == "arrayMap" {
@@ -352,7 +352,7 @@ func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 		elemSize: es,
 		val:      ri.val,
 	}
-	t.containers[fnName.Name] = ci
+	t.containers[arrName.Name] = ci
 
 	return nil
 }
@@ -360,12 +360,12 @@ func (t *tracer) varArrayDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 // arraySetDecl handles `s := arraySet(capacity)`. It uses the same backing layout
 // as varArrayDecl (1+capacity slots) but sets typeName to "arraySet" so method
 // dispatch routes to arraySet methods.
-func (t *tracer) arraySetDecl(fnName *ast.Ident, call *ast.CallExpr) error {
-	if err := t.varArrayDecl(fnName, call); err != nil {
+func (t *tracer) arraySetDecl(arrName *ast.Ident, call *ast.CallExpr) error {
+	if err := t.varArrayDecl(arrName, call); err != nil {
 		return err
 	}
 	// Override the typeName so method dispatch uses recordMethods["arraySet"].
-	if ri, ok := t.records[fnName.Name]; ok {
+	if ri, ok := t.records[arrName.Name]; ok {
 		ri.typeName = "arraySet"
 	}
 	return nil
@@ -374,10 +374,10 @@ func (t *tracer) arraySetDecl(fnName *ast.Ident, call *ast.CallExpr) error {
 // arrayElemPlace builds the place for a[index]. For scalar arrays the place is
 // `Block(arr.tb, index)`. For record arrays (elemSize > 1), the slot is
 // `index * elemSize + fieldOffset` with fieldOffset in the Place.Offset.
-func (t *tracer) arrayElemPlace(fnName *ast.Ident, indexExpr ast.Expr) (ir.BlockPlace, error) {
-	arr, ok := t.arrays[fnName.Name]
+func (t *tracer) arrayElemPlace(arrName *ast.Ident, indexExpr ast.Expr) (ir.BlockPlace, error) {
+	arr, ok := t.arrays[arrName.Name]
 	if !ok {
-		return ir.BlockPlace{}, t.errf(fnName, "undefined array %q", fnName.Name)
+		return ir.BlockPlace{}, t.errf(arrName, "undefined array %q", arrName.Name)
 	}
 	index, err := t.expr(indexExpr)
 	if err != nil {
@@ -498,7 +498,7 @@ func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
 // recordDecl handles `fnName := vec2(x, y)` (and future record constructors): it
 // reserves a temp with one slot per field, stores the initializers, and tracks
 // each field as an individual Num for scalar-replaceable reads.
-func (t *tracer) recordDecl(fnName *ast.Ident, call *ast.CallExpr, fields []string) error {
+func (t *tracer) recordDecl(varName *ast.Ident, call *ast.CallExpr, fields []string) error {
 	fnIdent, ok := call.Fun.(*ast.Ident)
 	if !ok {
 		return t.errf(call, "record constructor must be called by name, not expression")
@@ -508,7 +508,7 @@ func (t *tracer) recordDecl(fnName *ast.Ident, call *ast.CallExpr, fields []stri
 	}
 	typeName := fnIdent.Name
 	rec := &recordInfo{
-		tb:       &ir.TempBlock{Name: fnName.Name, Size: len(fields)},
+		tb:       &ir.TempBlock{Name: varName.Name, Size: len(fields)},
 		fields:   map[string]int{},
 		order:    fields,
 		typeName: typeName,
@@ -526,7 +526,7 @@ func (t *tracer) recordDecl(fnName *ast.Ident, call *ast.CallExpr, fields []stri
 		fieldVals[fields[i]] = val
 	}
 	rec.val = compNum(fieldVals)
-	t.records[fnName.Name] = rec
+	t.records[varName.Name] = rec
 	return nil
 }
 
