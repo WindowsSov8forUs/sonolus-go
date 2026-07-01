@@ -71,19 +71,19 @@ func EmitDefaultItems(dir string, engineName string) error {
 	levelName := "demo"
 
 	if err := emitDefaultSkin(dir, skinName); err != nil {
-		return fmt.Errorf("default skin: %w", err)
+		return fmt.Errorf("pack: default skin: %w", err)
 	}
 	if err := emitDefaultBackground(dir, bgName); err != nil {
-		return fmt.Errorf("default background: %w", err)
+		return fmt.Errorf("pack: default background: %w", err)
 	}
 	if err := emitDefaultEffect(dir, effectName); err != nil {
-		return fmt.Errorf("default effect: %w", err)
+		return fmt.Errorf("pack: default effect: %w", err)
 	}
 	if err := emitDefaultParticle(dir, particleName); err != nil {
-		return fmt.Errorf("default particle: %w", err)
+		return fmt.Errorf("pack: default particle: %w", err)
 	}
 	if err := emitDefaultLevel(dir, levelName, engineName, skinName, bgName, effectName, particleName); err != nil {
-		return fmt.Errorf("default level: %w", err)
+		return fmt.Errorf("pack: default level: %w", err)
 	}
 	return nil
 }
@@ -106,7 +106,7 @@ func emitDefaultSkin(dir, name string) error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("marshal skin data: %w", err)
+		return fmt.Errorf("pack: marshal skin data: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
@@ -133,14 +133,14 @@ func emitDefaultBackground(dir, name string) error {
 	}
 	data, err := json.Marshal(resource.BackgroundData{Fit: resource.FitWidth, Color: "#000000"})
 	if err != nil {
-		return fmt.Errorf("marshal background data: %w", err)
+		return fmt.Errorf("pack: marshal background data: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
 	}
 	cfg, err := json.Marshal(resource.BackgroundConfiguration{Blur: 0, Mask: "#000000"})
 	if err != nil {
-		return fmt.Errorf("marshal background config: %w", err)
+		return fmt.Errorf("pack: marshal background config: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(d, "configuration"), cfg, defaultFileMode); err != nil {
 		return err
@@ -169,7 +169,7 @@ func emitDefaultEffect(dir, name string) error {
 	}
 	data, err := json.Marshal(resource.EngineEffectData{})
 	if err != nil {
-		return fmt.Errorf("marshal effect data: %w", err)
+		return fmt.Errorf("pack: marshal effect data: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
@@ -197,7 +197,7 @@ func emitDefaultParticle(dir, name string) error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("marshal particle data: %w", err)
+		return fmt.Errorf("pack: marshal particle data: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err
@@ -224,7 +224,7 @@ func emitDefaultLevel(dir, name, engineName, skin, bg, effect, particle string) 
 	}
 	data, err := json.Marshal(resource.LevelData{})
 	if err != nil {
-		return fmt.Errorf("marshal level data: %w", err)
+		return fmt.Errorf("pack: marshal level data: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(d, "data"), data, defaultFileMode); err != nil {
 		return err

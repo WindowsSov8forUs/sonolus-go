@@ -320,11 +320,6 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return vec2Statics["left"](), true, nil
 	case "vec2Right":
 		return vec2Statics["right"](), true, nil
-	default:
-		if fields, ok := builtinRecordFields(fn.Name); ok {
-			r, err := t.inlineComposite(fn, n, fields)
-			return r, true, err
-		}
 	case "varArray", "arrayMap":
 		// varArray(capacity) / arrayMap(capacity) — capacity must be constant.
 		if len(n.Args) != 1 {
@@ -361,6 +356,11 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 	case "debugTerminate":
 		t.terminated = true
 		return constNum(0), true, nil
+	default:
+		if fields, ok := builtinRecordFields(fn.Name); ok {
+			r, err := t.inlineComposite(fn, n, fields)
+			return r, true, err
+		}
 	}
 	return Num{}, false, nil
 }

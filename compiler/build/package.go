@@ -75,7 +75,7 @@ func PackageNonPlay(cfg *resource.EngineConfiguration, rom []byte, data any, fil
 	case FileTutorialData:
 		p.TutorialData = blob
 	default:
-		return nil, fmt.Errorf("pack: unknown non-play mode file key %q", fileKey)
+		return nil, fmt.Errorf("build: unknown non-play mode file key %q", fileKey)
 	}
 	return p, nil
 }

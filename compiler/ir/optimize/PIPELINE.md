@@ -71,10 +71,13 @@ interference-graph allocation.
 | FAST | `TryAllocateBasic` (sequential with fallback) | `TryAllocateBasic` (sequential with fallback to AllocateLive) |
 | STANDARD | `Allocate` (liveness-aware) | `AllocateLive` (liveness-based linear scan) |
 
-**Rationale:** Go uses `AllocateBasic` for MINIMAL/FAST to keep compilation
-fast, and `AllocateLive` (interval-packing linear scan) for STANDARD to produce
-compact output. Python's `AllocateFast` and `TryAllocateBasic` tiered
-strategies are not yet implemented; implementing them is tracked as P2 step 2-1.
+**Rationale:** Go uses `AllocateBasic` (sequential) for MINIMAL, `TryAllocateBasic`
+(tiered: sequential with fallback to `AllocateLive`) for FAST, and `AllocateLive`
+(interval-packing linear scan) for STANDARD. The `TryAllocateBasic` fallback goes
+directly to `AllocateLive` rather than Python's intermediate `AllocateFast`, which
+provides equivalent output quality at marginally higher cost on spill — a pragmatic
+trade-off given that spill is rare in practice. Python's `AllocateFast` intermediate
+tier is tracked as a potential future optimization (NOTE, not required).
 
 ## Analysis Pass Model Difference
 

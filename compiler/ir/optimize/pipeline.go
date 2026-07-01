@@ -6,7 +6,7 @@
 //   - UnflattenAssociativeOps after FromSSA to clean up SSA destruction
 //   - Extra cleanup round (Coalesce + UCE + DCE) after AdvancedDCE
 //   - RenumberVars at end of Standard for deterministic output
-//   - Unified AllocateLive for all levels (Python has tiered allocation)
+//   - Tiered allocation: AllocateBasic (Minimal), TryAllocateBasic (Fast), AllocateLive (Standard)
 //
 // See PIPELINE.md for the full divergence rationale and pass-by-pass comparison.
 package optimize

@@ -37,7 +37,7 @@ func skinRenderMode(st *ast.StructType) resource.EngineRenderMode {
 // index (ID), or an error if the name is unknown or no Skin struct was declared.
 func spriteID(skinST *ast.StructType, name string) (int, error) {
 	if skinST == nil {
-		return 0, fmt.Errorf("unknown sprite name %q (no skin struct declared)", name)
+		return 0, fmt.Errorf("engine: unknown sprite name %q (no skin struct declared)", name)
 	}
 	id := 0
 	for _, f := range skinST.Fields.List {
@@ -48,5 +48,5 @@ func spriteID(skinST *ast.StructType, name string) (int, error) {
 			id++
 		}
 	}
-	return 0, fmt.Errorf("unknown sprite name %q", name)
+	return 0, fmt.Errorf("engine: unknown sprite name %q", name)
 }

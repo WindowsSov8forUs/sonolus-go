@@ -172,7 +172,7 @@ func uiSetEase(field uiField[resource.EngineConfigurationAnimationTweenEase]) fu
 	return func(ui *resource.EngineConfigurationUI, v string) error {
 		e, ok := easeName[v]
 		if !ok {
-			return fmt.Errorf("unknown ease %q", v)
+			return fmt.Errorf("engine: unknown ease %q", v)
 		}
 		*field(ui) = e
 		return nil
@@ -184,7 +184,7 @@ func uiSetMetric(field uiField[resource.EngineConfigurationMetric]) func(*resour
 	return func(ui *resource.EngineConfigurationUI, v string) error {
 		m, ok := metricName[v]
 		if !ok {
-			return fmt.Errorf("unknown metric %q", v)
+			return fmt.Errorf("engine: unknown metric %q", v)
 		}
 		*field(ui) = m
 		return nil
@@ -196,7 +196,7 @@ func uiSetJudgmentStyle(field uiField[resource.EngineConfigurationJudgmentErrorS
 	return func(ui *resource.EngineConfigurationUI, v string) error {
 		s, ok := judgmentErrorStyleName[v]
 		if !ok {
-			return fmt.Errorf("unknown judgmentErrorStyle %q", v)
+			return fmt.Errorf("engine: unknown judgmentErrorStyle %q", v)
 		}
 		*field(ui) = s
 		return nil
@@ -208,7 +208,7 @@ func uiSetJudgmentPlacement(field uiField[resource.EngineConfigurationJudgmentEr
 	return func(ui *resource.EngineConfigurationUI, v string) error {
 		p, ok := judgmentErrorPlacementName[v]
 		if !ok {
-			return fmt.Errorf("unknown judgmentErrorPlacement %q", v)
+			return fmt.Errorf("engine: unknown judgmentErrorPlacement %q", v)
 		}
 		*field(ui) = p
 		return nil
@@ -304,7 +304,7 @@ func buildUI(st *ast.StructType) (resource.EngineConfigurationUI, error) {
 		}
 		set, ok := uiSetters[k]
 		if !ok {
-			return resource.EngineConfigurationUI{}, fmt.Errorf("unknown UI field %q", k)
+			return resource.EngineConfigurationUI{}, fmt.Errorf("engine: unknown UI field %q", k)
 		}
 		if err := set(&ui, v); err != nil {
 			return resource.EngineConfigurationUI{}, fmt.Errorf("UI field %q: %w", k, err)

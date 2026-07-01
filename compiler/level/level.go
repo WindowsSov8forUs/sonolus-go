@@ -29,7 +29,7 @@ type LevelEntity struct {
 func CompileLevel(src string) (*resource.LevelData, error) {
 	var in InputLevel
 	if err := json.Unmarshal([]byte(src), &in); err != nil {
-		return nil, fmt.Errorf("parse level JSON: %w", err)
+		return nil, fmt.Errorf("level: parse JSON: %w", err)
 	}
 	var entities []resource.LevelDataEntity
 	for _, e := range in.Entities {
@@ -37,7 +37,7 @@ func CompileLevel(src string) (*resource.LevelData, error) {
 		for _, raw := range e.Data {
 			d, err := resource.DecodeLevelDataEntityData(raw)
 			if err != nil {
-				return nil, fmt.Errorf("entity %q: %w", e.Archetype, err)
+				return nil, fmt.Errorf("level: entity %q: %w", e.Archetype, err)
 			}
 			data = append(data, d)
 		}
@@ -58,7 +58,7 @@ func CompileLevel(src string) (*resource.LevelData, error) {
 func PackageLevel(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading level: %w", err)
+		return nil, fmt.Errorf("level: read: %w", err)
 	}
 	level, err := CompileLevel(string(data))
 	if err != nil {

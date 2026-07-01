@@ -44,12 +44,12 @@ type CompiledEngine struct {
 func EmitPackSource(dir string, name string, c CompiledEngine, meta EngineItemMeta) error {
 	engineDir := filepath.Join(dir, "engines", name)
 	if err := os.MkdirAll(engineDir, 0755); err != nil {
-		return fmt.Errorf("creating engine dir: %w", err)
+		return fmt.Errorf("pack: create engine dir: %w", err)
 	}
 
 	// Write thumbnail (required by sonolus-pack-go; a minimal 1x1 PNG).
 	if err := os.WriteFile(filepath.Join(engineDir, "thumbnail"), minPNG, 0644); err != nil {
-		return fmt.Errorf("writing engine thumbnail: %w", err)
+		return fmt.Errorf("pack: write engine thumbnail: %w", err)
 	}
 
 	// Write raw JSON data files (pack-go gzips them itself).
@@ -84,7 +84,7 @@ func EmitPackSource(dir string, name string, c CompiledEngine, meta EngineItemMe
 		if len(romData) >= 2 && romData[0] == 0x1f && romData[1] == 0x8b {
 			rawROM, err := codec.Decompress[[]byte](romData)
 			if err != nil {
-				return fmt.Errorf("decompressing ROM for pack source: %w", err)
+				return fmt.Errorf("pack: decompress ROM: %w", err)
 			}
 			romData = rawROM
 		}
