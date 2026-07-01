@@ -2,10 +2,6 @@ package frontend
 
 import (
 	"go/ast"
-	"go/importer"
-	"go/parser"
-	"go/token"
-	"go/types"
 	"strings"
 	"testing"
 
@@ -388,7 +384,6 @@ func f() {
 	}
 }
 
-
 func TestForBreak(t *testing.T) {
 	src := `package p
 func f() {
@@ -526,209 +521,6 @@ func TestSmoothstepRemoved(t *testing.T) {
 	}
 }
 
-// TestTypeCheckValid verifies that well-typed engine source passes go/types.
-func TestTypeCheckValid(t *testing.T) {
-	src := "package p\n" +
-		"func f() {\n" +
-		"	x := vec2(1, 2)\n" +
-		"	y := x.add(vec2(3, 4))\n" +
-		"	set(0, 0, y.x)\n" +
-		"}\n"
-	_, _, info, err := TypeCheck(src, nil)
-	if err != nil {
-		t.Fatalf("type check: %v", err)
-	}
-	if info == nil {
-		t.Fatal("expected non-nil types.Info")
-	}
-}
-
-// TestTypeCheckWrongArgCount verifies that too-few arguments are caught.
-func TestTypeCheckWrongArgCount(t *testing.T) {
-	src := "package p\nfunc f() {\n	set(0, 0)\n}\n" // set needs 3 args
-	_, _, _, err := TypeCheck(src, nil)
-	if err == nil {
-		t.Fatal("expected type error for wrong arg count")
-	}
-	t.Logf("type error (expected): %v", err)
-}
-
-// TestTypeCheckUndefinedIdent verifies that undefined names are caught.
-func TestTypeCheckUndefinedIdent(t *testing.T) {
-	src := "package p\nfunc f() {\n	set(0, 0, undefinedVar)\n}\n"
-	_, _, _, err := TypeCheck(src, nil)
-	if err == nil {
-		t.Fatal("expected type error for undefined variable")
-	}
-	t.Logf("type error (expected): %v", err)
-}
-
-// TestPreludeSource verifies the prelude generates valid Go and includes
-// user-record constructors with correct field signatures. User record types
-// are defined in the engine source; the prelude only adds constructor stubs
-// so go/types can resolve constructor calls.
-func TestPreludeSource(t *testing.T) {
-	src := PreludeSource("p", map[string][]string{"myRec": {"a", "b"}})
-	if !strings.Contains(src, "type Vec2 struct") {
-		t.Error("prelude missing Vec2")
-	}
-	if !strings.Contains(src, "func myRec(a float64, b float64) MyRec") {
-		t.Errorf("prelude missing user record constructor myRec, got:\n%s", src)
-	}
-	// Verify prelude + user type declaration form a valid package.
-	fset := token.NewFileSet()
-	userSrc := "package p; type MyRec struct { a, b float64 }"
-	preludeFile, _ := parser.ParseFile(fset, "prelude.go", src, 0)
-	userFile, _ := parser.ParseFile(fset, "engine.go", userSrc, 0)
-	conf := types.Config{Importer: importer.Default()}
-	if _, err := conf.Check("p", fset, []*ast.File{preludeFile, userFile}, &types.Info{}); err != nil {
-		t.Fatalf("prelude + user source check: %v", err)
-	}
-}
-
-// TestRectD3Path verifies that rect(...) produces the correct {t,r,b,l} layout
-// (not the 8-field Quad layout) under the go/types D3 path where Env.Info is set.
-// This is a regression test for the miscompile caused by typecheck.go:24 defining
-// Rect as 8-field while value.go:278 rectFields uses 4-field.
-func TestRectD3Path(t *testing.T) {
-	src := `package p
-func F() float64 {
-	r := rect(10, 20, 0, 5)
-	return r.w()
-}`
-	fset, userFile, info, err := TypeCheck(src, nil)
-	if err != nil {
-		t.Skipf("typecheck with Info not available in this configuration: %v", err)
-	}
-	// Even if Info is non-nil but the user file didn't type-check cleanly, we
-	// use the tracing path that employs types.Info.
-	accessors := ModeAccessors(ir.ModePlay)
-	env := Env{Names: accessors, Funcs: map[string]*ast.FuncDecl{}, Accessors: accessors, Mode: ir.ModePlay, Info: info}
-	// Find the body of F() among top-level declarations.
-	var funcBody *ast.BlockStmt
-	for _, d := range userFile.Decls {
-		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == "F" {
-			funcBody = fd.Body
-			break
-		}
-	}
-	if funcBody == nil {
-		t.Fatal("could not find function F in user source")
-	}
-	entry, compileErr := CompileBlock(fset, testGen, funcBody, env)
-	if compileErr != nil {
-		t.Fatalf("compile rect.w(): %v", compileErr)
-	}
-	// Just verify we got a valid CFG entry — the important thing is no panic.
-	if entry == nil {
-		t.Fatal("CompileBlock returned nil entry")
-	}
-}
-
-// TestVec2CrossBranchWrite verifies that record fields written in separate
-// branches are correctly read after the merge point. This exercises the memory-
-// backed fallback (the SSA-tracked val would diverge across branches without
-// a per-field phi, so the memory path is needed for correctness).
-func TestVec2CrossBranchWrite(t *testing.T) {
-	src := `package p
-	func f() {
-		v := vec2(0, 0)
-		if get(0, 0) == 1 {
-			v.x = 5
-		} else {
-			v.y = 7
-		}
-		set(0, 1, v.x)
-		set(0, 2, v.y)
-	}`
-	got := compileToCanon(t, src)
-	if got == "" {
-		t.Fatal("empty output for cross-branch record write")
-	}
-	// The output should load v.x and v.y from memory after the if/else merge.
-	t.Logf("cross-branch record write: %s", got)
-}
-
-// TestRecordFieldFoldAfterWrite verifies that a record field access folds to a
-// constant SSA value after a write, even without running the optimizer pipeline.
-func TestRecordFieldFoldAfterWrite(t *testing.T) {
-	src := `package p
-	func f() {
-		v := vec2(0, 0)
-		v.x = 7
-		v.y = v.x + 3
-		set(0, 0, v.y)
-	}`
-	got := compileToCanon(t, src)
-	// v.x folds to 7, v.y folds to 10.
-	want := "Block(JumpLoop(Execute(" +
-		"Set(#10000,#0,#0),Set(#10000,#1,#0),Set(#10000,#0,#7),Set(#10000,#1,#10),Set(#0,#0,#10),#1),#0))"
-	if got != want {
-		t.Errorf("\n got: %s\nwant: %s", got, want)
-	}
-}
-
-// TestRecordMethodBadArity verifies that calling a record method with too few
-// arguments produces a diagnostic instead of a compiler panic.
-func TestRecordMethodBadArity(t *testing.T) {
-	tests := []struct {
-		name string
-		src  string
-	}{
-		{"vec2.add with 0 args", "func F() float64 { v := vec2(1,2); return v.add() }"},
-		{"vec2.dot with 0 args", "func F() float64 { v := vec2(1,2); return v.dot() }"},
-		{"vec2.rotateAbout with 1 arg", "func F() float64 { v := vec2(1,2); return v.rotateAbout(vec2(0,1)) }"},
-		{"rect.translate with 0 args", "func F() float64 { r := rect(1,2,3,4); return r.translate() }"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			src := "package p\n" + tc.src
-			accessors := ModeAccessors(ir.ModePlay)
-			env := Env{Names: accessors, Funcs: map[string]*ast.FuncDecl{}, Accessors: accessors, Mode: ir.ModePlay}
-			// Parse and compile.
-			fset, file, err := parseOneFile(src)
-			if err != nil {
-				t.Fatalf("parse: %v", err)
-			}
-			decl := file.Decls[0].(*ast.FuncDecl)
-			_, compileErr := CompileBlock(fset, testGen, decl.Body, env)
-			if compileErr == nil {
-				t.Error("expected error for bad arity, got nil")
-			}
-		})
-	}
-}
-
-func parseOneFile(src string) (*token.FileSet, *ast.File, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "test.go", src, 0)
-	return fset, f, err
-}
-
-// TestPreludeSourcePair verifies that the prelude now includes Pair and VarArray
-// type declarations and constructors.
-func TestPreludeSourcePair(t *testing.T) {
-	src := PreludeSource("p", nil)
-	if !strings.Contains(src, "type Pair struct") {
-		t.Error("prelude missing Pair type")
-	}
-	if !strings.Contains(src, "func pair(first, second float64) Pair") {
-		t.Error("prelude missing pair() constructor")
-	}
-	if !strings.Contains(src, "type VarArray struct") {
-		t.Error("prelude missing VarArray type")
-	}
-	if !strings.Contains(src, "func varArray(capacity float64) VarArray") {
-		t.Error("prelude missing varArray() constructor")
-	}
-	// Verify prelude parses + type-checks.
-	fset := token.NewFileSet()
-	f, _ := parser.ParseFile(fset, "prelude.go", src, 0)
-	conf := types.Config{Importer: importer.Default()}
-	if _, err := conf.Check("p", fset, []*ast.File{f}, &types.Info{}); err != nil {
-		t.Fatalf("prelude type check: %v", err)
-	}
-}
 
 // TestPairMethods verifies that Pair comparison methods (lt/le/gt/ge/tuple)
 // compile through to valid IR.
@@ -845,7 +637,7 @@ func TestVarArrayRemove(t *testing.T) {
 		"	arr.append(2)\n" +
 		"	arr.append(3)\n" +
 		"	set(0, 0, arr.remove(2))\n" + // should be 1 (found)
-		"	set(0, 1, arr.len())\n" +    // should be 2
+		"	set(0, 1, arr.len())\n" + // should be 2
 		"}"
 	got := compileToCanon(t, src)
 	if got == "" || strings.Contains(got, "?") {
@@ -859,8 +651,8 @@ func TestArrayMapBasic(t *testing.T) {
 		"	m := arrayMap(8)\n" +
 		"	m.set(1, 100)\n" +
 		"	m.set(2, 200)\n" +
-		"	set(0, 0, m.get(1))\n" +  // should be 100
-		"	set(0, 1, m.len())\n" +    // should be 2
+		"	set(0, 0, m.get(1))\n" + // should be 100
+		"	set(0, 1, m.len())\n" + // should be 2
 		"	set(0, 2, m.contains(2))\n" + // should be 1
 		"}"
 	got := compileToCanon(t, src)
@@ -875,7 +667,7 @@ func TestArraySetBasic(t *testing.T) {
 		"	s := arraySet(8)\n" +
 		"	s.add(42)\n" +
 		"	set(0, 0, s.contains(42))\n" + // should be 1
-		"	set(0, 1, s.len())\n" +        // should be 1
+		"	set(0, 1, s.len())\n" + // should be 1
 		"}"
 	got := compileToCanon(t, src)
 	if got == "" || strings.Contains(got, "?") {

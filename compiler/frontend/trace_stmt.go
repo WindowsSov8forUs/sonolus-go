@@ -92,17 +92,17 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		return t.fieldStore(sel, n.Rhs[0])
 	}
 
-	fnName, ok := n.Lhs[0].(*ast.Ident)
+	lhsName, ok := n.Lhs[0].(*ast.Ident)
 	if !ok {
 		return t.errf(n, "assignment target must be an identifier")
 	}
 
 	// Field write: `=` to an env binding not shadowed by a local. (`:=` always
 	// declares a fresh local, shadowing any binding.)
-	if _, isLocal := t.vars[fnName.Name]; !isLocal && n.Tok == token.ASSIGN {
-		if b, ok := t.env.Names[fnName.Name]; ok {
+	if _, isLocal := t.vars[lhsName.Name]; !isLocal && n.Tok == token.ASSIGN {
+		if b, ok := t.env.Names[lhsName.Name]; ok {
 			if !b.Writable {
-				return t.errf(n, "cannot assign to read-only %q", fnName.Name)
+				return t.errf(n, "cannot assign to read-only %q", lhsName.Name)
 			}
 			val, err := t.expr(n.Rhs[0])
 			if err != nil {
@@ -117,7 +117,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 	// If the constructor is not recognized, fall through to regular assignment.
 	if call, ok := n.Rhs[0].(*ast.CallExpr); ok {
 		if fn, ok := call.Fun.(*ast.Ident); ok {
-			handled, err := t.compositeDecl(fnName, fn, call)
+			handled, err := t.compositeDecl(lhsName, fn, call)
 			if handled {
 				return err
 			}
@@ -136,7 +136,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 				return err
 			}
 			rec := &recordInfo{
-				tb:     &ir.TempBlock{Name: fnName.Name, Size: val.CompositeSize()},
+				tb:     &ir.TempBlock{Name: lhsName.Name, Size: val.CompositeSize()},
 				fields: map[string]int{},
 				order:  order,
 				val:    val,
@@ -144,16 +144,16 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		for i, f := range rec.order {
 			rec.fields[f] = i
 		}
-		t.records[fnName.Name] = rec
+		t.records[lhsName.Name] = rec
 		return nil
 	}
 
-	tb, ok := t.vars[fnName.Name]
+	tb, ok := t.vars[lhsName.Name]
 	if !ok {
 		if n.Tok != token.DEFINE {
-			return t.errf(n, "assignment to undefined variable %q", fnName.Name)
+			return t.errf(n, "assignment to undefined variable %q", lhsName.Name)
 		}
-		tb = t.alloc(fnName.Name)
+		tb = t.alloc(lhsName.Name)
 	}
 	t.emit(t.gen.SetPlace(t.cell(tb), val.mustNode()))
 	return nil
@@ -164,7 +164,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 // resolution (types.Info) when available, falling back to name-based lookup.
 // The first return value reports whether the constructor was recognized (handled).
 // If false, the caller should fall through to regular assignment.
-func (t *tracer) compositeDecl(fnName *ast.Ident, fn *ast.Ident, call *ast.CallExpr) (handled bool, _ error) {
+func (t *tracer) compositeDecl(varName *ast.Ident, fn *ast.Ident, call *ast.CallExpr) (handled bool, _ error) {
 	// D3: use types.Info to resolve record constructors by return type.
 	if info := t.env.Info; info != nil {
 		if obj, ok := info.Uses[fn]; ok {
@@ -174,16 +174,16 @@ func (t *tracer) compositeDecl(fnName *ast.Ident, fn *ast.Ident, call *ast.CallE
 						if st, ok := named.Underlying().(*types.Struct); ok {
 							typeName := named.Obj().Name()
 							if typeName == "VarArray" || typeName == "ArrayMap" || typeName == "FrozenNumSet" {
-								return true, t.varArrayDecl(fnName, call)
+								return true, t.varArrayDecl(varName, call)
 							}
 							if typeName == "ArraySet" {
-								return true, t.arraySetDecl(fnName, call)
+								return true, t.arraySetDecl(varName, call)
 							}
 							fields := make([]string, st.NumFields())
 							for i := range st.NumFields() {
 								fields[i] = st.Field(i).Name()
 							}
-							return true, t.recordDecl(fnName, call, fields)
+							return true, t.recordDecl(varName, call, fields)
 						}
 					}
 				}
@@ -193,49 +193,49 @@ func (t *tracer) compositeDecl(fnName *ast.Ident, fn *ast.Ident, call *ast.CallE
 	// Fallback: name-based dispatch (when Info is nil or type lookup fails).
 	switch fn.Name {
 	case "array":
-		return true, t.arrayDecl(fnName, call)
+		return true, t.arrayDecl(varName, call)
 	case "vec2":
-		return true, t.recordDecl(fnName, call, vec2Fields)
+		return true, t.recordDecl(varName, call, vec2Fields)
 	case "quad":
-		return true, t.recordDecl(fnName, call, quadFields)
+		return true, t.recordDecl(varName, call, quadFields)
 	case "mat":
-		return true, t.recordDecl(fnName, call, matFields)
+		return true, t.recordDecl(varName, call, matFields)
 	case "rect":
-		return true, t.recordDecl(fnName, call, rectFields)
+		return true, t.recordDecl(varName, call, rectFields)
 	case "trans":
-		return true, t.recordDecl(fnName, call, transFields)
+		return true, t.recordDecl(varName, call, transFields)
 	case "judgmentWindow":
-		return true, t.recordDecl(fnName, call, judgmentWindowFields)
+		return true, t.recordDecl(varName, call, judgmentWindowFields)
 	case "sprite":
-		return true, t.recordDecl(fnName, call, spriteFields)
+		return true, t.recordDecl(varName, call, spriteFields)
 	case "effect":
-		return true, t.recordDecl(fnName, call, effectFields)
+		return true, t.recordDecl(varName, call, effectFields)
 	case "particle":
-		return true, t.recordDecl(fnName, call, particleFields)
+		return true, t.recordDecl(varName, call, particleFields)
 	case "entityRef":
-		return true, t.recordDecl(fnName, call, entityRefFields)
+		return true, t.recordDecl(varName, call, entityRefFields)
 	case "pair":
-		return true, t.recordDecl(fnName, call, pairFields)
+		return true, t.recordDecl(varName, call, pairFields)
 	case "box":
-		return true, t.recordDecl(fnName, call, boxFields)
+		return true, t.recordDecl(varName, call, boxFields)
 	case "frozenNumSet":
-		return true, t.varArrayDecl(fnName, call)
+		return true, t.varArrayDecl(varName, call)
 	case "varArray", "arrayMap":
-		return true, t.varArrayDecl(fnName, call)
+		return true, t.varArrayDecl(varName, call)
 	case "arraySet":
-		return true, t.arraySetDecl(fnName, call)
+		return true, t.arraySetDecl(varName, call)
 	}
 	return false, nil
 }
 
 func (t *tracer) incDec(n *ast.IncDecStmt) error {
-	fnName, ok := n.X.(*ast.Ident)
+	varName, ok := n.X.(*ast.Ident)
 	if !ok {
 		return t.errf(n, "increment target must be an identifier")
 	}
-	tb, ok := t.vars[fnName.Name]
+	tb, ok := t.vars[varName.Name]
 	if !ok {
-		return t.errf(n, "increment of undefined variable %q", fnName.Name)
+		return t.errf(n, "increment of undefined variable %q", varName.Name)
 	}
 	op := binOps[token.ADD]
 	if n.Tok == token.DEC {
@@ -246,7 +246,7 @@ func (t *tracer) incDec(n *ast.IncDecStmt) error {
 	return nil
 }
 
-// arrayDecl handles `fnName := array(count)` and `fnName := array[Type](count)`:
+// arrayDecl handles `varName := array(count)` and `varName := array[Type](count)`:
 // it reserves a multi-slot temp. For record types, each element occupies elemSize
 // slots and can be indexed with `.Field` access.
 func (t *tracer) arrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
@@ -464,11 +464,11 @@ func (t *tracer) writePlace(lhs ast.Expr, val Num) error {
 		}
 		return nil
 	case *ast.IndexExpr:
-		fnName, ok := l.X.(*ast.Ident)
+		varName, ok := l.X.(*ast.Ident)
 		if !ok {
 			return t.errf(lhs, "array index target must be an identifier")
 		}
-		place, err := t.arrayElemPlace(fnName, l.Index)
+		place, err := t.arrayElemPlace(varName, l.Index)
 		if err != nil {
 			return err
 		}
@@ -479,11 +479,11 @@ func (t *tracer) writePlace(lhs ast.Expr, val Num) error {
 }
 
 func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
-	fnName, ok := idx.X.(*ast.Ident)
+	varName, ok := idx.X.(*ast.Ident)
 	if !ok {
 		return t.errf(idx, "array index target must be an identifier")
 	}
-	place, err := t.arrayElemPlace(fnName, idx.Index)
+	place, err := t.arrayElemPlace(varName, idx.Index)
 	if err != nil {
 		return err
 	}
@@ -495,7 +495,7 @@ func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
 	return nil
 }
 
-// recordDecl handles `fnName := vec2(x, y)` (and future record constructors): it
+// recordDecl handles `varName := vec2(x, y)` (and future record constructors): it
 // reserves a temp with one slot per field, stores the initializers, and tracks
 // each field as an individual Num for scalar-replaceable reads.
 func (t *tracer) recordDecl(varName *ast.Ident, call *ast.CallExpr, fields []string) error {

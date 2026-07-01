@@ -215,9 +215,9 @@ func CompileBlock(fset *token.FileSet, gen *ir.IDGen, body *ast.BlockStmt, env E
 		return nil, ErrNilBody
 	}
 	t := &tracer{
-		fset:     fset,
-		gen:      gen,
-		env:      env,
+		fset:       fset,
+		gen:        gen,
+		env:        env,
 		vars:       map[string]*ir.TempBlock{},
 		arrays:     map[string]*arrayInfo{},
 		records:    map[string]*recordInfo{},

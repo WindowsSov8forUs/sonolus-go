@@ -308,9 +308,6 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return boolNum(t.env.Mode == ir.ModePreview), true, nil
 	case "isTutorial":
 		return boolNum(t.env.Mode == ir.ModeTutorial), true, nil
-	case "vec2":
-		r, err := t.inlineComposite(fn, n, vec2Fields)
-		return r, true, err
 	case "vec2Zero":
 		return vec2Statics["zero"](), true, nil
 	case "vec2One":
@@ -323,21 +320,11 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return vec2Statics["left"](), true, nil
 	case "vec2Right":
 		return vec2Statics["right"](), true, nil
-	case "quad":
-		r, err := t.inlineComposite(fn, n, quadFields)
-		return r, true, err
-	case "mat":
-		r, err := t.inlineComposite(fn, n, matFields)
-		return r, true, err
-	case "rect":
-		r, err := t.inlineComposite(fn, n, rectFields)
-		return r, true, err
-	case "trans":
-		r, err := t.inlineComposite(fn, n, transFields)
-		return r, true, err
-	case "pair":
-		r, err := t.inlineComposite(fn, n, pairFields)
-		return r, true, err
+	default:
+		if fields, ok := builtinRecordFields(fn.Name); ok {
+			r, err := t.inlineComposite(fn, n, fields)
+			return r, true, err
+		}
 	case "varArray", "arrayMap":
 		// varArray(capacity) / arrayMap(capacity) — capacity must be constant.
 		if len(n.Args) != 1 {
@@ -354,9 +341,6 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			"_size":  constNum(0),
 			"_array": constNum(float64(capVal.c)),
 		}), true, nil
-	case "box":
-		r, err := t.inlineComposite(fn, n, boxFields)
-		return r, true, err
 	case "frozenNumSet":
 		return compNum(map[string]Num{"_size": constNum(0), "_array": constNum(0)}), true, nil
 	case "arraySet":
@@ -586,10 +570,11 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	retTemp := &ir.TempBlock{Name: decl.Name.Name + ".$ret", Size: 1}
 	cont := ir.NewBlock()
 
-	savedVars, savedArrays, savedRecords, savedEnv := t.vars, t.arrays, t.records, t.env
+	savedVars, savedArrays, savedRecords, savedContainers, savedEnv := t.vars, t.arrays, t.records, t.containers, t.env
 	t.vars = map[string]*ir.TempBlock{}
 	t.arrays = map[string]*arrayInfo{}
 	t.records = map[string]*recordInfo{}
+	t.containers = map[string]*containerInfo{}
 	t.env = childEnv
 
 	for i, p := range params {
@@ -637,7 +622,7 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	delete(t.inlining, decl.Name.Name)
 	t.returns = t.returns[:len(t.returns)-1]
 
-	t.vars, t.arrays, t.records, t.env = savedVars, savedArrays, savedRecords, savedEnv
+	t.vars, t.arrays, t.records, t.containers, t.env = savedVars, savedArrays, savedRecords, savedContainers, savedEnv
 	t.enter(cont)
 	if err != nil {
 		return Num{}, err

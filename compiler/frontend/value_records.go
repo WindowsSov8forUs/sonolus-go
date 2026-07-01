@@ -22,54 +22,61 @@ type recordMethodEntry struct {
 	compositeArgAt []int
 }
 
+// builtinRecordDef describes a built-in record type: its constructor name
+// (lowerCamelCase) and ordered field names. This single registry replaces the
+// previously duplicated lists in knownRecordFields, PreludeSource, compositeDecl,
+// and resolveBuiltinCall.
+type builtinRecordDef struct {
+	name   string
+	fields []string
+}
+
+// builtinRecords lists every built-in record type that has fields known to the
+// compiler. Container types (varArray, arrayMap, arraySet, frozenNumSet) and
+// handle types (loopedEffectHandle, etc.) are included so that knownRecordFields
+// and PreludeSource stay in sync automatically.
+var builtinRecords = []builtinRecordDef{
+	{"vec2", vec2Fields},
+	{"quad", quadFields},
+	{"mat", matFields},
+	{"rect", rectFields},
+	{"trans", transFields},
+	{"judgmentWindow", judgmentWindowFields},
+	{"sprite", spriteFields},
+	{"effect", effectFields},
+	{"particle", particleFields},
+	{"entityRef", entityRefFields},
+	{"pair", pairFields},
+	{"varArray", varArrayFields},
+	{"arrayMap", arrayMapFields},
+	{"arraySet", arraySetFields},
+	{"box", boxFields},
+	{"frozenNumSet", frozenNumSetFields},
+	{"loopedEffectHandle", loopedEffectHandleFields},
+	{"scheduledLoopedEffectHandle", scheduledLoopedEffectHandleFields},
+	{"particleHandle", particleHandleFields},
+}
+
+// builtinRecordFields returns the fields for name if it is a built-in record.
+func builtinRecordFields(name string) ([]string, bool) {
+	for _, r := range builtinRecords {
+		if r.name == name {
+			return r.fields, true
+		}
+	}
+	return nil, false
+}
+
 // knownRecordFields returns the ordered field names for a built-in or
 // user-defined record type. Known built-in names: vec2, quad, mat, rect, trans.
 func knownRecordFields(name string, userRecords map[string][]string) ([]string, bool) {
-	switch name {
-	case "vec2":
-		return []string{"x", "y"}, true
-	case "quad":
-		return quadFields, true
-	case "mat":
-		return matFields, true
-	case "rect":
-		return rectFields, true
-	case "trans":
-		return transFields, true
-	case "judgmentWindow":
-		return judgmentWindowFields, true
-	case "sprite":
-		return spriteFields, true
-	case "effect":
-		return effectFields, true
-	case "particle":
-		return particleFields, true
-	case "entityRef":
-		return entityRefFields, true
-	case "pair":
-		return pairFields, true
-	case "varArray":
-		return varArrayFields, true
-	case "arrayMap":
-		return arrayMapFields, true
-	case "arraySet":
-		return arraySetFields, true
-	case "box":
-		return boxFields, true
-	case "frozenNumSet":
-		return frozenNumSetFields, true
-	case "loopedEffectHandle":
-		return loopedEffectHandleFields, true
-	case "scheduledLoopedEffectHandle":
-		return scheduledLoopedEffectHandleFields, true
-	case "particleHandle":
-		return particleHandleFields, true
-	default:
-		if f, ok := userRecords[name]; ok {
-			return f, true
-		}
-		return nil, false
+	if f, ok := builtinRecordFields(name); ok {
+		return f, true
 	}
+	if f, ok := userRecords[name]; ok {
+		return f, true
+	}
+	return nil, false
 }
 
 // recordMethods maps record type name → method name → implementation.
@@ -101,12 +108,12 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"w":         {fn: rectW, minArity: 0},
 		"h":         {fn: rectH, minArity: 0},
 		"center":    {fn: rectCenter, minArity: 0},
-		"translate": {fn: rectTranslate, minArity: 1},
+		"translate": {fn: rectTranslate, minArity: 1, compositeArgAt: []int{0}},
 		"scale":     {fn: rectScale, minArity: 1},
 	},
 	"quad": {
 		"center":    {fn: quadCenter, minArity: 0},
-		"translate": {fn: quadTranslate, minArity: 1},
+		"translate": {fn: quadTranslate, minArity: 1, compositeArgAt: []int{0}},
 		"scale":     {fn: quadScale, minArity: 1},
 		"permute":   {fn: quadPermute, minArity: 1},
 		"rotate":    {fn: quadRotate, minArity: 1},
