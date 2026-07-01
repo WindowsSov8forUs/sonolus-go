@@ -4,6 +4,7 @@
 package build
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -73,6 +74,8 @@ func PackageNonPlay(cfg *resource.EngineConfiguration, rom []byte, data any, fil
 		p.PreviewData = blob
 	case FileTutorialData:
 		p.TutorialData = blob
+	default:
+		return nil, fmt.Errorf("pack: unknown non-play mode file key %q", fileKey)
 	}
 	return p, nil
 }

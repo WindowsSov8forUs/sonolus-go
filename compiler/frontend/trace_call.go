@@ -564,7 +564,7 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 		args[i] = v
 	}
 	recv := ""
-	if decl.Recv != nil && len(decl.Recv.List[0].Names) > 0 {
+	if decl.Recv != nil && len(decl.Recv.List) > 0 && len(decl.Recv.List[0].Names) > 0 {
 		recv = decl.Recv.List[0].Names[0].Name
 	}
 	child := Env{Names: t.env.Names, Receiver: recv, Funcs: t.env.Funcs, Methods: t.env.Methods, Accessors: t.env.Accessors, Constants: t.env.Constants}
