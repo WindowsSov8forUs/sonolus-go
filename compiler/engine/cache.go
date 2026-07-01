@@ -84,13 +84,7 @@ func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg 
 			c.playOrder = c.playOrder[1:]
 			delete(c.play, oldest)
 			delete(c.config, oldest)
-			// Also remove oldest from config order.
-			for i, k := range c.configOrder {
-				if k == oldest {
-					c.configOrder = append(c.configOrder[:i], c.configOrder[i+1:]...)
-					break
-				}
-			}
+			c.configOrder = removeFromOrder(c.configOrder, oldest)
 		}
 		c.playOrder = append(c.playOrder, key)
 	}
@@ -106,6 +100,17 @@ func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg 
 		}
 		c.config[key] = cfg
 	}
+}
+
+// removeFromOrder removes the first occurrence of key from a FIFO order slice.
+// It is used by both putKeyed and putPlayKeyed for eviction bookkeeping.
+func removeFromOrder(order []CacheKey, key CacheKey) []CacheKey {
+	for i, k := range order {
+		if k == key {
+			return append(order[:i], order[i+1:]...)
+		}
+	}
+	return order
 }
 
 // putKeyed is a generic helper for map stores under the write lock.
