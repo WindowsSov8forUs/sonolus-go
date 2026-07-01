@@ -1,6 +1,10 @@
 package optimize
 
-import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+import (
+	"sort"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+)
 
 // CoalesceSmallConditionalBlocks merges blocks with 1 outgoing edge whose target
 // has <= 1 statement. This collapses trivial passthroughs produced by frontend
@@ -256,11 +260,7 @@ func normSwitchParams(cases map[float64]bool) (offset, stride float64) {
 	for v := range cases {
 		vals = append(vals, v)
 	}
-	for i := 1; i < len(vals); i++ {
-		for j := i; j > 0 && vals[j] < vals[j-1]; j-- {
-			vals[j], vals[j-1] = vals[j-1], vals[j]
-		}
-	}
+	sort.Float64s(vals)
 	offset = vals[0]
 	stride = vals[1] - offset
 	if float64(int(offset)) != offset || float64(int(stride)) != stride {
