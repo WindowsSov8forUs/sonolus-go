@@ -6,64 +6,63 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
 
-// ── VarArray.sort() — in-place insertion sort on backing array ──────────────
-//
-// varArraySortCI emits an in-place insertion sort on the container's backing
-// array, sorting elements 0.._size-1 in ascending order. The sort is stable
-// and uses insertion sort (O(n²) comparisons) which is efficient for the
-// small arrays typical in Sonolus engines.
+// ── Shared insertion sort skeleton ───────────────────────────────────────────
 
-// varArraySortCI sorts the container in-place.
-func varArraySortCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, error) {
-	// Insertion sort:
-	// for i := 1; i < _size; i++ {
-	//     key := arr[i]
-	//     j := i - 1
-	//     while j >= 0 && arr[j] > key {
-	//         arr[j+1] = arr[j]
-	//         j--
-	//     }
-	//     arr[j+1] = key
-	// }
-	_ = v
-	_ = args
+// sortElemAccess abstracts element access for the insertion sort skeleton.
+// getCompare returns the comparison value at the given index (for Greater check).
+// getRaw returns the raw element to store as the sort key (defaults to getCompare
+// if nil). set emits a Set to store a raw element at the given index.
+type sortElemAccess struct {
+	getCompare func(gen *ir.IDGen, idx ir.Node) ir.Node
+	getRaw     func(gen *ir.IDGen, idx ir.Node) ir.Node // optional, defaults to getCompare
+	set        func(gen *ir.IDGen, idx ir.Node, val ir.Node) ir.Node
+}
 
-	// Allocate temps.
+func (a sortElemAccess) get(gen *ir.IDGen, idx ir.Node) ir.Node {
+	if a.getRaw != nil {
+		return a.getRaw(gen, idx)
+	}
+	return a.getCompare(gen, idx)
+}
+
+// emitInsertionSort emits an in-place insertion sort on the given element
+// range, comparing elements with Greater. The size node must be a readable
+// value (e.g. container size or count variable). Used by both varArray sort
+// and linked entity sort.
+func emitInsertionSort(t *tracer, sizeNode ir.Node, elem sortElemAccess) {
+	// Allocate temps: i, j, key, key value.
 	iTB := &ir.TempBlock{Name: "sortI", Size: 1}
 	iPlace := ir.BlockPlace{Block: iTB, Index: ir.Const(0), Offset: 0}
 	jTB := &ir.TempBlock{Name: "sortJ", Size: 1}
 	jPlace := ir.BlockPlace{Block: jTB, Index: ir.Const(0), Offset: 0}
 	keyTB := &ir.TempBlock{Name: "sortKey", Size: 1}
 	keyPlace := ir.BlockPlace{Block: keyTB, Index: ir.Const(0), Offset: 0}
-
+	keyValTB := &ir.TempBlock{Name: "sortKeyVal", Size: 1}
+	keyValPlace := ir.BlockPlace{Block: keyValTB, Index: ir.Const(0), Offset: 0}
 	// i = 1
 	t.emit(t.gen.SetPlace(iPlace, ir.Const(1)))
 
-	// Outer loop header
 	outerHead := ir.NewBlock()
 	outerBody := ir.NewBlock()
 	outerExit := ir.NewBlock()
-
 	t.fallthroughTo(outerHead)
 
-	// Outer: test i < _size
 	t.enter(outerHead)
 	iNode := ir.GetPlace(iPlace)
-	outerCond := t.gen.PureInstr(resource.RuntimeFunctionLess, iNode, ci.readSize())
+	outerCond := t.gen.PureInstr(resource.RuntimeFunctionLess, iNode, sizeNode)
 	outerHead.Test = outerCond
 	outerHead.ConnectTo(outerExit, ir.Cond(0))
 	outerHead.ConnectTo(outerBody, nil)
 
-	// Outer body
 	t.enter(outerBody)
-	// key = arr[i]
-	keyVal := ir.GetPlace(ci.elemPlace(t.gen, iNode))
-	t.emit(t.gen.SetPlace(keyPlace, keyVal))
-	// j = i - 1
+	// key = raw element, keyVal = comparison value
+	keyRaw := elem.get(t.gen, iNode)
+	keyCmp := elem.getCompare(t.gen, iNode)
+	t.emit(t.gen.SetPlace(keyPlace, keyRaw))
+	t.emit(t.gen.SetPlace(keyValPlace, keyCmp))
 	jStart := t.gen.PureInstr(resource.RuntimeFunctionSubtract, iNode, ir.Const(1))
 	t.emit(t.gen.SetPlace(jPlace, jStart))
 
-	// Inner loop header
 	innerHead := ir.NewBlock()
 	innerBody := ir.NewBlock()
 	innerExit := ir.NewBlock()
@@ -71,34 +70,47 @@ func varArraySortCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, error
 
 	t.enter(innerHead)
 	jNode := ir.GetPlace(jPlace)
-	// j >= 0 && arr[j] > key
 	jGe0 := t.gen.PureInstr(resource.RuntimeFunctionGreaterOr, jNode, ir.Const(-1))
-	arrJ := ir.GetPlace(ci.elemPlace(t.gen, jNode))
-	jGtKey := t.gen.PureInstr(resource.RuntimeFunctionGreater, arrJ, ir.GetPlace(keyPlace))
+	cmpJ := elem.getCompare(t.gen, jNode)
+	jGtKey := t.gen.PureInstr(resource.RuntimeFunctionGreater, cmpJ, ir.GetPlace(keyValPlace))
 	innerCond := t.gen.PureInstr(resource.RuntimeFunctionAnd, jGe0, jGtKey)
 	innerHead.Test = innerCond
 	innerHead.ConnectTo(innerExit, ir.Cond(0))
 	innerHead.ConnectTo(innerBody, nil)
 
-	// Inner body: arr[j+1] = arr[j]; j--
 	t.enter(innerBody)
 	jPlus1 := t.gen.PureInstr(resource.RuntimeFunctionAdd, jNode, ir.Const(1))
-	t.emit(t.gen.SetPlace(ci.elemPlace(t.gen, jPlus1), arrJ))
+	t.emit(elem.set(t.gen, jPlus1, cmpJ))
 	jMinus1 := t.gen.PureInstr(resource.RuntimeFunctionSubtract, jNode, ir.Const(1))
 	t.emit(t.gen.SetPlace(jPlace, jMinus1))
 	t.current.ConnectTo(innerHead, nil)
 
-	// Inner exit: arr[j+1] = key; i++
 	t.enter(innerExit)
 	jFinal := ir.GetPlace(jPlace)
 	jPlus1Final := t.gen.PureInstr(resource.RuntimeFunctionAdd, jFinal, ir.Const(1))
-	t.emit(t.gen.SetPlace(ci.elemPlace(t.gen, jPlus1Final), ir.GetPlace(keyPlace)))
+	t.emit(elem.set(t.gen, jPlus1Final, ir.GetPlace(keyPlace)))
 	iPlus1 := t.gen.PureInstr(resource.RuntimeFunctionAdd, iNode, ir.Const(1))
 	t.emit(t.gen.SetPlace(iPlace, iPlus1))
 	t.current.ConnectTo(outerHead, nil)
 
-	// Outer exit
 	t.enter(outerExit)
+}
+
+// ── VarArray.sort() — in-place insertion sort on backing array ──────────────
+
+// varArraySortCI sorts the container in-place using the shared insertion sort
+// skeleton. Elements are accessed through the container's backing temp block.
+func varArraySortCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, error) {
+	_ = v
+	_ = args
+	emitInsertionSort(t, ci.readSize(), sortElemAccess{
+		getCompare: func(gen *ir.IDGen, idx ir.Node) ir.Node {
+			return ir.GetPlace(ci.elemPlace(gen, idx))
+		},
+		set: func(gen *ir.IDGen, idx ir.Node, val ir.Node) ir.Node {
+			return gen.SetPlace(ci.elemPlace(gen, idx), val)
+		},
+	})
 	return constNum(0), nil
 }
 
@@ -210,77 +222,25 @@ func sortLinkedEntitiesCall(t *tracer, args []Num) (Num, error) {
 }
 
 // emitEntitySort performs insertion sort on the entity index array, comparing
-// entities by their sort key field value (read from EntityMemoryBlock).
+// entities by their sort key field value (read from EntityMemoryBlock). Uses
+// the shared insertion sort skeleton with distinct raw/comparison accessors.
 func emitEntitySort(t *tracer, idxTB *ir.TempBlock, countTB *ir.TempBlock, sortKeyOff int) error {
-	// Insertion sort on the index array
-	iTB := &ir.TempBlock{Name: "esI", Size: 1}
-	iPlace := ir.BlockPlace{Block: iTB, Index: ir.Const(0), Offset: 0}
-	t.emit(t.gen.SetPlace(iPlace, ir.Const(1)))
-
-	outerHead := ir.NewBlock()
-	outerBody := ir.NewBlock()
-	outerExit := ir.NewBlock()
-
-	t.fallthroughTo(outerHead)
-	t.enter(outerHead)
-	iNode := ir.GetPlace(iPlace)
 	countNode := ir.GetPlace(ir.BlockPlace{Block: countTB, Index: ir.Const(0), Offset: 0})
-	cond := t.gen.PureInstr(resource.RuntimeFunctionLess, iNode, countNode)
-	outerHead.Test = cond
-	outerHead.ConnectTo(outerExit, ir.Cond(0))
-	outerHead.ConnectTo(outerBody, nil)
-
-	t.enter(outerBody)
-	// keyIdx = indices[i]
-	keyIdx := ir.GetPlace(ir.BlockPlace{Block: idxTB, Index: iNode, Offset: 0})
-	// keyVal = EntityMemory[keyIdx + sortKeyOff]
-	keyVal := ir.GetPlace(ir.BlockPlace{Block: ir.Const(ir.BlockEntityMemory), Index: t.gen.PureInstr(resource.RuntimeFunctionAdd, keyIdx, ir.Const(sortKeyOff)), Offset: 0})
-	keyTB := &ir.TempBlock{Name: "esKey", Size: 1}
-	keyPlace := ir.BlockPlace{Block: keyTB, Index: ir.Const(0), Offset: 0}
-	t.emit(t.gen.SetPlace(keyPlace, keyIdx))
-	keyValTB := &ir.TempBlock{Name: "esKeyVal", Size: 1}
-	keyValPlace := ir.BlockPlace{Block: keyValTB, Index: ir.Const(0), Offset: 0}
-	t.emit(t.gen.SetPlace(keyValPlace, keyVal))
-
-	// j = i - 1
-	jTB := &ir.TempBlock{Name: "esJ", Size: 1}
-	jPlace := ir.BlockPlace{Block: jTB, Index: ir.Const(0), Offset: 0}
-	t.emit(t.gen.SetPlace(jPlace, t.gen.PureInstr(resource.RuntimeFunctionSubtract, iNode, ir.Const(1))))
-
-	// Inner loop
-	innerHead := ir.NewBlock()
-	innerBody := ir.NewBlock()
-	innerExit := ir.NewBlock()
-	t.current.ConnectTo(innerHead, nil)
-
-	t.enter(innerHead)
-	jNode := ir.GetPlace(jPlace)
-	jGe0 := t.gen.PureInstr(resource.RuntimeFunctionGreaterOr, jNode, ir.Const(0))
-	jIdx := ir.GetPlace(ir.BlockPlace{Block: idxTB, Index: jNode, Offset: 0})
-	jVal := ir.GetPlace(ir.BlockPlace{Block: ir.Const(ir.BlockEntityMemory), Index: t.gen.PureInstr(resource.RuntimeFunctionAdd, jIdx, ir.Const(sortKeyOff)), Offset: 0})
-	jGtKey := t.gen.PureInstr(resource.RuntimeFunctionGreater, jVal, ir.GetPlace(keyValPlace))
-	innerCond := t.gen.PureInstr(resource.RuntimeFunctionAnd, jGe0, jGtKey)
-	innerHead.Test = innerCond
-	innerHead.ConnectTo(innerExit, ir.Cond(0))
-	innerHead.ConnectTo(innerBody, nil)
-
-	t.enter(innerBody)
-	// indices[j+1] = indices[j]
-	jPlus1 := t.gen.PureInstr(resource.RuntimeFunctionAdd, jNode, ir.Const(1))
-	t.emit(t.gen.SetPlace(ir.BlockPlace{Block: idxTB, Index: jPlus1, Offset: 0}, jIdx))
-	// j--
-	t.emit(t.gen.SetPlace(jPlace, t.gen.PureInstr(resource.RuntimeFunctionSubtract, jNode, ir.Const(1))))
-	t.current.ConnectTo(innerHead, nil)
-
-	// Inner exit
-	t.enter(innerExit)
-	jFinal := ir.GetPlace(jPlace)
-	jPlus1Final := t.gen.PureInstr(resource.RuntimeFunctionAdd, jFinal, ir.Const(1))
-	t.emit(t.gen.SetPlace(ir.BlockPlace{Block: idxTB, Index: jPlus1Final, Offset: 0}, ir.GetPlace(keyPlace)))
-	iPlus1 := t.gen.PureInstr(resource.RuntimeFunctionAdd, iNode, ir.Const(1))
-	t.emit(t.gen.SetPlace(iPlace, iPlus1))
-	t.current.ConnectTo(outerHead, nil)
-
-	t.enter(outerExit)
+	emitInsertionSort(t, countNode, sortElemAccess{
+		getCompare: func(gen *ir.IDGen, idx ir.Node) ir.Node {
+			idxVal := ir.GetPlace(ir.BlockPlace{Block: idxTB, Index: idx, Offset: 0})
+			return ir.GetPlace(ir.BlockPlace{
+				Block: ir.Const(ir.BlockEntityMemory),
+				Index: gen.PureInstr(resource.RuntimeFunctionAdd, idxVal, ir.Const(sortKeyOff)),
+				Offset: 0,
+			})
+		},
+		getRaw: func(gen *ir.IDGen, idx ir.Node) ir.Node {
+			return ir.GetPlace(ir.BlockPlace{Block: idxTB, Index: idx, Offset: 0})
+		},
+		set: func(gen *ir.IDGen, idx ir.Node, val ir.Node) ir.Node {
+			return gen.SetPlace(ir.BlockPlace{Block: idxTB, Index: idx, Offset: 0}, val)
+		},
+	})
 	return nil
 }
