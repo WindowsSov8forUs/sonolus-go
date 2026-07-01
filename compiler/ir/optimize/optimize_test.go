@@ -71,11 +71,148 @@ func diamond() *ir.BasicBlock {
 	return e
 }
 
+// ── P3-3: additional CFG builders for expanded golden matrix ──
+
+func loopWithInvariant() *ir.BasicBlock {
+	// A loop where a computation is invariant: 3*5 inside loop body.
+	// LICM should hoist the constant expression out of the loop.
+	preheader, header, body, exit := ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock()
+	preheader.Statements = []ir.Node{set(0, 0, 0)}
+	preheader.ConnectTo(header, nil)
+	header.Test = getNode(0, 1)
+	header.ConnectTo(exit, ir.Cond(0))
+	header.ConnectTo(body, nil)
+	inv := testGen.PureInstr(resource.RuntimeFunctionMultiply, ir.Const(3), ir.Const(5))
+	body.Statements = []ir.Node{
+		testGen.SetPlace(ir.Cell(0, 2),
+			testGen.PureInstr(resource.RuntimeFunctionAdd, inv, getNode(1, 0)),
+		),
+		testGen.SetPlace(ir.Cell(0, 0),
+			testGen.PureInstr(resource.RuntimeFunctionAdd, getNode(0, 0), ir.Const(1)),
+		),
+	}
+	body.ConnectTo(header, nil)
+	return preheader
+}
+
+func redundantStore() *ir.BasicBlock {
+	// Dead store: first Set(1,0,42) is overwritten before any read.
+	e, b1 := ir.NewBlock(), ir.NewBlock()
+	e.Statements = []ir.Node{set(1, 0, 42), set(1, 0, 99)}
+	e.ConnectTo(b1, nil)
+	return e
+}
+
+func nestedLoop() *ir.BasicBlock {
+	// Two nested loops with an invariant expression in the inner loop.
+	outerHdr, outerBody, innerHdr, innerBody, innerExit, outerExit :=
+		ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock()
+
+	outerHdr.Statements = []ir.Node{set(0, 0, 0)}
+	outerHdr.Test = getNode(0, 1)
+	outerHdr.ConnectTo(outerExit, ir.Cond(0))
+	outerHdr.ConnectTo(outerBody, nil)
+
+	outerBody.Statements = []ir.Node{set(0, 2, 0)}
+	outerBody.ConnectTo(innerHdr, nil)
+
+	innerHdr.Test = getNode(0, 3)
+	innerHdr.ConnectTo(innerExit, ir.Cond(0))
+	innerHdr.ConnectTo(innerBody, nil)
+
+	inv := testGen.PureInstr(resource.RuntimeFunctionMultiply, ir.Const(2), ir.Const(8))
+	innerBody.Statements = []ir.Node{
+		testGen.SetPlace(ir.Cell(0, 4), inv),
+		testGen.SetPlace(ir.Cell(0, 2),
+			testGen.PureInstr(resource.RuntimeFunctionAdd, getNode(0, 2), ir.Const(1)),
+		),
+	}
+	innerBody.ConnectTo(innerHdr, nil)
+
+	innerExit.Statements = []ir.Node{
+		testGen.SetPlace(ir.Cell(0, 0),
+			testGen.PureInstr(resource.RuntimeFunctionAdd, getNode(0, 0), ir.Const(1)),
+		),
+	}
+	innerExit.ConnectTo(outerHdr, nil)
+	return outerHdr
+}
+
+func phiMerge() *ir.BasicBlock {
+	// Both branches assign constant 7 — phi should merge to a constant.
+	e, a, b, merge := ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock()
+	e.Test = getNode(0, 0)
+	a.Statements = []ir.Node{set(1, 0, 7)}
+	b.Statements = []ir.Node{set(1, 0, 7)}
+	e.ConnectTo(b, ir.Cond(0))
+	e.ConnectTo(a, nil)
+	a.ConnectTo(merge, nil)
+	b.ConnectTo(merge, nil)
+	return e
+}
+
+func switchChain() *ir.BasicBlock {
+	// Chain of if-else blocks that RewriteToSwitch can optimize.
+	e, c1, c2, c3, def, ex := ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock(), ir.NewBlock()
+	e.Test = getNode(0, 0)
+	e.ConnectTo(c1, ir.Cond(0))
+	e.ConnectTo(def, nil)
+	c1.Test = getNode(0, 0)
+	c1.ConnectTo(c2, ir.Cond(1))
+	c1.ConnectTo(def, nil)
+	c2.Test = getNode(0, 0)
+	c2.ConnectTo(c3, ir.Cond(2))
+	c2.ConnectTo(def, nil)
+	c3.Statements = []ir.Node{set(1, 0, 42)}
+	c3.ConnectTo(ex, nil)
+	def.Statements = []ir.Node{set(1, 0, 0)}
+	def.ConnectTo(ex, nil)
+	return e
+}
+
+func commonSubexpr() *ir.BasicBlock {
+	// Two identical (3*5)+2 expressions that CSE should dedup.
+	e, b1 := ir.NewBlock(), ir.NewBlock()
+	expr := testGen.PureInstr(resource.RuntimeFunctionAdd,
+		testGen.PureInstr(resource.RuntimeFunctionMultiply, ir.Const(3), ir.Const(5)),
+		ir.Const(2),
+	)
+	e.Statements = []ir.Node{
+		testGen.SetPlace(ir.Cell(1, 0), expr),
+		testGen.SetPlace(ir.Cell(1, 1), expr),
+	}
+	e.ConnectTo(b1, nil)
+	return e
+}
+
+func copyPropagation() *ir.BasicBlock {
+	// Chain: x=5, y=x+0, z=y+0. CopyCoalesce should fold y and z to 5.
+	e, b1 := ir.NewBlock(), ir.NewBlock()
+	e.Statements = []ir.Node{
+		set(1, 0, 5),
+		testGen.SetPlace(ir.Cell(1, 1),
+			testGen.PureInstr(resource.RuntimeFunctionAdd, getNode(1, 0), ir.Const(0)),
+		),
+		testGen.SetPlace(ir.Cell(1, 2),
+			testGen.PureInstr(resource.RuntimeFunctionAdd, getNode(1, 1), ir.Const(0)),
+		),
+	}
+	e.ConnectTo(b1, nil)
+	return e
+}
+
 var builders = map[string]func() *ir.BasicBlock{
-	"linear3":    linear3,
-	"empty_skip": emptySkip,
-	"const_test": constTest,
-	"diamond":    diamond,
+	"linear3":           linear3,
+	"empty_skip":        emptySkip,
+	"const_test":        constTest,
+	"diamond":           diamond,
+	"loop_invariant":    loopWithInvariant,
+	"redundant_store":   redundantStore,
+	"nested_loop":       nestedLoop,
+	"phi_merge":         phiMerge,
+	"switch_chain":      switchChain,
+	"common_subexpr":    commonSubexpr,
+	"copy_propagation":  copyPropagation,
 }
 
 func TestOptimizeGolden(t *testing.T) {

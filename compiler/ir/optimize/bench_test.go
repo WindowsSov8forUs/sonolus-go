@@ -50,6 +50,7 @@ func benchEntry(gen *ir.IDGen) *ir.BasicBlock {
 }
 
 func BenchmarkSCCP(b *testing.B) {
+	b.ReportAllocs()
 	for b.Loop() {
 		gen := ir.NewIDGen()
 		entry := benchEntry(gen)
@@ -59,6 +60,7 @@ func BenchmarkSCCP(b *testing.B) {
 }
 
 func BenchmarkCSE(b *testing.B) {
+	b.ReportAllocs()
 	for b.Loop() {
 		gen := ir.NewIDGen()
 		entry := benchEntry(gen)
@@ -69,6 +71,7 @@ func BenchmarkCSE(b *testing.B) {
 }
 
 func BenchmarkLICM(b *testing.B) {
+	b.ReportAllocs()
 	for b.Loop() {
 		gen := ir.NewIDGen()
 		entry := benchEntry(gen)
@@ -80,6 +83,7 @@ func BenchmarkLICM(b *testing.B) {
 }
 
 func BenchmarkInlining(b *testing.B) {
+	b.ReportAllocs()
 	for b.Loop() {
 		gen := ir.NewIDGen()
 		entry := benchEntry(gen)
