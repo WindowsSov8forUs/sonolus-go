@@ -12,6 +12,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/play"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
 
 var methodCallbacks = map[string]play.Callback{
@@ -192,18 +193,25 @@ func compileParsed(
 		for k, v := range bindings[i] {
 			names[k] = v
 		}
+		var cms []callbackMethod
 		for _, m := range a.methods {
-			env := frontend.Env{
-				Names: names, Receiver: m.receiver, Funcs: funcs, Methods: a.helpers,
+			cms = append(cms, callbackMethod{name: string(m.callback), receiver: m.receiver, body: m.body})
+		}
+		envBuilder := func(receiver string) frontend.Env {
+			return frontend.Env{
+				Names: names, Receiver: receiver, Funcs: funcs, Methods: a.helpers,
 				Accessors: frontend.ModeAccessorsReadOnly(ir.ModePlay),
 				Mode:      ir.ModePlay,
 			}
-			sn, err := compileCallbackBlock(gen, fset, m.body, env, string(m.callback), ir.ModePlay, opts)
-			if err != nil {
-				return nil, nil, fmt.Errorf("archetype %q callback %q: %w", a.name, m.callback, err)
-			}
-			results = append(results, play.CompileCallback(i, m.callback, sn))
 		}
+		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
+			return play.CompileCallback(idx, play.Callback(cb), sn)
+		}
+		r, err := compileMethodCallbacks(gen, fset, cms, a.name, i, ir.ModePlay, opts, envBuilder, resultFn)
+		if err != nil {
+			return nil, nil, err
+		}
+		results = append(results, r...)
 	}
 
 	if err := play.Assemble(data, results); err != nil {

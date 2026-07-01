@@ -125,6 +125,45 @@ type archetypeData struct {
 	imports []resource.EngineDataArchetypeImport
 }
 
+// callbackMethod is a unified representation of a single archetype callback,
+// used by compileMethodCallbacks to abstract over parsedMethod (Play) and
+// modeMethod (Watch/Preview/Tutorial).
+type callbackMethod struct {
+	name     string
+	receiver string
+	body     *ast.BlockStmt
+}
+
+// compileMethodCallbacks compiles a list of callback methods for one archetype.
+// The envBuilder callback constructs the frontend.Env for each method (this
+// differs between Play and non-Play modes). The resultFn callback wraps the
+// compiled SNode into a mode-specific Result. Returns nil if no methods produce
+// results.
+func compileMethodCallbacks(
+	gen *ir.IDGen,
+	fset *token.FileSet,
+	methods []callbackMethod,
+	archetypeName string,
+	archetypeIndex int,
+	mode ir.Mode,
+	opts *CompileOptions,
+	envBuilder func(receiver string) frontend.Env,
+	resultFn func(idx int, cb string, sn snode.SNode) *modecompile.Result,
+) ([]*modecompile.Result, error) {
+	var results []*modecompile.Result
+	for _, m := range methods {
+		env := envBuilder(m.receiver)
+		sn, err := compileCallbackBlock(gen, fset, m.body, env, m.name, mode, opts)
+		if err != nil {
+			return nil, fmt.Errorf("archetype %q callback %s: %w", archetypeName, m.name, err)
+		}
+		if r := resultFn(archetypeIndex, m.name, sn); r != nil {
+			results = append(results, r)
+		}
+	}
+	return results, nil
+}
+
 // compileArchetypeCallbacks compiles all callbacks for all archetypes in a
 // Watch/Preview mode file. It handles the shared archetype-iteration +
 // callback-compilation loop, returning archetype metadata and compiled results.
@@ -157,20 +196,23 @@ func compileArchetypeCallbacks(
 		for k, v := range b {
 			names[k] = v
 		}
+		var cms []callbackMethod
 		for _, m := range a.methods {
-			cb, ok := callbackSet[m.methodName]
-			if !ok {
-				continue
-			}
-			env := frontend.Env{Names: names, Receiver: m.receiver, Funcs: funcs, Accessors: accessors, Mode: mode}
-			sn, err := compileCallbackBlock(gen, fset, m.body, env, m.methodName, mode, opts)
-			if err != nil {
-				return nil, nil, fmt.Errorf("archetype %q callback %s: %w", name, m.methodName, err)
-			}
-			if r := modecompile.CompileCallback(i, cb, sn, nil); r != nil {
-				results = append(results, r)
+			if cb, ok := callbackSet[m.methodName]; ok {
+				cms = append(cms, callbackMethod{name: cb, receiver: m.receiver, body: m.body})
 			}
 		}
+		envBuilder := func(receiver string) frontend.Env {
+			return frontend.Env{Names: names, Receiver: receiver, Funcs: funcs, Accessors: accessors, Mode: mode}
+		}
+		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
+			return modecompile.CompileCallback(idx, cb, sn, nil)
+		}
+		r, err := compileMethodCallbacks(gen, fset, cms, name, i, mode, opts, envBuilder, resultFn)
+		if err != nil {
+			return nil, nil, err
+		}
+		results = append(results, r...)
 		arcData = append(arcData, ad)
 	}
 	return arcData, results, nil
