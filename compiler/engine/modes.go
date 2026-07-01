@@ -83,7 +83,7 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 			info:     &a.info,
 		}
 		for _, f := range td.structType.Fields.List {
-			collectSonolusTags(f, tc)
+			collectSonolusTags(f, tc) // non-Play modes ignore modeTag (exported/scored/lifed are Play-only)
 		}
 	}
 
@@ -250,7 +250,8 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 		if d.Body == nil {
 			continue
 		}
-		idx, err := compileTutorialCallback(gen, pf.fset, d, pf.funcs, accessors, cb, ir.ModeTutorial, app, opts)
+		tutCtx := compileCtx{gen: gen, fset: pf.fset, mode: ir.ModeTutorial, opts: opts}
+		idx, err := tutCtx.compileTutorialCallback(d, pf.funcs, accessors, cb, app)
 		if err != nil {
 			return nil, err
 		}

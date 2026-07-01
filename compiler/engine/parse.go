@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"reflect"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -126,7 +125,7 @@ func parseFields(a *parsedArchetype, st *ast.StructType) error {
 		info:     &a.info,
 	}
 	for _, f := range st.Fields.List {
-		unknown := collectSonolusTags(f, tc)
+		unknown, modeTag := collectSonolusTags(f, tc)
 		if unknown != "" {
 			// The first name in the field carries the tag.
 			name := ""
@@ -135,11 +134,7 @@ func parseFields(a *parsedArchetype, st *ast.StructType) error {
 			}
 			return fmt.Errorf("archetype %q field %q: unknown sonolus tag %q", a.name, name, unknown)
 		}
-		if f.Tag == nil || len(f.Names) == 0 {
-			continue
-		}
-		tag := reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus")
-		switch tag {
+		switch modeTag {
 		case "exported":
 			for _, name := range f.Names {
 				a.exported = append(a.exported, name.Name)
@@ -207,7 +202,8 @@ func compileParsed(
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
 			return play.CompileCallback(idx, play.Callback(cb), sn)
 		}
-		r, err := compileMethodCallbacks(gen, fset, cms, a.name, i, ir.ModePlay, opts, envBuilder, resultFn)
+		ctx := compileCtx{gen: gen, fset: fset, mode: ir.ModePlay, opts: opts}
+		r, err := ctx.compileMethodCallbacks(cms, a.name, i, envBuilder, resultFn)
 		if err != nil {
 			return nil, nil, err
 		}

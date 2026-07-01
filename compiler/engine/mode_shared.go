@@ -28,13 +28,13 @@ type tagCollector struct {
 }
 
 // collectSonolusTags reads sonolus struct tags from a field and appends field
-// names to the appropriate collector slices. It returns false for tags that are
-// mode-specific (exported, scored, lifed) so callers can handle them separately.
-// An empty tag is silently skipped. Any other unrecognized tag is reported via
-// unknownTag (empty string means no unknown tag).
-func collectSonolusTags(field *ast.Field, tc *tagCollector) (unknownTag string) {
+// names to the appropriate collector slices. Mode-specific tags (exported,
+// scored, lifed) are reported via modeTag so callers can handle them without
+// re-reading the struct tag. An empty tag is silently skipped. Any other
+// unrecognized tag is reported via unknownTag (empty string means no error).
+func collectSonolusTags(field *ast.Field, tc *tagCollector) (unknownTag, modeTag string) {
 	if field.Tag == nil || len(field.Names) == 0 {
-		return ""
+		return "", ""
 	}
 	tag := reflect.StructTag(stringLit(field.Tag.Value)).Get("sonolus")
 	for _, name := range field.Names {
@@ -53,13 +53,15 @@ func collectSonolusTags(field *ast.Field, tc *tagCollector) (unknownTag string) 
 			*tc.despawn = append(*tc.despawn, name.Name)
 		case "info":
 			*tc.info = append(*tc.info, name.Name)
-		case "exported", "scored", "lifed", "":
-			// mode-specific or empty — caller handles
+		case "exported", "scored", "lifed":
+			modeTag = tag
+		case "":
+			// empty tag — silently skip
 		default:
-			return tag
+			return tag, ""
 		}
 	}
-	return ""
+	return "", modeTag
 }
 
 // buildBindings builds the name→Binding map and imports slice for an archetype
@@ -134,26 +136,30 @@ type callbackMethod struct {
 	body     *ast.BlockStmt
 }
 
+// compileCtx bundles the common per-compilation-session parameters shared across
+// callback compilation helpers, reducing parameter list duplication.
+type compileCtx struct {
+	gen  *ir.IDGen
+	fset *token.FileSet
+	mode ir.Mode
+	opts *CompileOptions
+}
+
 // compileMethodCallbacks compiles a list of callback methods for one archetype.
 // The envBuilder callback constructs the frontend.Env for each method (this
 // differs between Play and non-Play modes). The resultFn callback wraps the
-// compiled SNode into a mode-specific Result. Returns nil if no methods produce
-// results.
-func compileMethodCallbacks(
-	gen *ir.IDGen,
-	fset *token.FileSet,
+// compiled SNode into a mode-specific Result.
+func (ctx compileCtx) compileMethodCallbacks(
 	methods []callbackMethod,
 	archetypeName string,
 	archetypeIndex int,
-	mode ir.Mode,
-	opts *CompileOptions,
 	envBuilder func(receiver string) frontend.Env,
 	resultFn func(idx int, cb string, sn snode.SNode) *modecompile.Result,
 ) ([]*modecompile.Result, error) {
 	var results []*modecompile.Result
 	for _, m := range methods {
 		env := envBuilder(m.receiver)
-		sn, err := compileCallbackBlock(gen, fset, m.body, env, m.name, mode, opts)
+		sn, err := compileCallbackBlock(ctx.gen, ctx.fset, m.body, env, m.name, ctx.mode, ctx.opts)
 		if err != nil {
 			return nil, fmt.Errorf("archetype %q callback %s: %w", archetypeName, m.name, err)
 		}
@@ -208,7 +214,8 @@ func compileArchetypeCallbacks(
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
 			return modecompile.CompileCallback(idx, cb, sn, nil)
 		}
-		r, err := compileMethodCallbacks(gen, fset, cms, name, i, mode, opts, envBuilder, resultFn)
+		ctx := compileCtx{gen: gen, fset: fset, mode: mode, opts: opts}
+		r, err := ctx.compileMethodCallbacks(cms, name, i, envBuilder, resultFn)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -222,19 +229,15 @@ func compileArchetypeCallbacks(
 // (Preprocess, Navigate, or Update) and returns the appended SNode index.
 // It is the per-callback helper used by CompileTutorialFile.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
-func compileTutorialCallback(
-	gen *ir.IDGen,
-	fset *token.FileSet,
+func (ctx compileCtx) compileTutorialCallback(
 	d *ast.FuncDecl,
 	funcs map[string]*ast.FuncDecl,
 	accessors map[string]frontend.Binding,
 	callback string,
-	mode ir.Mode,
 	app *snode.Appender,
-	opts *CompileOptions,
 ) (int, error) {
-	env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: mode}
-	sn, err := compileCallbackBlock(gen, fset, d.Body, env, d.Name.Name, mode, opts)
+	env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ctx.mode}
+	sn, err := compileCallbackBlock(ctx.gen, ctx.fset, d.Body, env, d.Name.Name, ctx.mode, ctx.opts)
 	if err != nil {
 		return 0, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
 	}
