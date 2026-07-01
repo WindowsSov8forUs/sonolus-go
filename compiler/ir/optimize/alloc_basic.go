@@ -98,3 +98,71 @@ func rewriteTempBlockPlace(p ir.Place, blk int, offsets func(*ir.TempBlock) int)
 		Offset: bp.Offset,
 	}
 }
+
+// TryAllocateBasic implements the tiered allocation strategy used by the Fast
+// optimisation level in sonolus.py: it attempts sequential allocation first
+// (AllocateBasic) and falls back to liveness-based allocation (AllocateLive)
+// when the basic allocator exceeds the slot threshold.
+type TryAllocateBasic struct {
+	BlockID  int
+	MaxSlots int
+}
+
+func (TryAllocateBasic) Name() string { return "TryAllocateBasic" }
+
+func (a TryAllocateBasic) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
+	maxSlots := a.MaxSlots
+	if maxSlots <= 0 {
+		maxSlots = 256
+	}
+	basic := AllocateBasic{BlockID: a.BlockID}
+	result := basic.Run(gen, entry)
+	if countAllocSlots(result, a.BlockID) > maxSlots {
+		live := AllocateLive{BlockID: a.BlockID}
+		result = live.Run(gen, entry)
+	}
+	return result
+}
+
+func countAllocSlots(entry *ir.BasicBlock, blockID int) int {
+	if blockID == 0 {
+		blockID = ir.DefaultTempMemoryBlock
+	}
+	maxIdx := 0
+	for _, b := range ir.Preorder(entry) {
+		for _, s := range b.Statements {
+			maxIdx = maxSlotIdx(s, blockID, maxIdx)
+		}
+		maxIdx = maxSlotIdx(b.Test, blockID, maxIdx)
+	}
+	return maxIdx + 1
+}
+
+func maxSlotIdx(n ir.Node, blk int, cur int) int {
+	if n == nil {
+		return cur
+	}
+	switch t := n.(type) {
+	case ir.Instr:
+		for _, a := range t.Args {
+			cur = maxSlotIdx(a, blk, cur)
+		}
+	case ir.Get:
+		cur = maxSlotIdx(t.Place, blk, cur)
+	case ir.Set:
+		cur = maxSlotIdx(t.Place, blk, cur)
+		cur = maxSlotIdx(t.Value, blk, cur)
+	case ir.BlockPlace:
+		if c, ok := t.Block.(ir.Const); ok && int(float64(c)) == blk {
+			if idx, ok := t.Index.(ir.Const); ok {
+				slot := int(float64(idx))
+				if slot > cur {
+					cur = slot
+				}
+			}
+		}
+		cur = maxSlotIdx(t.Block, blk, cur)
+		cur = maxSlotIdx(t.Index, blk, cur)
+	}
+	return cur
+}

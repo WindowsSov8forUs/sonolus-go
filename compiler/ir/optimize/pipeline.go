@@ -191,12 +191,15 @@ func OptimizeCtx(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback str
 	entry = runPassesCtx(gen, entry, ctx, passes...)
 
 	// Select the appropriate allocator for the optimization level.
-	// AllocateBasic (sequential) for MINIMAL/FAST: faster compilation,
-	// no liveness analysis. AllocateLive (interval packing) for STANDARD:
-	// reuses non-overlapping lifetimes, producing more compact output.
+	// AllocateBasic (sequential) for MINIMAL: fastest compilation, no
+	// liveness analysis. TryAllocateBasic (tiered) for FAST: sequential
+	// with fallback to AllocateLive on spill. AllocateLive (interval
+	// packing) for STANDARD: always uses liveness for most compact output.
 	switch level {
-	case LevelMinimal, LevelFast:
+	case LevelMinimal:
 		return AllocateBasic{BlockID: tempBlock}.Run(gen, entry), nil
+	case LevelFast:
+		return TryAllocateBasic{BlockID: tempBlock}.Run(gen, entry), nil
 	default:
 		return AllocateLive{BlockID: tempBlock}.Run(gen, entry), nil
 	}
