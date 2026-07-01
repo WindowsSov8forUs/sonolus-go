@@ -4,6 +4,9 @@ package ir
 // are visited bottom-up: children first, then the node itself. Unlike Map,
 // Walk does not reconstruct nodes — it is intended for read-only analysis
 // (use counting, liveness collection, etc.).
+//
+// Nil nodes are visited as-is (visit(nil) is called). Callers that collect
+// nodes into a slice should guard against nil entries.
 func Walk(n Node, visit func(Node)) {
 	if n == nil {
 		visit(nil)

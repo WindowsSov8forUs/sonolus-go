@@ -44,8 +44,9 @@ func (v InlineVars) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *Dominanc
 					}
 				}
 			}
+			subs := map[ir.SSAPlace]ir.Node{}
 			for {
-				subs := map[ir.SSAPlace]ir.Node{}
+				clear(subs)
 				for p := range getInlinableUses(stmt) {
 					if valid[p] && (v.Aggressive || v.isFreeToInline(inlined[p]) || !crossesLoop(p, b)) {
 						subs[p] = inlined[p]
@@ -216,8 +217,9 @@ func (v InlineVars) inlineDefs(
 	inlined := map[ir.SSAPlace]ir.Node{}
 	for _, p := range defOrder {
 		defn := canonical[p]
+		subs := map[ir.SSAPlace]ir.Node{}
 		for {
-			subs := map[ir.SSAPlace]ir.Node{}
+			clear(subs)
 			for inP := range getInlinableUses(defn) {
 				inDefn, has := canonical[inP]
 				if !has || !v.isInlinable(inDefn) {

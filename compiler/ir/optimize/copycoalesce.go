@@ -45,9 +45,9 @@ func (CopyCoalesce) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 				continue
 			}
 			// Only size-1 temps participate in SSA coalescing — larger temps
-		// represent arrays/records and cannot be trivially unified (aligned
-		// with ssa.go stmtDef and the sonolus.py backend's single-slot model).
-		dst, ok := tempOf(set.Place)
+			// represent arrays/records and cannot be trivially unified (aligned
+			// with ssa.go stmtDef and the sonolus.py backend's single-slot model).
+			dst, ok := tempOf(set.Place)
 			if !ok || dst.Size != 1 {
 				continue
 			}

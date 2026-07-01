@@ -117,16 +117,17 @@ handle the `Sub(0, a)` pattern. Added in P1-2.
 - Python: `sonolus.py/sonolus/backend/optimize/simplify.py:325-326`
 - Go: `compiler/ir/optimize/simplify.go:99-104`
 
-### 9. CopyCoalesce: Def-Count Heuristic vs Full Liveness
+### 9. CopyCoalesce: Liveness-Augmented Coalescing
 
 Python's `CopyCoalesce` uses `LivenessAnalysis` to build an interference graph,
-checking whether the copy target is live at the copy point. Go uses a simpler
-def-count heuristic: coalesce on single-predecessor edge blocks unconditionally;
-for multi-predecessor blocks, only coalesce when the destination temp has a
-single definition. The Go heuristic is cheaper but may miss coalescing
-opportunities that full liveness analysis would catch.
+checking whether the copy target is live at the copy point. Go computes full
+liveness analysis via `analyzeLiveness(entry)` and uses a combined guard:
+coalesce on single-predecessor edge blocks unconditionally; for multi-predecessor
+blocks, only coalesce when the destination temp has a single definition OR is not
+live after the copy (no interference with other definitions). This liveness-
+augmented approach exceeds Python's precision while remaining efficient.
 - Python: `sonolus.py/sonolus/backend/optimize/copy_coalesce.py:69-80`
-- Go: `compiler/ir/optimize/copycoalesce.go:61-69`
+- Go: `compiler/ir/optimize/copycoalesce.go:18-20` (liveness), `:68-73` (combined guard)
 
 ### 10. NormalizeBlocks: Mode-Aware Type Coercion Omitted
 
@@ -148,6 +149,25 @@ The two optimization levels are not comparable in scope; Go's FAST is
 effectively a Standard-lite pipeline. This is an intentional design choice to
 provide meaningful optimization at the FAST level without requiring the full
 Standard pipeline cost.
+
+### 12. simplify.go Split into Per-Pass Files (2026-07)
+
+The original `simplify.go` contained 7 Pass implementations in one file. As part of
+the v5 improvement plan, each pass was extracted into its own file:
+
+| Pass | File |
+|------|------|
+| `CoalesceSmallConditionalBlocks` | `coalesce_small_cond.go` |
+| `RemoveRedundantArguments` | `redundant_args.go` |
+| `FlattenAssociativeOps` | `flatten.go` |
+| `UnflattenAssociativeOps` | `unflatten.go` |
+| `NormalizeSwitch` | `normalize_switch.go` |
+| `CombineExitBlocks` | `combine_exit.go` |
+| `NormalizeBlocks` | `normalize_blocks.go` |
+
+Shared utilities (`trimArgs`, `filterConst`, `sameArgs`, `flattenStmt`,
+`unflattenStmt`, `normSwitchParams`, `flattenOps`) are co-located with their
+primary pass file. No behavioral changes were made.
 
 ## Reference
 

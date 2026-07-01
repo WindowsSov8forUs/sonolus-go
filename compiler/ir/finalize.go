@@ -188,16 +188,23 @@ func Lower(n Node) (snode.SNode, error) {
 	}
 }
 
+// ROM indices for non-finite float constants.
+const (
+	romNaNIndex    = 0
+	romPosInfIndex = 1
+	romNegInfIndex = 2
+)
+
 // numeric lowers a numeric constant, reading non-finite values from ROM
 // (mirrors finalize._numeric_to_engine_node).
 func numeric(v float64) snode.SNode {
 	switch {
 	case math.IsInf(v, 1):
-		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(1))
+		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(romPosInfIndex))
 	case math.IsInf(v, -1):
-		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(2))
+		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(romNegInfIndex))
 	case math.IsNaN(v):
-		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(0))
+		return snode.Call(OpGet, snode.Val(BlockEngineRom), snode.Val(romNaNIndex))
 	default:
 		return snode.Val(v)
 	}

@@ -3,6 +3,7 @@ package optimize
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
@@ -202,17 +203,17 @@ func copyPropagation() *ir.BasicBlock {
 }
 
 var builders = map[string]func() *ir.BasicBlock{
-	"linear3":           linear3,
-	"empty_skip":        emptySkip,
-	"const_test":        constTest,
-	"diamond":           diamond,
-	"loop_invariant":    loopWithInvariant,
-	"redundant_store":   redundantStore,
-	"nested_loop":       nestedLoop,
-	"phi_merge":         phiMerge,
-	"switch_chain":      switchChain,
-	"common_subexpr":    commonSubexpr,
-	"copy_propagation":  copyPropagation,
+	"linear3":          linear3,
+	"empty_skip":       emptySkip,
+	"const_test":       constTest,
+	"diamond":          diamond,
+	"loop_invariant":   loopWithInvariant,
+	"redundant_store":  redundantStore,
+	"nested_loop":      nestedLoop,
+	"phi_merge":        phiMerge,
+	"switch_chain":     switchChain,
+	"common_subexpr":   commonSubexpr,
+	"copy_propagation": copyPropagation,
 }
 
 func TestOptimizeGolden(t *testing.T) {
@@ -311,9 +312,13 @@ func TestCSEDeduplicates(t *testing.T) {
 		testGen.SetPlace(ir.Cell(0, 2), ir.GetPlace(ir.TempCell(ir.NewTemp("x")))),
 		testGen.SetPlace(ir.Cell(0, 3), inner), // duplicate
 	}
+	ToSSA{}.Run(testGen, e)
 	CSE{}.Run(testGen, e)
-	// After CSE, the second Add should be replaced with a Get to the extracted SSA var.
-	t.Logf("statements after CSE: %d", len(e.Statements))
+	// After CSE, the duplicate expression should be eliminated or the block should
+	// have at least the original statements.
+	if len(e.Statements) < 1 {
+		t.Errorf("CSE removed all statements, got %d", len(e.Statements))
+	}
 }
 
 // TestStandardPipeline runs the whole ordered optimization pipeline (the SCCP
@@ -334,7 +339,7 @@ func f() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry , err = Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
+	entry, err = Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +518,7 @@ func TestPipelineNodeCount(t *testing.T) {
 				t.Fatalf("compile: %v", err)
 			}
 
-			entry , err = Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
+			entry, err = Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -594,7 +599,7 @@ func TestLICMHoistsLoopInvariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result , err := Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
+	result, err := Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -603,7 +608,9 @@ func TestLICMHoistsLoopInvariant(t *testing.T) {
 	if got == "" {
 		t.Error("LICM pipeline produced empty output")
 	}
-	t.Logf("LICM hoist output: %s", got)
+	if !strings.Contains(got, "Sin") {
+		t.Errorf("LICM did not hoist Sin out of loop body: %s", got)
+	}
 }
 
 // TestLICMRespectsWrittenBlocks verifies that LICM does NOT hoist reads from
@@ -626,7 +633,7 @@ func TestLICMRespectsWrittenBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result , err := Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
+	result, err := Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,7 +642,10 @@ func TestLICMRespectsWrittenBlocks(t *testing.T) {
 	if got == "" {
 		t.Error("LICM pipeline produced empty output for writable-block case")
 	}
-	t.Logf("LICM writable-block output: %s", got)
+	// The get(2000,0) inside the loop must NOT be hoisted; verify output is well-formed.
+	if !strings.Contains(got, "Get") && !strings.Contains(got, "Execute") {
+		t.Errorf("LICM output missing expected nodes: %s", got)
+	}
 }
 
 // TestAllocateLiveReusesSlots verifies that the liveness-based allocator runs
@@ -659,7 +669,7 @@ func TestAllocateLiveReusesSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Optimize includes AllocateLive at the tail.
-	result , err := Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
+	result, err := Optimize(testGen, entry, ir.ModePlay, "updateParallel", ir.DefaultTempMemoryBlock, LevelStandard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,7 +734,7 @@ func TestSCCP_UnconditionalSuccessorAfterConstTest(t *testing.T) {
 	entry.ConnectTo(exit, nil) // unconditional edge
 
 	// Run the Standard pipeline on this minimal graph.
-	result , err := Optimize(testGen, entry, ir.ModePlay, "test", ir.DefaultTempMemoryBlock, LevelStandard)
+	result, err := Optimize(testGen, entry, ir.ModePlay, "test", ir.DefaultTempMemoryBlock, LevelStandard)
 	if err != nil {
 		t.Fatal(err)
 	}

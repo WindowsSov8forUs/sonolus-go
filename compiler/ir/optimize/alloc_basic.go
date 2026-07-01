@@ -66,7 +66,7 @@ func rewriteTempBlockNode(n ir.Node, blk int, offsets func(*ir.TempBlock) int) i
 		for i, a := range v.Args {
 			args[i] = rewriteTempBlockNode(a, blk, offsets)
 		}
-		return ir.Instr{Op: v.Op, Args: args, ID: v.ID}
+		return ir.Instr{Op: v.Op, Args: args, ID: v.ID, Pure: v.Pure}
 	case ir.Get:
 		return ir.Get{Place: rewriteTempBlockPlace(v.Place, blk, offsets)}
 	case ir.Set:
@@ -138,31 +138,31 @@ func countAllocSlots(entry *ir.BasicBlock, blockID int) int {
 	return maxIdx + 1
 }
 
-func maxSlotIdx(n ir.Node, blk int, cur int) int {
+func maxSlotIdx(n ir.Node, blk int, maxSoFar int) int {
 	if n == nil {
-		return cur
+		return maxSoFar
 	}
 	switch t := n.(type) {
 	case ir.Instr:
 		for _, a := range t.Args {
-			cur = maxSlotIdx(a, blk, cur)
+			maxSoFar = maxSlotIdx(a, blk, maxSoFar)
 		}
 	case ir.Get:
-		cur = maxSlotIdx(t.Place, blk, cur)
+		maxSoFar = maxSlotIdx(t.Place, blk, maxSoFar)
 	case ir.Set:
-		cur = maxSlotIdx(t.Place, blk, cur)
-		cur = maxSlotIdx(t.Value, blk, cur)
+		maxSoFar = maxSlotIdx(t.Place, blk, maxSoFar)
+		maxSoFar = maxSlotIdx(t.Value, blk, maxSoFar)
 	case ir.BlockPlace:
 		if c, ok := t.Block.(ir.Const); ok && int(float64(c)) == blk {
 			if idx, ok := t.Index.(ir.Const); ok {
 				slot := int(float64(idx))
-				if slot > cur {
-					cur = slot
+				if slot > maxSoFar {
+					maxSoFar = slot
 				}
 			}
 		}
-		cur = maxSlotIdx(t.Block, blk, cur)
-		cur = maxSlotIdx(t.Index, blk, cur)
+		maxSoFar = maxSlotIdx(t.Block, blk, maxSoFar)
+		maxSoFar = maxSlotIdx(t.Index, blk, maxSoFar)
 	}
-	return cur
+	return maxSoFar
 }

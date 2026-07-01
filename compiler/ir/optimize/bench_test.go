@@ -75,8 +75,8 @@ func BenchmarkLICM(b *testing.B) {
 	for b.Loop() {
 		gen := ir.NewIDGen()
 		entry := benchEntry(gen)
-		SCCP{}.Run(gen, entry)
 		ToSSA{}.Run(gen, entry)
+		SCCP{}.Run(gen, entry)
 		l := LICM{Oracle: ir.Blocks(ir.ModePlay)}
 		l.Run(gen, entry)
 	}
@@ -87,6 +87,7 @@ func BenchmarkInlining(b *testing.B) {
 	for b.Loop() {
 		gen := ir.NewIDGen()
 		entry := benchEntry(gen)
+		ToSSA{}.Run(gen, entry)
 		i := InlineVars{Aggressive: false, Callback: "test", Oracle: ir.Blocks(ir.ModePlay)}
 		i.Run(gen, entry)
 	}

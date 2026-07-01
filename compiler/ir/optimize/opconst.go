@@ -6,7 +6,7 @@ import "github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 // optimize pass implementations can use unqualified names (opAdd, etc.).
 // All values are sourced from ir.opsconst.go — the single canonical
 // definition point — eliminating the previous duplication across packages.
-var (
+const (
 	// Arithmetic
 	opAdd      = ir.OpAdd
 	opSubtract = ir.OpSubtract

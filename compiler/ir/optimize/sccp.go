@@ -171,7 +171,7 @@ func (s *sccpState) init(entry *ir.BasicBlock) {
 			s.values[ssaNode(p)] = undef
 			for _, arg := range phi.Args {
 				if a, ok := arg.(ir.SSAPlace); ok {
-					s.ssaEdges[a] = appendNode(s.ssaEdges[a], ssaNode(p))
+					s.ssaEdges[a] = append(s.ssaEdges[a], ssaNode(p))
 				}
 			}
 		}
@@ -182,7 +182,7 @@ func (s *sccpState) init(entry *ir.BasicBlock) {
 					s.placesToBlocks[p] = block
 					s.values[ssaNode(p)] = undef
 					for dep := range sccpDeps(set.Value) {
-						s.ssaEdges[dep] = appendNode(s.ssaEdges[dep], ssaNode(p))
+						s.ssaEdges[dep] = append(s.ssaEdges[dep], ssaNode(p))
 					}
 				}
 			}
@@ -190,7 +190,7 @@ func (s *sccpState) init(entry *ir.BasicBlock) {
 		s.defs[testNode(block)] = block.Test
 		s.values[testNode(block)] = undef
 		for dep := range sccpDeps(block.Test) {
-			s.ssaEdges[dep] = appendNode(s.ssaEdges[dep], testNode(block))
+			s.ssaEdges[dep] = append(s.ssaEdges[dep], testNode(block))
 		}
 	}
 }
@@ -578,9 +578,15 @@ func computeOp(op ir.Op, v []float64) lat {
 		return constLat(v[0] + (v[1]-v[0])*t)
 	case opRemap:
 		// remap(x, srcMin, srcMax, dstMin, dstMax)
+		if v[2] == v[1] {
+			return nac
+		}
 		t := (v[0] - v[1]) / (v[2] - v[1])
 		return constLat(v[3] + (v[4]-v[3])*t)
 	case opRemapClamped:
+		if v[2] == v[1] {
+			return nac
+		}
 		t := math.Max(0, math.Min(1, (v[0]-v[1])/(v[2]-v[1])))
 		return constLat(v[3] + (v[4]-v[3])*t)
 	default:
@@ -718,12 +724,9 @@ func (s *sccpState) substitutePlace(p ir.Place) ir.Place {
 	return p
 }
 
-// appendNode adds n to the nodes slice. Deduplication is unnecessary because
-// the SCCP lattice has finite height (3 states per node), so duplicate
-// worklist entries cause at most one redundant but convergent re-evaluation.
-func appendNode(nodes []sccpNode, n sccpNode) []sccpNode {
-	return append(nodes, n)
-}
+// Deduplication of worklist entries is unnecessary because the SCCP lattice
+// has finite height (3 states per node), so duplicate entries cause at most
+// one redundant but convergent re-evaluation.
 
 func appendDistinct(vals []lat, v lat) []lat {
 	for _, x := range vals {

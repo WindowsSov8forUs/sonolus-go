@@ -1,6 +1,7 @@
 package optimize
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
@@ -105,5 +106,7 @@ func TestLICMPhiMigration(t *testing.T) {
 	if got == "" {
 		t.Error("LICM phi migration pipeline produced empty output")
 	}
-	t.Logf("LICM phi migration output: %s", got)
+	if !strings.Contains(got, "Execute") && !strings.Contains(got, "Add") {
+		t.Errorf("LICM phi migration output missing expected nodes: %s", got)
+	}
 }

@@ -84,9 +84,9 @@ func TestCopyCoalescePreservesImpure(t *testing.T) {
 	e := ir.NewBlock()
 	e.Statements = []ir.Node{
 		testGen.SetPlace(ir.TempCell(a), ir.Const(5)),
-		testGen.SetPlace(ir.TempCell(b), ir.GetPlace(ir.TempCell(a))),    // copy
+		testGen.SetPlace(ir.TempCell(b), ir.GetPlace(ir.TempCell(a))),  // copy
 		testGen.ImpureInstr(resource.RuntimeFunctionDraw, ir.Const(1)), // side effect
-		testGen.SetPlace(ir.Cell(0, 0), ir.GetPlace(ir.TempCell(b))),    // use after side effect
+		testGen.SetPlace(ir.Cell(0, 0), ir.GetPlace(ir.TempCell(b))),   // use after side effect
 	}
 
 	CopyCoalesce{}.Run(testGen, e)

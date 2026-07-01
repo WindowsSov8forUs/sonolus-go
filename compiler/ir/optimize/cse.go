@@ -31,7 +31,7 @@ func (CSE) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *DominanceCache) *
 		b.Test = cseCanonicalize(b.Test)
 	}
 
-	cs := cseState{table: map[cseKeyType]ir.SSAPlace{}, nextID: 0, gen: gen}
+	cs := cseState{table: map[cseKeyType]ir.SSAPlace{}, nextID: 0, gen: gen, h: fnv.New128a()}
 	cs.process(entry, dom)
 	return entry
 }
@@ -47,6 +47,7 @@ type cseState struct {
 	table  map[cseKeyType]ir.SSAPlace
 	nextID int
 	gen    *ir.IDGen
+	h      hash.Hash // reused hasher, reset per key computation
 }
 
 func (c *cseState) newSSA() ir.SSAPlace {
@@ -58,16 +59,15 @@ func (c *cseState) newSSA() ir.SSAPlace {
 func (c *cseState) process(block *ir.BasicBlock, dom *Dominance) {
 	var added []cseKeyType
 	var stmts []ir.Node
-	h := fnv.New128a()
 
 	for _, s := range block.Statements {
 		var pre []ir.Node
-		s2 := c.rewrite(s, &pre, &added, h)
+		s2 := c.rewrite(s, &pre, &added, c.h)
 		stmts = append(stmts, pre...)
 		stmts = append(stmts, s2)
 	}
 	var pre []ir.Node
-	block.Test = c.rewrite(block.Test, &pre, &added, h)
+	block.Test = c.rewrite(block.Test, &pre, &added, c.h)
 	stmts = append(stmts, pre...)
 	block.Statements = stmts
 
