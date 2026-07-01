@@ -232,6 +232,61 @@ func parseFloatParam(tags []string, key string, def float64) (float64, error) {
 	return parseFloat(v)
 }
 
+// parseBucketSpriteTag parses a sprite field's sonolus tag into an
+// EngineDataBucketSprite. It handles sprite=, x=, y=, w=, h=, rotation=,
+// and fallback= key-value pairs.
+func parseBucketSpriteTag(stag string, skinST *ast.StructType) (resource.EngineDataBucketSprite, error) {
+	spr := resource.EngineDataBucketSprite{}
+	for _, p := range splitTag(stag) {
+		k, v := keyVal(p)
+		switch k {
+		case "sprite":
+			id, err := spriteID(skinST, v)
+			if err != nil {
+				return spr, fmt.Errorf("bucket sprite: %w", err)
+			}
+			spr.ID = id
+		case "x":
+			x, err := parseFloat(v)
+			if err != nil {
+				return spr, err
+			}
+			spr.X = x
+		case "y":
+			y, err := parseFloat(v)
+			if err != nil {
+				return spr, err
+			}
+			spr.Y = y
+		case "w":
+			w, err := parseFloat(v)
+			if err != nil {
+				return spr, err
+			}
+			spr.W = w
+		case "h":
+			h, err := parseFloat(v)
+			if err != nil {
+				return spr, err
+			}
+			spr.H = h
+		case "rotation":
+			r, err := parseFloat(v)
+			if err != nil {
+				return spr, err
+			}
+			spr.Rotation = r
+		case "fallback":
+			id, err := spriteID(skinST, v)
+			if err != nil {
+				return spr, fmt.Errorf("bucket fallback sprite: %w", err)
+			}
+			spr.FallbackID = id
+		}
+	}
+	return spr, nil
+}
+
 func buildBuckets(st *ast.StructType, skinST *ast.StructType) ([]resource.EngineDataBucket, error) {
 	var out []resource.EngineDataBucket
 	for _, f := range st.Fields.List {
@@ -240,62 +295,23 @@ func buildBuckets(st *ast.StructType, skinST *ast.StructType) ([]resource.Engine
 		if len(tagParts) == 0 || tagParts[0] != "bucket" || len(f.Names) == 0 {
 			continue
 		}
+		ft, ok := f.Type.(*ast.StructType)
+		if !ok {
+			out = append(out, resource.EngineDataBucket{})
+			continue
+		}
 		var sprites []resource.EngineDataBucketSprite
-		if ft, ok := f.Type.(*ast.StructType); ok {
-			for _, sf := range ft.Fields.List {
-				for range sf.Names {
-					spr := resource.EngineDataBucketSprite{}
-					if stag, ok := reflect.StructTag(stringLit(sf.Tag.Value)).Lookup("sonolus"); ok {
-						for _, p := range splitTag(stag) {
-							k, v := keyVal(p)
-							switch k {
-							case "sprite":
-								id, err := spriteID(skinST, v)
-								if err != nil {
-									return nil, fmt.Errorf("bucket sprite: %w", err)
-								}
-								spr.ID = id
-							case "x":
-								var err error
-								spr.X, err = parseFloat(v)
-								if err != nil {
-									return nil, err
-								}
-							case "y":
-								var err error
-								spr.Y, err = parseFloat(v)
-								if err != nil {
-									return nil, err
-								}
-							case "w":
-								var err error
-								spr.W, err = parseFloat(v)
-								if err != nil {
-									return nil, err
-								}
-							case "h":
-								var err error
-								spr.H, err = parseFloat(v)
-								if err != nil {
-									return nil, err
-								}
-							case "rotation":
-								var err error
-								spr.Rotation, err = parseFloat(v)
-								if err != nil {
-									return nil, err
-								}
-							case "fallback":
-								id, err := spriteID(skinST, v)
-								if err != nil {
-									return nil, fmt.Errorf("bucket fallback sprite: %w", err)
-								}
-								spr.FallbackID = id
-							}
-						}
+		for _, sf := range ft.Fields.List {
+			for range sf.Names {
+				spr := resource.EngineDataBucketSprite{}
+				if stag, ok := reflect.StructTag(stringLit(sf.Tag.Value)).Lookup("sonolus"); ok {
+					var err error
+					spr, err = parseBucketSpriteTag(stag, skinST)
+					if err != nil {
+						return nil, err
 					}
-					sprites = append(sprites, spr)
 				}
+				sprites = append(sprites, spr)
 			}
 		}
 		bucket := resource.EngineDataBucket{Sprites: sprites}
