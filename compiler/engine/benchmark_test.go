@@ -8,6 +8,7 @@ import (
 // BenchmarkCompilePlay measures end-to-end Play-mode compilation throughput
 // for a minimal engine (one archetype, one callback).
 func BenchmarkCompilePlay(b *testing.B) {
+	b.ReportAllocs()
 	src := `package p
 type Note struct {
 	Beat float64 ` + "`sonolus:\"imported\"`" + `
@@ -31,6 +32,7 @@ func (n *Note) UpdateParallel() {
 // BenchmarkCompilePlayWithArithmetic measures compilation throughput for
 // a callback that exercises arithmetic and control flow.
 func BenchmarkCompilePlayWithArithmetic(b *testing.B) {
+	b.ReportAllocs()
 	src := `package p
 type Note struct {
 	X float64 ` + "`sonolus:\"memory\"`" + `
@@ -55,6 +57,7 @@ func (n *Note) UpdateParallel() {
 // BenchmarkCompilePlayWithLoop measures compilation for a callback containing
 // a for loop with arithmetic.
 func BenchmarkCompilePlayWithLoop(b *testing.B) {
+	b.ReportAllocs()
 	src := `package p
 type Note struct {
 	Beat  float64 ` + "`sonolus:\"imported\"`" + `
@@ -82,7 +85,8 @@ func (n *Note) UpdateSequential() {
 // BenchmarkCompilePlayStages reports total Play-mode compilation time for a
 // simple engine read from testdata/golden/simple_play.go.
 func BenchmarkCompilePlayStages(b *testing.B) {
-	src, err := os.ReadFile("testdata/golden/simple_play.go")
+	b.ReportAllocs()
+	src, err := os.ReadFile("testdata/golden/simple.play.go")
 	if err != nil {
 		b.Fatalf("read test source: %v", err)
 	}
@@ -99,6 +103,7 @@ func BenchmarkCompilePlayStages(b *testing.B) {
 // BenchmarkCompileAllModes measures compilation throughput for all four modes
 // sequentially from a single engine source.
 func BenchmarkCompileAllModes(b *testing.B) {
+	b.ReportAllocs()
 	src := `package p
 type Note struct {
 	Beat float64 ` + "`sonolus:\"imported\"`" + `
