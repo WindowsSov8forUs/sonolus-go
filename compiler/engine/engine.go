@@ -18,14 +18,16 @@ import (
 	"context"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
 )
 
 // CompileOptions holds optional compilation parameters. nil is equivalent to
 // default options (no stats collection, standard optimization level, no
 // cancellation).
 type CompileOptions struct {
-	Context context.Context // if non-nil, checked between optimization passes for cancellation
-	Stats   *CompileStats   // if non-nil, per-callback compilation timing is recorded
+	Context context.Context  // if non-nil, checked between optimization passes for cancellation
+	Stats   *CompileStats    // if non-nil, per-callback compilation timing is recorded
+	Opt     optimize.Level   // optimization level (0 = default = LevelStandard)
 }
 
 // optsCtx extracts the context from opts, returning nil if opts is nil (safe
@@ -35,6 +37,15 @@ func optsCtx(opts *CompileOptions) context.Context {
 		return nil
 	}
 	return opts.Context
+}
+
+// optsLevel extracts the optimization level from opts. Returns LevelStandard
+// when opts is nil or Opt is zero-valued (the default).
+func optsLevel(opts *CompileOptions) optimize.Level {
+	if opts == nil || opts.Opt == 0 {
+		return optimize.LevelStandard
+	}
+	return opts.Opt
 }
 
 // ImportedField describes one imported field of an archetype. Name is the Go

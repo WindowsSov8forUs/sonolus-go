@@ -5,7 +5,6 @@ package tutorial
 
 import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
 
 // Callback is a tutorial-mode callback name.
@@ -17,9 +16,6 @@ const (
 	CallbackUpdate     Callback = "update"
 )
 
-// CompileCallback optimizes one tutorial callback's SNode tree. Tutorial has no
-// value-callback omission rules, but CompileCallback still runs peephole
-// optimization and the general pure-constant/trailing-zero stripping rules.
-func CompileCallback(archetypeIndex int, cb Callback, node snode.SNode) *modecompile.Result {
-	return modecompile.CompileCallback(archetypeIndex, string(cb), node, nil)
+func init() {
+	modecompile.RegisterModeOmit("tutorial", nil)
 }

@@ -7,7 +7,7 @@ import "github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 // Exports — used only by Play mode) are zero-valued in other modes.
 type ArchetypeDef struct {
 	Name     string
-	HasInput bool                                       // Play mode only
+	HasInput bool // Play mode only
 	Imports  []resource.EngineDataArchetypeImport
-	Exports  []resource.EngineArchetypeDataName         // Play mode only
+	Exports  []resource.EngineArchetypeDataName // Play mode only
 }

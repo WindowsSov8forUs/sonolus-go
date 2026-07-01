@@ -43,7 +43,7 @@ func TestCompileCallbackNoOp(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := CompileCallback(0, c.cb, c.node)
+			got := modecompile.CompileCallbackForMode(0, string(c.cb), c.node, "watch")
 			if c.wantNil {
 				if got != nil {
 					t.Fatalf("expected nil, got %s", canon(got.Node))
@@ -120,6 +120,9 @@ func TestHasInput(t *testing.T) {
 	for i, a := range data.Archetypes {
 		if a.Name == "" {
 			t.Errorf("archetype[%d].Name is empty", i)
+		}
+		if a.HasInput {
+			t.Errorf("archetype[%d].HasInput = true, want false (watch mode has no Touch callback)", i)
 		}
 	}
 }

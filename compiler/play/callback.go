@@ -34,24 +34,34 @@ func playOmit(s snode.SNode, cb string) (omit, handled bool) {
 	return false, false
 }
 
-// CompileCallback optimizes one archetype callback's SNode tree and applies
-// play-specific omission rules.
-func CompileCallback(archetypeIndex int, cb Callback, node snode.SNode) *modecompile.Result {
-	return modecompile.CompileCallback(archetypeIndex, string(cb), node, playOmit)
+func init() {
+	modecompile.RegisterModeOmit("play", playOmit)
 }
 
-// playSetters maps each Play callback name to its archetype field setter.
-var playSetters = map[string]func(*resource.EnginePlayDataArchetype, int, int){
-	"preprocess":       func(a *resource.EnginePlayDataArchetype, i, o int) { a.Preprocess = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
-	"spawnOrder":       func(a *resource.EnginePlayDataArchetype, i, o int) { a.SpawnOrder = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
-	"shouldSpawn":      func(a *resource.EnginePlayDataArchetype, i, o int) { a.ShouldSpawn = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
-	"initialize":       func(a *resource.EnginePlayDataArchetype, i, o int) { a.Initialize = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
-	"updateSequential": func(a *resource.EnginePlayDataArchetype, i, o int) { a.UpdateSequential = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
-	"touch":            func(a *resource.EnginePlayDataArchetype, i, o int) { a.Touch = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
-	"updateParallel":   func(a *resource.EnginePlayDataArchetype, i, o int) { a.UpdateParallel = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
-	"terminate":        func(a *resource.EnginePlayDataArchetype, i, o int) { a.Terminate = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o} },
+// Setters maps each Play callback name to its archetype field setter.
+var Setters = map[string]func(*resource.EnginePlayDataArchetype, int, int){
+	"preprocess": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.Preprocess = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
+	"spawnOrder": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.SpawnOrder = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
+	"shouldSpawn": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.ShouldSpawn = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
+	"initialize": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.Initialize = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
+	"updateSequential": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.UpdateSequential = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
+	"touch": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.Touch = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
+	"updateParallel": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.UpdateParallel = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
+	"terminate": func(a *resource.EnginePlayDataArchetype, i, o int) {
+		a.Terminate = &resource.EnginePlayDataArchetypeCallback{Index: i, Order: o}
+	},
 }
-
-// SetPlayCallback is the modecompile.SetCallback for Play mode, created from the
-// playSetters dispatch table.
-var SetPlayCallback = modecompile.NewCallbackSetter(playSetters)

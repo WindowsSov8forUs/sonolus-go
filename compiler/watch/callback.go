@@ -29,23 +29,31 @@ func watchOmit(s snode.SNode, cb string) (omit, handled bool) {
 	return false, false
 }
 
-// CompileCallback optimizes one archetype callback's SNode tree and applies
-// watch-specific omission rules.
-func CompileCallback(archetypeIndex int, cb Callback, node snode.SNode) *modecompile.Result {
-	return modecompile.CompileCallback(archetypeIndex, string(cb), node, watchOmit)
+func init() {
+	modecompile.RegisterModeOmit("watch", watchOmit)
 }
 
-// watchSetters maps each Watch callback name to its archetype field setter.
-var watchSetters = map[string]func(*resource.EngineWatchDataArchetype, int, int){
-	"preprocess":       func(a *resource.EngineWatchDataArchetype, i, o int) { a.Preprocess = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o} },
-	"spawnTime":        func(a *resource.EngineWatchDataArchetype, i, o int) { a.SpawnTime = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o} },
-	"despawnTime":      func(a *resource.EngineWatchDataArchetype, i, o int) { a.DespawnTime = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o} },
-	"initialize":       func(a *resource.EngineWatchDataArchetype, i, o int) { a.Initialize = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o} },
-	"updateSequential": func(a *resource.EngineWatchDataArchetype, i, o int) { a.UpdateSequential = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o} },
-	"updateParallel":   func(a *resource.EngineWatchDataArchetype, i, o int) { a.UpdateParallel = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o} },
-	"terminate":        func(a *resource.EngineWatchDataArchetype, i, o int) { a.Terminate = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o} },
+// Setters maps each Watch callback name to its archetype field setter.
+var Setters = map[string]func(*resource.EngineWatchDataArchetype, int, int){
+	"preprocess": func(a *resource.EngineWatchDataArchetype, i, o int) {
+		a.Preprocess = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o}
+	},
+	"spawnTime": func(a *resource.EngineWatchDataArchetype, i, o int) {
+		a.SpawnTime = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o}
+	},
+	"despawnTime": func(a *resource.EngineWatchDataArchetype, i, o int) {
+		a.DespawnTime = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o}
+	},
+	"initialize": func(a *resource.EngineWatchDataArchetype, i, o int) {
+		a.Initialize = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o}
+	},
+	"updateSequential": func(a *resource.EngineWatchDataArchetype, i, o int) {
+		a.UpdateSequential = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o}
+	},
+	"updateParallel": func(a *resource.EngineWatchDataArchetype, i, o int) {
+		a.UpdateParallel = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o}
+	},
+	"terminate": func(a *resource.EngineWatchDataArchetype, i, o int) {
+		a.Terminate = &resource.EngineWatchDataArchetypeCallback{Index: i, Order: o}
+	},
 }
-
-// SetWatchCallback is the modecompile.SetCallback for Watch mode, created from the
-// watchSetters dispatch table.
-var SetWatchCallback = modecompile.NewCallbackSetter(watchSetters)

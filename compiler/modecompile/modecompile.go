@@ -32,6 +32,25 @@ type OmitFunc func(node snode.SNode, callback string) (omit, handled bool)
 // matching sonolus.js-compiler's {callback}Order convention.
 type SetCallback[A any] func(arch *A, callback string, index int, order int) error
 
+// modeConfigs holds per-mode omission rules registered by each mode package.
+// See RegisterModeOmit.
+var modeConfigs = map[string]OmitFunc{}
+
+// RegisterModeOmit registers an omission function for a named mode (e.g. "play",
+// "watch"). Mode packages call this in init() so that callers can use
+// CompileCallback without passing their own omit wrapper.
+func RegisterModeOmit(mode string, omit OmitFunc) {
+	modeConfigs[mode] = omit
+}
+
+// CompileCallbackForMode is like CompileCallback but looks up the OmitFunc
+// registered for the given mode name. Callers should prefer this over the
+// per-mode wrapper functions.
+func CompileCallbackForMode(archetypeIndex int, callback string, node snode.SNode, mode string) *Result {
+	omit := modeConfigs[mode]
+	return CompileCallback(archetypeIndex, callback, node, omit)
+}
+
 // CompileCallback optimizes one archetype callback's SNode tree and applies the
 // caller-supplied omission rules. It returns nil when the callback should be
 // omitted.
@@ -150,14 +169,15 @@ func ignoreReturn(f snode.Func) snode.SNode {
 	if len(f.Args) == 0 {
 		return f
 	}
-	if _, ok := f.Args[len(f.Args)-1].(snode.Value); !ok {
+	last, ok := f.Args[len(f.Args)-1].(snode.Value)
+	if !ok || last != 0 {
 		return f
 	}
 	if len(f.Args) == 2 {
 		return f.Args[0]
 	}
 	return snode.Func{
-		Op: resource.RuntimeFunctionExecute,
+		Op:   resource.RuntimeFunctionExecute,
 		Args: append([]snode.SNode{}, f.Args[:len(f.Args)-1]...),
 	}
 }

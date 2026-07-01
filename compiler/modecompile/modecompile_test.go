@@ -19,7 +19,7 @@ func TestCompileCallback_PureConstant(t *testing.T) {
 func TestCompileCallback_ExecuteIgnoreReturn(t *testing.T) {
 	// Execute(..., 0) discards its trailing return value.
 	f := snode.Func{
-		Op: resource.RuntimeFunctionExecute,
+		Op:   resource.RuntimeFunctionExecute,
 		Args: []snode.SNode{snode.Value(2000), snode.Value(1), snode.Value(0)},
 	}
 	r := CompileCallback(0, "test", f, nil)
@@ -39,7 +39,7 @@ func TestCompileCallback_ExecuteIgnoreReturn(t *testing.T) {
 func TestCompileCallback_OmitFunc(t *testing.T) {
 	// When OmitFunc returns (true, true), general omission rules are skipped.
 	f := snode.Func{
-		Op: resource.RuntimeFunctionExecute,
+		Op:   resource.RuntimeFunctionExecute,
 		Args: []snode.SNode{snode.Value(2000), snode.Value(0)},
 	}
 	omitAlways := func(s snode.SNode, cb string) (omit, handled bool) {
@@ -106,7 +106,7 @@ func TestIsConstNonZero(t *testing.T) {
 func TestIgnoreReturn(t *testing.T) {
 	// Execute(a, 0) with 2 args → a
 	f := snode.Func{
-		Op: resource.RuntimeFunctionExecute,
+		Op:   resource.RuntimeFunctionExecute,
 		Args: []snode.SNode{snode.Value(42), snode.Value(0)},
 	}
 	result := ignoreReturn(f)
@@ -116,7 +116,7 @@ func TestIgnoreReturn(t *testing.T) {
 
 	// Execute(a, b, 0) → Execute(a, b)
 	f2 := snode.Func{
-		Op: resource.RuntimeFunctionExecute,
+		Op:   resource.RuntimeFunctionExecute,
 		Args: []snode.SNode{snode.Value(1), snode.Value(2), snode.Value(0)},
 	}
 	result2 := ignoreReturn(f2)
@@ -127,7 +127,7 @@ func TestIgnoreReturn(t *testing.T) {
 
 	// Non-Execute function → unchanged
 	f3 := snode.Func{
-		Op: resource.RuntimeFunctionAdd,
+		Op:   resource.RuntimeFunctionAdd,
 		Args: []snode.SNode{snode.Value(1), snode.Value(2)},
 	}
 	result3 := ignoreReturn(f3)
@@ -143,7 +143,10 @@ func TestNormalizeSlice_Empty(t *testing.T) {
 	var s []int
 	got := NormalizeSlice(s)
 	if got == nil {
-		t.Log("NormalizeSlice on nil slice returns nil (acceptable)")
+		t.Error("NormalizeSlice on nil slice returned nil, want empty slice")
+	}
+	if len(got) != 0 {
+		t.Errorf("len = %d, want 0", len(got))
 	}
 }
 
@@ -163,7 +166,7 @@ func TestNewCallbackSetter_Empty(t *testing.T) {
 	}
 	err := setCb(&testArch{}, "nonexistent", 0, 0)
 	if err == nil {
-		t.Log("no-op for unknown callback (expected)")
+		t.Error("expected error for unknown callback, got nil")
 	}
 }
 
@@ -180,21 +183,24 @@ func TestAssemble_OutOfOrderIndex(t *testing.T) {
 	}
 }
 
-func TestIsConstZero_WithFunc(t *testing.T) {
+func TestIsConst_FuncNode(t *testing.T) {
 	f := snode.Func{Op: resource.RuntimeFunctionAdd}
 	if IsConstZero(f) {
 		t.Error("Func should not be const-zero")
 	}
-}
-
-func TestIsConstNonZero_WithFunc(t *testing.T) {
-	f := snode.Func{Op: resource.RuntimeFunctionAdd}
 	if IsConstNonZero(f) {
 		t.Error("Func should not be const-nonzero")
 	}
 }
 
 // testArch is a minimal archetype for Assemble tests.
-type testArch struct{}
+type testArch struct {
+	cbIndex int
+	cbOrder int
+}
 
-func testSetCb(arch *testArch, cb string, index int, order int) error { return nil }
+func testSetCb(arch *testArch, cb string, index int, order int) error {
+	arch.cbIndex = index
+	arch.cbOrder = order
+	return nil
+}

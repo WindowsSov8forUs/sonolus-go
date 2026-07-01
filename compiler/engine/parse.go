@@ -169,9 +169,9 @@ func compileParsed(
 		a := archetypes[name]
 		exports := make([]resource.EngineArchetypeDataName, len(a.exported))
 		imports, b := buildBindings(a.imported, a.memory, a.exported, a.data, a.shared, a.input, a.despawn, a.info,
-				func(name string, idx int) {
-					exports[idx] = resource.EngineArchetypeDataName(name)
-				})
+			func(name string, idx int) {
+				exports[idx] = resource.EngineArchetypeDataName(name)
+			})
 		if a.scored || a.lifed {
 			ArchetypeScoreLife(b, a.scored, a.lifed)
 		}
@@ -200,7 +200,7 @@ func compileParsed(
 			}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
-			return play.CompileCallback(idx, play.Callback(cb), sn)
+			return modecompile.CompileCallbackForMode(idx, cb, sn, "play")
 		}
 		ctx := compileCtx{gen: gen, fset: fset, mode: ir.ModePlay, opts: opts}
 		r, err := ctx.compileMethodCallbacks(cms, a.name, i, envBuilder, resultFn)

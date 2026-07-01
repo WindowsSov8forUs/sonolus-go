@@ -22,8 +22,9 @@ func BuildWatchData(
 	arcs := make([]resource.EngineWatchDataArchetype, len(archetypes))
 	for i, a := range archetypes {
 		arcs[i] = resource.EngineWatchDataArchetype{
-			Name:    resource.EngineArchetypeName(a.Name),
-			Imports: modecompile.NormalizeSlice(a.Imports),
+			Name:     resource.EngineArchetypeName(a.Name),
+			HasInput: a.HasInput,
+			Imports:  modecompile.NormalizeSlice(a.Imports),
 		}
 	}
 

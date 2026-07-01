@@ -14,6 +14,23 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
 
+// modeName returns the canonical mode name string for an ir.Mode value,
+// used to look up registered OmitFunc in modecompile.
+func modeName(m ir.Mode) string {
+	switch m {
+	case ir.ModePlay:
+		return "play"
+	case ir.ModeWatch:
+		return "watch"
+	case ir.ModePreview:
+		return "preview"
+	case ir.ModeTutorial:
+		return "tutorial"
+	default:
+		return ""
+	}
+}
+
 // tagCollector gathers field names grouped by sonolus struct tag. It is used by
 // both parseFields (Play mode, which also handles exported/scored/lifed) and
 // parseModeFile (Watch/Preview/Tutorial modes).
@@ -212,7 +229,7 @@ func compileArchetypeCallbacks(
 			return frontend.Env{Names: names, Receiver: receiver, Funcs: funcs, Accessors: accessors, Mode: mode}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
-			return modecompile.CompileCallback(idx, cb, sn, nil)
+			return modecompile.CompileCallbackForMode(idx, cb, sn, modeName(mode))
 		}
 		ctx := compileCtx{gen: gen, fset: fset, mode: mode, opts: opts}
 		r, err := ctx.compileMethodCallbacks(cms, name, i, envBuilder, resultFn)
@@ -241,7 +258,7 @@ func (ctx compileCtx) compileTutorialCallback(
 	if err != nil {
 		return 0, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
 	}
-	if r := modecompile.CompileCallback(-1, callback, sn, nil); r != nil {
+	if r := modecompile.CompileCallbackForMode(-1, callback, sn, "tutorial"); r != nil {
 		return app.Append(r.Node)
 	}
 	return 0, nil
@@ -265,7 +282,7 @@ func compileUpdateSpawn(
 			if err != nil {
 				return 0, fmt.Errorf("UpdateSpawn: %w", err)
 			}
-			if r := modecompile.CompileCallback(-1, "UpdateSpawn", sn, nil); r != nil {
+			if r := modecompile.CompileCallbackForMode(-1, "UpdateSpawn", sn, "watch"); r != nil {
 				app := snode.NewAppender(nodes)
 				idx, err := app.Append(r.Node)
 				if err != nil {

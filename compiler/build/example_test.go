@@ -34,19 +34,19 @@ func TestEndToEndPlay(t *testing.T) {
 
 	results := []*modecompile.Result{
 		// Note.spawnOrder = constant 0 -> omitted entirely.
-		play.CompileCallback(0, play.CallbackSpawnOrder, val(0)),
+		modecompile.CompileCallbackForMode(0, string(play.CallbackSpawnOrder), val(0), "play"),
 		// Note.initialize: Set(mem, 1, 2 + 3) -> constant folds to Set(mem,1,5).
-		play.CompileCallback(0, play.CallbackInitialize,
-			call(resource.RuntimeFunctionSet, val(mem), val(1), call(resource.RuntimeFunctionAdd, val(2), val(3)))),
+		modecompile.CompileCallbackForMode(0, string(play.CallbackInitialize),
+			call(resource.RuntimeFunctionSet, val(mem), val(1), call(resource.RuntimeFunctionAdd, val(2), val(3))), "play"),
 		// Note.updateParallel: Execute(Set(mem,1,Get(mem,1)+1), 0) -> SetAdd + drop return.
-		play.CompileCallback(0, play.CallbackUpdateParallel,
+		modecompile.CompileCallbackForMode(0, string(play.CallbackUpdateParallel),
 			call(resource.RuntimeFunctionExecute,
 				call(resource.RuntimeFunctionSet, val(mem), val(1),
 					call(resource.RuntimeFunctionAdd, call(resource.RuntimeFunctionGet, val(mem), val(1)), val(1))),
-				val(0))),
+				val(0)), "play"),
 		// Stage.updateParallel shares the Get(mem,1) subexpression with Note.
-		play.CompileCallback(1, play.CallbackUpdateParallel,
-			call(resource.RuntimeFunctionGet, val(mem), val(1))),
+		modecompile.CompileCallbackForMode(1, string(play.CallbackUpdateParallel),
+			call(resource.RuntimeFunctionGet, val(mem), val(1)), "play"),
 	}
 
 	if err := play.Assemble(data, results); err != nil {

@@ -37,7 +37,7 @@ func TestCompileCallbackNoOp(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := CompileCallback(0, c.cb, c.node)
+			got := modecompile.CompileCallbackForMode(0, string(c.cb), c.node, "preview")
 			if c.wantNil {
 				if got != nil {
 					t.Fatalf("expected nil, got %s", canon(got.Node))

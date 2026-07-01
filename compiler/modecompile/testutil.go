@@ -35,5 +35,5 @@ func Canon(n snode.SNode) string {
 		}
 		return string(t.Op) + "(" + strings.Join(ps, ",") + ")"
 	}
-	return "?"
+	return "?" // unreachable: snode.SNode is sealed to Value | Func
 }

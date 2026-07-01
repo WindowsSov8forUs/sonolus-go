@@ -83,7 +83,14 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 			info:     &a.info,
 		}
 		for _, f := range td.structType.Fields.List {
-			collectSonolusTags(f, tc) // non-Play modes ignore modeTag (exported/scored/lifed are Play-only)
+			unknown, _ := collectSonolusTags(f, tc)
+			if unknown != "" {
+				name := ""
+				if len(f.Names) > 0 {
+					name = f.Names[0].Name
+				}
+				return nil, fmt.Errorf("%s: unknown sonolus tag %q on field %q", td.name, unknown, name)
+			}
 		}
 	}
 
@@ -105,20 +112,22 @@ func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string
 // callback body. It is used by all non-Play modes (Play uses parse.go which goes
 // through the play sub-package).
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
-func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStmt, env frontend.Env, methodName string, mode ir.Mode, opts *CompileOptions) (snode.SNode, error) {
+func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStmt, env frontend.Env, methodName string, mode ir.Mode, opts *CompileOptions) (sn snode.SNode, err error) {
 	t0 := time.Now()
+	defer func() {
+		if opts != nil && opts.Stats != nil {
+			opts.Stats.Record(methodName, time.Since(t0))
+		}
+	}()
 	entry, err := frontend.CompileBlock(fset, gen, body, env)
 	if err != nil {
 		return nil, err
 	}
-	entry, err = optimize.OptimizeCtx(gen, entry, mode, methodName, ir.DefaultTempMemoryBlock, optimize.LevelStandard, optsCtx(opts))
+	entry, err = optimize.OptimizeCtx(gen, entry, mode, methodName, ir.DefaultTempMemoryBlock, optsLevel(opts), optsCtx(opts))
 	if err != nil {
 		return nil, err
 	}
-	sn, err := ir.CFGToSNode(gen, entry)
-	if opts != nil && opts.Stats != nil {
-		opts.Stats.Record(methodName, time.Since(t0))
-	}
+	sn, err = ir.CFGToSNode(gen, entry)
 	return sn, err
 }
 
@@ -157,7 +166,7 @@ func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.Engi
 		return nil, err
 	}
 
-	if err := modecompile.Assemble(&nodes, outArcs, results, watch.SetWatchCallback); err != nil {
+	if err := modecompile.Assemble(&nodes, outArcs, results, modecompile.NewCallbackSetter(watch.Setters)); err != nil {
 		return nil, err
 	}
 
@@ -197,7 +206,7 @@ func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.En
 		outArcs[i] = resource.EnginePreviewDataArchetype{Name: ad.name, Imports: ad.imports}
 	}
 
-	if err := modecompile.Assemble(&nodes, outArcs, results, preview.SetPreviewCallback); err != nil {
+	if err := modecompile.Assemble(&nodes, outArcs, results, modecompile.NewCallbackSetter(preview.Setters)); err != nil {
 		return nil, err
 	}
 

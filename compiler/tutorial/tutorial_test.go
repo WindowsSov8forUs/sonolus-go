@@ -5,6 +5,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
 )
 
@@ -108,13 +109,13 @@ func TestCompileCallback_Peephole(t *testing.T) {
 	// CompileCallback should run peephole optimization and apply
 	// pure-constant/trailing-zero stripping.
 	zero := snode.Val(0)
-	r := CompileCallback(-1, CallbackPreprocess, zero)
+	r := modecompile.CompileCallbackForMode(-1, string(CallbackPreprocess), zero, "tutorial")
 	if r != nil {
 		t.Error("pure constant zero should be stripped")
 	}
 
 	nonZero := snode.Val(42)
-	r = CompileCallback(-1, CallbackNavigate, nonZero)
+	r = modecompile.CompileCallbackForMode(-1, string(CallbackNavigate), nonZero, "tutorial")
 	if r != nil {
 		t.Error("pure constant non-zero should be stripped")
 	}
@@ -123,7 +124,7 @@ func TestCompileCallback_Peephole(t *testing.T) {
 func TestCompileCallback_Dynamic(t *testing.T) {
 	// A dynamic node should not be stripped.
 	dyn := snode.Call(resource.RuntimeFunctionDebugLog, snode.Val(1))
-	r := CompileCallback(-1, CallbackUpdate, dyn)
+	r := modecompile.CompileCallbackForMode(-1, string(CallbackUpdate), dyn, "tutorial")
 	if r == nil {
 		t.Fatal("dynamic callback should not be stripped")
 	}
