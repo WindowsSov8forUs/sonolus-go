@@ -15,13 +15,13 @@ import (
 func vec2BinOp(gen *ir.IDGen, v Num, w Num, op resource.RuntimeFunction) (Num, error) {
 	if w.IsComposite() {
 		return compNum(map[string]Num{
-			"x": exprNum(gen.PureInstr(op, v.Field("x").mustNode(), w.Field("x").mustNode())),
-			"y": exprNum(gen.PureInstr(op, v.Field("y").mustNode(), w.Field("y").mustNode())),
+			"x": exprNum(gen.PureInstr(op, v.MustField("x").mustNode(), w.MustField("x").mustNode())),
+			"y": exprNum(gen.PureInstr(op, v.MustField("y").mustNode(), w.MustField("y").mustNode())),
 		}), nil
 	}
 	return compNum(map[string]Num{
-		"x": exprNum(gen.PureInstr(op, v.Field("x").mustNode(), w.mustNode())),
-		"y": exprNum(gen.PureInstr(op, v.Field("y").mustNode(), w.mustNode())),
+		"x": exprNum(gen.PureInstr(op, v.MustField("x").mustNode(), w.mustNode())),
+		"y": exprNum(gen.PureInstr(op, v.MustField("y").mustNode(), w.mustNode())),
 	}), nil
 }
 
@@ -42,7 +42,7 @@ func vec2Div(t *tracer, v Num, args []Num) (Num, error) {
 }
 
 func vec2Magnitude(t *tracer, v Num, args []Num) (Num, error) {
-	x, y := v.Field("x"), v.Field("y")
+	x, y := v.MustField("x"), v.MustField("y")
 	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionPower,
 		t.gen.PureInstr(resource.RuntimeFunctionAdd,
 			t.gen.PureInstr(resource.RuntimeFunctionMultiply, x.mustNode(), x.mustNode()),
@@ -53,12 +53,12 @@ func vec2Magnitude(t *tracer, v Num, args []Num) (Num, error) {
 func vec2Dot(t *tracer, v Num, args []Num) (Num, error) {
 	w := args[0]
 	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd,
-		t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.Field("x").mustNode(), w.Field("x").mustNode()),
-		t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.Field("y").mustNode(), w.Field("y").mustNode()))), nil
+		t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.MustField("x").mustNode(), w.MustField("x").mustNode()),
+		t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.MustField("y").mustNode(), w.MustField("y").mustNode()))), nil
 }
 
 func vec2Normalize(t *tracer, v Num, args []Num) (Num, error) {
-	x, y := v.Field("x"), v.Field("y")
+	x, y := v.MustField("x"), v.MustField("y")
 	mag := t.gen.PureInstr(resource.RuntimeFunctionPower,
 		t.gen.PureInstr(resource.RuntimeFunctionAdd,
 			t.gen.PureInstr(resource.RuntimeFunctionMultiply, x.mustNode(), x.mustNode()),
@@ -92,7 +92,7 @@ var vec2Statics = map[string]func() Num{
 }
 
 func vec2Angle(t *tracer, v Num, args []Num) (Num, error) {
-	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionArctan2, v.Field("y").mustNode(), v.Field("x").mustNode())), nil
+	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionArctan2, v.MustField("y").mustNode(), v.MustField("x").mustNode())), nil
 }
 
 func vec2Rotate(t *tracer, v Num, args []Num) (Num, error) {
@@ -101,33 +101,33 @@ func vec2Rotate(t *tracer, v Num, args []Num) (Num, error) {
 	sin := t.gen.PureInstr(resource.RuntimeFunctionSin, a.mustNode())
 	return compNum(map[string]Num{
 		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionSubtract,
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.Field("x").mustNode(), cos),
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.Field("y").mustNode(), sin))),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.MustField("x").mustNode(), cos),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.MustField("y").mustNode(), sin))),
 		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd,
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.Field("x").mustNode(), sin),
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.Field("y").mustNode(), cos))),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.MustField("x").mustNode(), sin),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, v.MustField("y").mustNode(), cos))),
 	}), nil
 }
 
 func vec2Orthogonal(t *tracer, v Num, args []Num) (Num, error) {
 	return compNum(map[string]Num{
-		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionNegate, v.Field("y").mustNode())),
-		"y": v.Field("x"),
+		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionNegate, v.MustField("y").mustNode())),
+		"y": v.MustField("x"),
 	}), nil
 }
 
 func vec2RotateAbout(t *tracer, v Num, args []Num) (Num, error) {
 	pt, angle := args[0], args[1]
-	dx := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSubtract, v.Field("x").mustNode(), pt.Field("x").mustNode()))
-	dy := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSubtract, v.Field("y").mustNode(), pt.Field("y").mustNode()))
+	dx := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSubtract, v.MustField("x").mustNode(), pt.MustField("x").mustNode()))
+	dy := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSubtract, v.MustField("y").mustNode(), pt.MustField("y").mustNode()))
 	cs := t.gen.PureInstr(resource.RuntimeFunctionCos, angle.mustNode())
 	sn := t.gen.PureInstr(resource.RuntimeFunctionSin, angle.mustNode())
 	return compNum(map[string]Num{
-		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, pt.Field("x").mustNode(),
+		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, pt.MustField("x").mustNode(),
 			t.gen.PureInstr(resource.RuntimeFunctionSubtract,
 				t.gen.PureInstr(resource.RuntimeFunctionMultiply, dx.mustNode(), cs),
 				t.gen.PureInstr(resource.RuntimeFunctionMultiply, dy.mustNode(), sn)))),
-		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, pt.Field("y").mustNode(),
+		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, pt.MustField("y").mustNode(),
 			t.gen.PureInstr(resource.RuntimeFunctionAdd,
 				t.gen.PureInstr(resource.RuntimeFunctionMultiply, dx.mustNode(), sn),
 				t.gen.PureInstr(resource.RuntimeFunctionMultiply, dy.mustNode(), cs)))),
@@ -135,7 +135,7 @@ func vec2RotateAbout(t *tracer, v Num, args []Num) (Num, error) {
 }
 
 func vec2NormalizeOrZero(t *tracer, v Num, args []Num) (Num, error) {
-	x, y := v.Field("x"), v.Field("y")
+	x, y := v.MustField("x"), v.MustField("y")
 	magSq := t.gen.PureInstr(resource.RuntimeFunctionAdd,
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, x.mustNode(), x.mustNode()),
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, y.mustNode(), y.mustNode()))
@@ -156,9 +156,9 @@ func vec2NormalizeOrZero(t *tracer, v Num, args []Num) (Num, error) {
 
 // angleDiff returns the absolute angle between two vectors: Acos(dot(a,b)/(|a||b|)).
 func vec2AngleDiff(t *tracer, v Num, args []Num) (Num, error) {
-	ax, ay := v.Field("x").mustNode(), v.Field("y").mustNode()
+	ax, ay := v.MustField("x").mustNode(), v.MustField("y").mustNode()
 	w := args[0]
-	bx, by := w.Field("x").mustNode(), w.Field("y").mustNode()
+	bx, by := w.MustField("x").mustNode(), w.MustField("y").mustNode()
 	dot := t.gen.PureInstr(resource.RuntimeFunctionAdd,
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, ax, bx),
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, ay, by))
@@ -180,9 +180,9 @@ func vec2AngleDiff(t *tracer, v Num, args []Num) (Num, error) {
 
 // signedAngleDiff returns the signed angle: Arctan2(cross(a,b), dot(a,b)).
 func vec2SignedAngleDiff(t *tracer, v Num, args []Num) (Num, error) {
-	ax, ay := v.Field("x").mustNode(), v.Field("y").mustNode()
+	ax, ay := v.MustField("x").mustNode(), v.MustField("y").mustNode()
 	w := args[0]
-	bx, by := w.Field("x").mustNode(), w.Field("y").mustNode()
+	bx, by := w.MustField("x").mustNode(), w.MustField("y").mustNode()
 	cross := t.gen.PureInstr(resource.RuntimeFunctionSubtract,
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, ax, by),
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, ay, bx))

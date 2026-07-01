@@ -14,9 +14,9 @@ import (
 // pairLt implements Pair.lt(o Pair) → float64 (1.0 if p < o, else 0.0).
 func pairLt(t *tracer, p Num, args []Num) (Num, error) {
 	o := args[0]
-	firstLt := t.gen.PureInstr(resource.RuntimeFunctionLess, p.Field("first").mustNode(), o.Field("first").mustNode())
-	firstEq := t.gen.PureInstr(resource.RuntimeFunctionEqual, p.Field("first").mustNode(), o.Field("first").mustNode())
-	secondLt := t.gen.PureInstr(resource.RuntimeFunctionLess, p.Field("second").mustNode(), o.Field("second").mustNode())
+	firstLt := t.gen.PureInstr(resource.RuntimeFunctionLess, p.MustField("first").mustNode(), o.MustField("first").mustNode())
+	firstEq := t.gen.PureInstr(resource.RuntimeFunctionEqual, p.MustField("first").mustNode(), o.MustField("first").mustNode())
+	secondLt := t.gen.PureInstr(resource.RuntimeFunctionLess, p.MustField("second").mustNode(), o.MustField("second").mustNode())
 	andPart := t.gen.PureInstr(resource.RuntimeFunctionAnd, firstEq, secondLt)
 	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionOr, firstLt, andPart)), nil
 }
@@ -24,9 +24,9 @@ func pairLt(t *tracer, p Num, args []Num) (Num, error) {
 // pairLe implements Pair.le(o Pair) → float64 (1.0 if p <= o, else 0.0).
 func pairLe(t *tracer, p Num, args []Num) (Num, error) {
 	o := args[0]
-	firstLt := t.gen.PureInstr(resource.RuntimeFunctionLess, p.Field("first").mustNode(), o.Field("first").mustNode())
-	firstEq := t.gen.PureInstr(resource.RuntimeFunctionEqual, p.Field("first").mustNode(), o.Field("first").mustNode())
-	secondLe := t.gen.PureInstr(resource.RuntimeFunctionLessOr, p.Field("second").mustNode(), o.Field("second").mustNode())
+	firstLt := t.gen.PureInstr(resource.RuntimeFunctionLess, p.MustField("first").mustNode(), o.MustField("first").mustNode())
+	firstEq := t.gen.PureInstr(resource.RuntimeFunctionEqual, p.MustField("first").mustNode(), o.MustField("first").mustNode())
+	secondLe := t.gen.PureInstr(resource.RuntimeFunctionLessOr, p.MustField("second").mustNode(), o.MustField("second").mustNode())
 	andPart := t.gen.PureInstr(resource.RuntimeFunctionAnd, firstEq, secondLe)
 	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionOr, firstLt, andPart)), nil
 }
@@ -43,7 +43,7 @@ func pairGe(t *tracer, p Num, args []Num) (Num, error) {
 
 // pairTuple implements Pair.tuple() → [2]float64.
 func pairTuple(t *tracer, p Num, args []Num) (Num, error) {
-	return arrayNum([]Num{p.Field("first"), p.Field("second")}), nil
+	return arrayNum([]Num{p.MustField("first"), p.MustField("second")}), nil
 }
 
 // ── Container info type ─────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ func (ci *containerInfo) writeSize(t *tracer, newSize ir.Node) {
 // composite value only.
 
 func varArrayLen(t *tracer, v Num, args []Num) (Num, error) {
-	return v.Field("_size"), nil
+	return v.MustField("_size"), nil
 }
 
 func varArrayCapacity(t *tracer, v Num, args []Num) (Num, error) {
@@ -103,7 +103,7 @@ func varArrayCapacity(t *tracer, v Num, args []Num) (Num, error) {
 func varArrayIsFull(t *tracer, v Num, args []Num) (Num, error) {
 	capNum := constNum(-1)
 	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionEqual,
-		v.Field("_size").mustNode(), capNum.mustNode())), nil
+		v.MustField("_size").mustNode(), capNum.mustNode())), nil
 }
 
 func varArrayAppend(t *tracer, v Num, args []Num) (Num, error) {

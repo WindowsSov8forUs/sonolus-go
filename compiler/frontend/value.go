@@ -111,18 +111,21 @@ func (n Num) TryField(name string) (Num, bool) {
 	return v, ok
 }
 
-// Field returns the Num for a named field of a record, or panics.
+// MustField returns the Num for a named field of a record, or panics.
 // For user-reachable code paths that may receive non-record values,
 // use TryField which returns ok=false instead.
 //
-// Field is safe to call in record-method implementations because the D2/D3
+// MustField is safe to call in record-method implementations because the D2/D3
 // type-driven dispatch system validates the receiver type before the method
 // runs, guaranteeing both that the receiver is a record and that the named
 // field exists.
-func (n Num) Field(name string) Num {
+//
+// MustField follows the Go MustXxx naming convention for functions that panic
+// on error (cf. regexp.MustCompile, template.Must).
+func (n Num) MustField(name string) Num {
 	v, ok := n.TryField(name)
 	if !ok {
-		panic("Num.Field: unknown field " + name)
+		panic("Num.MustField: unknown field " + name)
 	}
 	return v
 }

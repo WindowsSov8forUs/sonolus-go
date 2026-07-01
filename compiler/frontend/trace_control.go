@@ -684,7 +684,7 @@ func (t *tracer) returnStmt(n *ast.ReturnStmt) error {
 			}
 			rc.compositeFields = order
 			for i, f := range rc.compositeFields {
-				t.emit(t.gen.SetPlace(ir.BlockPlace{Block: rc.temp, Index: ir.Const(i), Offset: 0}, vals[0].Field(f).mustNode()))
+				t.emit(t.gen.SetPlace(ir.BlockPlace{Block: rc.temp, Index: ir.Const(i), Offset: 0}, vals[0].MustField(f).mustNode()))
 			}
 		} else if len(vals) == 1 {
 			// Single scalar return.
