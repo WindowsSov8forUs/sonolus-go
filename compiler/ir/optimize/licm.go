@@ -41,12 +41,12 @@ func (l LICM) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *DominanceCache
 		if lp.Header == entry {
 			continue
 		}
-		licmProcessLoop(lp, dom, &nextID, l.Oracle)
+		nextID = licmProcessLoop(lp, dom, nextID, l.Oracle)
 	}
 	return entry
 }
 
-func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle BlockOracle) {
+func licmProcessLoop(lp Loop, dom *Dominance, nextID int, oracle BlockOracle) int {
 	var preheader *ir.BasicBlock
 	var nonBack []*ir.FlowEdge
 	for _, e := range lp.Header.Incoming {
@@ -55,9 +55,10 @@ func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle BlockOracle) {
 		}
 	}
 	if len(nonBack) == 0 {
-		return
+		return nextID
 	}
-	if len(nonBack) == 1 && len(nonBack[0].Src.Statements) == 0 && len(nonBack[0].Src.Outgoing) == 1 {
+	if len(nonBack) == 1 && len(nonBack[0].Src.Statements) == 0 &&
+		len(nonBack[0].Src.Outgoing) == 1 && len(nonBack[0].Src.Phis) == 0 {
 		preheader = nonBack[0].Src
 	} else {
 		preheader = ir.NewBlock()
@@ -68,6 +69,34 @@ func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle BlockOracle) {
 			lp.Header.Incoming = removeEdge(lp.Header.Incoming, e)
 		}
 		lp.Header.Incoming = append(lp.Header.Incoming, &ir.FlowEdge{Src: preheader, Dst: lp.Header, Cond: nil})
+
+		// Migrate phi nodes: values arriving from blocks outside the loop body
+		// must be rewired to the newly created preheader. This mirrors the logic
+		// in sonolus.py's _get_or_create_preheader (licm.py:115-124).
+		for _, phi := range lp.Header.Phis {
+			preheaderValues := map[*ir.BasicBlock]ir.Place{}
+			for src := range phi.Args {
+				if !lp.Body[src] {
+					preheaderValues[src] = phi.Args[src]
+					delete(phi.Args, src)
+				}
+			}
+			if len(preheaderValues) == 1 {
+				for _, v := range preheaderValues {
+					phi.Args[preheader] = v
+				}
+			} else if len(preheaderValues) > 1 {
+				// Multiple non-loop predecessors each contribute a distinct SSA
+				// value. Hoist the merge into the preheader via a phi there, then
+				// feed the result to the header.
+				preheader.Phis = append(preheader.Phis, &ir.Phi{
+					Var:    phi.Var,
+					Target: phi.Target,
+					Args:   preheaderValues,
+				})
+				phi.Args[preheader] = phi.Target
+			}
+		}
 	}
 
 	defs := licmDefsInLoop(lp.Body)
@@ -88,10 +117,11 @@ func licmProcessLoop(lp Loop, dom *Dominance, nextID *int, oracle BlockOracle) {
 	hoisted := map[cseKeyType]bool{}
 	for _, b := range guaranteed {
 		for _, s := range b.Statements {
-			licmHoistExpr(s, preheader, defs, nextID, hoisted, oracle)
+			nextID = licmHoistExpr(s, preheader, defs, nextID, hoisted, oracle)
 		}
-		licmHoistExpr(b.Test, preheader, defs, nextID, hoisted, oracle)
+		nextID = licmHoistExpr(b.Test, preheader, defs, nextID, hoisted, oracle)
 	}
+	return nextID
 }
 
 func licmDefsInLoop(body map[*ir.BasicBlock]bool) map[ir.SSAPlace]bool {
@@ -113,26 +143,27 @@ func licmDefsInLoop(body map[*ir.BasicBlock]bool) map[ir.SSAPlace]bool {
 	return defs
 }
 
-func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID *int, hoisted map[cseKeyType]bool, oracle BlockOracle) {
+func licmHoistExpr(n ir.Node, preheader *ir.BasicBlock, defs map[ir.SSAPlace]bool, nextID int, hoisted map[cseKeyType]bool, oracle BlockOracle) int {
 	instr, ok := n.(ir.Instr)
 	if !ok || !ir.Pure(instr.Op) || ir.SideEffects(instr.Op) {
-		return
+		return nextID
 	}
 	h := fnv.New128a()
 	k := cseKey(instr, h)
 	if hoisted[k] {
-		return
+		return nextID
 	}
 	if !licmIsInvariant(instr, defs, oracle) {
-		return
+		return nextID
 	}
 	if exprCost(instr) < inlineCostThreshold {
-		return
+		return nextID
 	}
 	hoisted[k] = true
-	p := ir.SSAPlace{Name: "licm", Num: *nextID}
-	*nextID++
+	p := ir.SSAPlace{Name: "licm", Num: nextID}
+	nextID++
 	preheader.Statements = append(preheader.Statements, ir.Set{Place: p, Value: instr})
+	return nextID
 }
 
 func licmIsInvariant(instr ir.Instr, defs map[ir.SSAPlace]bool, oracle BlockOracle) bool {

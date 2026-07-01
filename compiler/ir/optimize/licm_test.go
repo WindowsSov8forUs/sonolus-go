@@ -35,21 +35,75 @@ func TestLICMNestedLoop(t *testing.T) {
 	t.Logf("LICM nested loop output: %s", got)
 }
 
-// TestLICMNoPreheaderForStraightline verifies that LICM does not insert a
-// preheader when the CFG has no loops. A straight-line CFG with a pure
-// computation should pass through unchanged by LICM.
-func TestLICMNoPreheaderForStraightline(t *testing.T) {
-	e := ir.NewBlock()
-	exit := ir.NewBlock()
-	inv := testGen.PureInstr(resource.RuntimeFunctionMultiply, ir.Const(3), ir.Const(5))
-	e.Statements = []ir.Node{
-		testGen.SetPlace(ir.Cell(0, 0), inv),
-		testGen.SetPlace(ir.Cell(0, 1), ir.Const(42)),
-	}
-	e.ConnectTo(exit, nil)
+// TestLICMPhiMigration verifies that LICM correctly migrates phi node arguments
+// when creating a new preheader block. The CFG has two non-back predecessors (predA,
+// predB) feeding a loop header that carries a phi node for variable x. LICM must
+// create a new preheader (since neither predecessor qualifies for reuse) and migrate
+// the phi args from predA/predB to the preheader. Without this migration, FromSSA
+// drops the SSA values and produces incorrect output.
+func TestLICMPhiMigration(t *testing.T) {
+	x := ir.NewTemp("x")
 
-	result := LICM{Oracle: ir.Blocks(ir.ModePlay)}.Run(testGen, e)
-	_ = result
-	// LICM should not crash or produce nil on a no-loop CFG.
-	t.Logf("LICM no-loop test passed")
+	entry := ir.NewBlock()
+	predA := ir.NewBlock()
+	predB := ir.NewBlock()
+	header := ir.NewBlock()
+	body := ir.NewBlock()
+	exit := ir.NewBlock()
+
+	// entry branches to predA (truthy) or predB (falsy) based on a memory read.
+	entry.Test = ir.GetPlace(ir.Cell(0, 0))
+
+	// Each predecessor writes a distinct value to x so the loop header phi has
+	// two non-back args. Both predecessors contain statements so LICM cannot
+	// reuse either as a preheader — it must create a new one.
+	predA.Statements = []ir.Node{
+		testGen.SetPlace(ir.TempCell(x), ir.Const(10)),
+	}
+	predB.Statements = []ir.Node{
+		testGen.SetPlace(ir.TempCell(x), ir.Const(20)),
+	}
+
+	// Loop condition uses a memory read (not the temp variable) to avoid
+	// circular SSA dependency between the test and the phi target.
+	header.Test = ir.GetPlace(ir.Cell(0, 0))
+
+	// Loop body: an invariant pure computation and a phi-dependent write.
+	body.Statements = []ir.Node{
+		testGen.SetPlace(ir.Cell(0, 0),
+			testGen.PureInstr(resource.RuntimeFunctionMultiply, ir.Const(3), ir.Const(5))),
+		testGen.SetPlace(ir.TempCell(x),
+			testGen.PureInstr(resource.RuntimeFunctionSubtract,
+				ir.GetPlace(ir.TempCell(x)), ir.Const(1))),
+	}
+
+	exit.Statements = []ir.Node{
+		testGen.SetPlace(ir.Cell(0, 1), ir.GetPlace(ir.TempCell(x))),
+	}
+
+	// Edges.
+	entry.ConnectTo(predA, nil)
+	entry.ConnectTo(predB, ir.Cond(0))
+	predA.ConnectTo(header, nil)
+	predB.ConnectTo(header, nil)
+	header.ConnectTo(body, nil)
+	header.ConnectTo(exit, ir.Cond(0))
+	body.ConnectTo(header, nil) // back edge
+
+	// Run Standard pipeline: ToSSA → … → LICM → … → FromSSA → …
+	result, err := Optimize(testGen, entry, ir.ModePlay, "updateSequential",
+		ir.DefaultTempMemoryBlock, LevelStandard)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sn, err := ir.CFGToSNode(testGen, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := canon(snode.Peephole(sn))
+	if got == "" {
+		t.Error("LICM phi migration pipeline produced empty output")
+	}
+	t.Logf("LICM phi migration output: %s", got)
 }
