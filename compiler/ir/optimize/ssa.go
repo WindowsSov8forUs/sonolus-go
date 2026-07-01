@@ -68,10 +68,7 @@ func stmtDef(s ir.Node) *ir.TempBlock {
 	if !ok {
 		return nil
 	}
-	tb, ok := bp.Block.(*ir.TempBlock)
-	if !ok || tb.Size != 1 {
-		return nil
-	}
+	tb, _ := blockTemp(bp)
 	return tb
 }
 

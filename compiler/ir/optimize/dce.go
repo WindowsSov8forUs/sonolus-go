@@ -64,17 +64,24 @@ func (DeadCodeElimination) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlo
 	return entry
 }
 
+// blockTemp extracts the size-1 *TempBlock backing a BlockPlace, if any.
+// Shared by tempOf (DCE) and stmtDef (SSA construction) to avoid duplicating
+// the type-assert-and-size-check pattern.
+func blockTemp(bp ir.BlockPlace) (*ir.TempBlock, bool) {
+	tb, ok := bp.Block.(*ir.TempBlock)
+	if !ok || tb.Size != 1 {
+		return nil, false
+	}
+	return tb, true
+}
+
 // tempOf returns the size-1 temp block a place writes to, if any.
 func tempOf(p ir.Place) (*ir.TempBlock, bool) {
 	bp, ok := p.(ir.BlockPlace)
 	if !ok {
 		return nil, false
 	}
-	tb, ok := bp.Block.(*ir.TempBlock)
-	if !ok || tb.Size != 1 {
-		return nil, false
-	}
-	return tb, true
+	return blockTemp(bp)
 }
 
 func isLiveStore(set ir.Set, uses map[*ir.TempBlock]bool) bool {
