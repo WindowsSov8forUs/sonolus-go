@@ -59,6 +59,12 @@ func (v InlineVars) RunWithDom(gen *ir.IDGen, entry *ir.BasicBlock, dc *Dominanc
 				}
 			}
 		}
+		// Safeguard: the processing loop guarantees newStmts has exactly
+		// len(all) elements — one for each original statement plus the test.
+		// If a future refactor breaks this invariant, skip rather than panic.
+		if len(newStmts) == 0 {
+			continue
+		}
 		b.Statements = newStmts[:len(newStmts)-1]
 		b.Test = newStmts[len(newStmts)-1]
 	}
