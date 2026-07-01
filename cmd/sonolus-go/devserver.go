@@ -39,6 +39,12 @@ type devServer struct {
 	state devServerState
 }
 
+// recompile reads the source file and recompiles all four modes. Play mode
+// failure is fatal (returns error) because the dev server cannot serve the
+// engine without play data. Watch, preview, and tutorial mode failures are
+// non-fatal — they are recorded in state.modeErrors and exposed via the
+// /sonolus/engines/info endpoint so the user can inspect them without the
+// server going down.
 func (s *devServer) recompile() error {
 	src, err := os.ReadFile(s.src)
 	if err != nil {
@@ -71,40 +77,37 @@ func (s *devServer) recompile() error {
 	newState.rom = rom
 
 	// ── Watch mode ──
-	watchKey := engine.NewCacheKey("watch", srcStr)
-	if d := s.cache.GetWatch(watchKey); d != nil {
-		newState.wd = d
-	} else if watchData, err := engine.CompileWatchFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
-		fmt.Fprintf(os.Stderr, "[dev] watch compile: %v\n", err)
-		newState.modeErrors["watch"] = err.Error()
-	} else {
-		newState.wd = watchData
-		s.cache.PutWatch(watchKey, watchData)
-	}
+	compileNonPlay(s, "watch",
+		func(k engine.CacheKey) (*resource.EngineWatchData, bool) { d := s.cache.GetWatch(k); return d, d != nil },
+		func(k engine.CacheKey, d *resource.EngineWatchData) { s.cache.PutWatch(k, d) },
+		func(src string, opts *engine.CompileOptions) (*resource.EngineWatchData, error) {
+			return engine.CompileWatchFileWithStats(src, opts)
+		},
+		func(d *resource.EngineWatchData) { newState.wd = d },
+		srcStr, newState.modeErrors,
+	)
 
 	// ── Preview mode ──
-	previewKey := engine.NewCacheKey("preview", srcStr)
-	if d := s.cache.GetPreview(previewKey); d != nil {
-		newState.pv = d
-	} else if previewData, err := engine.CompilePreviewFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
-		fmt.Fprintf(os.Stderr, "[dev] preview compile: %v\n", err)
-		newState.modeErrors["preview"] = err.Error()
-	} else {
-		newState.pv = previewData
-		s.cache.PutPreview(previewKey, previewData)
-	}
+	compileNonPlay(s, "preview",
+		func(k engine.CacheKey) (*resource.EnginePreviewData, bool) { d := s.cache.GetPreview(k); return d, d != nil },
+		func(k engine.CacheKey, d *resource.EnginePreviewData) { s.cache.PutPreview(k, d) },
+		func(src string, opts *engine.CompileOptions) (*resource.EnginePreviewData, error) {
+			return engine.CompilePreviewFileWithStats(src, opts)
+		},
+		func(d *resource.EnginePreviewData) { newState.pv = d },
+		srcStr, newState.modeErrors,
+	)
 
 	// ── Tutorial mode ──
-	tutorialKey := engine.NewCacheKey("tutorial", srcStr)
-	if d := s.cache.GetTutorial(tutorialKey); d != nil {
-		newState.tut = d
-	} else if tutorialData, err := engine.CompileTutorialFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx}); err != nil {
-		fmt.Fprintf(os.Stderr, "[dev] tutorial compile: %v\n", err)
-		newState.modeErrors["tutorial"] = err.Error()
-	} else {
-		newState.tut = tutorialData
-		s.cache.PutTutorial(tutorialKey, tutorialData)
-	}
+	compileNonPlay(s, "tutorial",
+		func(k engine.CacheKey) (*resource.EngineTutorialData, bool) { d := s.cache.GetTutorial(k); return d, d != nil },
+		func(k engine.CacheKey, d *resource.EngineTutorialData) { s.cache.PutTutorial(k, d) },
+		func(src string, opts *engine.CompileOptions) (*resource.EngineTutorialData, error) {
+			return engine.CompileTutorialFileWithStats(src, opts)
+		},
+		func(d *resource.EngineTutorialData) { newState.tut = d },
+		srcStr, newState.modeErrors,
+	)
 
 	// Atomic pointer swap — the only part that needs the write lock.
 	s.mu.Lock()
@@ -114,6 +117,34 @@ func (s *devServer) recompile() error {
 	fmt.Printf("[dev] recompiled: %d nodes, %d archetypes, %d options\n",
 		len(newState.data.Nodes), len(newState.data.Archetypes), len(newState.cfg.Options))
 	return nil
+}
+
+// compileNonPlay is a generic helper for the repeated cache-check-then-compile
+// pattern used by optional (non-Play) modes. Errors are recorded in modeErrors
+// but do not prevent the server from starting.
+func compileNonPlay[T any](
+	s *devServer,
+	mode string,
+	getter func(engine.CacheKey) (T, bool),
+	putter func(engine.CacheKey, T),
+	compiler func(string, *engine.CompileOptions) (T, error),
+	setter func(T),
+	srcStr string,
+	modeErrors map[string]string,
+) {
+	key := engine.NewCacheKey(mode, srcStr)
+	if val, ok := getter(key); ok {
+		setter(val)
+		return
+	}
+	val, err := compiler(srcStr, &engine.CompileOptions{Context: s.ctx})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[dev] %s compile: %v\n", mode, err)
+		modeErrors[mode] = err.Error()
+		return
+	}
+	putter(key, val)
+	setter(val)
 }
 
 // servePayload returns a handler that calls getter (under RLock) to obtain the
