@@ -12,6 +12,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
 )
 
 // compilePlayToDir compiles a minimal play engine and writes the packaged files
@@ -226,7 +227,6 @@ func TestBuildWithStats(t *testing.T) {
 	}
 	// Stats.Total() may be zero if compilation is sub-nanosecond, which is fine.
 	_ = stats.Total()
-	_ = playCfg
 }
 
 func TestServeCommand(t *testing.T) {
@@ -338,7 +338,7 @@ func Update() {}
 	}
 
 	// Compile all modes via compileAllModes (the same path used by -m all and pack).
-	c, err := compileAllModes(src, false)
+	c, err := compileAllModes(src, false, optimize.LevelStandard)
 	if err != nil {
 		t.Fatalf("compileAllModes: %v", err)
 	}
@@ -612,11 +612,9 @@ type Note struct {
 }
 func (n *Note) Initialize() { debugPause() }
 `
-	_, err := compileAllModes(src, false)
+	_, err := compileAllModes(src, false, optimize.LevelStandard)
 	if err != nil {
-		t.Logf("compileAllModes returned expected error: %v", err)
-	} else {
-		t.Log("compileAllModes succeeded (may be valid if resource defaults are used)")
+		t.Errorf("compileAllModes failed: %v", err)
 	}
 }
 
@@ -688,13 +686,11 @@ func TestROMFlag_BuildFromFile(t *testing.T) {
 	}
 }
 
-// TestFatalfBehavior verifies that fatalf calls os.Exit(1) by testing that
-// the error message output path is reachable (we can't test os.Exit directly
-// in unit tests, but we verify the formatting path).
-func TestFatalfBehavior(t *testing.T) {
-	// fatalf is tested indirectly via the error paths above.
-	// This test documents the expected behavior and verifies that the format
-	// string construction is correct.
+// TestCompileAllModes_ProducesAllModeData verifies that compileAllModes returns
+// non-nil Node arrays for all four modes when given valid engine source.
+func TestCompileAllModes_ProducesAllModeData(t *testing.T) {
+	// Verifies that compileAllModes produces non-nil Node arrays for all
+	// four modes when given valid engine source.
 	dir := t.TempDir()
 	srcPath := filepath.Join(dir, "engine.go")
 	src := `package engine
@@ -710,7 +706,7 @@ func (n *Note) Initialize() { debugPause() }
 	}
 
 	// compileAllModes should succeed for this valid source.
-	c, err := compileAllModes(src, false)
+	c, err := compileAllModes(src, false, optimize.LevelStandard)
 	if err != nil {
 		t.Fatalf("compileAllModes: %v", err)
 	}

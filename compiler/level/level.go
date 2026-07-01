@@ -69,3 +69,46 @@ func PackageLevel(path string) ([]byte, error) {
 
 // FileName is the canonical on-disk filename for a level.
 const FileName = "LevelData"
+
+// ── LevelBuilder ──────────────────────────────────────────────────────────────
+
+// LevelBuilder provides a chainable API for constructing LevelData
+// programmatically, matching the builder pattern used by sonolus.py's
+// build_level_data() and sonolus.js-compiler's level data assembly.
+type LevelBuilder struct {
+	bgmOffset float64
+	entities  []resource.LevelDataEntity
+}
+
+// NewLevelBuilder creates an empty LevelBuilder with BGMOffset defaulting to 0.
+func NewLevelBuilder() *LevelBuilder { return &LevelBuilder{} }
+
+// SetBGMOffset sets the BGM offset in seconds.
+func (b *LevelBuilder) SetBGMOffset(offset float64) *LevelBuilder {
+	b.bgmOffset = offset
+	return b
+}
+
+// AddEntity appends an entity with the given archetype name, display name, and
+// pre-built data entries. The name is used as the entity reference in level data;
+// archetype must match an engine archetype name.
+func (b *LevelBuilder) AddEntity(name string, archetype string, data []resource.LevelDataEntityData) *LevelBuilder {
+	b.entities = append(b.entities, resource.LevelDataEntity{
+		Name:      name,
+		Archetype: resource.EngineArchetypeName(archetype),
+		Data:      data,
+	})
+	return b
+}
+
+// Build returns the assembled LevelData. Returns nil only when there are no
+// entities, which is valid (an empty level).
+func (b *LevelBuilder) Build() *resource.LevelData {
+	if b.entities == nil {
+		b.entities = []resource.LevelDataEntity{}
+	}
+	return &resource.LevelData{
+		BGMOffset: b.bgmOffset,
+		Entities:  b.entities,
+	}
+}

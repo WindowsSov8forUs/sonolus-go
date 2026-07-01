@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
 )
 
 // errUnknownMode is returned when the user supplies an unrecognized mode string.
@@ -60,4 +63,27 @@ func (m Mode) String() string { return string(m) }
 // e.g. "engines/my-engine.go" → "my-engine".
 func engineNameFromPath(srcPath string) string {
 	return filepath.Base(srcPath[:len(srcPath)-len(filepath.Ext(srcPath))])
+}
+
+// parseOptLevel converts a CLI -O flag value to an optimizer level.
+// Valid values: 0=minimal, 1=fast, 2=standard (default).
+func parseOptLevel(n int) (optimize.Level, error) {
+	switch n {
+	case 0:
+		return optimize.LevelMinimal, nil
+	case 1:
+		return optimize.LevelFast, nil
+	case 2:
+		return optimize.LevelStandard, nil
+	default:
+		return 0, fmt.Errorf("invalid optimization level %d (valid: 0=minimal, 1=fast, 2=standard)", n)
+	}
+}
+
+// buildOpts constructs CompileOptions from CLI flags.
+func buildOpts(stats bool, comp *engine.CompileStats, optLevel optimize.Level) *engine.CompileOptions {
+	if comp == nil {
+		return &engine.CompileOptions{Opt: optLevel}
+	}
+	return &engine.CompileOptions{Opt: optLevel, Stats: comp}
 }

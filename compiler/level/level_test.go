@@ -105,6 +105,45 @@ func TestLevel_MultiLevel(t *testing.T) {
 	}
 }
 
+func TestLevelBuilder(t *testing.T) {
+	b := NewLevelBuilder().
+		SetBGMOffset(2.0).
+		AddEntity("n0", "TapNote", []resource.LevelDataEntityData{
+			resource.LevelDataEntityValueData{Name: "beat", Value: 0},
+			resource.LevelDataEntityValueData{Name: "lane", Value: 3},
+		}).
+		AddEntity("n1", "TapNote", []resource.LevelDataEntityData{
+			resource.LevelDataEntityValueData{Name: "beat", Value: 1},
+		})
+
+	data := b.Build()
+	if data.BGMOffset != 2.0 {
+		t.Errorf("BGMOffset = %f, want 2.0", data.BGMOffset)
+	}
+	if len(data.Entities) != 2 {
+		t.Fatalf("entities = %d, want 2", len(data.Entities))
+	}
+	if data.Entities[0].Name != "n0" || data.Entities[0].Archetype != "TapNote" {
+		t.Errorf("entity[0] = %+v", data.Entities[0])
+	}
+	if data.Entities[1].Name != "n1" {
+		t.Errorf("entity[1].Name = %q", data.Entities[1].Name)
+	}
+}
+
+func TestLevelBuilder_Empty(t *testing.T) {
+	data := NewLevelBuilder().Build()
+	if data.BGMOffset != 0 {
+		t.Errorf("default BGMOffset = %f", data.BGMOffset)
+	}
+	if data.Entities == nil {
+		t.Error("Entities should be non-nil (empty slice)")
+	}
+	if len(data.Entities) != 0 {
+		t.Errorf("Entities = %d", len(data.Entities))
+	}
+}
+
 // FuzzLevelToBytes is a byte-level fuzz test that CompileLevel must not panic.
 func FuzzLevelToBytes(f *testing.F) {
 	f.Add([]byte(testLevel))

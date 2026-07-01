@@ -26,18 +26,20 @@ var (
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>] [-m <mode>]\n")
+		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>] [-m <mode>] [-O <level>]\n")
 		fmt.Fprintf(os.Stderr, "       sonolus-go serve <engine.go>\n")
 		fmt.Fprintf(os.Stderr, "       sonolus-go level <chart.json>\n")
 		fmt.Fprintf(os.Stderr, "       sonolus-go pack  <engine.go> [-author <name>]\n")
 		fmt.Fprintf(os.Stderr, "       sonolus-go host  <engine.go> [-addr <:8080>]\n")
 		fmt.Fprintf(os.Stderr, "  build modes: play (default), watch, preview, tutorial, all\n")
+		fmt.Fprintf(os.Stderr, "  opt levels:  0=minimal, 1=fast, 2=standard (default)\n")
 		flag.PrintDefaults()
 	}
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	statsFlag := flag.Bool("stats", false, "print per-mode compilation timing")
 	outDir := flag.String("o", "dist", "output directory")
 	modeFlag := flag.String("m", "play", "engine mode: play, watch, preview, tutorial, all")
+	optFlag := flag.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 	romFlag := flag.String("rom", "", "path to raw float32 ROM file (optional)")
 	authorFlag := flag.String("author", "sonolus-go", "engine author (for pack)")
 	addrFlag := flag.String("addr", ":8080", "server listen address (for host)")
@@ -69,7 +71,7 @@ func main() {
 		if err != nil {
 			fatalf("packaging level: %v", err)
 		}
-		dir := filepath.Join(*outDir, filepath.Base(levelPath[:len(levelPath)-len(filepath.Ext(levelPath))]))
+		dir := filepath.Join(*outDir, engineNameFromPath(levelPath))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			fatalf("creating %s: %v", dir, err)
 		}
@@ -109,17 +111,30 @@ func main() {
 		fatalf("reading %s: %v", srcPath, err)
 	}
 
-	name := filepath.Base(srcPath[:len(srcPath)-len(filepath.Ext(srcPath))])
+	name := engineNameFromPath(srcPath)
 	dir := filepath.Join(*outDir, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fatalf("creating %s: %v", dir, err)
 	}
 
+	// Parse mode early so we can skip redundant Play compilation for -m all.
+	mode, err := ParseMode(*modeFlag)
+	if err != nil {
+		fatalf("%v", err)
+	}
+
+	optLevel, err := parseOptLevel(*optFlag)
+	if err != nil {
+		fatalf("%v", err)
+	}
+
 	// Config and ROM are engine-global, extracted from Play compile.
+	// For -m all, skip standalone Play compilation — compileAllModes provides it.
 	cfg := &resource.EngineConfiguration{}
-	playData, playCfg, playErr := engine.CompilePlayFile(string(src))
-	if playErr == nil {
-		cfg = playCfg
+	var playData *resource.EnginePlayData
+	var playErr error
+	if mode != ModeAll {
+		playData, cfg, playErr = engine.CompilePlayFileWithStats(string(src), buildOpts(false, nil, optLevel))
 	}
 	// If play compilation failed, cfg stays as default empty config.
 	// Failure is deferred until we know whether play mode is in the target set.
@@ -137,11 +152,6 @@ func main() {
 		if err != nil {
 			fatalf("building ROM: %v", err)
 		}
-	}
-
-	mode, err := ParseMode(*modeFlag)
-	if err != nil {
-		fatalf("%v", err)
 	}
 
 	modes := mode.Expand()
@@ -163,7 +173,7 @@ func main() {
 
 	// Compile and package each requested mode.
 	if mode == ModeAll {
-		c, err := compileAllModes(string(src), *statsFlag)
+		c, err := compileAllModes(string(src), *statsFlag, optLevel)
 		if err != nil {
 			fatalf("compiling: %v", err)
 		}
@@ -181,19 +191,19 @@ func main() {
 				}
 				packageAndWritePlay(dir, cfg, playData, rom)
 			case ModeWatch:
-				data, err := engine.CompileWatchFile(string(src))
+				data, err := engine.CompileWatchFileWithStats(string(src), buildOpts(false, nil, optLevel))
 				if err != nil {
 					fatalf("compiling watch: %v", err)
 				}
 				packageAndWriteNonPlay(dir, cfg, rom, *data, build.FileWatchData, "watch")
 			case ModePreview:
-				data, err := engine.CompilePreviewFile(string(src))
+				data, err := engine.CompilePreviewFileWithStats(string(src), buildOpts(false, nil, optLevel))
 				if err != nil {
 					fatalf("compiling preview: %v", err)
 				}
 				packageAndWriteNonPlay(dir, cfg, rom, *data, build.FilePreviewData, "preview")
 			case ModeTutorial:
-				data, err := engine.CompileTutorialFile(string(src))
+				data, err := engine.CompileTutorialFileWithStats(string(src), buildOpts(false, nil, optLevel))
 				if err != nil {
 					fatalf("compiling tutorial: %v", err)
 				}

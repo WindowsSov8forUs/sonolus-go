@@ -78,7 +78,10 @@ func (s *devServer) recompile() error {
 
 	// ── Watch mode ──
 	compileNonPlay(s, "watch",
-		func(k engine.CacheKey) (*resource.EngineWatchData, bool) { d := s.cache.GetWatch(k); return d, d != nil },
+		func(k engine.CacheKey) (*resource.EngineWatchData, bool) {
+			d := s.cache.GetWatch(k)
+			return d, d != nil
+		},
 		func(k engine.CacheKey, d *resource.EngineWatchData) { s.cache.PutWatch(k, d) },
 		func(src string, opts *engine.CompileOptions) (*resource.EngineWatchData, error) {
 			return engine.CompileWatchFileWithStats(src, opts)
@@ -89,7 +92,10 @@ func (s *devServer) recompile() error {
 
 	// ── Preview mode ──
 	compileNonPlay(s, "preview",
-		func(k engine.CacheKey) (*resource.EnginePreviewData, bool) { d := s.cache.GetPreview(k); return d, d != nil },
+		func(k engine.CacheKey) (*resource.EnginePreviewData, bool) {
+			d := s.cache.GetPreview(k)
+			return d, d != nil
+		},
 		func(k engine.CacheKey, d *resource.EnginePreviewData) { s.cache.PutPreview(k, d) },
 		func(src string, opts *engine.CompileOptions) (*resource.EnginePreviewData, error) {
 			return engine.CompilePreviewFileWithStats(src, opts)
@@ -100,7 +106,10 @@ func (s *devServer) recompile() error {
 
 	// ── Tutorial mode ──
 	compileNonPlay(s, "tutorial",
-		func(k engine.CacheKey) (*resource.EngineTutorialData, bool) { d := s.cache.GetTutorial(k); return d, d != nil },
+		func(k engine.CacheKey) (*resource.EngineTutorialData, bool) {
+			d := s.cache.GetTutorial(k)
+			return d, d != nil
+		},
 		func(k engine.CacheKey, d *resource.EngineTutorialData) { s.cache.PutTutorial(k, d) },
 		func(src string, opts *engine.CompileOptions) (*resource.EngineTutorialData, error) {
 			return engine.CompileTutorialFileWithStats(src, opts)
@@ -139,7 +148,7 @@ func compileNonPlay[T any](
 	}
 	val, err := compiler(srcStr, &engine.CompileOptions{Context: s.ctx})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[dev] %s compile: %v\n", mode, err)
+		slog.Warn("[dev] compile", "mode", mode, "error", err)
 		modeErrors[mode] = err.Error()
 		return
 	}
@@ -165,7 +174,7 @@ func (s *devServer) serveRom(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Encoding", "gzip")
 	if _, err := w.Write(s.state.rom); err != nil {
-		fmt.Fprintf(os.Stderr, "[dev] write rom: %v\n", err)
+		slog.Warn("[dev] write rom", "error", err)
 	}
 }
 
@@ -189,7 +198,7 @@ func (s *devServer) serveInfo(w http.ResponseWriter, r *http.Request) {
 		info["errors"] = s.state.modeErrors
 	}
 	if err := json.NewEncoder(w).Encode(info); err != nil {
-		fmt.Fprintf(os.Stderr, "[dev] encode info: %v\n", err)
+		slog.Warn("[dev] encode info", "error", err)
 	}
 }
 

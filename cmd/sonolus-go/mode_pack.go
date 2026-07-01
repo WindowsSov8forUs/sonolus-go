@@ -12,16 +12,43 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/pack"
 	"github.com/WindowsSov8forUs/sonolus-pack-go/packer"
 )
+
+// compileWithStats compiles one mode with optional stats capture. The two
+// compile functions handle the with-stats and without-stats paths,
+// eliminating the copy-paste stats/timing boilerplate from the four
+// parallel goroutines in compileAllModes.
+func compileWithStats(
+	wg *sync.WaitGroup, modeName string, withStats bool,
+	compile func() error,
+	compileStats func(*engine.CompileStats) error,
+	dur *time.Duration,
+) {
+	defer wg.Done()
+	t0 := time.Now()
+	if withStats {
+		cs := &engine.CompileStats{}
+		if err := compileStats(cs); err != nil {
+			*dur = time.Since(t0)
+			return
+		}
+		*dur = time.Since(t0)
+		cs.WriteSummary(os.Stderr, modeName)
+	} else {
+		_ = compile()
+		*dur = time.Since(t0)
+	}
+}
 
 // compileAllModes compiles the engine source for all four modes in parallel,
 // returning the CompiledEngine bundle with the shared configuration.
 // Go has no GIL, so this scales to all available cores — a structural advantage
 // over the Python reference which requires no-GIL builds for parallelism.
 // If stats is true, per-mode compilation times are printed to stdout.
-func compileAllModes(src string, stats bool) (pack.CompiledEngine, error) {
+func compileAllModes(src string, stats bool, optLevel optimize.Level) (pack.CompiledEngine, error) {
 	var c pack.CompiledEngine
 
 	var (
@@ -43,62 +70,58 @@ func compileAllModes(src string, stats bool) (pack.CompiledEngine, error) {
 	var wg sync.WaitGroup
 	wg.Add(4)
 
-	go func() {
-		defer wg.Done()
-		t0 := time.Now()
-		if stats {
-			stats := &engine.CompileStats{}
-			opts := &engine.CompileOptions{Stats: stats}
+	go compileWithStats(&wg, "play", stats,
+		func() error {
+			opts := &engine.CompileOptions{Opt: optLevel}
 			playData, playCfg, playErr = engine.CompilePlayFileWithStats(src, opts)
-			playDur = time.Since(t0)
-			stats.WriteSummary(os.Stderr, "play")
-		} else {
-			playData, playCfg, playErr = engine.CompilePlayFile(src)
-			playDur = time.Since(t0)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		t0 := time.Now()
-		if stats {
-			stats := &engine.CompileStats{}
-			opts := &engine.CompileOptions{Stats: stats}
+			return playErr
+		},
+		func(cs *engine.CompileStats) error {
+			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
+			playData, playCfg, playErr = engine.CompilePlayFileWithStats(src, opts)
+			return playErr
+		},
+		&playDur,
+	)
+	go compileWithStats(&wg, "watch", stats,
+		func() error {
+			opts := &engine.CompileOptions{Opt: optLevel}
 			watchData, watchErr = engine.CompileWatchFileWithStats(src, opts)
-			watchDur = time.Since(t0)
-			stats.WriteSummary(os.Stderr, "watch")
-		} else {
-			watchData, watchErr = engine.CompileWatchFile(src)
-			watchDur = time.Since(t0)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		t0 := time.Now()
-		if stats {
-			stats := &engine.CompileStats{}
-			opts := &engine.CompileOptions{Stats: stats}
+			return watchErr
+		},
+		func(cs *engine.CompileStats) error {
+			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
+			watchData, watchErr = engine.CompileWatchFileWithStats(src, opts)
+			return watchErr
+		},
+		&watchDur,
+	)
+	go compileWithStats(&wg, "preview", stats,
+		func() error {
+			opts := &engine.CompileOptions{Opt: optLevel}
 			previewData, previewErr = engine.CompilePreviewFileWithStats(src, opts)
-			previewDur = time.Since(t0)
-			stats.WriteSummary(os.Stderr, "preview")
-		} else {
-			previewData, previewErr = engine.CompilePreviewFile(src)
-			previewDur = time.Since(t0)
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		t0 := time.Now()
-		if stats {
-			stats := &engine.CompileStats{}
-			opts := &engine.CompileOptions{Stats: stats}
+			return previewErr
+		},
+		func(cs *engine.CompileStats) error {
+			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
+			previewData, previewErr = engine.CompilePreviewFileWithStats(src, opts)
+			return previewErr
+		},
+		&previewDur,
+	)
+	go compileWithStats(&wg, "tutorial", stats,
+		func() error {
+			opts := &engine.CompileOptions{Opt: optLevel}
 			tutorialData, tutorialErr = engine.CompileTutorialFileWithStats(src, opts)
-			tutorialDur = time.Since(t0)
-			stats.WriteSummary(os.Stderr, "tutorial")
-		} else {
-			tutorialData, tutorialErr = engine.CompileTutorialFile(src)
-			tutorialDur = time.Since(t0)
-		}
-	}()
+			return tutorialErr
+		},
+		func(cs *engine.CompileStats) error {
+			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
+			tutorialData, tutorialErr = engine.CompileTutorialFileWithStats(src, opts)
+			return tutorialErr
+		},
+		&tutorialDur,
+	)
 
 	wg.Wait()
 
@@ -143,7 +166,7 @@ func runPack(srcPath string, author string) error {
 
 	// 1. Compile all 4 modes.
 	fmt.Printf("compiling %s...\n", engineName)
-	c, err := compileAllModes(string(src), false) // stats only for build command
+	c, err := compileAllModes(string(src), false, optimize.LevelStandard) // stats only for build command
 	if err != nil {
 		return err
 	}
