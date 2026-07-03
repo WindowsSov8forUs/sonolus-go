@@ -509,8 +509,12 @@ func (t *tracer) callUserFunc(fnName *ast.Ident, decl *ast.FuncDecl, args []Num)
 // sonolusCall handles sonolus.Function(args) calls by mapping the PascalCase
 // function name to its camelCase runtimeFns entry.
 // e.g. sonolus.Draw → draw, sonolus.DebugPause → debugPause, sonolus.GetShifted → getShifted.
+// Constructor names with trailing underscore (Vec2_, Quad_) are stripped:
+// sonolus.Vec2_ → vec2_ → vec2.
 func (t *tracer) sonolusCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error) {
 	fnName := lowerFirst(sel.Sel.Name)
+	// Strip trailing underscore from constructor names (Vec2_ → vec2).
+	fnName = strings.TrimSuffix(fnName, "_")
 	fn := &ast.Ident{Name: fnName, NamePos: sel.Sel.NamePos}
 
 	// Type-driven dispatch.

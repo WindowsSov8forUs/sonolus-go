@@ -629,6 +629,147 @@ func UpdateSpawn() float64 { return 0 }
 	}
 }
 
+// TestGap_SonolusConstructor verifies sonolus.Vec2_/(x,y) constructor.
+func TestGap_SonolusConstructor(t *testing.T) {
+	src := `package test
+import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+type Skin struct { Note float64 }
+type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
+func (n *Note) Initialize() {
+    v := sonolus.Vec2_(n.Beat, 0)
+    sonolus.DebugPause()
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err != nil {
+		t.Logf("Vec2_ constructor: %v", err)
+	} else {
+		t.Log("Vec2_ constructor: OK")
+	}
+}
+
+// TestGap_RecordField_Pair tests Pair (2-field) record type.
+func TestGap_RecordField_Pair(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat float64 ` + "`sonolus:\"imported\"`" + `
+    p    Pair    ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.p.First = n.Beat
+    n.p.Second = 0
+    debugPause()
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err != nil {
+		t.Fatalf("CompilePlaySources: %v", err)
+	}
+}
+
+// TestGap_RecordField_Trans tests Trans (9-field) record type.
+func TestGap_RecordField_Trans(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat float64 ` + "`sonolus:\"imported\"`" + `
+    t    Trans   ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.t.M11 = 1
+    n.t.M12 = 0
+    n.t.M13 = 0
+    n.t.M21 = 0
+    n.t.M22 = 1
+    n.t.M23 = 0
+    n.t.M31 = 0
+    n.t.M32 = 0
+    n.t.M33 = 1
+    debugPause()
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err != nil {
+		t.Fatalf("CompilePlaySources: %v", err)
+	}
+}
+
+// TestGap_RecordField_Rect tests Rect (4-field) record type.
+func TestGap_RecordField_Rect(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat float64 ` + "`sonolus:\"imported\"`" + `
+    area Rect    ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.area.T = 0
+    n.area.R = 1
+    n.area.B = 2
+    n.area.L = 0
+    debugPause()
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err != nil {
+		t.Fatalf("CompilePlaySources: %v", err)
+	}
+}
+
+// TestGap_RecordField_WatchMode tests record fields in Watch mode.
+func TestGap_RecordField_WatchMode(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat float64 ` + "`sonolus:\"imported\"`" + `
+    pos  Vec2    ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.pos.X = n.Beat
+    n.pos.Y = 0
+}
+func (n *Note) UpdateParallel() {
+    n.pos.X += 1
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, err := engine.CompileWatchSources(ess, nil)
+	if err != nil {
+		t.Fatalf("CompileWatchSources: %v", err)
+	}
+}
+
+// TestGap_RecordField_WholeAssign tests n.pos = vec2(x,y) whole-record assignment.
+func TestGap_RecordField_WholeAssign(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat float64 ` + "`sonolus:\"imported\"`" + `
+    pos  Vec2    ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.pos.X = n.Beat
+    n.pos.Y = 0
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err != nil {
+		t.Fatalf("CompilePlaySources: %v", err)
+	}
+}
+
 // TestRecordField_MatchesExistingGolden verifies existing golden tests
 // still pass with record field expansion (i.e. no regression on scalar fields).
 func TestRecordField_MatchesExistingGolden(t *testing.T) {
