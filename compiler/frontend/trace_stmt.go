@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -547,6 +548,16 @@ func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
 
 // fieldPlace builds the place for v.field (used for writes).
 func (t *tracer) fieldPlace(sel *ast.SelectorExpr) (ir.BlockPlace, error) {
+	// Record-typed struct field: n.pos.X → look up "pos.x" in bindings.
+	if inner, ok := sel.X.(*ast.SelectorExpr); ok {
+		if base, ok2 := inner.X.(*ast.Ident); ok2 && t.env.Receiver != "" && base.Name == t.env.Receiver {
+			fullName := inner.Sel.Name + "." + strings.ToLower(sel.Sel.Name)
+			if b, ok3 := t.env.Names[fullName]; ok3 {
+				return ir.NewBlockPlace(ir.Const(b.Block), ir.Const(b.Index), 0), nil
+			}
+		}
+	}
+
 	base, ok := sel.X.(*ast.Ident)
 	if !ok {
 		return ir.BlockPlace{}, t.errf(sel, "field access requires a record identifier")
@@ -563,6 +574,24 @@ func (t *tracer) fieldPlace(sel *ast.SelectorExpr) (ir.BlockPlace, error) {
 }
 
 func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
+	// Record-typed struct field write: n.pos.X = value → look up "pos.x" in bindings.
+	if inner, ok := sel.X.(*ast.SelectorExpr); ok {
+		if base, ok2 := inner.X.(*ast.Ident); ok2 && t.env.Receiver != "" && base.Name == t.env.Receiver {
+			fullName := inner.Sel.Name + "." + strings.ToLower(sel.Sel.Name)
+			if b, ok3 := t.env.Names[fullName]; ok3 {
+				if !b.Writable {
+					return t.errf(sel, "cannot assign to read-only field %q", fullName)
+				}
+				val, err := t.expr(rhs)
+				if err != nil {
+					return err
+				}
+				t.emitBindingStore(b, val)
+				return nil
+			}
+		}
+	}
+
 	// Receiver field write (method-authored callback).
 	if b, isRecv, err := t.receiverBinding(sel); err != nil {
 		return err

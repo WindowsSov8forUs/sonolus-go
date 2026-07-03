@@ -58,6 +58,15 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		} else if isRecv {
 			return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
 		}
+		// Record-typed struct field: n.pos.X → look up "pos.x" in bindings.
+		if inner, ok := n.X.(*ast.SelectorExpr); ok {
+			if base, ok2 := inner.X.(*ast.Ident); ok2 && t.env.Receiver != "" && base.Name == t.env.Receiver {
+				fullName := inner.Sel.Name + "." + strings.ToLower(n.Sel.Name)
+				if b, ok3 := t.env.Names[fullName]; ok3 {
+					return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
+				}
+			}
+		}
 		// Bare composite: evaluate vec2(...).x → extract field from the composite.
 		if _, isCall := n.X.(*ast.CallExpr); isCall {
 			v, err := t.expr(n.X)
@@ -140,8 +149,11 @@ func (t *tracer) ident(n *ast.Ident) (Num, error) {
 
 // call handles the memory builtins get(block, index) and set(block, index, value).
 func (t *tracer) call(n *ast.CallExpr) (Num, error) {
-	// Method helper call: receiver.Method(args).
+	// Package-qualified call: sonolus.Draw(...) → runtime function.
 	if sel, ok := n.Fun.(*ast.SelectorExpr); ok {
+		if pkgName := t.resolvePkgName(sel.X); pkgName == "sonolus" {
+			return t.sonolusCall(n, sel)
+		}
 		return t.methodCall(n, sel)
 	}
 	fn, ok := n.Fun.(*ast.Ident)
@@ -485,6 +497,63 @@ func (t *tracer) inlineComposite(fnName *ast.Ident, call *ast.CallExpr, fields [
 func (t *tracer) callUserFunc(fnName *ast.Ident, decl *ast.FuncDecl, args []Num) (Num, error) {
 	child := Env{Names: t.env.Accessors, Accessors: t.env.Accessors, Funcs: t.env.Funcs, Methods: t.env.Methods, Constants: t.env.Constants}
 	return t.inlineFunc(fnName, decl, args, child)
+}
+
+// sonolusCall handles sonolus.Function(args) calls by mapping the PascalCase
+// function name to its camelCase runtimeFns entry.
+// e.g. sonolus.Draw → draw, sonolus.DebugPause → debugPause, sonolus.GetShifted → getShifted.
+func (t *tracer) sonolusCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error) {
+	fnName := lowerFirst(sel.Sel.Name)
+	fn := &ast.Ident{Name: fnName, NamePos: sel.Sel.NamePos}
+
+	// Type-driven dispatch.
+	if r, handled, err := t.resolveTypeCall(fn, n); handled {
+		return r, err
+	}
+	// Builtin dispatch without pre-evaluated args.
+	if r, handled, err := t.resolveBuiltinCall(fn, n); handled {
+		return r, err
+	}
+	// Evaluate args and dispatch.
+	args := make([]Num, len(n.Args))
+	for i, a := range n.Args {
+		v, err := t.expr(a)
+		if err != nil {
+			return Num{}, err
+		}
+		args[i] = v
+	}
+	return t.callWithArgs(fn, n, args)
+}
+
+// resolvePkgName returns the Go package name for an identifier, using go/types
+// info when available. Returns "" if the identifier is not a package reference.
+func (t *tracer) resolvePkgName(x ast.Expr) string {
+	ident, ok := x.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	if info := t.env.Info; info != nil {
+		if obj, ok2 := info.Uses[ident]; ok2 {
+			if pkgName, ok3 := obj.(*types.PkgName); ok3 {
+				return pkgName.Imported().Name()
+			}
+		}
+	}
+	// Fallback: known package names.
+	if ident.Name == "sonolus" {
+		return "sonolus"
+	}
+	return ""
+}
+
+// lowerFirst returns s with the first character lowercased.
+// e.g. "Draw" → "draw", "DebugPause" → "debugPause".
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 // methodCall inlines a non-callback method of the current archetype, invoked as
