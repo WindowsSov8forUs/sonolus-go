@@ -35,48 +35,35 @@ type PackagedEngine struct {
 // PackageAny gzip-compresses any JSON-serializable value.
 func PackageAny(data any) ([]byte, error) { return codec.Compress(data) }
 
-// PackageConfiguration gzip-compresses a JSON EngineConfiguration.
-func PackageConfiguration(cfg *resource.EngineConfiguration) ([]byte, error) {
-	return codec.Compress(cfg)
-}
-
 // PackagePlay builds the play-mode packaged engine from its configuration, play
 // data, and ROM.
 func PackagePlay(cfg *resource.EngineConfiguration, data *resource.EnginePlayData, rom []byte) (*PackagedEngine, error) {
-	configuration, err := PackageConfiguration(cfg)
+	configuration, err := codec.Compress(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("package configuration: %w", err)
 	}
 	playData, err := codec.Compress(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("package play data: %w", err)
 	}
 	return &PackagedEngine{Configuration: configuration, PlayData: playData, ROM: rom}, nil
 }
 
 // PackageNonPlay builds a packaged engine for a non-play mode (watch, preview,
 // or tutorial). cfg and rom are shared with Play; data is the mode-specific
-// compiled data. fileKey is the canonical file name (e.g. FileWatchData).
-func PackageNonPlay(cfg *resource.EngineConfiguration, rom []byte, data any, fileKey string) (*PackagedEngine, error) {
-	configuration, err := PackageConfiguration(cfg)
+// compiled data. setBlob stores the compressed blob into the correct field
+// on the PackagedEngine (e.g. p.WatchData = blob).
+func PackageNonPlay(cfg *resource.EngineConfiguration, rom []byte, data any, setBlob func(*PackagedEngine, []byte)) (*PackagedEngine, error) {
+	configuration, err := codec.Compress(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("package configuration: %w", err)
 	}
 	blob, err := codec.Compress(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("package data: %w", err)
 	}
 	p := &PackagedEngine{Configuration: configuration, ROM: rom}
-	switch fileKey {
-	case FileWatchData:
-		p.WatchData = blob
-	case FilePreviewData:
-		p.PreviewData = blob
-	case FileTutorialData:
-		p.TutorialData = blob
-	default:
-		return nil, fmt.Errorf("build: unknown non-play mode file key %q", fileKey)
-	}
+	setBlob(p, blob)
 	return p, nil
 }
 

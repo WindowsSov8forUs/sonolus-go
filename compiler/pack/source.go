@@ -43,12 +43,12 @@ type CompiledEngine struct {
 // matching what pack-go's Pack with type "json" expects.
 func EmitPackSource(dir string, name string, c CompiledEngine, meta EngineItemMeta) error {
 	engineDir := filepath.Join(dir, "engines", name)
-	if err := os.MkdirAll(engineDir, 0755); err != nil {
+	if err := os.MkdirAll(engineDir, defaultDirMode); err != nil {
 		return fmt.Errorf("pack: create engine dir: %w", err)
 	}
 
 	// Write thumbnail (required by sonolus-pack-go; a minimal 1x1 PNG).
-	if err := os.WriteFile(filepath.Join(engineDir, "thumbnail"), minPNG, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(engineDir, "thumbnail"), minPNG, defaultFileMode); err != nil {
 		return fmt.Errorf("pack: write engine thumbnail: %w", err)
 	}
 
@@ -58,7 +58,7 @@ func EmitPackSource(dir string, name string, c CompiledEngine, meta EngineItemMe
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(engineDir, filename), data, 0644)
+		return os.WriteFile(filepath.Join(engineDir, filename), data, defaultFileMode)
 	}
 	if err := writeJSON("configuration", c.Configuration); err != nil {
 		return err

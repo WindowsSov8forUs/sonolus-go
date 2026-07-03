@@ -161,7 +161,7 @@ func TestPackageNonPlay_Write(t *testing.T) {
 		Skin:  resource.EngineSkinData{},
 		Nodes: []resource.EngineDataNode{},
 	}
-	pkg, err := PackageNonPlay(cfg, rom, previewData, FilePreviewData)
+	pkg, err := PackageNonPlay(cfg, rom, previewData, func(p *PackagedEngine, b []byte) { p.PreviewData = b })
 	if err != nil {
 		t.Fatalf("PackageNonPlay(preview): %v", err)
 	}

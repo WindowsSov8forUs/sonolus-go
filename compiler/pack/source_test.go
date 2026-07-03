@@ -109,7 +109,7 @@ func TestEmitPackSourceWithROM(t *testing.T) {
 // files for all required resource types.
 func TestEmitDefaultItems(t *testing.T) {
 	dir := t.TempDir()
-	if err := EmitDefaultItems(dir, "test-engine"); err != nil {
+	if err := EmitDefaultItems(dir, "test-engine", EngineItemMeta{Skin: "default", Background: "default", Effect: "default", Particle: "default"}); err != nil {
 		t.Fatalf("EmitDefaultItems: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestCDNGeneration(t *testing.T) {
 	// Verify that the emitted default items generate .srl references that
 	// pack-go can process.
 	dir := t.TempDir()
-	if err := EmitDefaultItems(dir, "test-engine"); err != nil {
+	if err := EmitDefaultItems(dir, "test-engine", EngineItemMeta{Skin: "default", Background: "default", Effect: "default", Particle: "default"}); err != nil {
 		t.Fatalf("EmitDefaultItems: %v", err)
 	}
 

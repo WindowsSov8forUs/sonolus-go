@@ -62,12 +62,13 @@ func writeItemJSON(dir string, item map[string]any) error {
 // EmitDefaultItems writes minimal placeholder items for skin, background, effect,
 // particle, and a demo level so that an engine referencing them passes pack-go's
 // reference validation. All assets are minimal placeholders (1x1 PNG, silent MP3,
-// empty resource data).
-func EmitDefaultItems(dir string, engineName string) error {
-	skinName := "default"
-	bgName := "default"
-	effectName := "default"
-	particleName := "default"
+// empty resource data). Item names are taken from meta so they match the names
+// referenced in the engine's item.json.
+func EmitDefaultItems(dir string, engineName string, meta EngineItemMeta) error {
+	skinName := meta.Skin
+	bgName := meta.Background
+	effectName := meta.Effect
+	particleName := meta.Particle
 	levelName := "demo"
 
 	if err := emitDefaultSkin(dir, skinName); err != nil {
