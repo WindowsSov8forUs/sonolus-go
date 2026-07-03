@@ -33,6 +33,9 @@ type OmitFunc func(node snode.SNode, callback string) (omit, handled bool)
 type SetCallback[A any] func(arch *A, callback string, index int, order int) error
 
 // modeConfigs holds per-mode omission rules registered by each mode package.
+// All calls to RegisterModeOmit MUST happen during package init(), before any
+// compilation begins. The map is read concurrently during compilation but
+// never written after init(), so no synchronization is needed.
 // See RegisterModeOmit.
 var modeConfigs = map[string]OmitFunc{}
 
@@ -117,7 +120,7 @@ func Assemble[A any](
 		orders[c.ArchetypeIndex] = order + 1
 
 		if err := setCb(&archetypes[c.ArchetypeIndex], c.Callback, index, order); err != nil {
-			return err
+			return fmt.Errorf("assemble: archetype %d callback %s setCb: %w", c.ArchetypeIndex, c.Callback, err)
 		}
 	}
 

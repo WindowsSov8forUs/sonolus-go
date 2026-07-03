@@ -3,8 +3,6 @@ package preview
 
 import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 )
 
 // Callback is a preview-mode archetype callback name.
@@ -14,11 +12,6 @@ const (
 	CallbackPreprocess Callback = "preprocess"
 	CallbackRender     Callback = "render"
 )
-
-// preview has no value-callback omission rules.
-func init() {
-	modecompile.RegisterModeOmit("preview", nil)
-}
 
 // Setters maps each Preview callback name to its archetype field setter.
 var Setters = map[string]func(*resource.EnginePreviewDataArchetype, int, int){

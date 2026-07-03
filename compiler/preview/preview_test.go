@@ -55,10 +55,17 @@ func TestCompileCallbackNoOp(t *testing.T) {
 }
 
 func TestAssembleDedupAndDispatch(t *testing.T) {
-	data := BuildPreviewData(
-		resource.EngineSkinData{},
-		[]ArchetypeDef{{Name: "A"}, {Name: "B"}},
-	)
+	defs := []ArchetypeDef{{Name: "A"}, {Name: "B"}}
+	data := &resource.EnginePreviewData{
+		Skin:       resource.EngineSkinData{},
+		Archetypes: make([]resource.EnginePreviewDataArchetype, len(defs)),
+	}
+	for i, a := range defs {
+		data.Archetypes[i] = resource.EnginePreviewDataArchetype{
+			Name:    resource.EngineArchetypeName(a.Name),
+			Imports: modecompile.NormalizeSlice(a.Imports),
+		}
+	}
 
 	results := []*modecompile.Result{
 		{ArchetypeIndex: 0, Callback: string(CallbackRender), Node: get(0)},
@@ -67,7 +74,7 @@ func TestAssembleDedupAndDispatch(t *testing.T) {
 		{ArchetypeIndex: 0, Callback: string(CallbackPreprocess), Node: get(1)},
 	}
 
-	if err := Assemble(data, results); err != nil {
+	if err := modecompile.Assemble(&data.Nodes, data.Archetypes, results, modecompile.NewCallbackSetter(Setters)); err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
 

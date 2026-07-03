@@ -77,7 +77,9 @@ func TestAssemble_Direct(t *testing.T) {
 		resource.EngineParticleData{},
 		resource.EngineInstructionData{},
 	)
-	Assemble(data, 1, 2, 3)
+	data.Preprocess = 1
+	data.Navigate = 2
+	data.Update = 3
 
 	if data.Preprocess != 1 {
 		t.Errorf("Preprocess = %d, want 1", data.Preprocess)
@@ -98,7 +100,9 @@ func TestAssemble_ZeroIndices(t *testing.T) {
 		resource.EngineInstructionData{},
 	)
 	// Zero indices mean "no callback" per Sonolus convention.
-	Assemble(data, 0, 0, 0)
+	data.Preprocess = 0
+	data.Navigate = 0
+	data.Update = 0
 
 	if data.Preprocess != 0 || data.Navigate != 0 || data.Update != 0 {
 		t.Error("all indices should be zero")

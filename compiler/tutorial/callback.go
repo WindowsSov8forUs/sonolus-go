@@ -3,10 +3,6 @@
 // (Preprocess, Navigate, Update) that operate on global state.
 package tutorial
 
-import (
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
-)
-
 // Callback is a tutorial-mode callback name.
 type Callback string
 
@@ -15,7 +11,3 @@ const (
 	CallbackNavigate   Callback = "navigate"
 	CallbackUpdate     Callback = "update"
 )
-
-func init() {
-	modecompile.RegisterModeOmit("tutorial", nil)
-}

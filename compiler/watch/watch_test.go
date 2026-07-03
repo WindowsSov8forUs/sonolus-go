@@ -61,13 +61,20 @@ func TestCompileCallbackNoOp(t *testing.T) {
 }
 
 func TestAssembleDedupAndDispatch(t *testing.T) {
-	data := BuildWatchData(
-		resource.EngineSkinData{},
-		resource.EngineEffectData{},
-		resource.EngineParticleData{},
-		nil,
-		[]ArchetypeDef{{Name: "A"}, {Name: "B"}},
-	)
+	defs := []ArchetypeDef{{Name: "A"}, {Name: "B"}}
+	data := &resource.EngineWatchData{
+		Skin:       resource.EngineSkinData{},
+		Effect:     resource.EngineEffectData{},
+		Particle:   resource.EngineParticleData{},
+		Archetypes: make([]resource.EngineWatchDataArchetype, len(defs)),
+	}
+	for i, a := range defs {
+		data.Archetypes[i] = resource.EngineWatchDataArchetype{
+			Name:     resource.EngineArchetypeName(a.Name),
+			HasInput: a.HasInput,
+			Imports:  modecompile.NormalizeSlice(a.Imports),
+		}
+	}
 
 	results := []*modecompile.Result{
 		{ArchetypeIndex: 0, Callback: string(CallbackUpdateParallel), Node: get(0)},
@@ -76,7 +83,7 @@ func TestAssembleDedupAndDispatch(t *testing.T) {
 		{ArchetypeIndex: 0, Callback: string(CallbackInitialize), Node: get(1)},
 	}
 
-	if err := Assemble(data, results); err != nil {
+	if err := modecompile.Assemble(&data.Nodes, data.Archetypes, results, modecompile.NewCallbackSetter(Setters)); err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
 
@@ -105,15 +112,22 @@ func TestAssembleDedupAndDispatch(t *testing.T) {
 
 func TestHasInput(t *testing.T) {
 	// Watch mode has no input (Touch) callback, so HasInput should always be
-	// false. The field is propagated from ArchetypeDef through BuildWatchData
-	// into the core EngineWatchDataArchetype.
-	data := BuildWatchData(
-		resource.EngineSkinData{},
-		resource.EngineEffectData{},
-		resource.EngineParticleData{},
-		nil,
-		[]ArchetypeDef{{Name: "A"}, {Name: "B"}},
-	)
+	// false. The field is propagated from ArchetypeDef into the core
+	// EngineWatchDataArchetype.
+	defs := []ArchetypeDef{{Name: "A"}, {Name: "B"}}
+	data := &resource.EngineWatchData{
+		Skin:       resource.EngineSkinData{},
+		Effect:     resource.EngineEffectData{},
+		Particle:   resource.EngineParticleData{},
+		Archetypes: make([]resource.EngineWatchDataArchetype, len(defs)),
+	}
+	for i, a := range defs {
+		data.Archetypes[i] = resource.EngineWatchDataArchetype{
+			Name:     resource.EngineArchetypeName(a.Name),
+			HasInput: a.HasInput,
+			Imports:  modecompile.NormalizeSlice(a.Imports),
+		}
+	}
 	if len(data.Archetypes) != 2 {
 		t.Fatalf("archetype count = %d", len(data.Archetypes))
 	}
