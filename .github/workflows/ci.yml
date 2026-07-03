@@ -16,7 +16,7 @@ jobs:
       - run: go mod download
       - run: go test -timeout 5m ./... -count=1
       # Verify CLI binary builds and sub-commands are wired correctly.
-      - run: go build -o sonolus-go.exe ./cmd/sonolus-go/
+      - run: go build -o sonolus-go ./cmd/sonolus-go/
       - run: ./sonolus-go -version
         continue-on-error: true
       # Smoke-test pack command: compile a minimal engine and verify output.
