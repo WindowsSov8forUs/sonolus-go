@@ -327,7 +327,7 @@ func runNonPlayPipeline(src string, cbSet map[string]string, mode ir.Mode, opts 
 	res.r = r
 	res.accessors = frontend.ModeAccessorsReadOnly(mode)
 	res.nodes = []resource.EngineDataNode{}
-	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
+	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin, r.skinST), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
 	if err != nil {
 		return res, fmt.Errorf("compile callbacks: %w", err)
 	}
@@ -444,7 +444,7 @@ func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode
 	}
 	res.pf = pf
 
-	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
+	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin, r.skinST), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
 	if err != nil {
 		return res, fmt.Errorf("compile callbacks: %w", err)
 	}

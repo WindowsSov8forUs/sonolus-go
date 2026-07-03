@@ -33,6 +33,7 @@ func resourceRole(name string) string {
 
 type parsedResources struct {
 	skin        resource.EngineSkinData
+	skinST      *ast.StructType // Skin AST (for tag-based sprite name resolution)
 	effect      resource.EngineEffectData
 	particle    resource.EngineParticleData
 	buckets     []resource.EngineDataBucket
@@ -56,6 +57,7 @@ func buildResources(typeSpecs map[string]*ast.StructType, uiVarLit *ast.Composit
 		seen[role] = true
 		switch role {
 		case "skin":
+			r.skinST = st
 			r.skin.RenderMode = skinRenderMode(st)
 			r.skin.Sprites = collectFieldItems(st, func(name string, id int) resource.EngineSkinDataSprite {
 				return resource.EngineSkinDataSprite{Name: resource.SkinSpriteName(name), ID: id}

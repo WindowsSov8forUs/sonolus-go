@@ -274,7 +274,7 @@ func compileParsed(
 	}
 
 	data := play.BuildPlayData(r.skin, r.effect, r.particle, r.buckets, defs)
-spriteIndex := buildSpriteIndex(r.skin)
+spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 
 	results := make([]*modecompile.Result, 0, len(order)*3)
 	for i, name := range order {
