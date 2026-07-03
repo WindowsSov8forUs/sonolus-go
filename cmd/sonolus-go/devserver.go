@@ -32,11 +32,12 @@ type devServerState struct {
 
 // devServer holds the in-memory compiled engine state and serves it over HTTP.
 type devServer struct {
-	mu    sync.RWMutex
-	src   string
-	cache *engine.CompileCache
-	ctx   context.Context // passed to CompileOptions for cancellation support
-	state devServerState
+	mu      sync.RWMutex
+	src     string
+	romPath string // path to custom ROM file (empty = use defaults)
+	cache   *engine.CompileCache
+	ctx     context.Context // passed to CompileOptions for cancellation support
+	state   devServerState
 }
 
 // recompile reads the source file and recompiles all four modes. Play mode
@@ -56,7 +57,7 @@ func (s *devServer) recompile() error {
 	newState := devServerState{modeErrors: map[string]string{}}
 
 	// ── Play mode ──
-	playKey := engine.NewCacheKey("play", srcStr)
+	playKey := engine.NewCacheKey("play", 0, srcStr, s.src)
 	if d, cfg := s.cache.GetPlay(playKey); d != nil {
 		newState.data = d
 		newState.cfg = cfg
@@ -70,9 +71,16 @@ func (s *devServer) recompile() error {
 		s.cache.PutPlay(playKey, playData, cfg)
 	}
 
-	rom, err := build.DefaultROMBytes()
-	if err != nil {
-		return fmt.Errorf("build rom: %w", err)
+	// Load ROM: from romPath if specified, otherwise use defaults.
+	var rom []byte
+	var romErr error
+	if s.romPath != "" {
+		rom, romErr = build.BuildROMFromFile(s.romPath)
+	} else {
+		rom, romErr = build.DefaultROMBytes()
+	}
+	if romErr != nil {
+		return fmt.Errorf("build rom: %w", romErr)
 	}
 	newState.rom = rom
 
@@ -123,8 +131,8 @@ func (s *devServer) recompile() error {
 	s.state = newState
 	s.mu.Unlock()
 
-	fmt.Printf("[dev] recompiled: %d nodes, %d archetypes, %d options\n",
-		len(newState.data.Nodes), len(newState.data.Archetypes), len(newState.cfg.Options))
+	slog.Info("[dev] recompiled", "nodes", len(newState.data.Nodes),
+		"archetypes", len(newState.data.Archetypes), "options", len(newState.cfg.Options))
 	return nil
 }
 
@@ -141,7 +149,7 @@ func compileNonPlay[T any](
 	srcStr string,
 	modeErrors map[string]string,
 ) {
-	key := engine.NewCacheKey(mode, srcStr)
+	key := engine.NewCacheKey(mode, 0, srcStr, s.src)
 	if val, ok := getter(key); ok {
 		setter(val)
 		return
@@ -164,7 +172,12 @@ func (s *devServer) servePayload(getter func() any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		serveGzip(w, getter())
+		data := getter()
+		if data == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		serveGzip(w, data)
 	}
 }
 
@@ -215,11 +228,11 @@ func serveGzip(w http.ResponseWriter, data any) {
 	}
 }
 
-func runDevServer(srcPath string, addr string) error {
+func runDevServer(srcPath string, addr string, romPath string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := &devServer{src: srcPath, cache: engine.NewCache(), ctx: ctx}
+	srv := &devServer{src: srcPath, romPath: romPath, cache: engine.NewCache(), ctx: ctx}
 	if err := srv.recompile(); err != nil {
 		return err
 	}
@@ -233,14 +246,17 @@ func runDevServer(srcPath string, addr string) error {
 	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.state.tut }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveRom)
 
-	// Watch for source file changes using fsnotify (event-driven, no polling).
-	// Triggers recompile on Write/Create events. Cancelled when runDevServer returns.
+	// Watch parent directory for source file changes using fsnotify.
+	// Watching the directory (rather than the file) handles editor save-via-rename
+	// patterns where the file is deleted and recreated under a new inode.
+	// Events are filtered by filename to only trigger on the source file.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("fsnotify: %w", err)
 	}
 	defer watcher.Close()
-	if err := watcher.Add(srcPath); err != nil {
+	parentDir := filepath.Dir(srcPath)
+	if err := watcher.Add(parentDir); err != nil {
 		return fmt.Errorf("fsnotify add: %w", err)
 	}
 	go func() {
@@ -249,17 +265,20 @@ func runDevServer(srcPath string, addr string) error {
 			case <-ctx.Done():
 				return
 			case event := <-watcher.Events:
+				if filepath.Clean(event.Name) != filepath.Clean(srcPath) {
+					continue
+				}
 				if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 					if err := srv.recompile(); err != nil {
-						fmt.Fprintf(os.Stderr, "[dev] recompile error: %v\n", err)
+						slog.Error("[dev] recompile error", "error", err)
 					}
 				}
 			case err := <-watcher.Errors:
-				fmt.Fprintf(os.Stderr, "[dev] watcher error: %v\n", err)
+				slog.Error("[dev] watcher error", "error", err)
 			}
 		}
 	}()
 
-	fmt.Printf("[dev] serving on http://localhost%s\n", addr)
+	slog.Info("[dev] serving", "address", addr)
 	return http.ListenAndServe(addr, mux)
 }

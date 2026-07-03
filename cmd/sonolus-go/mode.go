@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
 )
 
@@ -59,6 +60,23 @@ func allModeNames() []string {
 // String implements fmt.Stringer.
 func (m Mode) String() string { return string(m) }
 
+// IRMode converts a main.Mode to the compiler's ir.Mode representation.
+// ModeAll and unknown modes default to ir.ModePlay.
+func (m Mode) IRMode() ir.Mode {
+	switch m {
+	case ModePlay:
+		return ir.ModePlay
+	case ModeWatch:
+		return ir.ModeWatch
+	case ModePreview:
+		return ir.ModePreview
+	case ModeTutorial:
+		return ir.ModeTutorial
+	default:
+		return ir.ModePlay
+	}
+}
+
 // engineNameFromPath extracts the engine name from an engine source file path.
 // e.g. "engines/my-engine.go" → "my-engine".
 func engineNameFromPath(srcPath string) string {
@@ -81,7 +99,7 @@ func parseOptLevel(n int) (optimize.Level, error) {
 }
 
 // buildOpts constructs CompileOptions from CLI flags.
-func buildOpts(stats bool, comp *engine.CompileStats, optLevel optimize.Level) *engine.CompileOptions {
+func buildOpts(comp *engine.CompileStats, optLevel optimize.Level) *engine.CompileOptions {
 	if comp == nil {
 		return &engine.CompileOptions{Opt: optLevel}
 	}

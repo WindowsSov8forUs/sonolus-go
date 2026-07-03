@@ -27,10 +27,10 @@ var (
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: sonolus-go build <engine.go> [-o <out-dir>] [-m <mode>] [-O <level>]\n")
-		fmt.Fprintf(os.Stderr, "       sonolus-go serve <engine.go>\n")
+		fmt.Fprintf(os.Stderr, "       sonolus-go serve <engine.go> [-rom <file>]\n")
 		fmt.Fprintf(os.Stderr, "       sonolus-go level <chart.json>\n")
-		fmt.Fprintf(os.Stderr, "       sonolus-go pack  <engine.go> [-author <name>]\n")
-		fmt.Fprintf(os.Stderr, "       sonolus-go host  <engine.go> [-addr <:8080>] [-author <name>]\n")
+		fmt.Fprintf(os.Stderr, "       sonolus-go pack  <engine.go> [-author <name>] [-rom <file>]\n")
+		fmt.Fprintf(os.Stderr, "       sonolus-go host  <engine.go> [-addr <:8080>] [-author <name>] [-rom <file>]\n")
 		fmt.Fprintf(os.Stderr, "  build modes: play (default), watch, preview, tutorial, all\n")
 		fmt.Fprintf(os.Stderr, "  opt levels:  0=minimal, 1=fast, 2=standard (default)\n")
 		flag.PrintDefaults()
@@ -58,7 +58,7 @@ func main() {
 	// Dev server (in-process, with auto-recompile).
 	if flag.Arg(0) == "serve" {
 		srcPath := flag.Arg(1)
-		if err := runDevServer(srcPath, *addrFlag); err != nil {
+		if err := runDevServer(srcPath, *addrFlag, *romFlag); err != nil {
 			fatalf("%v", err)
 		}
 		return
@@ -134,7 +134,7 @@ func main() {
 	var playData *resource.EnginePlayData
 	var playErr error
 	if mode != ModeAll {
-		playData, cfg, playErr = engine.CompilePlayFileWithStats(string(src), buildOpts(false, nil, optLevel))
+		playData, cfg, playErr = engine.CompilePlayFileWithStats(string(src), buildOpts(nil, optLevel))
 	}
 	// If play compilation failed, cfg stays as default empty config.
 	// Failure is deferred until we know whether play mode is in the target set.
@@ -179,9 +179,9 @@ func main() {
 		}
 		cfg = &c.Configuration
 		packageAndWritePlay(dir, cfg, &c.PlayData, rom)
-		packageAndWriteNonPlay(dir, cfg, rom, c.WatchData, build.FileWatchData, "watch")
-		packageAndWriteNonPlay(dir, cfg, rom, c.PreviewData, build.FilePreviewData, "preview")
-		packageAndWriteNonPlay(dir, cfg, rom, c.TutorialData, build.FileTutorialData, "tutorial")
+		packageAndWriteNonPlay(dir, cfg, rom, c.WatchData, func(p *build.PackagedEngine, b []byte) { p.WatchData = b }, "watch")
+		packageAndWriteNonPlay(dir, cfg, rom, c.PreviewData, func(p *build.PackagedEngine, b []byte) { p.PreviewData = b }, "preview")
+		packageAndWriteNonPlay(dir, cfg, rom, c.TutorialData, func(p *build.PackagedEngine, b []byte) { p.TutorialData = b }, "tutorial")
 	} else {
 		for _, m := range modes {
 			switch m {
@@ -191,23 +191,23 @@ func main() {
 				}
 				packageAndWritePlay(dir, cfg, playData, rom)
 			case ModeWatch:
-				data, err := engine.CompileWatchFileWithStats(string(src), buildOpts(false, nil, optLevel))
+				data, err := engine.CompileWatchFileWithStats(string(src), buildOpts(nil, optLevel))
 				if err != nil {
 					fatalf("compiling watch: %v", err)
 				}
-				packageAndWriteNonPlay(dir, cfg, rom, *data, build.FileWatchData, "watch")
+				packageAndWriteNonPlay(dir, cfg, rom, *data, func(p *build.PackagedEngine, b []byte) { p.WatchData = b }, "watch")
 			case ModePreview:
-				data, err := engine.CompilePreviewFileWithStats(string(src), buildOpts(false, nil, optLevel))
+				data, err := engine.CompilePreviewFileWithStats(string(src), buildOpts(nil, optLevel))
 				if err != nil {
 					fatalf("compiling preview: %v", err)
 				}
-				packageAndWriteNonPlay(dir, cfg, rom, *data, build.FilePreviewData, "preview")
+				packageAndWriteNonPlay(dir, cfg, rom, *data, func(p *build.PackagedEngine, b []byte) { p.PreviewData = b }, "preview")
 			case ModeTutorial:
-				data, err := engine.CompileTutorialFileWithStats(string(src), buildOpts(false, nil, optLevel))
+				data, err := engine.CompileTutorialFileWithStats(string(src), buildOpts(nil, optLevel))
 				if err != nil {
 					fatalf("compiling tutorial: %v", err)
 				}
-				packageAndWriteNonPlay(dir, cfg, rom, *data, build.FileTutorialData, "tutorial")
+				packageAndWriteNonPlay(dir, cfg, rom, *data, func(p *build.PackagedEngine, b []byte) { p.TutorialData = b }, "tutorial")
 			}
 		}
 	}
@@ -231,8 +231,8 @@ func packageAndWritePlay(dir string, cfg *resource.EngineConfiguration,
 }
 
 func packageAndWriteNonPlay[D any](dir string, cfg *resource.EngineConfiguration,
-	rom []byte, data D, fileKind string, name string) {
-	pkg, err := build.PackageNonPlay(cfg, rom, &data, fileKind)
+	rom []byte, data D, setBlob func(*build.PackagedEngine, []byte), name string) {
+	pkg, err := build.PackageNonPlay(cfg, rom, &data, setBlob)
 	if err != nil {
 		fatalf("packaging %s: %v", name, err)
 	}

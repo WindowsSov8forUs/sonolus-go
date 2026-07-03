@@ -38,6 +38,9 @@ func compileWithStats(
 		*dur = time.Since(t0)
 		cs.WriteSummary(os.Stderr, modeName)
 	} else {
+		// compile() error is captured by closure (stored in outer err variable via
+		// the calling compileWithStats closure). We intentionally discard it here
+		// because the caller checks the closure-captured error after the loop.
 		_ = compile()
 		*dur = time.Since(t0)
 	}
@@ -181,7 +184,7 @@ func runPack(srcPath string, author string) error {
 	// 3. Emit pack-go source tree.
 	sourceDir := filepath.Join(os.TempDir(), "sonolus-pack-source", engineName)
 	if err := os.RemoveAll(sourceDir); err != nil {
-		return err
+		return fmt.Errorf("cleaning pack source dir %s: %w", sourceDir, err)
 	}
 	defer os.RemoveAll(sourceDir)
 
@@ -197,7 +200,7 @@ func runPack(srcPath string, author string) error {
 	if err := pack.EmitPackSource(sourceDir, engineName, c, meta); err != nil {
 		return fmt.Errorf("emitting source tree: %w", err)
 	}
-	if err := pack.EmitDefaultItems(sourceDir, engineName); err != nil {
+	if err := pack.EmitDefaultItems(sourceDir, engineName, meta); err != nil {
 		return fmt.Errorf("emitting default items: %w", err)
 	}
 

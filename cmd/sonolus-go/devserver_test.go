@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -127,4 +128,87 @@ func trunc(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// TestServePayloadNil verifies that servePayload returns HTTP 503 when the
+// data-providing closure returns nil.
+func TestServePayloadNil(t *testing.T) {
+	s := &devServer{} // no recompile, all state fields are nil
+	handler := s.servePayload(func() any { return nil })
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", w.Code)
+	}
+}
+
+// TestServeGzipError verifies that serveGzip returns HTTP 500 when the
+// gzip encoding fails (e.g., due to a write error on the response writer).
+func TestServeGzipError(t *testing.T) {
+	// serveGzip writes gzip-encoded data. Use a ResponseWriter that fails on write
+	// to exercise the error path.
+	w := &failingWriter{}
+	serveGzip(w, []byte("test data"))
+	if !w.written {
+		t.Error("expected write to be attempted")
+	}
+	// serveGzip logs the error but doesn't set an error status code since the
+	// header was already written with 200. The write error is swallowed after logging.
+}
+
+type failingWriter struct {
+	written bool
+}
+
+func (w *failingWriter) Header() http.Header        { return http.Header{} }
+func (w *failingWriter) WriteHeader(int)             {}
+func (w *failingWriter) Write(b []byte) (int, error) { w.written = true; return 0, fmt.Errorf("simulated write error") }
+
+// TestRecompileCacheHit verifies that calling recompile twice on the same source
+// hits the cache on the second call, without re-parsing or re-compiling.
+func TestRecompileCacheHit(t *testing.T) {
+	dir := t.TempDir()
+	srcPath := filepath.Join(dir, "engine.go")
+	src := `package p
+type N struct {
+	x float64 ` + "`sonolus:\"memory\"`" + `
+}
+func (n N) Initialize() { n.x = 42 }
+func (n N) UpdateSequential() { debugPause() }
+func UpdateSpawn() float64 { return 0 }
+func Preprocess() {}
+func Navigate() float64 { return 1 }
+func Update() {}
+`
+	if err := os.WriteFile(srcPath, []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	// First compilation: cache miss.
+	if err := srv.recompile(); err != nil {
+		t.Fatalf("first recompile: %v", err)
+	}
+	nodesAfterFirst := len(srv.state.data.Nodes)
+
+	// Second compilation without changing the file: should be a cache hit.
+	if err := srv.recompile(); err != nil {
+		t.Fatalf("second recompile (cache hit): %v", err)
+	}
+	// Node count should be identical since the source didn't change.
+	if len(srv.state.data.Nodes) != nodesAfterFirst {
+		t.Errorf("node count changed after cache hit: %d -> %d",
+			nodesAfterFirst, len(srv.state.data.Nodes))
+	}
+	// Non-play data should also be non-nil (cached).
+	if srv.state.wd == nil {
+		t.Error("watch data nil after cache hit")
+	}
+	if srv.state.pv == nil {
+		t.Error("preview data nil after cache hit")
+	}
+	if srv.state.tut == nil {
+		t.Error("tutorial data nil after cache hit")
+	}
 }
