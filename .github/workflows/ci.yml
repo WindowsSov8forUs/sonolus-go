@@ -13,9 +13,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: go test ./... -count=1
+      - run: go mod download
+      - run: go test -timeout 5m ./... -count=1
       # Verify CLI binary builds and sub-commands are wired correctly.
-      - run: go build -o sonolus-go.exe .
+      - run: go build -o sonolus-go.exe ./cmd/sonolus-go/
       - run: ./sonolus-go -version
         continue-on-error: true
       # Smoke-test pack command: compile a minimal engine and verify output.
@@ -44,8 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: git clone --depth 1 https://github.com/WindowsSov8forUs/sonolus-pack-go.git ../sonolus-pack-go || true
-      - run: git clone --depth 1 https://github.com/WindowsSov8forUs/sonolus-server-go.git ../sonolus-server-go || true
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
