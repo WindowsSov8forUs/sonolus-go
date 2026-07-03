@@ -41,7 +41,7 @@ type parsedResources struct {
 	ui          *resource.EngineConfigurationUI // non-nil if a UI struct was parsed
 }
 
-func buildResources(typeSpecs map[string]*ast.StructType) (parsedResources, error) {
+func buildResources(typeSpecs map[string]*ast.StructType, uiVarLit *ast.CompositeLit) (parsedResources, error) {
 	var r parsedResources
 	seen := map[string]bool{}
 
@@ -93,7 +93,7 @@ func buildResources(typeSpecs map[string]*ast.StructType) (parsedResources, erro
 				return parsedResources{}, err
 			}
 		case "ui":
-			ui, err := buildUI(st)
+			ui, err := buildUI(st, uiVarLit)
 			if err != nil {
 				return parsedResources{}, err
 			}

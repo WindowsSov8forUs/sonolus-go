@@ -207,6 +207,69 @@ func (a Archetype) UpdateParallel(dt float64) {}
 	}
 }
 
+// TestUIConfig_TypedEnum verifies typed UI config via var ui = UI{...}.
+func TestUIConfig_TypedEnum(t *testing.T) {
+	src := "package test\n" +
+		"import \"github.com/WindowsSov8forUs/sonolus-go/sonolus\"\n" +
+		"type Skin struct { Note float64 }\n" +
+		"type Note struct { Beat float64 `sonolus:\"imported\"` }\n" +
+		"type UI struct {\n" +
+		"    PrimaryMetric      sonolus.Metric             `sonolus:\"primaryMetric\"`\n" +
+		"    JudgmentErrorStyle sonolus.JudgmentErrorStyle `sonolus:\"judgmentErrorStyle\"`\n" +
+		"    MenuVisibility     sonolus.Visibility          `sonolus:\"menuVisibility\"`\n" +
+		"}\n" +
+		"var ui = UI{\n" +
+		"    PrimaryMetric:      sonolus.MetricLife,\n" +
+		"    JudgmentErrorStyle: sonolus.JudgmentErrorPlus,\n" +
+		"    MenuVisibility:     sonolus.Visibility{Scale: 0.8, Alpha: 1.0},\n" +
+		"}\n" +
+		"func (n *Note) Initialize() { debugPause() }\n" +
+		"func UpdateSpawn() float64 { return 0 }\n"
+	_, _, err := CompilePlayFile(src)
+	if err != nil {
+		t.Fatalf("CompilePlayFile: %v", err)
+	}
+}
+
+// TestUIConfig_BackwardCompat verifies tag-based UI config still works.
+func TestUIConfig_BackwardCompat(t *testing.T) {
+	src := "package test\n" +
+		"type Skin struct { Note float64 }\n" +
+		"type Note struct { Beat float64 `sonolus:\"imported\"` }\n" +
+		"type UI struct {\n" +
+		"    PrimaryMetric string `sonolus:\"primaryMetric=life\"`\n" +
+		"}\n" +
+		"func (n *Note) Initialize() { debugPause() }\n" +
+		"func UpdateSpawn() float64 { return 0 }\n"
+	_, _, err := CompilePlayFile(src)
+	if err != nil {
+		t.Fatalf("CompilePlayFile: %v", err)
+	}
+}
+
+// TestUIConfig_Animation verifies nested Animation/Tween in typed UI config.
+func TestUIConfig_Animation(t *testing.T) {
+	src := "package test\n" +
+		"import \"github.com/WindowsSov8forUs/sonolus-go/sonolus\"\n" +
+		"type Skin struct { Note float64 }\n" +
+		"type Note struct { Beat float64 `sonolus:\"imported\"` }\n" +
+		"type UI struct {\n" +
+		"    JudgmentAnimation sonolus.Animation `sonolus:\"judgmentAnimation\"`\n" +
+		"}\n" +
+		"var ui = UI{\n" +
+		"    JudgmentAnimation: sonolus.Animation{\n" +
+		"        Scale: sonolus.Tween{From: 0, To: 1, Duration: 0.1, Ease: sonolus.EasingOutCubic},\n" +
+		"        Alpha: sonolus.Tween{From: 1, To: 0, Duration: 0.3, Ease: sonolus.EasingNone},\n" +
+		"    },\n" +
+		"}\n" +
+		"func (n *Note) Initialize() { debugPause() }\n" +
+		"func UpdateSpawn() float64 { return 0 }\n"
+	_, _, err := CompilePlayFile(src)
+	if err != nil {
+		t.Fatalf("CompilePlayFile: %v", err)
+	}
+}
+
 // TestBuildUI_UnknownField verifies error on unrecognized tag key.
 func TestBuildUI_UnknownField(t *testing.T) {
 	src := `package test

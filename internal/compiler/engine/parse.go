@@ -93,7 +93,7 @@ func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.Engin
 		}
 	}
 
-	r, err := buildResources(pes.resources)
+	r, err := buildResources(pes.resources, pes.uiVar)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -186,7 +186,7 @@ func CompilePlaySources(ess *EngineSources, opts *CompileOptions) (*resource.Eng
 	}
 
 	// 5. Build resources from main package only.
-	r, err := buildResources(mainPES.resources)
+	r, err := buildResources(mainPES.resources, mainPES.uiVar)
 	if err != nil {
 		return nil, nil, err
 	}

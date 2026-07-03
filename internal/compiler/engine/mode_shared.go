@@ -141,6 +141,7 @@ type parsedModeFile struct {
 	order     []string
 	funcs     map[string]*ast.FuncDecl
 	resources map[string]*ast.StructType
+	uiVar     *ast.CompositeLit
 }
 
 // archetypeData holds the per-archetype metadata produced by callback
@@ -319,7 +320,7 @@ func runNonPlayPipeline(src string, cbSet map[string]string, mode ir.Mode, opts 
 	}
 	res.pf = pf
 	res.gen = ir.NewIDGen()
-	r, err := buildResources(pf.resources)
+	r, err := buildResources(pf.resources, pf.uiVar)
 	if err != nil {
 		return res, fmt.Errorf("build resources: %w", err)
 	}
@@ -356,7 +357,7 @@ func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode
 	}
 
 	// 3. Build resources (main package only).
-	r, err := buildResources(mainPES.resources)
+	r, err := buildResources(mainPES.resources, mainPES.uiVar)
 	if err != nil {
 		return res, fmt.Errorf("build resources: %w", err)
 	}

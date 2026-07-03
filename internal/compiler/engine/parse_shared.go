@@ -32,6 +32,7 @@ type parsedEngineSource struct {
 	methods   []parsedMethodDecl
 	funcs     map[string]*ast.FuncDecl
 	resources map[string]*ast.StructType
+	uiVar     *ast.CompositeLit // non-nil when var ui/var uiConfig found
 }
 
 // parseEngineSource parses an engine Go source file and returns the shared
@@ -62,6 +63,10 @@ func parseEngineSourceFiles(files map[string]string, allowResources bool) (*pars
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
 
+			// Scan for var ui / var uiConfig (typed UI config).
+			if out.uiVar == nil {
+				out.uiVar = findUIVar(file.Decls)
+			}
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:

@@ -103,7 +103,7 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 		}
 	}
 
-	return &parsedModeFile{fset: pes.fset, arcs: arcs, order: order, funcs: pes.funcs, resources: pes.resources}, nil
+	return &parsedModeFile{fset: pes.fset, arcs: arcs, order: order, funcs: pes.funcs, resources: pes.resources, uiVar: pes.uiVar}, nil
 }
 
 func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string]frontend.Binding) {
@@ -307,7 +307,7 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 	if err != nil {
 		return nil, err
 	}
-	if _, err := buildResources(pf.resources); err != nil {
+	if _, err := buildResources(pf.resources, pf.uiVar); err != nil {
 		return nil, err
 	}
 	return finishTutorial(pf.fset, pf.funcs, pf.resources, opts)
@@ -349,7 +349,7 @@ func CompileTutorialSources(ess *EngineSources, opts *CompileOptions) (*resource
 }
 
 func finishTutorial(fset *token.FileSet, funcs map[string]*ast.FuncDecl, resources map[string]*ast.StructType, opts *CompileOptions) (*resource.EngineTutorialData, error) {
-	r, err := buildResources(resources)
+	r, err := buildResources(resources, nil)
 	if err != nil {
 		return nil, err
 	}

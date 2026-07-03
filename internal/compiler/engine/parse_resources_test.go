@@ -234,7 +234,7 @@ func TestIsInstructionIcon_WrongSelector(t *testing.T) {
 
 func TestBuildUI_Empty(t *testing.T) {
 	st := parseStructType(t, "type U struct{}")
-	ui, err := buildUI(st)
+	ui, err := buildUI(st, nil)
 	if err != nil {
 		t.Fatalf("buildUI: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestBuildUI_Metrics(t *testing.T) {
 		PrimaryMetric  float64 `+"`sonolus:\"primaryMetric=arcadePercentage\"`"+`
 		SecondaryMetric float64 `+"`sonolus:\"secondaryMetric=accuracyPercentage\"`"+`
 	}`)
-	ui, err := buildUI(st)
+	ui, err := buildUI(st, nil)
 	if err != nil {
 		t.Fatalf("buildUI: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestBuildUI_Visibility(t *testing.T) {
 	st := parseStructType(t, `type U struct {
 		Visible float64 `+"`sonolus:\"menuVisibilityScale=1.0\"`"+`
 	}`)
-	ui, err := buildUI(st)
+	ui, err := buildUI(st, nil)
 	if err != nil {
 		t.Fatalf("buildUI: %v", err)
 	}

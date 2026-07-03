@@ -251,10 +251,31 @@ func buildUISetters() map[string]func(*resource.EngineConfigurationUI, string) e
 }
 
 // buildUI parses a UI struct from the engine source and returns an
-// EngineConfigurationUI. It starts from defaultUI() and overrides fields
-// based on sonolus tag key=value pairs on each struct field.
-func buildUI(st *ast.StructType) (resource.EngineConfigurationUI, error) {
+// EngineConfigurationUI. If uiLit is non-nil, field values are read from
+// the composite literal (typed mode); otherwise from sonolus:"key=value" tags.
+func buildUI(st *ast.StructType, uiLit *ast.CompositeLit) (resource.EngineConfigurationUI, error) {
 	ui := defaultUI()
+
+	// Typed mode: evaluate the composite literal.
+	if uiLit != nil {
+		ctx := newUIEvalContext()
+		vals, err := evaluateUIConfig(st, uiLit, ctx)
+		if err != nil {
+			return resource.EngineConfigurationUI{}, fmt.Errorf("UI: %w", err)
+		}
+		for k, v := range vals {
+			set, ok := uiSetters[k]
+			if !ok {
+				return resource.EngineConfigurationUI{}, fmt.Errorf("engine: unknown UI field %q", k)
+			}
+			if err := set(&ui, v); err != nil {
+				return resource.EngineConfigurationUI{}, fmt.Errorf("UI field %q: %w", k, err)
+			}
+		}
+		return ui, nil
+	}
+
+	// String mode: parse sonolus:"key=value" tags.
 	for _, f := range st.Fields.List {
 		if f.Tag == nil || len(f.Names) == 0 {
 			continue

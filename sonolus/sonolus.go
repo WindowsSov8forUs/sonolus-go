@@ -440,3 +440,107 @@ var (
 	EntityLifeGood     float64
 	EntityLifeMiss     float64
 )
+
+// ── UI configuration types ──────────────────────────────────────────────────
+
+type (
+	Metric                  string
+	JudgmentErrorStyle      string
+	JudgmentErrorPlacement  string
+	Ease                    string
+)
+
+type Visibility struct{ Scale, Alpha float64 }
+
+type Tween struct {
+	From, To, Duration float64
+	Ease               Ease
+}
+
+type Animation struct{ Scale, Alpha Tween }
+
+// Metrics
+const (
+	MetricArcade              Metric = "arcade"
+	MetricArcadePercentage    Metric = "arcadePercentage"
+	MetricAccuracy            Metric = "accuracy"
+	MetricAccuracyPercentage  Metric = "accuracyPercentage"
+	MetricLife                Metric = "life"
+	MetricPerfect             Metric = "perfect"
+	MetricPerfectPercentage   Metric = "perfectPercentage"
+	MetricGreatGoodMiss       Metric = "greatGoodMiss"
+	MetricGreatGoodMissPct    Metric = "greatGoodMissPercentage"
+	MetricMiss                Metric = "miss"
+	MetricMissPercentage      Metric = "missPercentage"
+	MetricErrorHeatmap        Metric = "errorHeatmap"
+)
+
+// Judgment error styles
+const (
+	JudgmentErrorNone          JudgmentErrorStyle = "none"
+	JudgmentErrorLate          JudgmentErrorStyle = "late"
+	JudgmentErrorEarly         JudgmentErrorStyle = "early"
+	JudgmentErrorPlus          JudgmentErrorStyle = "plus"
+	JudgmentErrorMinus         JudgmentErrorStyle = "minus"
+	JudgmentErrorArrowUp       JudgmentErrorStyle = "arrowUp"
+	JudgmentErrorArrowDown     JudgmentErrorStyle = "arrowDown"
+	JudgmentErrorArrowLeft     JudgmentErrorStyle = "arrowLeft"
+	JudgmentErrorArrowRight    JudgmentErrorStyle = "arrowRight"
+	JudgmentErrorTriangleUp    JudgmentErrorStyle = "triangleUp"
+	JudgmentErrorTriangleDown  JudgmentErrorStyle = "triangleDown"
+	JudgmentErrorTriangleLeft  JudgmentErrorStyle = "triangleLeft"
+	JudgmentErrorTriangleRight JudgmentErrorStyle = "triangleRight"
+)
+
+// Judgment error placements
+const (
+	JudgmentErrorPlacementLeft      JudgmentErrorPlacement = "left"
+	JudgmentErrorPlacementRight     JudgmentErrorPlacement = "right"
+	JudgmentErrorPlacementLeftRight JudgmentErrorPlacement = "leftRight"
+	JudgmentErrorPlacementTop       JudgmentErrorPlacement = "top"
+	JudgmentErrorPlacementBottom    JudgmentErrorPlacement = "bottom"
+	JudgmentErrorPlacementTopBottom JudgmentErrorPlacement = "topBottom"
+	JudgmentErrorPlacementCenter    JudgmentErrorPlacement = "center"
+)
+
+// Easing functions
+const (
+	EasingLinear      Ease = "linear"
+	EasingNone        Ease = "none"
+	EasingInSine      Ease = "inSine"
+	EasingInQuad      Ease = "inQuad"
+	EasingInCubic     Ease = "inCubic"
+	EasingInQuart     Ease = "inQuart"
+	EasingInQuint     Ease = "inQuint"
+	EasingInExpo      Ease = "inExpo"
+	EasingInCirc      Ease = "inCirc"
+	EasingInBack      Ease = "inBack"
+	EasingInElastic   Ease = "inElastic"
+	EasingOutSine     Ease = "outSine"
+	EasingOutQuad     Ease = "outQuad"
+	EasingOutCubic    Ease = "outCubic"
+	EasingOutQuart    Ease = "outQuart"
+	EasingOutQuint    Ease = "outQuint"
+	EasingOutExpo     Ease = "outExpo"
+	EasingOutCirc     Ease = "outCirc"
+	EasingOutBack     Ease = "outBack"
+	EasingOutElastic  Ease = "outElastic"
+	EasingInOutSine   Ease = "inOutSine"
+	EasingInOutQuad   Ease = "inOutQuad"
+	EasingInOutCubic  Ease = "inOutCubic"
+	EasingInOutQuart  Ease = "inOutQuart"
+	EasingInOutQuint  Ease = "inOutQuint"
+	EasingInOutExpo   Ease = "inOutExpo"
+	EasingInOutCirc   Ease = "inOutCirc"
+	EasingInOutBack   Ease = "inOutBack"
+	EasingInOutElastic Ease = "inOutElastic"
+	EasingOutInSine   Ease = "outInSine"
+	EasingOutInQuad   Ease = "outInQuad"
+	EasingOutInCubic  Ease = "outInCubic"
+	EasingOutInQuart  Ease = "outInQuart"
+	EasingOutInQuint  Ease = "outInQuint"
+	EasingOutInExpo   Ease = "outInExpo"
+	EasingOutInCirc   Ease = "outInCirc"
+	EasingOutInBack   Ease = "outInBack"
+	EasingOutInElastic Ease = "outInElastic"
+)
