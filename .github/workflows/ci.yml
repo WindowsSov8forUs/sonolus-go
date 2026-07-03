@@ -10,22 +10,12 @@ jobs:
       - uses: actions/checkout@v4
 
       # Clone sibling dependency repos (required by local replace directives in go.mod).
-      # Remove these steps once sonolus-core-go, sonolus-pack-go, and sonolus-server-go
-      # are published as versioned modules.
-      - uses: actions/checkout@v4
-        with:
-          repository: WindowsSov8forUs/sonolus-core-go
-          path: ../sonolus-core-go
-      - uses: actions/checkout@v4
-        with:
-          repository: WindowsSov8forUs/sonolus-pack-go
-          path: ../sonolus-pack-go
-        continue-on-error: true
-      - uses: actions/checkout@v4
-        with:
-          repository: WindowsSov8forUs/sonolus-server-go
-          path: ../sonolus-server-go
-        continue-on-error: true
+      # git clone is used instead of actions/checkout because the paths are outside
+      # the workspace, which actions/checkout@v4 refuses.
+      # Remove these steps once the repos are published as versioned modules.
+      - run: git clone --depth 1 https://github.com/WindowsSov8forUs/sonolus-core-go.git ../sonolus-core-go
+      - run: git clone --depth 1 https://github.com/WindowsSov8forUs/sonolus-pack-go.git ../sonolus-pack-go || true
+      - run: git clone --depth 1 https://github.com/WindowsSov8forUs/sonolus-server-go.git ../sonolus-server-go || true
 
       - uses: actions/setup-go@v5
         with:
@@ -55,7 +45,7 @@ jobs:
         shell: bash
         continue-on-error: true
       - run: go vet ./...
-      - run: gofmt -s -l compiler cmd > fmt.out && test ! -s fmt.out || (cat fmt.out && exit 1)
+      - run: gofmt -s -l internal cmd sonolus > fmt.out && test ! -s fmt.out || (cat fmt.out && exit 1)
         shell: bash
   fuzz:
     runs-on: ubuntu-latest
