@@ -59,4 +59,4 @@ from engine source via a `type UI struct { ... }` with `sonolus:"key=value"` tag
 1. Verify skin sprite transform coverage **✅ Done (2026-06-29)** — Transform2d compose/translate/scale/rotate/transformVec
 2. Add Judgment/Metric/Visibility/Animation config parsing from engine source **✅ Done (2026-06-28)**
 3. Engine data value model now has explicit `NumKind` (Scalar/Record/Array) with array-of-records support **✅ Done (2026-06-29)**
-4. Container types (Pair, VarArray) with iterator protocol — **planned**, not yet started (to be modeled after `sonolus.py/sonolus/script/containers.py`)
+4. Container types (VarArray, ArrayMap, ArraySet, FrozenNumSet) with sort/search/iterate protocol — **✅ Done (2026-07)** (see `compiler/frontend/containers.go`)

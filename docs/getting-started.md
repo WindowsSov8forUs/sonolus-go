@@ -69,4 +69,4 @@ sonolus-go serve -m play ./engine.go
 
 ## DSL 语法
 
-参见 [DSL 语言参考](language.md)。
+参见 [DSL 语言参考](FRONTEND_SYNTAX.md)。

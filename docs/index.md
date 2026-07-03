@@ -26,7 +26,7 @@ sonolus-go serve -m play ./engine/
 ```
 Go源文件 (.go)
   → compiler/frontend     (AST 追踪 → CFG IR)
-  → compiler/ir/optimize  (~15 个优化 pass)
+  → compiler/ir/optimize  (~40 个优化 pass)
   → compiler/ir/finalize  (寄存器分配 + 指令扁平化)
   → compiler/snode        (SNode 去重 + 序列化)
   → compiler/{play,watch,preview,tutorial}
