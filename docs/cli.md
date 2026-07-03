@@ -70,3 +70,7 @@ sonolus-go host <source> [-addr <:8080>] [-author <name>]
 ## 环境变量
 
 sonolus-go 不使用环境变量。所有配置通过命令行标志传递。
+
+---
+
+> 参考：[快速入门](getting-started.md) · [DSL 语言参考](dsl-reference.md) · [编译器架构](architecture.md)

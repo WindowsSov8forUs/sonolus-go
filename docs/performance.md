@@ -61,4 +61,8 @@ Run with: `go test ./internal/compiler/ir/optimize/ -bench . -benchmem`
 
 - Go benchmarks use `b.ReportAllocs()` for allocation tracking
 - Python comparison requires sonolus.py at `../sonolus.py` with Python >= 3.11
+
+---
+
+> 参考：[编译器架构](architecture.md) · [优化器](optimization.md)
 - For production profiling, use `-cpuprofile` and `-memprofile` flags

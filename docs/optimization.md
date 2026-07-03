@@ -107,4 +107,8 @@ Alloc: AllocateBasic
 ## 参考
 
 - sonolus.py 优化器: `../sonolus.py/sonolus/backend/optimize/`
+
+---
+
+> 参考：[编译器架构](architecture.md) · [性能基准](performance.md)
 - sonolus.js-compiler SNode 优化: `../sonolus.js-internal/compiler/src/snode/optimize/`
