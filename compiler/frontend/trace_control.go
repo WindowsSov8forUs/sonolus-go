@@ -37,16 +37,7 @@ func (t *tracer) ifStmt(n *ast.IfStmt) error {
 		if cond.c != 0 {
 			return t.stmtList(n.Body.List)
 		}
-		switch e := n.Else.(type) {
-		case nil:
-			return nil
-		case *ast.BlockStmt:
-			return t.stmtList(e.List)
-		case *ast.IfStmt:
-			return t.ifStmt(e)
-		default:
-			return t.errf(n.Else, "unsupported else %T", n.Else)
-		}
+		return t.dispatchElse(n.Else)
 	}
 
 	condBlock := t.current
@@ -72,21 +63,8 @@ func (t *tracer) ifStmt(n *ast.IfStmt) error {
 	}
 	t.fallthroughTo(merge)
 
-	if elseBlock != nil {
-		t.enter(elseBlock)
-		switch e := n.Else.(type) {
-		case *ast.BlockStmt:
-			if err := t.stmtList(e.List); err != nil {
-				return err
-			}
-		case *ast.IfStmt:
-			if err := t.ifStmt(e); err != nil {
-				return err
-			}
-		default:
-			return t.errf(n.Else, "unsupported else %T", n.Else)
-		}
-		t.fallthroughTo(merge)
+	if err := t.traceElseBranch(n.Else, elseBlock, merge); err != nil {
+		return err
 	}
 
 	// If neither branch reaches the merge, code after the if is unreachable.
@@ -232,5 +210,47 @@ func (t *tracer) branch(n *ast.BranchStmt) error {
 	}
 	// The rest of this block is unreachable; stmtList stops here.
 	t.terminated = true
+	return nil
+}
+
+// dispatchElse handles an else branch when the if-condition is a compile-time
+// constant. The taken branch is executed inline and the dead branch is skipped
+// entirely — no CFG edge is created.
+func (t *tracer) dispatchElse(elseStmt ast.Stmt) error {
+	if elseStmt == nil {
+		return nil
+	}
+	switch e := elseStmt.(type) {
+	case *ast.BlockStmt:
+		return t.stmtList(e.List)
+	case *ast.IfStmt:
+		return t.ifStmt(e)
+	default:
+		return t.errf(elseStmt, "unsupported else %T", elseStmt)
+	}
+}
+
+// traceElseBranch traces the else branch of a runtime if-statement. elseBlock
+// is the CFG block created by the caller (connected to the false edge of the
+// condition). It is entered, the body is traced, and execution falls through to
+// merge. When elseStmt is nil, there is no else branch and this is a no-op.
+func (t *tracer) traceElseBranch(elseStmt ast.Stmt, elseBlock, merge *ir.BasicBlock) error {
+	if elseStmt == nil {
+		return nil
+	}
+	t.enter(elseBlock)
+	switch e := elseStmt.(type) {
+	case *ast.BlockStmt:
+		if err := t.stmtList(e.List); err != nil {
+			return err
+		}
+	case *ast.IfStmt:
+		if err := t.ifStmt(e); err != nil {
+			return err
+		}
+	default:
+		return t.errf(elseStmt, "unsupported else %T", elseStmt)
+	}
+	t.fallthroughTo(merge)
 	return nil
 }

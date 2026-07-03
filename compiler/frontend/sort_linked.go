@@ -148,6 +148,9 @@ func sortLinkedEntitiesCall(t *tracer, args []Num) (Num, error) {
 	nextOff := int(args[2].c)
 	prevOff := 0
 	if len(args) >= 4 {
+		if !args[3].isConst {
+			return Num{}, fmt.Errorf("frontend: sortLinkedEntities: prevOffset must be a compile-time constant")
+		}
 		prevOff = int(args[3].c)
 	}
 

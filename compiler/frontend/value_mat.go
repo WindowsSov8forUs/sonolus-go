@@ -47,14 +47,13 @@ func matCompose(t *tracer, m Num, args []Num) (Num, error) {
 			t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField(r0).mustNode(), n.MustField(c0).mustNode()),
 			t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField(r1).mustNode(), n.MustField(c1).mustNode()))
 	}
-	add := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, a, b) }
 	return compNum(map[string]Num{
 		"m11": exprNum(dot2("m11", "m12", "m11", "m21")),
 		"m12": exprNum(dot2("m11", "m12", "m12", "m22")),
-		"m13": exprNum(add(dot2("m11", "m12", "m13", "m23"), m.MustField("m13").mustNode())),
+		"m13": exprNum(t.addNode(dot2("m11", "m12", "m13", "m23"), m.MustField("m13").mustNode())),
 		"m21": exprNum(dot2("m21", "m22", "m11", "m21")),
 		"m22": exprNum(dot2("m21", "m22", "m12", "m22")),
-		"m23": exprNum(add(dot2("m21", "m22", "m13", "m23"), m.MustField("m23").mustNode())),
+		"m23": exprNum(t.addNode(dot2("m21", "m22", "m13", "m23"), m.MustField("m23").mustNode())),
 	}), nil
 }
 
@@ -64,14 +63,12 @@ func matRotate(t *tracer, m Num, args []Num) (Num, error) {
 	cos := exprNum(t.gen.PureInstr(resource.RuntimeFunctionCos, a.mustNode()))
 	sin := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSin, a.mustNode()))
 	negSin := exprNum(t.gen.PureInstr(resource.RuntimeFunctionNegate, sin.mustNode()))
-	add := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, a, b) }
-	mul := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a, b) }
 	return compNum(map[string]Num{
-		"m11": exprNum(add(mul(m.MustField("m11").mustNode(), cos.mustNode()), mul(m.MustField("m12").mustNode(), sin.mustNode()))),
-		"m12": exprNum(add(mul(m.MustField("m11").mustNode(), negSin.mustNode()), mul(m.MustField("m12").mustNode(), cos.mustNode()))),
+		"m11": exprNum(t.addNode(t.mulNode(m.MustField("m11").mustNode(), cos.mustNode()), t.mulNode(m.MustField("m12").mustNode(), sin.mustNode()))),
+		"m12": exprNum(t.addNode(t.mulNode(m.MustField("m11").mustNode(), negSin.mustNode()), t.mulNode(m.MustField("m12").mustNode(), cos.mustNode()))),
 		"m13": m.MustField("m13"),
-		"m21": exprNum(add(mul(m.MustField("m21").mustNode(), cos.mustNode()), mul(m.MustField("m22").mustNode(), sin.mustNode()))),
-		"m22": exprNum(add(mul(m.MustField("m21").mustNode(), negSin.mustNode()), mul(m.MustField("m22").mustNode(), cos.mustNode()))),
+		"m21": exprNum(t.addNode(t.mulNode(m.MustField("m21").mustNode(), cos.mustNode()), t.mulNode(m.MustField("m22").mustNode(), sin.mustNode()))),
+		"m22": exprNum(t.addNode(t.mulNode(m.MustField("m21").mustNode(), negSin.mustNode()), t.mulNode(m.MustField("m22").mustNode(), cos.mustNode()))),
 		"m23": m.MustField("m23"),
 	}), nil
 }

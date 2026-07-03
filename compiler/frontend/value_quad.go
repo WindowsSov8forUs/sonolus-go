@@ -114,37 +114,30 @@ func quadContains(t *tracer, q Num, args []Num) (Num, error) {
 	return exprNum(same), nil
 }
 
-func quadTop(t *tracer, q Num, args []Num) (Num, error) {
+// quadEdge computes the midpoint of a quad edge defined by two corners.
+// fx1/fy1 and fx2/fy2 are the x/y field name pairs for the two corners.
+func quadEdge(t *tracer, q Num, fx1, fy1, fx2, fy2 string) (Num, error) {
 	return compNum(map[string]Num{
 		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("tlx").mustNode(), q.MustField("trx").mustNode()), ir.Const(2))),
+			t.gen.PureInstr(resource.RuntimeFunctionAdd,
+				q.MustField(fx1).mustNode(), q.MustField(fx2).mustNode()), ir.Const(2))),
 		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("tly").mustNode(), q.MustField("try").mustNode()), ir.Const(2))),
+			t.gen.PureInstr(resource.RuntimeFunctionAdd,
+				q.MustField(fy1).mustNode(), q.MustField(fy2).mustNode()), ir.Const(2))),
 	}), nil
+}
+
+func quadTop(t *tracer, q Num, args []Num) (Num, error) {
+	return quadEdge(t, q, "tlx", "tly", "trx", "try")
 }
 func quadRight(t *tracer, q Num, args []Num) (Num, error) {
-	return compNum(map[string]Num{
-		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("trx").mustNode(), q.MustField("brx").mustNode()), ir.Const(2))),
-		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("try").mustNode(), q.MustField("bry").mustNode()), ir.Const(2))),
-	}), nil
+	return quadEdge(t, q, "trx", "try", "brx", "bry")
 }
 func quadBottom(t *tracer, q Num, args []Num) (Num, error) {
-	return compNum(map[string]Num{
-		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("blx").mustNode(), q.MustField("brx").mustNode()), ir.Const(2))),
-		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("bly").mustNode(), q.MustField("bry").mustNode()), ir.Const(2))),
-	}), nil
+	return quadEdge(t, q, "blx", "bly", "brx", "bry")
 }
 func quadLeft(t *tracer, q Num, args []Num) (Num, error) {
-	return compNum(map[string]Num{
-		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("blx").mustNode(), q.MustField("tlx").mustNode()), ir.Const(2))),
-		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
-			t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("bly").mustNode(), q.MustField("tly").mustNode()), ir.Const(2))),
-	}), nil
+	return quadEdge(t, q, "blx", "bly", "tlx", "tly")
 }
 
 func quadRotate(t *tracer, q Num, args []Num) (Num, error) {

@@ -129,18 +129,18 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		return err
 	}
 
-		// Composite value from a function return or constructor: register as a record.
-		if n.Tok == token.DEFINE && val.IsComposite() {
-			order, err := val.CompositeFieldOrder()
-			if err != nil {
-				return err
-			}
-			rec := &recordInfo{
-				tb:     &ir.TempBlock{Name: lhsName.Name, Size: val.CompositeSize()},
-				fields: map[string]int{},
-				order:  order,
-				val:    val,
-			}
+	// Composite value from a function return or constructor: register as a record.
+	if n.Tok == token.DEFINE && val.IsComposite() {
+		order, err := val.CompositeFieldOrder()
+		if err != nil {
+			return err
+		}
+		rec := &recordInfo{
+			tb:     &ir.TempBlock{Name: lhsName.Name, Size: val.CompositeSize()},
+			fields: map[string]int{},
+			order:  order,
+			val:    val,
+		}
 		for i, f := range rec.order {
 			rec.fields[f] = i
 		}
@@ -166,29 +166,18 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 // If false, the caller should fall through to regular assignment.
 func (t *tracer) compositeDecl(varName *ast.Ident, fn *ast.Ident, call *ast.CallExpr) (handled bool, _ error) {
 	// D3: use types.Info to resolve record constructors by return type.
-	if info := t.env.Info; info != nil {
-		if obj, ok := info.Uses[fn]; ok {
-			if fobj, ok := obj.(*types.Func); ok {
-				if sig, ok := fobj.Type().(*types.Signature); ok {
-					if named, ok := sig.Results().At(0).Type().(*types.Named); ok {
-						if st, ok := named.Underlying().(*types.Struct); ok {
-							typeName := named.Obj().Name()
-							if typeName == "VarArray" || typeName == "ArrayMap" || typeName == "FrozenNumSet" {
-								return true, t.varArrayDecl(varName, call)
-							}
-							if typeName == "ArraySet" {
-								return true, t.arraySetDecl(varName, call)
-							}
-							fields := make([]string, st.NumFields())
-							for i := range st.NumFields() {
-								fields[i] = st.Field(i).Name()
-							}
-							return true, t.recordDecl(varName, call, fields)
-						}
-					}
-				}
-			}
+	if st, typeName, ok := t.resolveRecordType(fn); ok {
+		if typeName == "VarArray" || typeName == "ArrayMap" || typeName == "FrozenNumSet" {
+			return true, t.varArrayDecl(varName, call)
 		}
+		if typeName == "ArraySet" {
+			return true, t.arraySetDecl(varName, call)
+		}
+		fields := make([]string, st.NumFields())
+		for i := range st.NumFields() {
+			fields[i] = st.Field(i).Name()
+		}
+		return true, t.recordDecl(varName, call, fields)
 	}
 	// Fallback: name-based dispatch (when Info is nil or type lookup fails).
 	switch fn.Name {
@@ -262,20 +251,10 @@ func (t *tracer) arrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 	}
 	elemSize := 1
 	// Check if this is array[RecordType](count) via type info.
-	if t.env.Info != nil {
-		if idx, ok := call.Fun.(*ast.IndexExpr); ok {
-			if id, ok := idx.X.(*ast.Ident); ok && id.Name == "array" {
-				if obj, ok2 := t.env.Info.Uses[id]; ok2 {
-					if fobj, ok3 := obj.(*types.Func); ok3 {
-						if sig, ok4 := fobj.Type().(*types.Signature); ok4 {
-							if named, ok5 := sig.Results().At(0).Type().(*types.Named); ok5 {
-								if st, ok6 := named.Underlying().(*types.Struct); ok6 {
-									elemSize = st.NumFields()
-								}
-							}
-						}
-					}
-				}
+	if idx, ok := call.Fun.(*ast.IndexExpr); ok {
+		if id, ok := idx.X.(*ast.Ident); ok && id.Name == "array" {
+			if st, _, ok3 := t.resolveRecordType(id); ok3 {
+				elemSize = st.NumFields()
 			}
 		}
 	}
@@ -340,16 +319,12 @@ func (t *tracer) varArrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 	}
 	t.records[arrName.Name] = ri
 
-	es := 1
-	if fnIdent.Name == "arrayMap" {
-		es = 2 // key + value slots per entry
-	}
 	ci := &containerInfo{
 		tb:       tb,
 		sizeSlot: 0,
 		dataOff:  1,
 		capacity: capacity,
-		elemSize: es,
+		elemSize: elemSize,
 		val:      ri.val,
 	}
 	t.containers[arrName.Name] = ci
@@ -631,4 +606,39 @@ func (t *tracer) emitBindingStore(b Binding, val Num) {
 	} else {
 		t.emit(t.gen.SetPlace(ir.Cell(b.Block, b.Index), val.mustNode()))
 	}
+}
+
+// resolveRecordType resolves an identifier to its underlying struct type via the
+// types.Info chain: Ident → types.Func → types.Signature → types.Named → types.Struct.
+// Returns the struct type, the named type name, and whether resolution succeeded.
+// Only works for functions that return a single struct-typed result (constructors).
+func (t *tracer) resolveRecordType(fn *ast.Ident) (st *types.Struct, typeName string, _ bool) {
+	info := t.env.Info
+	if info == nil {
+		return nil, "", false
+	}
+	obj, ok := info.Uses[fn]
+	if !ok {
+		return nil, "", false
+	}
+	fobj, ok := obj.(*types.Func)
+	if !ok {
+		return nil, "", false
+	}
+	sig, ok := fobj.Type().(*types.Signature)
+	if !ok {
+		return nil, "", false
+	}
+	if sig.Results().Len() == 0 {
+		return nil, "", false
+	}
+	named, ok := sig.Results().At(0).Type().(*types.Named)
+	if !ok {
+		return nil, "", false
+	}
+	st, ok = named.Underlying().(*types.Struct)
+	if !ok {
+		return nil, "", false
+	}
+	return st, named.Obj().Name(), true
 }

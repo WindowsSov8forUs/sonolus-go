@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"go/types"
 	"strconv"
+	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
@@ -308,18 +309,6 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return boolNum(t.env.Mode == ir.ModePreview), true, nil
 	case "isTutorial":
 		return boolNum(t.env.Mode == ir.ModeTutorial), true, nil
-	case "vec2Zero":
-		return vec2Statics["zero"](), true, nil
-	case "vec2One":
-		return vec2Statics["one"](), true, nil
-	case "vec2Up":
-		return vec2Statics["up"](), true, nil
-	case "vec2Down":
-		return vec2Statics["down"](), true, nil
-	case "vec2Left":
-		return vec2Statics["left"](), true, nil
-	case "vec2Right":
-		return vec2Statics["right"](), true, nil
 	case "varArray", "arrayMap":
 		// varArray(capacity) / arrayMap(capacity) — capacity must be constant.
 		if len(n.Args) != 1 {
@@ -357,6 +346,12 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		t.terminated = true
 		return constNum(0), true, nil
 	default:
+		if strings.HasPrefix(fn.Name, "vec2") {
+			key := strings.ToLower(fn.Name[4:])
+			if f, ok := vec2Statics[key]; ok {
+				return f(), true, nil
+			}
+		}
 		if fields, ok := builtinRecordFields(fn.Name); ok {
 			r, err := t.inlineComposite(fn, n, fields)
 			return r, true, err
@@ -410,15 +405,12 @@ func (t *tracer) callWithArgs(fn *ast.Ident, n *ast.CallExpr, args []Num) (Num, 
 		}
 		t.debugError(msgNode)
 		return constNum(0), nil
-	case "debugRequire":
+	case "debugRequire", "debugAssertTrue":
 		if len(args) != 2 {
-			return Num{}, t.errf(n, "debugRequire expects 2 arguments (condition, message)")
+			return Num{}, t.errf(n, "%s expects 2 arguments (condition, message)", fn.Name)
 		}
-		t.debugRequire(args[0], args[1])
-		return constNum(0), nil
-	case "debugAssertTrue":
-		if len(args) != 2 {
-			return Num{}, t.errf(n, "debugAssertTrue expects 2 arguments (condition, message)")
+		if _, err := args[1].Node(); err != nil {
+			return Num{}, t.errf(n, "%s: %v", fn.Name, err)
 		}
 		t.debugRequire(args[0], args[1])
 		return constNum(0), nil
@@ -431,6 +423,9 @@ func (t *tracer) callWithArgs(fn *ast.Ident, n *ast.CallExpr, args []Num) (Num, 
 		eq, ok := applyBinary(t.gen, token.EQL, args[0], zero)
 		if !ok {
 			return Num{}, t.errf(n, "debugAssertFalse: cannot compare condition")
+		}
+		if _, err := args[1].Node(); err != nil {
+			return Num{}, t.errf(n, "debugAssertFalse: %v", err)
 		}
 		t.debugRequire(eq, args[1])
 		return constNum(0), nil

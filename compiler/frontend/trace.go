@@ -11,6 +11,8 @@ import (
 	"go/token"
 	"go/types"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
 
@@ -212,7 +214,7 @@ func validateFieldType(expr ast.Expr, fieldName string) error {
 // its original positions in fset for error messages).
 func CompileBlock(fset *token.FileSet, gen *ir.IDGen, body *ast.BlockStmt, env Env) (*ir.BasicBlock, error) {
 	if body == nil {
-		return nil, ErrNilBody
+		return nil, fmt.Errorf("frontend: nil function body")
 	}
 	t := &tracer{
 		fset:       fset,
@@ -237,7 +239,7 @@ func CompileBlock(fset *token.FileSet, gen *ir.IDGen, body *ast.BlockStmt, env E
 
 func (t *tracer) errf(node ast.Node, format string, args ...any) error {
 	pos := t.fset.Position(node.Pos())
-	return fmt.Errorf("%d:%d: %s", pos.Line, pos.Column, fmt.Sprintf(format, args...))
+	return fmt.Errorf("%d:%d: "+format, append([]any{pos.Line, pos.Column}, args...)...)
 }
 
 // cell returns the place for a local's temp block.
@@ -307,4 +309,14 @@ func funcParams(decl *ast.FuncDecl) []string {
 		}
 	}
 	return out
+}
+
+// addNode emits a PureInstr Add node with the given operands.
+func (t *tracer) addNode(a, b ir.Node) ir.Node {
+	return t.gen.PureInstr(resource.RuntimeFunctionAdd, a, b)
+}
+
+// mulNode emits a PureInstr Multiply node with the given operands.
+func (t *tracer) mulNode(a, b ir.Node) ir.Node {
+	return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a, b)
 }

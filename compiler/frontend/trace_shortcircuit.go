@@ -32,10 +32,7 @@ func (t *tracer) shortCircuitAnd(n *ast.IfStmt, bin *ast.BinaryExpr) error {
 	}
 	if left.isConst {
 		if left.c == 0 {
-			if elseBlock != nil {
-				return t.stmtList(n.Else.(*ast.BlockStmt).List)
-			}
-			return nil
+			return t.dispatchElse(n.Else)
 		}
 		right, err := t.expr(bin.Y)
 		if err != nil {
@@ -130,21 +127,8 @@ func (t *tracer) finishShortCircuit(n *ast.IfStmt, thenBlock, merge, elseBlock *
 	}
 	t.fallthroughTo(merge)
 
-	if elseBlock != nil {
-		t.enter(elseBlock)
-		switch e := n.Else.(type) {
-		case *ast.BlockStmt:
-			if err := t.stmtList(e.List); err != nil {
-				return err
-			}
-		case *ast.IfStmt:
-			if err := t.ifStmt(e); err != nil {
-				return err
-			}
-		default:
-			return t.errf(n.Else, "unsupported else %T", n.Else)
-		}
-		t.fallthroughTo(merge)
+	if err := t.traceElseBranch(n.Else, elseBlock, merge); err != nil {
+		return err
 	}
 
 	t.enter(merge)

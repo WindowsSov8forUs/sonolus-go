@@ -266,33 +266,6 @@ func TypeCheck(src string, records map[string][]string) (*token.FileSet, *ast.Fi
 	return fset, userFile, info, nil
 }
 
-// TypeCheckFiles parses and type-checks multiple engine source files combined
-// with the prelude. The files map is filename → source code. At least one file
-// is required. Returns the same structured results as TypeCheck.
-func TypeCheckFiles(files map[string]string, records map[string][]string) (*token.FileSet, []*ast.File, *types.Info, error) {
-	if len(files) == 0 {
-		return nil, nil, nil, fmt.Errorf("typecheck: no source files provided")
-	}
-	fset := token.NewFileSet()
-	var pkgName string
-	var userFiles []*ast.File
-	for name, src := range files {
-		f, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("typecheck: parse %s: %w", name, err)
-		}
-		if pkgName == "" {
-			pkgName = f.Name.Name
-		}
-		userFiles = append(userFiles, f)
-	}
-	info, err := checkWithPrelude(fset, pkgName, userFiles, records)
-	if err != nil {
-		return fset, userFiles, info, err
-	}
-	return fset, userFiles, info, nil
-}
-
 // checkWithPrelude runs type-checking on the prelude + user files and applies
 // the engine DSL error filter: only undeclared identifiers and wrong argument
 // counts are propagated; Go-strictness mismatches (float64 indices, implicit

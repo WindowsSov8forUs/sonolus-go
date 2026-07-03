@@ -71,9 +71,7 @@ func transTransformVec(t *tracer, m Num, args []Num) (Num, error) {
 	v := args[0]
 	x := v.MustField("x").mustNode()
 	y := v.MustField("y").mustNode()
-	add := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, a, b) }
-	mul := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a, b) }
-	nx := add(add(mul(m.MustField("m11").mustNode(), x), mul(m.MustField("m12").mustNode(), y)), m.MustField("m13").mustNode())
-	ny := add(add(mul(m.MustField("m21").mustNode(), x), mul(m.MustField("m22").mustNode(), y)), m.MustField("m23").mustNode())
+	nx := t.addNode(t.addNode(t.mulNode(m.MustField("m11").mustNode(), x), t.mulNode(m.MustField("m12").mustNode(), y)), m.MustField("m13").mustNode())
+	ny := t.addNode(t.addNode(t.mulNode(m.MustField("m21").mustNode(), x), t.mulNode(m.MustField("m22").mustNode(), y)), m.MustField("m23").mustNode())
 	return compNum(map[string]Num{"x": exprNum(nx), "y": exprNum(ny)}), nil
 }

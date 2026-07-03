@@ -3,6 +3,7 @@ package frontend
 import (
 	"go/ast"
 	"go/types"
+	"strings"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -30,7 +31,7 @@ func f() {
 	if err == nil {
 		t.Fatal("expected error for defer")
 	}
-	if !contains(err.Error(), "unsupported") {
+	if !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("error should mention unsupported, got: %v", err)
 	}
 }
@@ -44,7 +45,7 @@ func f() {
 	if err == nil {
 		t.Fatal("expected error for go statement")
 	}
-	if !contains(err.Error(), "unsupported") {
+	if !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("error should mention unsupported, got: %v", err)
 	}
 }
@@ -82,7 +83,7 @@ func f() {
 	if err == nil {
 		t.Fatal("expected error for func literal")
 	}
-	if !contains(err.Error(), "unsupported") {
+	if !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("error should mention unsupported, got: %v", err)
 	}
 }
@@ -134,7 +135,7 @@ func f() {
 	if err == nil {
 		t.Fatal("tagless switch compiled — should have been rejected")
 	}
-	if !contains(err.Error(), "unsupported") && !contains(err.Error(), "break") {
+	if !strings.Contains(err.Error(), "unsupported") && !strings.Contains(err.Error(), "break") {
 		t.Errorf("expected 'unsupported' or 'break' error, got: %v", err)
 	}
 }
@@ -210,17 +211,28 @@ func (n N) Initialize() {
 	t.Log("unexported access compiled (valid — same package)")
 }
 
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && searchString(s, sub)
-}
-
-func searchString(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
+// TestErrorMessages verifies that key error paths produce expected error messages.
+func TestErrorMessages(t *testing.T) {
+	tests := []struct {
+		name, src, want string
+	}{
+		{"range key not ident", `package p; func f() { for xs[0] := range xs {} }`, "identifier"},
+		{"break outside loop", `package p; func f() { break }`, "outside of a loop"},
+		{"continue outside loop", `package p; func f() { continue }`, "outside of a loop"},
+		{"multi-assign non-composite", `package p; func f() { a, b := 1 }`, "composite"},
+		{"range no key variable", `package p; func f() { for range xs {} }`, "key variable"},
 	}
-	return false
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := Compile(tt.src, statusEnv())
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.want)
+			}
+		})
+	}
 }
 
 // FuzzFrontend verifies that the frontend never panics on arbitrary valid Go

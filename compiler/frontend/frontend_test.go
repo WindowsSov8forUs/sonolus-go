@@ -40,7 +40,10 @@ func compileToCanon(t *testing.T, src string) string {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
+	entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sn, err := ir.CFGToSNode(gen, entry)
 	if err != nil {
 		panic(err)
@@ -337,7 +340,10 @@ func TestModeAccessors(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
+		entry, err = ir.AllocateTestBlocks(entry, ir.DefaultTempMemoryBlock)
+		if err != nil {
+			t.Fatal(err)
+		}
 		sn, err := ir.CFGToSNode(testGen, entry)
 		if err != nil {
 			return "", err
@@ -520,7 +526,6 @@ func TestSmoothstepRemoved(t *testing.T) {
 		t.Fatal("expected error for removed smoothstep")
 	}
 }
-
 
 // TestPairMethods verifies that Pair comparison methods (lt/le/gt/ge/tuple)
 // compile through to valid IR.
@@ -929,6 +934,24 @@ func TestLogicalOrShortCircuit(t *testing.T) {
 	got := compileToCanon(t, src)
 	if got == "" {
 		t.Fatal("logical OR short-circuit failed to compile")
+	}
+}
+
+func TestShortCircuitAndConstFalseWithElseIf(t *testing.T) {
+	// Regression test for v10 Step 1: constant-false && with else-if should not panic.
+	// Previously n.Else.(*ast.BlockStmt) would panic because n.Else is *ast.IfStmt
+	// when an else-if chain follows a constant-false short-circuit AND.
+	src := `package p
+	func f() {
+		if false && get(0, 0) > 0 {
+			set(0, 1, 1)
+		} else if get(0, 1) > 0 {
+			set(0, 1, 2)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" {
+		t.Fatal("constant-false && with else-if should compile without panic")
 	}
 }
 
@@ -2272,5 +2295,180 @@ func TestSpawnParticle(t *testing.T) {
 	got := compileToCanon(t, src)
 	if got == "" || strings.Contains(got, "?") {
 		t.Errorf("spawn/spawnParticle/moveParticle/destroyParticle failed: %s", got)
+	}
+}
+
+func TestCompileSwitchBasic(t *testing.T) {
+	src := `package p
+	func f() {
+		switch 1 {
+		case 0:
+			debugPause()
+		case 1:
+			debugLog(42)
+		default:
+			debugPause()
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("switch basic failed: %s", got)
+	}
+}
+
+func TestCompileSwitchTagless(t *testing.T) {
+	src := `package p
+	func f() {
+		x := 1
+		switch {
+		case x > 0:
+			debugPause()
+		default:
+			debugLog(1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("switch tagless failed: %s", got)
+	}
+}
+
+func TestCompileForRange(t *testing.T) {
+	src := `package p
+	func f() {
+		for i := range 5 {
+			debugLog(1)
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("for range failed: %s", got)
+	}
+}
+
+func TestCompileShortCircuitAnd(t *testing.T) {
+	src := `package p
+	func f() {
+		x := debugLog(0) > 0
+		y := debugLog(0) > 0
+		if x && y {
+			debugPause()
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("short-circuit AND failed: %s", got)
+	}
+}
+
+func TestCompileShortCircuitOr(t *testing.T) {
+	src := `package p
+	func f() {
+		x := debugLog(0) > 0
+		y := debugLog(0) > 0
+		if x || y {
+			debugPause()
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("short-circuit OR failed: %s", got)
+	}
+}
+
+func TestCompileNestedShortCircuit(t *testing.T) {
+	src := `package p
+	func f() {
+		a := debugLog(0) > 0
+		b := debugLog(0) > 0
+		c := debugLog(0) > 0
+		if (a && b) || c {
+			debugPause()
+		}
+	}`
+	got := compileToCanon(t, src)
+	if got == "" || strings.Contains(got, "?") {
+		t.Errorf("nested short-circuit failed: %s", got)
+	}
+}
+
+// ── Additional engine DSL tests for coverage improvement ──
+
+func TestFoldBinaryQuo(t *testing.T) {
+	src := "package p\nfunc f() { set(0, 0, 6.0 / 2.0) }"
+	got := compileToCanon(t, src)
+	if !strings.Contains(got, "#3") {
+		t.Errorf("6/2 should fold to 3, got: %s", got)
+	}
+}
+
+func TestFoldBinaryComparison(t *testing.T) {
+	tests := []struct {
+		name, src, want string
+	}{
+		{"eql_true", "func f() { set(0, 0, 1.0 == 1.0) }", "#1"},
+		{"eql_false", "func f() { set(0, 0, 1.0 == 2.0) }", "#0"},
+		{"neq_true", "func f() { set(0, 0, 1.0 != 2.0) }", "#1"},
+		{"neq_false", "func f() { set(0, 0, 1.0 != 1.0) }", "#0"},
+		{"lss_true", "func f() { set(0, 0, 1.0 < 2.0) }", "#1"},
+		{"lss_false", "func f() { set(0, 0, 2.0 < 1.0) }", "#0"},
+		{"leq_true", "func f() { set(0, 0, 1.0 <= 2.0) }", "#1"},
+		{"leq_eq", "func f() { set(0, 0, 2.0 <= 2.0) }", "#1"},
+		{"gtr_true", "func f() { set(0, 0, 3.0 > 2.0) }", "#1"},
+		{"gtr_false", "func f() { set(0, 0, 2.0 > 3.0) }", "#0"},
+		{"geq_true", "func f() { set(0, 0, 3.0 >= 2.0) }", "#1"},
+		{"geq_eq", "func f() { set(0, 0, 3.0 >= 3.0) }", "#1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := compileToCanon(t, "package p\n"+tt.src)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("expected %q in output, got: %s", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestFoldLogicalAndOr(t *testing.T) {
+	tests := []struct {
+		name, src, want string
+	}{
+		{"land_false", "func f() { set(0, 0, true && false) }", "#0"},
+		{"land_true", "func f() { set(0, 0, true && true) }", "#1"},
+		{"lor_true", "func f() { set(0, 0, true || false) }", "#1"},
+		{"lor_false", "func f() { set(0, 0, false || false) }", "#0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := compileToCanon(t, "package p\n"+tt.src)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("expected %q in output, got: %s", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestFoldUnaryNot(t *testing.T) {
+	got := compileToCanon(t, "package p\nfunc f() { set(0, 0, !true) }")
+	if !strings.Contains(got, "#0") {
+		t.Errorf("!true should fold to 0, got: %s", got)
+	}
+}
+
+func TestFoldUnarySub(t *testing.T) {
+	got := compileToCanon(t, "package p\nfunc f() { set(0, 0, -5.0) }")
+	if got == "" {
+		t.Fatal("empty output")
+	}
+}
+
+func TestModeAccessorsReadOnly(t *testing.T) {
+	acc := ModeAccessorsReadOnly(ir.ModePlay)
+	if len(acc) == 0 {
+		t.Error("ModeAccessorsReadOnly returned empty map")
+	}
+	accCloned := ModeAccessors(ir.ModePlay)
+	if len(acc) != len(accCloned) {
+		t.Errorf("read-only (%d) vs cloned (%d) length mismatch", len(acc), len(accCloned))
 	}
 }

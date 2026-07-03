@@ -25,6 +25,7 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 	}
 
 	merge := ir.NewBlock()
+	var defaultBody []ast.Stmt
 
 	for _, clause := range n.Body.List {
 		cc, ok := clause.(*ast.CaseClause)
@@ -33,12 +34,9 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 		}
 
 		if cc.List == nil {
-			// default case.
-			t.enter(ir.NewBlock())
-			if err := t.stmtList(cc.Body); err != nil {
-				return err
-			}
-			t.fallthroughTo(merge)
+			// Defer default case — process after all other cases so that
+			// it is connected from the last non-default case's nextBlock.
+			defaultBody = cc.Body
 			continue
 		}
 
@@ -113,6 +111,19 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 		t.enter(nextBlock)
 	}
 
+	// Process default case after all non-default cases so that t.current
+	// (the last nextBlock) correctly falls through to the default body.
+	if defaultBody != nil {
+		defaultBlock := ir.NewBlock()
+		t.fallthroughTo(defaultBlock)
+		t.enter(defaultBlock)
+		if err := t.stmtList(defaultBody); err != nil {
+			return err
+		}
+		t.fallthroughTo(merge)
+	}
+
 	t.enter(merge)
+	t.terminated = len(merge.Incoming) == 0
 	return nil
 }

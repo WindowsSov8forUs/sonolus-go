@@ -9,10 +9,10 @@ import (
 
 // NumKind distinguishes the three semantic categories of a traced value:
 // scalar, record (composite with named fields), and array (indexed).
-type NumKind byte
+type numKind byte
 
 const (
-	kindScalar NumKind = iota
+	kindScalar numKind = iota
 	kindRecord
 	kindArray
 )
@@ -20,7 +20,7 @@ const (
 // Num is a traced value: scalar constant, IR expression, record (composite
 // with named fields), or array of elements.
 type Num struct {
-	kind NumKind
+	kind numKind
 
 	isConst bool
 	c       float64
@@ -93,7 +93,7 @@ func (n Num) CompositeFieldOrder() ([]string, error) {
 	if n.kind != kindRecord {
 		return nil, fmt.Errorf("Num.CompositeFieldOrder: not a record")
 	}
-	var out []string
+	out := make([]string, 0, len(n.fields))
 	for k := range n.fields {
 		out = append(out, k)
 	}
@@ -128,6 +128,18 @@ func (n Num) MustField(name string) Num {
 		panic("Num.MustField: unknown field " + name)
 	}
 	return v
+}
+
+// Field returns the named field from a record value, or an error if the
+// receiver is not a record or the field does not exist. Prefer Field over
+// MustField in user-reachable code paths (e.g. field access tracing) where
+// the field name comes from user source and may be invalid.
+func (n Num) Field(name string) (Num, error) {
+	v, ok := n.TryField(name)
+	if !ok {
+		return Num{}, fmt.Errorf("Num.Field: unknown field %q", name)
+	}
+	return v, nil
 }
 
 // SetField updates a named field in a record.

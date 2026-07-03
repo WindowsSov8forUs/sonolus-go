@@ -25,29 +25,34 @@ func vec2BinOp(gen *ir.IDGen, v Num, w Num, op resource.RuntimeFunction) (Num, e
 	}), nil
 }
 
-func vec2Add(t *tracer, v Num, args []Num) (Num, error) {
-	return vec2BinOp(t.gen, v, args[0], resource.RuntimeFunctionAdd)
+// vec2MagSq returns x² + y² as an IR expression.
+func vec2MagSq(gen *ir.IDGen, v Num) ir.Node {
+	x, y := v.MustField("x"), v.MustField("y")
+	return gen.PureInstr(resource.RuntimeFunctionAdd,
+		gen.PureInstr(resource.RuntimeFunctionMultiply, x.mustNode(), x.mustNode()),
+		gen.PureInstr(resource.RuntimeFunctionMultiply, y.mustNode(), y.mustNode()))
 }
 
-func vec2Sub(t *tracer, v Num, args []Num) (Num, error) {
-	return vec2BinOp(t.gen, v, args[0], resource.RuntimeFunctionSubtract)
+// vec2Mag returns sqrt(x² + y²) as an IR expression.
+func vec2Mag(gen *ir.IDGen, v Num) ir.Node {
+	return gen.PureInstr(resource.RuntimeFunctionPower, vec2MagSq(gen, v), ir.Const(0.5))
 }
 
-func vec2Mul(t *tracer, v Num, args []Num) (Num, error) {
-	return vec2BinOp(t.gen, v, args[0], resource.RuntimeFunctionMultiply)
+// makeVec2BinOp creates a binary-op method for Vec2 that applies the given
+// operation element-wise.
+func makeVec2BinOp(op resource.RuntimeFunction) func(*tracer, Num, []Num) (Num, error) {
+	return func(t *tracer, v Num, args []Num) (Num, error) {
+		return vec2BinOp(t.gen, v, args[0], op)
+	}
 }
 
-func vec2Div(t *tracer, v Num, args []Num) (Num, error) {
-	return vec2BinOp(t.gen, v, args[0], resource.RuntimeFunctionDivide)
-}
+var vec2Add = makeVec2BinOp(resource.RuntimeFunctionAdd)
+var vec2Sub = makeVec2BinOp(resource.RuntimeFunctionSubtract)
+var vec2Mul = makeVec2BinOp(resource.RuntimeFunctionMultiply)
+var vec2Div = makeVec2BinOp(resource.RuntimeFunctionDivide)
 
 func vec2Magnitude(t *tracer, v Num, args []Num) (Num, error) {
-	x, y := v.MustField("x"), v.MustField("y")
-	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionPower,
-		t.gen.PureInstr(resource.RuntimeFunctionAdd,
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, x.mustNode(), x.mustNode()),
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, y.mustNode(), y.mustNode())),
-		ir.Const(0.5))), nil
+	return exprNum(vec2Mag(t.gen, v)), nil
 }
 
 func vec2Dot(t *tracer, v Num, args []Num) (Num, error) {
@@ -59,11 +64,7 @@ func vec2Dot(t *tracer, v Num, args []Num) (Num, error) {
 
 func vec2Normalize(t *tracer, v Num, args []Num) (Num, error) {
 	x, y := v.MustField("x"), v.MustField("y")
-	mag := t.gen.PureInstr(resource.RuntimeFunctionPower,
-		t.gen.PureInstr(resource.RuntimeFunctionAdd,
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, x.mustNode(), x.mustNode()),
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, y.mustNode(), y.mustNode())),
-		ir.Const(0.5))
+	mag := vec2Mag(t.gen, v)
 	return compNum(map[string]Num{
 		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide, x.mustNode(), mag)),
 		"y": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide, y.mustNode(), mag)),
@@ -136,9 +137,7 @@ func vec2RotateAbout(t *tracer, v Num, args []Num) (Num, error) {
 
 func vec2NormalizeOrZero(t *tracer, v Num, args []Num) (Num, error) {
 	x, y := v.MustField("x"), v.MustField("y")
-	magSq := t.gen.PureInstr(resource.RuntimeFunctionAdd,
-		t.gen.PureInstr(resource.RuntimeFunctionMultiply, x.mustNode(), x.mustNode()),
-		t.gen.PureInstr(resource.RuntimeFunctionMultiply, y.mustNode(), y.mustNode()))
+	magSq := vec2MagSq(t.gen, v)
 	eps := ir.Const(1e-10)
 	useZero := t.gen.PureInstr(resource.RuntimeFunctionLessOr, magSq, eps)
 	mag := t.gen.PureInstr(resource.RuntimeFunctionPower, magSq, ir.Const(0.5))
@@ -162,16 +161,16 @@ func vec2AngleDiff(t *tracer, v Num, args []Num) (Num, error) {
 	dot := t.gen.PureInstr(resource.RuntimeFunctionAdd,
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, ax, bx),
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, ay, by))
-	lenA := t.gen.PureInstr(resource.RuntimeFunctionPower,
-		t.gen.PureInstr(resource.RuntimeFunctionAdd,
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, ax, ax),
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, ay, ay)),
-		ir.Const(0.5))
-	lenB := t.gen.PureInstr(resource.RuntimeFunctionPower,
-		t.gen.PureInstr(resource.RuntimeFunctionAdd,
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, bx, bx),
-			t.gen.PureInstr(resource.RuntimeFunctionMultiply, by, by)),
-		ir.Const(0.5))
+	// vec2MagFromXY computes sqrt(x² + y²) from raw x,y nodes.
+	vec2MagFromXY := func(x, y ir.Node) ir.Node {
+		return t.gen.PureInstr(resource.RuntimeFunctionPower,
+			t.gen.PureInstr(resource.RuntimeFunctionAdd,
+				t.gen.PureInstr(resource.RuntimeFunctionMultiply, x, x),
+				t.gen.PureInstr(resource.RuntimeFunctionMultiply, y, y)),
+			ir.Const(0.5))
+	}
+	lenA := vec2MagFromXY(ax, ay)
+	lenB := vec2MagFromXY(bx, by)
 	cos := t.gen.PureInstr(resource.RuntimeFunctionDivide, dot,
 		t.gen.PureInstr(resource.RuntimeFunctionMultiply, lenA, lenB))
 	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionArccos,

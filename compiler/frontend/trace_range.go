@@ -86,19 +86,8 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 				return err
 			}
 		}
-		// Clean up loop variables.
-		delete(t.vars, keyName.Name)
-		if valName != "" {
-			delete(t.vars, valName)
-		}
-		// Create merge block so subsequent statements are reachable.
-		// If the unrolled body terminated (e.g. return), the merge has
-		// no incoming edges and is treated as dead — matching the runtime
-		// loop behaviour.
-		merge := ir.NewBlock()
-		t.fallthroughTo(merge)
-		t.enter(merge)
-		t.terminated = len(merge.Incoming) == 0
+		t.cleanupLoopVars(keyName.Name, valName)
+		t.enterMerge()
 		return nil
 	}
 
@@ -147,11 +136,7 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 	t.enter(merge)
 	t.terminated = len(merge.Incoming) == 0
 
-	// Clean up loop variables
-	delete(t.vars, keyName.Name)
-	if valName != "" {
-		delete(t.vars, valName)
-	}
+	t.cleanupLoopVars(keyName.Name, valName)
 	return nil
 }
 
@@ -196,10 +181,8 @@ func (t *tracer) containerIter(n *ast.RangeStmt, ci *containerInfo, keyName, val
 				t.enter(skipBlock)
 			}
 		}
-		delete(t.vars, keyName)
-		if valName != "" {
-			delete(t.vars, valName)
-		}
+		t.cleanupLoopVars(keyName, valName)
+		t.enterMerge()
 		return nil
 	}
 
@@ -240,9 +223,27 @@ func (t *tracer) containerIter(n *ast.RangeStmt, ci *containerInfo, keyName, val
 	t.enter(merge)
 	t.terminated = len(merge.Incoming) == 0
 
+	t.cleanupLoopVars(keyName, valName)
+	return nil
+}
+
+// cleanupLoopVars removes the loop key and optional value variable from t.vars
+// after a for-range completes.
+func (t *tracer) cleanupLoopVars(keyName, valName string) {
 	delete(t.vars, keyName)
 	if valName != "" {
 		delete(t.vars, valName)
 	}
-	return nil
+}
+
+// enterMerge creates a merge block after an unrolled loop body and enters it.
+// Subsequent statements will be reachable through the merge block (unless the
+// loop body always terminates, in which case merge has no incoming edges and
+// is treated as dead code).
+func (t *tracer) enterMerge() *ir.BasicBlock {
+	merge := ir.NewBlock()
+	t.fallthroughTo(merge)
+	t.enter(merge)
+	t.terminated = len(merge.Incoming) == 0
+	return merge
 }
