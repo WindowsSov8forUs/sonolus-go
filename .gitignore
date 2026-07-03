@@ -33,6 +33,15 @@ coverage.*
 *.swo
 *~
 
+# --- Build output ---
+cmd/sonolus-go/dist/
+
+# --- Temporary scripts ---
+_*.py
+
+# --- Coverage reports ---
+*_coverage.html
+
 # --- OS ---
 .DS_Store
 Thumbs.db
