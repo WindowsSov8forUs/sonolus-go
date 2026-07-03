@@ -9,11 +9,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Clone dependency repos still using local replace directives.
-      # Remove once pack-go / server-go are tagged at required versions.
-      - run: git clone --depth 1 https://github.com/WindowsSov8forUs/sonolus-pack-go.git ../sonolus-pack-go || true
-      - run: git clone --depth 1 https://github.com/WindowsSov8forUs/sonolus-server-go.git ../sonolus-server-go || true
-
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'

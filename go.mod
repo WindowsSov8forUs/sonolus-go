@@ -2,13 +2,8 @@ module github.com/WindowsSov8forUs/sonolus-go
 
 go 1.25.4
 
-replace (
-	github.com/WindowsSov8forUs/sonolus-pack-go => ../sonolus-pack-go
-	github.com/WindowsSov8forUs/sonolus-server-go => ../sonolus-server-go
-)
-
 require (
-	github.com/WindowsSov8forUs/sonolus-core-go v0.2.0
+	github.com/WindowsSov8forUs/sonolus-core-go v0.2.1
 	github.com/WindowsSov8forUs/sonolus-pack-go v0.1.3
 	github.com/WindowsSov8forUs/sonolus-server-go v0.1.0
 	github.com/fsnotify/fsnotify v1.10.1
