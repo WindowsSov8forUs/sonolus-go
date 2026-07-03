@@ -55,7 +55,7 @@ func controlFlow(gen *IDGen, b *BasicBlock, index map[*BasicBlock]int, exit int)
 	edges := sortedOutgoing(b)
 
 	var defaultDst *BasicBlock
-	var conds []condEdge
+	conds := make([]condEdge, 0, len(edges))
 	for _, e := range edges {
 		if e.Cond == nil {
 			defaultDst = e.Dst

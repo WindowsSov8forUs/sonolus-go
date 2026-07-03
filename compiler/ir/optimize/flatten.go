@@ -11,12 +11,7 @@ type FlattenAssociativeOps struct{}
 func (FlattenAssociativeOps) Name() string { return "FlattenAssociativeOps" }
 
 func (FlattenAssociativeOps) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
-	for _, b := range ir.Preorder(entry) {
-		for i, s := range b.Statements {
-			b.Statements[i] = flattenStmt(s)
-		}
-		b.Test = flattenStmt(b.Test)
-	}
+	transformBlocks(entry, func(n ir.Node) ir.Node { return flattenStmt(n) })
 	return entry
 }
 

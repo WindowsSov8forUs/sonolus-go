@@ -9,7 +9,6 @@ import "github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 // ir/finalize.go and ir/optimize use these directly. snode keeps its own
 // independent aliases (with the same names) because ir imports snode, so
 // snode cannot import ir without a cycle.
-
 const (
 	// Arithmetic
 	OpAdd      = resource.RuntimeFunctionAdd

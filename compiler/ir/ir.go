@@ -16,7 +16,7 @@ import (
 // Runtime memory block IDs used by the Sonolus engine across all modes.
 const (
 	BlockRuntimeEnvironment = 1000
-	BlockRuntimeUpdate      = 1001 // also BlockRuntimeCanvas in Preview
+	BlockRuntimeUpdate      = 1001 // RuntimeCanvas in Preview mode
 	BlockRuntimeTouch       = 1002
 	BlockEngineRom          = 3000
 	TouchFieldStride        = 9

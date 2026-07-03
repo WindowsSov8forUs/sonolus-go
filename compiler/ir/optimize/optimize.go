@@ -5,6 +5,7 @@ package optimize
 
 import (
 	"context"
+	"sort"
 	"fmt"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
@@ -58,16 +59,12 @@ type BlockOracle interface {
 // Passes that implement PassWithDom receive a cached dominance tree that is
 // shared across the pipeline, avoiding redundant O(N²) recomputation.
 func RunPasses(gen *ir.IDGen, entry *ir.BasicBlock, passes ...Pass) *ir.BasicBlock {
-	return runPassesCtx(gen, entry, nil, passes...)
+	return RunPassesCtx(gen, entry, nil, passes...)
 }
 
 // RunPassesCtx is like RunPasses but checks ctx after every pass. If ctx is
 // nil or ctx.Done() is nil, cancellation is skipped entirely (zero overhead).
 func RunPassesCtx(gen *ir.IDGen, entry *ir.BasicBlock, ctx context.Context, passes ...Pass) *ir.BasicBlock {
-	return runPassesCtx(gen, entry, ctx, passes...)
-}
-
-func runPassesCtx(gen *ir.IDGen, entry *ir.BasicBlock, ctx context.Context, passes ...Pass) *ir.BasicBlock {
 	dom := &DominanceCache{}
 	for _, p := range passes {
 		if pd, ok := p.(PassWithDom); ok {
@@ -200,6 +197,17 @@ func computeLoopBody(header, latch *ir.BasicBlock) map[*ir.BasicBlock]bool {
 	return body
 }
 
+// transformBlocks applies a node transformer to every statement and test in
+// every block of the CFG (preorder traversal).
+func transformBlocks(entry *ir.BasicBlock, xform func(ir.Node) ir.Node) {
+	for _, b := range ir.Preorder(entry) {
+		for i, s := range b.Statements {
+			b.Statements[i] = xform(s)
+		}
+		b.Test = xform(b.Test)
+	}
+}
+
 // FindLoops discovers all natural loops in the CFG via dominance back-edges.
 // It is used by both LICM and InlineVars to avoid duplicating loop discovery.
 func FindLoops(blocks []*ir.BasicBlock, dom *Dominance) []Loop {
@@ -221,5 +229,10 @@ func FindLoops(blocks []*ir.BasicBlock, dom *Dominance) []Loop {
 		}
 		loops = append(loops, Loop{Header: header, Latches: latches, Body: body})
 	}
+	// Sort by header preorder number descending, matching sonolus.py licm.py:45.
+	// Dominance.Num is assigned during ReversePostorder walk and is deterministic.
+	sort.Slice(loops, func(i, j int) bool {
+		return dom.Num[loops[i].Header] > dom.Num[loops[j].Header]
+	})
 	return loops
 }

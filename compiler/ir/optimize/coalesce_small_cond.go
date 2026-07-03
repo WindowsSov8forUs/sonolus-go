@@ -10,6 +10,10 @@ type CoalesceSmallConditionalBlocks struct{}
 
 func (CoalesceSmallConditionalBlocks) Name() string { return "CoalesceSmallConditionalBlocks" }
 
+func (CoalesceSmallConditionalBlocks) Requires() []Analysis  { return nil }
+func (CoalesceSmallConditionalBlocks) Preserves() []Analysis { return nil }
+func (CoalesceSmallConditionalBlocks) Destroys() []Analysis  { return []Analysis{AnalysisDominance} }
+
 func (CoalesceSmallConditionalBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	queue := []*ir.BasicBlock{entry}
 	processed := map[*ir.BasicBlock]bool{}

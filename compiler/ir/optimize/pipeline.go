@@ -100,6 +100,9 @@ func Standard(mode ir.Mode, callback string) []Pass {
 // only essential cleanup (coalesce, unreachable code, dead code) and skips
 // SSA construction, SCCP, inlining, LICM, and CSE entirely. Compilation is
 // fast but output quality may be lower.
+//
+// mode and callback are accepted for interface consistency with Standard()
+// and Fast() but are not used — the Minimal pipeline is mode-agnostic.
 func Minimal(mode ir.Mode, callback string) []Pass {
 	_ = mode
 	_ = callback
@@ -190,7 +193,7 @@ func OptimizeCtx(gen *ir.IDGen, entry *ir.BasicBlock, mode ir.Mode, callback str
 	if err := VerifyPasses(passes...); err != nil {
 		return nil, fmt.Errorf("optimize: pass dependency violation in %v pipeline: %w", level, err)
 	}
-	entry = runPassesCtx(gen, entry, ctx, passes...)
+	entry = RunPassesCtx(gen, entry, ctx, passes...)
 
 	// Select the appropriate allocator for the optimization level.
 	// AllocateBasic (sequential) for MINIMAL: fastest compilation, no

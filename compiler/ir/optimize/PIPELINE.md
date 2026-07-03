@@ -85,10 +85,16 @@ Python models `DominanceFrontiers` and `LivenessAnalysis` as first-class
 `CompilerPass` objects with `requires()` dependency declarations. The
 `run_passes` orchestrator automatically inserts missing analyses.
 
-Go computes dominance and liveness internally within each pass that needs
-them. This is simpler but means `ComputeDominance` may be called multiple times
-per pipeline (up to 6× in Standard: `ToSSA` ×1, `InlineVars` ×3, `LICM` ×1,
-`CSE` ×1). A dominance cache is tracked as P2 step 2-2.
+Go uses a **shared dominance cache** (`DominanceCache`) across all passes that
+implement the `PassWithDom` interface (`ToSSA`, `InlineVars`, `LICM`, `CSE`).
+The pipeline runner (`runPassesCtx`) creates one cache instance and passes it
+to each eligible pass. The cache uses a structural hash of the CFG topology to
+detect when recomputation is needed, so dominance is computed at most once per
+CFG shape — typically once per pipeline for Standard (after SSA construction),
+and only recomputed when passes like `CoalesceFlow` modify the graph structure.
+
+Liveness analysis is still computed independently within each pass that needs
+it (`CopyCoalesce`, `AdvancedDCE`, `AllocateLive`), following Python's model.
 
 ## Pass Count Summary
 

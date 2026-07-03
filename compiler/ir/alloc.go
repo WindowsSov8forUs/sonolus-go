@@ -149,7 +149,11 @@ func (a *allocator) rewritePlace(p Place) (Place, error) {
 			return BlockPlace{Block: Const(a.blockID), Index: Const(base), Offset: 0}, nil
 		}
 		if c, ok := bp.Index.(Const); ok {
-			return BlockPlace{Block: Const(a.blockID), Index: Const(base + int(c)), Offset: 0}, nil
+			ci := int(c)
+			if Const(ci) != c {
+				return nil, fmt.Errorf("allocate: non-integer index %v in BlockPlace for temp %s", c, tb.Name)
+			}
+			return BlockPlace{Block: Const(a.blockID), Index: Const(base + ci), Offset: 0}, nil
 		}
 		rw, err := a.rewrite(bp.Index)
 		if err != nil {

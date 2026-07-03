@@ -1,7 +1,9 @@
 package ir
 
-// Code generated from sonolus.py backend/blocks.py. DO NOT EDIT by hand.
-// Regenerate via compiler/ir/optimize/testdata/genblocks (see _blocks.json).
+import "fmt"
+
+// Memory block layout tables for all four Sonolus engine modes.
+// Hand-maintained; changes must be reflected in the mode-specific assemble code.
 
 // Mode is a Sonolus engine mode; each has its own memory block layout.
 type Mode int
@@ -12,6 +14,22 @@ const (
 	ModePreview
 	ModeTutorial
 )
+
+// String returns the canonical mode name ("play", "watch", "preview", "tutorial").
+func (m Mode) String() string {
+	switch m {
+	case ModePlay:
+		return "play"
+	case ModeWatch:
+		return "watch"
+	case ModePreview:
+		return "preview"
+	case ModeTutorial:
+		return "tutorial"
+	default:
+		return fmt.Sprintf("Mode(%d)", m)
+	}
+}
 
 type blockInfo struct {
 	name     string
@@ -32,7 +50,7 @@ var blockTables = map[Mode]map[int]blockInfo{
 	ModePlay: {
 		1000:  {"RuntimeEnvironment", set("preprocess")},
 		1001:  {"RuntimeUpdate", nil},
-		1002:  {"RuntimeTouchArray", nil},
+		1002:  {"RuntimeTouch", nil},
 		1003:  {"RuntimeSkinTransform", set("preprocess", "touch", "updateSequential")},
 		1004:  {"RuntimeParticleTransform", set("preprocess", "touch", "updateSequential")},
 		1005:  {"RuntimeBackground", set("preprocess", "touch", "updateSequential")},
@@ -60,7 +78,7 @@ var blockTables = map[Mode]map[int]blockInfo{
 		4107:  {"EntityLifeArray", set("preprocess")},
 		5000:  {"ArchetypeLife", set("preprocess")},
 		5001:  {"ArchetypeScore", set("preprocess")},
-		10000: {"TemporaryMemory", set("initialize", "preprocess", "shouldSpawn", "spawnOrder", "terminate", "touch", "updateParallel", "updateSequential")},
+		10000: {"TempMemory", set("initialize", "preprocess", "shouldSpawn", "spawnOrder", "terminate", "touch", "updateParallel", "updateSequential")},
 	},
 	ModeWatch: {
 		1000:  {"RuntimeEnvironment", set("preprocess")},
@@ -91,7 +109,7 @@ var blockTables = map[Mode]map[int]blockInfo{
 		4106:  {"EntityLifeArray", set("preprocess")},
 		5000:  {"ArchetypeLife", set("preprocess")},
 		5001:  {"ArchetypeScore", set("preprocess")},
-		10000: {"TemporaryMemory", set("despawnTime", "initialize", "preprocess", "spawnTime", "terminate", "updateParallel", "updateSequential", "updateSpawn")},
+		10000: {"TempMemory", set("despawnTime", "initialize", "preprocess", "spawnTime", "terminate", "updateParallel", "updateSequential", "updateSpawn")},
 	},
 	ModePreview: {
 		1000:  {"RuntimeEnvironment", set("preprocess")},
@@ -108,7 +126,7 @@ var blockTables = map[Mode]map[int]blockInfo{
 		4100:  {"EntityDataArray", set("preprocess")},
 		4101:  {"EntitySharedMemoryArray", set("preprocess")},
 		4102:  {"EntityInfoArray", nil},
-		10000: {"TemporaryMemory", set("preprocess", "render")},
+		10000: {"TempMemory", set("preprocess", "render")},
 	},
 	ModeTutorial: {
 		1000:  {"RuntimeEnvironment", set("preprocess")},
@@ -122,7 +140,7 @@ var blockTables = map[Mode]map[int]blockInfo{
 		2001:  {"TutorialData", set("preprocess")},
 		2002:  {"TutorialInstruction", set("navigate", "preprocess", "update")},
 		3000:  {"EngineRom", nil},
-		10000: {"TemporaryMemory", set("navigate", "preprocess", "update")},
+		10000: {"TempMemory", set("navigate", "preprocess", "update")},
 	},
 }
 

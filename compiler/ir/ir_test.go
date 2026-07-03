@@ -166,7 +166,10 @@ func TestAllocateTestBlocks_Basic(t *testing.T) {
 	b0.ConnectTo(b1, nil)
 	b1.Statements = []Node{gen.SetPlace(Cell(0, 1), Const(2))}
 
-	allocated, err := AllocateTestBlocks(b0, DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
+	allocated, err := AllocateTestBlocks(b0, DefaultTempMemoryBlock)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if allocated == nil {
 		t.Fatal("AllocateTestBlocks returned nil")
 	}
@@ -177,7 +180,10 @@ func TestAllocateTestBlocks_Empty(t *testing.T) {
 	gen := NewIDGen()
 	b := NewBlock()
 	b.Statements = []Node{gen.SetPlace(Cell(0, 0), Const(42))}
-	allocated, err := AllocateTestBlocks(b, DefaultTempMemoryBlock); if err != nil { t.Fatal(err) }
+	allocated, err := AllocateTestBlocks(b, DefaultTempMemoryBlock)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if allocated == nil {
 		t.Fatal("AllocateTestBlocks returned nil")
 	}

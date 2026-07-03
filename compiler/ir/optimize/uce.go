@@ -9,6 +9,10 @@ type UnreachableCodeElimination struct{}
 
 func (UnreachableCodeElimination) Name() string { return "UnreachableCodeElimination" }
 
+func (UnreachableCodeElimination) Requires() []Analysis  { return nil }
+func (UnreachableCodeElimination) Preserves() []Analysis { return nil }
+func (UnreachableCodeElimination) Destroys() []Analysis  { return []Analysis{AnalysisDominance} }
+
 func (UnreachableCodeElimination) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	original := reachable(entry)
 

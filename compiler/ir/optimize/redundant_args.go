@@ -27,17 +27,19 @@ func trimArgs(gen *ir.IDGen, n ir.Node) ir.Node {
 	args := instr.Args
 	op := instr.Op
 
-	// Sub(0, a) → Negate(a). Must be checked before filterConst strips the 0.
-	if op == opSubtract && len(args) == 2 {
-		if c, ok := args[0].(ir.Const); ok && float64(c) == 0 {
-			return ir.Instr{ID: gen.Next(), Op: opNegate, Args: []ir.Node{args[1]}, Pure: true}
-		}
-	}
-
 	// Remove identity elements: Add(a,0)→a, Sub(a,0)→a, Mul(a,1)→a, Div(a,1)→a
 	switch op {
-	case opAdd, opSubtract:
+	case opAdd:
 		args = filterConst(args, 0)
+	case opSubtract:
+		args = filterConst(args, 0)
+		// Sub(0, a) → Negate(a) — check after filterConst for n-ary case
+		// (e.g. Sub(0, x, 0) flattened to 3-arg form).
+		if len(args) == 2 {
+			if c, ok := args[0].(ir.Const); ok && float64(c) == 0 {
+				return ir.Instr{ID: gen.Next(), Op: opNegate, Args: []ir.Node{args[1]}, Pure: true}
+			}
+		}
 	case opMultiply, opDivide:
 		args = filterConst(args, 1)
 	}

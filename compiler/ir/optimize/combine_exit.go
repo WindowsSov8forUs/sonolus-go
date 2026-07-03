@@ -8,6 +8,10 @@ type CombineExitBlocks struct{}
 
 func (CombineExitBlocks) Name() string { return "CombineExitBlocks" }
 
+func (CombineExitBlocks) Requires() []Analysis  { return nil }
+func (CombineExitBlocks) Preserves() []Analysis { return nil }
+func (CombineExitBlocks) Destroys() []Analysis  { return []Analysis{AnalysisDominance} }
+
 func (CombineExitBlocks) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	var firstExit *ir.BasicBlock
 	for _, b := range ir.Preorder(entry) {

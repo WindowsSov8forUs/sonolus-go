@@ -209,11 +209,11 @@ func licmArgInvariant(n ir.Node, defs map[ir.SSAPlace]bool, oracle BlockOracle) 
 	}
 }
 
-// Requires implements ManagedPass — LICM uses dominance via DominanceCache (RunWithDom).
-func (LICM) Requires() []Analysis { return nil }
+// Requires implements ManagedPass — LICM operates on SSA form.
+func (LICM) Requires() []Analysis { return []Analysis{AnalysisSSA} }
 
 // Preserves implements ManagedPass.
-func (LICM) Preserves() []Analysis { return nil }
+func (LICM) Preserves() []Analysis { return []Analysis{AnalysisSSA} }
 
 // Destroys implements ManagedPass.
 func (LICM) Destroys() []Analysis { return nil }

@@ -17,6 +17,11 @@ type FlowEdge struct {
 // variable (the temp block) it was created for; Target is the SSA value it
 // defines (assigned during SSA renaming); Args maps each predecessor block to
 // the SSA value flowing in along that edge.
+//
+// INVARIANT: During SSA form (between ToSSA and FromSSA), Target and all Args
+// values are of concrete type SSAPlace. After FromSSA, phis are removed —
+// they should never appear in post-SSA passes. Unchecked type assertions
+// to ir.SSAPlace in ssa.go, sccp.go, and inlining.go depend on this invariant.
 type Phi struct {
 	Var    *TempBlock
 	Target Place

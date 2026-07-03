@@ -211,11 +211,11 @@ func writeIntComma(h hash.Hash, v int) {
 	h.Write(b)
 }
 
-// Requires implements ManagedPass — CSE uses dominance via DominanceCache (RunWithDom).
-func (CSE) Requires() []Analysis { return nil }
+// Requires implements ManagedPass — CSE operates on SSA form.
+func (CSE) Requires() []Analysis { return []Analysis{AnalysisSSA} }
 
 // Preserves implements ManagedPass.
-func (CSE) Preserves() []Analysis { return nil }
+func (CSE) Preserves() []Analysis { return []Analysis{AnalysisSSA} }
 
 // Destroys implements ManagedPass.
 func (CSE) Destroys() []Analysis { return nil }

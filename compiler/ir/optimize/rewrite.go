@@ -12,6 +12,10 @@ type RewriteToSwitch struct{}
 
 func (RewriteToSwitch) Name() string { return "RewriteToSwitch" }
 
+func (RewriteToSwitch) Requires() []Analysis  { return nil }
+func (RewriteToSwitch) Preserves() []Analysis { return nil }
+func (RewriteToSwitch) Destroys() []Analysis  { return []Analysis{AnalysisDominance} }
+
 func (RewriteToSwitch) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
 	rewriteIfsToSwitch(entry)
 	rewriteCombineBlocks(entry)

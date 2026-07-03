@@ -9,12 +9,7 @@ type UnflattenAssociativeOps struct{}
 func (UnflattenAssociativeOps) Name() string { return "UnflattenAssociativeOps" }
 
 func (UnflattenAssociativeOps) Run(gen *ir.IDGen, entry *ir.BasicBlock) *ir.BasicBlock {
-	for _, b := range ir.Preorder(entry) {
-		for i, s := range b.Statements {
-			b.Statements[i] = unflattenStmt(gen, s)
-		}
-		b.Test = unflattenStmt(gen, b.Test)
-	}
+	transformBlocks(entry, func(n ir.Node) ir.Node { return unflattenStmt(gen, n) })
 	return entry
 }
 

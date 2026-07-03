@@ -2,6 +2,7 @@ package optimize
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
 )
@@ -413,8 +414,17 @@ func findExits(entry *ir.BasicBlock) []*ir.BasicBlock {
 	return out
 }
 
+var tempSetPool = sync.Pool{
+	New: func() any {
+		return make(map[*ir.TempBlock]bool)
+	},
+}
+
 func copyTempSet(m map[*ir.TempBlock]bool) map[*ir.TempBlock]bool {
-	o := map[*ir.TempBlock]bool{}
+	o := tempSetPool.Get().(map[*ir.TempBlock]bool)
+	for k := range o {
+		delete(o, k)
+	}
 	for k := range m {
 		o[k] = true
 	}
