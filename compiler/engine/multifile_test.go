@@ -570,10 +570,26 @@ func UpdateSpawn() float64 { return 0 }
 
 // TestSonolusGlobals verifies sonolus-prefixed global variable access.
 func TestSonolusGlobals(t *testing.T) {
-	t.Run("sonolus globals not supported", func(t *testing.T) {
-		// sonolus.Time, sonolus.DeltaTime etc. are engine globals
-		// that exist in the sonolus package but are separately injected
-		// by the compiler prelude. Bare access (time, deltaTime) works.
+	t.Run("sonolus.Time", func(t *testing.T) {
+		src := `package test
+import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+type Skin struct { Note float64 }
+type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
+func (n *Note) Initialize() {
+    x := sonolus.Time
+    sonolus.DebugPause()
+}
+func UpdateSpawn() float64 { return 0 }
+`
+		ess := engine.NewSingleFileSources(src)
+		_, _, err := engine.CompilePlaySources(ess, nil)
+		if err != nil {
+			t.Logf("sonolus.Time: %v", err)
+		} else {
+			t.Log("sonolus.Time: OK")
+		}
+	})
+	t.Run("bare time", func(t *testing.T) {
 		src := `package test
 import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 type Skin struct { Note float64 }
@@ -587,7 +603,9 @@ func UpdateSpawn() float64 { return 0 }
 		ess := engine.NewSingleFileSources(src)
 		_, _, err := engine.CompilePlaySources(ess, nil)
 		if err != nil {
-			t.Logf("bare global access: %v", err)
+			t.Logf("bare time: %v", err)
+		} else {
+			t.Log("bare time: OK")
 		}
 	})
 }

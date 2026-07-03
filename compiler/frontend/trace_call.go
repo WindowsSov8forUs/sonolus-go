@@ -67,6 +67,13 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 				}
 			}
 		}
+		// sonolus-prefixed global variable: sonolus.Time → lookup "time" in bindings.
+		if pkg, ok := n.X.(*ast.Ident); ok && pkg.Name == "sonolus" {
+			bareName := lowerFirst(n.Sel.Name)
+			if b, ok2 := t.env.Names[bareName]; ok2 {
+				return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
+			}
+		}
 		// Bare composite: evaluate vec2(...).x → extract field from the composite.
 		if _, isCall := n.X.(*ast.CallExpr); isCall {
 			v, err := t.expr(n.X)
