@@ -106,12 +106,11 @@ func main() {
 	}
 
 	srcPath := flag.Arg(1)
-	src, err := os.ReadFile(srcPath)
+	ess, name, err := resolveSourceArg(srcPath)
 	if err != nil {
-		fatalf("reading %s: %v", srcPath, err)
+		fatalf("%v", err)
 	}
 
-	name := engineNameFromPath(srcPath)
 	dir := filepath.Join(*outDir, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		fatalf("creating %s: %v", dir, err)
@@ -134,7 +133,7 @@ func main() {
 	var playData *resource.EnginePlayData
 	var playErr error
 	if mode != ModeAll {
-		playData, cfg, playErr = engine.CompilePlayFileWithStats(string(src), buildOpts(nil, optLevel))
+		playData, cfg, playErr = engine.CompilePlaySources(ess, buildOpts(nil, optLevel))
 	}
 	// If play compilation failed, cfg stays as default empty config.
 	// Failure is deferred until we know whether play mode is in the target set.
@@ -173,7 +172,7 @@ func main() {
 
 	// Compile and package each requested mode.
 	if mode == ModeAll {
-		c, err := compileAllModes(string(src), *statsFlag, optLevel)
+		c, err := compileAllModes(ess, *statsFlag, optLevel)
 		if err != nil {
 			fatalf("compiling: %v", err)
 		}
@@ -191,19 +190,19 @@ func main() {
 				}
 				packageAndWritePlay(dir, cfg, playData, rom)
 			case ModeWatch:
-				data, err := engine.CompileWatchFileWithStats(string(src), buildOpts(nil, optLevel))
+				data, err := engine.CompileWatchSources(ess, buildOpts(nil, optLevel))
 				if err != nil {
 					fatalf("compiling watch: %v", err)
 				}
 				packageAndWriteNonPlay(dir, cfg, rom, *data, func(p *build.PackagedEngine, b []byte) { p.WatchData = b }, "watch")
 			case ModePreview:
-				data, err := engine.CompilePreviewFileWithStats(string(src), buildOpts(nil, optLevel))
+				data, err := engine.CompilePreviewSources(ess, buildOpts(nil, optLevel))
 				if err != nil {
 					fatalf("compiling preview: %v", err)
 				}
 				packageAndWriteNonPlay(dir, cfg, rom, *data, func(p *build.PackagedEngine, b []byte) { p.PreviewData = b }, "preview")
 			case ModeTutorial:
-				data, err := engine.CompileTutorialFileWithStats(string(src), buildOpts(nil, optLevel))
+				data, err := engine.CompileTutorialSources(ess, buildOpts(nil, optLevel))
 				if err != nil {
 					fatalf("compiling tutorial: %v", err)
 				}

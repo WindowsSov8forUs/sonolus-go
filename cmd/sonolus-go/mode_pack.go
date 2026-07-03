@@ -51,7 +51,7 @@ func compileWithStats(
 // Go has no GIL, so this scales to all available cores — a structural advantage
 // over the Python reference which requires no-GIL builds for parallelism.
 // If stats is true, per-mode compilation times are printed to stdout.
-func compileAllModes(src string, stats bool, optLevel optimize.Level) (pack.CompiledEngine, error) {
+func compileAllModes(ess *engine.EngineSources, stats bool, optLevel optimize.Level) (pack.CompiledEngine, error) {
 	var c pack.CompiledEngine
 
 	var (
@@ -76,12 +76,12 @@ func compileAllModes(src string, stats bool, optLevel optimize.Level) (pack.Comp
 	go compileWithStats(&wg, "play", stats,
 		func() error {
 			opts := &engine.CompileOptions{Opt: optLevel}
-			playData, playCfg, playErr = engine.CompilePlayFileWithStats(src, opts)
+			playData, playCfg, playErr = engine.CompilePlaySources(ess, opts)
 			return playErr
 		},
 		func(cs *engine.CompileStats) error {
 			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
-			playData, playCfg, playErr = engine.CompilePlayFileWithStats(src, opts)
+			playData, playCfg, playErr = engine.CompilePlaySources(ess, opts)
 			return playErr
 		},
 		&playDur,
@@ -89,12 +89,12 @@ func compileAllModes(src string, stats bool, optLevel optimize.Level) (pack.Comp
 	go compileWithStats(&wg, "watch", stats,
 		func() error {
 			opts := &engine.CompileOptions{Opt: optLevel}
-			watchData, watchErr = engine.CompileWatchFileWithStats(src, opts)
+			watchData, watchErr = engine.CompileWatchSources(ess, opts)
 			return watchErr
 		},
 		func(cs *engine.CompileStats) error {
 			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
-			watchData, watchErr = engine.CompileWatchFileWithStats(src, opts)
+			watchData, watchErr = engine.CompileWatchSources(ess, opts)
 			return watchErr
 		},
 		&watchDur,
@@ -102,12 +102,12 @@ func compileAllModes(src string, stats bool, optLevel optimize.Level) (pack.Comp
 	go compileWithStats(&wg, "preview", stats,
 		func() error {
 			opts := &engine.CompileOptions{Opt: optLevel}
-			previewData, previewErr = engine.CompilePreviewFileWithStats(src, opts)
+			previewData, previewErr = engine.CompilePreviewSources(ess, opts)
 			return previewErr
 		},
 		func(cs *engine.CompileStats) error {
 			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
-			previewData, previewErr = engine.CompilePreviewFileWithStats(src, opts)
+			previewData, previewErr = engine.CompilePreviewSources(ess, opts)
 			return previewErr
 		},
 		&previewDur,
@@ -115,12 +115,12 @@ func compileAllModes(src string, stats bool, optLevel optimize.Level) (pack.Comp
 	go compileWithStats(&wg, "tutorial", stats,
 		func() error {
 			opts := &engine.CompileOptions{Opt: optLevel}
-			tutorialData, tutorialErr = engine.CompileTutorialFileWithStats(src, opts)
+			tutorialData, tutorialErr = engine.CompileTutorialSources(ess, opts)
 			return tutorialErr
 		},
 		func(cs *engine.CompileStats) error {
 			opts := &engine.CompileOptions{Opt: optLevel, Stats: cs}
-			tutorialData, tutorialErr = engine.CompileTutorialFileWithStats(src, opts)
+			tutorialData, tutorialErr = engine.CompileTutorialSources(ess, opts)
 			return tutorialErr
 		},
 		&tutorialDur,
@@ -160,16 +160,14 @@ func compileAllModes(src string, stats bool, optLevel optimize.Level) (pack.Comp
 }
 
 func runPack(srcPath string, author string) error {
-	src, err := os.ReadFile(srcPath)
+	ess, engineName, err := resolveSourceArg(srcPath)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", srcPath, err)
+		return err
 	}
-
-	engineName := engineNameFromPath(srcPath)
 
 	// 1. Compile all 4 modes.
 	fmt.Printf("compiling %s...\n", engineName)
-	c, err := compileAllModes(string(src), false, optimize.LevelStandard) // stats only for build command
+	c, err := compileAllModes(ess, false, optimize.LevelStandard)
 	if err != nil {
 		return err
 	}

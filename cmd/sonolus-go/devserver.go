@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -33,36 +35,38 @@ type devServerState struct {
 // devServer holds the in-memory compiled engine state and serves it over HTTP.
 type devServer struct {
 	mu      sync.RWMutex
-	src     string
-	romPath string // path to custom ROM file (empty = use defaults)
+	src     string                 // source path (file or directory)
+	romPath string                 // path to custom ROM file (empty = use defaults)
 	cache   *engine.CompileCache
-	ctx     context.Context // passed to CompileOptions for cancellation support
+	ctx     context.Context        // passed to CompileOptions for cancellation support
 	state   devServerState
 }
 
-// recompile reads the source file and recompiles all four modes. Play mode
-// failure is fatal (returns error) because the dev server cannot serve the
-// engine without play data. Watch, preview, and tutorial mode failures are
+// recompile reads the source (file or directory) and recompiles all four modes.
+// Play mode failure is fatal (returns error) because the dev server cannot serve
+// the engine without play data. Watch, preview, and tutorial mode failures are
 // non-fatal — they are recorded in state.modeErrors and exposed via the
 // /sonolus/engines/info endpoint so the user can inspect them without the
 // server going down.
 func (s *devServer) recompile() error {
-	src, err := os.ReadFile(s.src)
+	ess, err := engine.LoadEngineSources(s.src)
 	if err != nil {
-		return fmt.Errorf("reading source: %w", err)
+		return fmt.Errorf("loading sources: %w", err)
 	}
-	srcStr := string(src)
+
+	// Compute a cache key from all source files.
+	cacheSrc := cacheSourceString(ess)
 
 	// Compile to local variables first; only swap pointers under the lock.
 	newState := devServerState{modeErrors: map[string]string{}}
 
 	// ── Play mode ──
-	playKey := engine.NewCacheKey("play", 0, srcStr, s.src)
+	playKey := engine.NewCacheKey("play", 0, cacheSrc, s.src)
 	if d, cfg := s.cache.GetPlay(playKey); d != nil {
 		newState.data = d
 		newState.cfg = cfg
 	} else {
-		playData, cfg, err := engine.CompilePlayFileWithStats(srcStr, &engine.CompileOptions{Context: s.ctx})
+		playData, cfg, err := engine.CompilePlaySources(ess, &engine.CompileOptions{Context: s.ctx})
 		if err != nil {
 			return fmt.Errorf("compile play: %w", err)
 		}
@@ -91,11 +95,11 @@ func (s *devServer) recompile() error {
 			return d, d != nil
 		},
 		func(k engine.CacheKey, d *resource.EngineWatchData) { s.cache.PutWatch(k, d) },
-		func(src string, opts *engine.CompileOptions) (*resource.EngineWatchData, error) {
-			return engine.CompileWatchFileWithStats(src, opts)
+		func(ess *engine.EngineSources, opts *engine.CompileOptions) (*resource.EngineWatchData, error) {
+			return engine.CompileWatchSources(ess, opts)
 		},
 		func(d *resource.EngineWatchData) { newState.wd = d },
-		srcStr, newState.modeErrors,
+		ess, cacheSrc, newState.modeErrors,
 	)
 
 	// ── Preview mode ──
@@ -105,11 +109,11 @@ func (s *devServer) recompile() error {
 			return d, d != nil
 		},
 		func(k engine.CacheKey, d *resource.EnginePreviewData) { s.cache.PutPreview(k, d) },
-		func(src string, opts *engine.CompileOptions) (*resource.EnginePreviewData, error) {
-			return engine.CompilePreviewFileWithStats(src, opts)
+		func(ess *engine.EngineSources, opts *engine.CompileOptions) (*resource.EnginePreviewData, error) {
+			return engine.CompilePreviewSources(ess, opts)
 		},
 		func(d *resource.EnginePreviewData) { newState.pv = d },
-		srcStr, newState.modeErrors,
+		ess, cacheSrc, newState.modeErrors,
 	)
 
 	// ── Tutorial mode ──
@@ -119,11 +123,11 @@ func (s *devServer) recompile() error {
 			return d, d != nil
 		},
 		func(k engine.CacheKey, d *resource.EngineTutorialData) { s.cache.PutTutorial(k, d) },
-		func(src string, opts *engine.CompileOptions) (*resource.EngineTutorialData, error) {
-			return engine.CompileTutorialFileWithStats(src, opts)
+		func(ess *engine.EngineSources, opts *engine.CompileOptions) (*resource.EngineTutorialData, error) {
+			return engine.CompileTutorialSources(ess, opts)
 		},
 		func(d *resource.EngineTutorialData) { newState.tut = d },
-		srcStr, newState.modeErrors,
+		ess, cacheSrc, newState.modeErrors,
 	)
 
 	// Atomic pointer swap — the only part that needs the write lock.
@@ -136,6 +140,24 @@ func (s *devServer) recompile() error {
 	return nil
 }
 
+// cacheSourceString builds a deterministic cache-key string from all source
+// files in the engine. File order is sorted for determinism.
+func cacheSourceString(ess *engine.EngineSources) string {
+	names := make([]string, 0, len(ess.Main))
+	for n := range ess.Main {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, n := range names {
+		b.WriteString(n)
+		b.WriteByte(0)
+		b.WriteString(ess.Main[n])
+		b.WriteByte(0)
+	}
+	return b.String()
+}
+
 // compileNonPlay is a generic helper for the repeated cache-check-then-compile
 // pattern used by optional (non-Play) modes. Errors are recorded in modeErrors
 // but do not prevent the server from starting.
@@ -144,8 +166,9 @@ func compileNonPlay[T any](
 	mode string,
 	getter func(engine.CacheKey) (T, bool),
 	putter func(engine.CacheKey, T),
-	compiler func(string, *engine.CompileOptions) (T, error),
+	compiler func(*engine.EngineSources, *engine.CompileOptions) (T, error),
 	setter func(T),
+	ess *engine.EngineSources,
 	srcStr string,
 	modeErrors map[string]string,
 ) {
@@ -154,7 +177,7 @@ func compileNonPlay[T any](
 		setter(val)
 		return
 	}
-	val, err := compiler(srcStr, &engine.CompileOptions{Context: s.ctx})
+	val, err := compiler(ess, &engine.CompileOptions{Context: s.ctx})
 	if err != nil {
 		slog.Warn("[dev] compile", "mode", mode, "error", err)
 		modeErrors[mode] = err.Error()
@@ -246,17 +269,26 @@ func runDevServer(srcPath string, addr string, romPath string) error {
 	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func() any { return srv.state.tut }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveRom)
 
-	// Watch parent directory for source file changes using fsnotify.
-	// Watching the directory (rather than the file) handles editor save-via-rename
-	// patterns where the file is deleted and recreated under a new inode.
-	// Events are filtered by filename to only trigger on the source file.
+	// Watch source directory for file changes using fsnotify.
+	// For single-file engines, watch the parent directory and filter by filename.
+	// For directory engines, watch the engine directory itself and trigger on any
+	// .go file change. Watching directories (rather than files) handles editor
+	// save-via-rename patterns.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("fsnotify: %w", err)
 	}
 	defer watcher.Close()
-	parentDir := filepath.Dir(srcPath)
-	if err := watcher.Add(parentDir); err != nil {
+
+	fi, statErr := os.Stat(srcPath)
+	isDir := statErr == nil && fi.IsDir()
+	var watchDir string
+	if isDir {
+		watchDir = srcPath
+	} else {
+		watchDir = filepath.Dir(srcPath)
+	}
+	if err := watcher.Add(watchDir); err != nil {
 		return fmt.Errorf("fsnotify add: %w", err)
 	}
 	go func() {
@@ -265,7 +297,12 @@ func runDevServer(srcPath string, addr string, romPath string) error {
 			case <-ctx.Done():
 				return
 			case event := <-watcher.Events:
-				if filepath.Clean(event.Name) != filepath.Clean(srcPath) {
+				// For directory engines, trigger on any .go file change.
+				// For single-file engines, filter by the exact source filename.
+				if !isDir && filepath.Clean(event.Name) != filepath.Clean(srcPath) {
+					continue
+				}
+				if isDir && !strings.HasSuffix(event.Name, ".go") {
 					continue
 				}
 				if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {

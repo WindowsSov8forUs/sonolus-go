@@ -77,10 +77,30 @@ func (m Mode) IRMode() ir.Mode {
 	}
 }
 
-// engineNameFromPath extracts the engine name from an engine source file path.
-// e.g. "engines/my-engine.go" → "my-engine".
+// engineNameFromPath extracts the engine name from an engine source file path
+// or directory path. For files, it strips the extension; for directories, it
+// uses the directory base name.
+// e.g. "engines/my-engine.go" → "my-engine", "engines/my-engine/" → "my-engine"
 func engineNameFromPath(srcPath string) string {
-	return filepath.Base(srcPath[:len(srcPath)-len(filepath.Ext(srcPath))])
+	base := filepath.Base(srcPath)
+	ext := filepath.Ext(base)
+	if ext == ".go" {
+		return base[:len(base)-len(ext)]
+	}
+	// Directory or other: use the base name directly.
+	return base
+}
+
+// resolveSourceArg loads engine sources from a file or directory path.
+// Returns the EngineSources, engine name, and the compile*Sources function
+// appropriate for each mode.
+func resolveSourceArg(path string) (ess *engine.EngineSources, engineName string, err error) {
+	ess, err = engine.LoadEngineSources(path)
+	if err != nil {
+		return nil, "", err
+	}
+	name := engineNameFromPath(path)
+	return ess, name, nil
 }
 
 // parseOptLevel converts a CLI -O flag value to an optimizer level.

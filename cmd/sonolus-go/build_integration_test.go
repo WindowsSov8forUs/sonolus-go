@@ -341,7 +341,7 @@ func Update() {}
 	}
 
 	// Compile all modes via compileAllModes (the same path used by -m all and pack).
-	c, err := compileAllModes(src, false, optimize.LevelStandard)
+	c, err := compileAllModes(engine.NewSingleFileSources(src), false, optimize.LevelStandard)
 	if err != nil {
 		t.Fatalf("compileAllModes: %v", err)
 	}
@@ -615,7 +615,7 @@ type Note struct {
 }
 func (n *Note) Initialize() { debugPause() }
 `
-	_, err := compileAllModes(src, false, optimize.LevelStandard)
+	_, err := compileAllModes(engine.NewSingleFileSources(src), false, optimize.LevelStandard)
 	if err != nil {
 		t.Errorf("compileAllModes failed: %v", err)
 	}
@@ -743,7 +743,7 @@ func (n *Note) Initialize() { debugPause() }
 	}
 
 	// compileAllModes should succeed for this valid source.
-	c, err := compileAllModes(src, false, optimize.LevelStandard)
+	c, err := compileAllModes(engine.NewSingleFileSources(src), false, optimize.LevelStandard)
 	if err != nil {
 		t.Fatalf("compileAllModes: %v", err)
 	}
@@ -784,7 +784,7 @@ func Update() {}
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 
-	c, err := compileAllModes(src, true, optimize.LevelStandard)
+	c, err := compileAllModes(engine.NewSingleFileSources(src), true, optimize.LevelStandard)
 	w.Close()
 
 	// Restore stderr and read captured output.
@@ -838,7 +838,7 @@ func Update() {}
 	old := os.Stderr
 	os.Stderr = tmpf
 
-	_, _ = compileAllModes(src, true, optimize.LevelStandard)
+	_, _ = compileAllModes(engine.NewSingleFileSources(src), true, optimize.LevelStandard)
 
 	os.Stderr = old
 	tmpf.Close()
