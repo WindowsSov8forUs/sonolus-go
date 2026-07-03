@@ -14,7 +14,7 @@ jobs:
         with:
           go-version: '1.25'
       - run: go mod download
-      - run: go test -timeout 5m ./... -count=1
+      - run: go test -p 1 -timeout 5m ./... -count=1
       # Verify CLI binary builds and sub-commands are wired correctly.
       - run: go build -o sonolus-go ./cmd/sonolus-go/
       - run: ./sonolus-go -version
