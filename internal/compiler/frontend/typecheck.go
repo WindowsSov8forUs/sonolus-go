@@ -208,6 +208,7 @@ func PreludeSource(pkg string, records map[string][]string) string {
 	// ── Special ──
 	b.WriteString("func screen() Rect { return Rect{} }\n")
 	b.WriteString("func safeArea() Rect { return Rect{} }\n")
+	b.WriteString("func sprite(name string) float64 { return 0 }\n")
 	b.WriteString("func offsetAdjustedTime() float64 { return 0 }\n")
 	b.WriteString("func prevTime() float64 { return 0 }\n")
 	b.WriteString("func pnpoly(point Vec2, quad Quad) float64 { return 0 }\n")

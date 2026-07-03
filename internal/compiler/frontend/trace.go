@@ -37,9 +37,10 @@ type Env struct {
 	Methods   map[string]*ast.FuncDecl // non-callback methods of the current archetype
 	Accessors map[string]Binding
 	Mode      ir.Mode
-	Records   map[string][]string // user-defined record: name → field names
-	Info      *types.Info         // go/types type-check result (D1 diagnostic layer)
-	Constants map[string]float64  // named compile-time constants (e.g. archetype indices)
+	Records     map[string][]string // user-defined record: name → field names
+	Info        *types.Info         // go/types type-check result (D1 diagnostic layer)
+	Constants   map[string]float64  // named compile-time constants (e.g. archetype indices)
+	SpriteIndex map[string]float64  // sprite name → index (from Skin struct fields)
 }
 
 // loopCtx records the jump targets for break/continue inside a loop.

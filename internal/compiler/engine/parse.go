@@ -274,6 +274,7 @@ func compileParsed(
 	}
 
 	data := play.BuildPlayData(r.skin, r.effect, r.particle, r.buckets, defs)
+spriteIndex := buildSpriteIndex(r.skin)
 
 	results := make([]*modecompile.Result, 0, len(order)*3)
 	for i, name := range order {
@@ -290,7 +291,7 @@ func compileParsed(
 			return frontend.Env{
 				Names: names, Receiver: receiver, Funcs: funcs, Methods: a.helpers,
 				Accessors: frontend.ModeAccessorsReadOnly(ir.ModePlay),
-				Mode:      ir.ModePlay,
+				Mode:        ir.ModePlay, SpriteIndex: spriteIndex,
 			}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {

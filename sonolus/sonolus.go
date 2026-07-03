@@ -383,6 +383,7 @@ func StreamSet(args ...float64) float64            { return 0 }
 func HasSkinSprite(args ...float64) float64   { return 0 }
 func HasEffectClip(args ...float64) float64   { return 0 }
 func HasParticle(args ...float64) float64     { return 0 }
+func Sprite(name string) float64               { return 0 }
 
 // ── Runtime functions — mode checks ──
 

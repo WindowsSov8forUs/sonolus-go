@@ -33,6 +33,16 @@ func skinRenderMode(st *ast.StructType) resource.EngineRenderMode {
 	return resource.EngineRenderModeLightweight
 }
 
+// buildSpriteIndex builds a sprite-name → ID map from parsed skin sprites.
+// Returns nil if no skin is available (e.g., before resources are built).
+func buildSpriteIndex(skin resource.EngineSkinData) map[string]float64 {
+	m := make(map[string]float64, len(skin.Sprites))
+	for _, s := range skin.Sprites {
+		m[string(s.Name)] = float64(s.ID)
+	}
+	return m
+}
+
 // spriteID looks up a sprite name in the Skin struct and returns its positional
 // index (ID), or an error if the name is unknown or no Skin struct was declared.
 func spriteID(skinST *ast.StructType, name string) (int, error) {

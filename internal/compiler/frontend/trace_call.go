@@ -297,6 +297,19 @@ func (t *tracer) resolveTypeCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, err
 // (arrays, mode checks, composite constructors, etc.).
 func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, error) {
 	switch fn.Name {
+	case "sprite":
+		if len(n.Args) == 1 {
+			if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				name, err := strconv.Unquote(lit.Value)
+				if err == nil {
+					if id, ok2 := t.env.SpriteIndex[name]; ok2 {
+						return constNum(id), true, nil
+					}
+					return Num{}, true, t.errf(n, "unknown sprite name %q", name)
+				}
+			}
+		}
+		return Num{}, true, t.errf(n, "sprite expects a string literal")
 	case "len":
 		if len(n.Args) == 1 {
 			if id, ok := n.Args[0].(*ast.Ident); ok {
