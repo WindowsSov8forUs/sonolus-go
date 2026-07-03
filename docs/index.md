@@ -25,13 +25,13 @@ sonolus-go serve -m play ./engine/
 
 ```
 Go源文件 (.go)
-  → compiler/frontend     (AST 追踪 → CFG IR)
-  → compiler/ir/optimize  (~40 个优化 pass)
-  → compiler/ir/finalize  (寄存器分配 + 指令扁平化)
-  → compiler/snode        (SNode 去重 + 序列化)
-  → compiler/{play,watch,preview,tutorial}
-  → compiler/build        (EngineData 包装)
-  → compiler/pack         (sonolus-pack 源树输出)
+  → internal/compiler/frontend     (AST 追踪 → CFG IR)
+  → internal/compiler/ir/optimize  (~40 个优化 pass)
+  → internal/compiler/ir/finalize  (寄存器分配 + 指令扁平化)
+  → internal/compiler/snode        (SNode 去重 + 序列化)
+  → internal/compiler/{play,watch,preview,tutorial}
+  → internal/compiler/build        (EngineData 包装)
+  → internal/compiler/pack         (sonolus-pack 源树输出)
 ```
 
 详见 [编译器架构](architecture.md)。

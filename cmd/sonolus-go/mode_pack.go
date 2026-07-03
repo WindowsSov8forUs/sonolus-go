@@ -10,10 +10,10 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/pack"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/build"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/pack"
 	"github.com/WindowsSov8forUs/sonolus-pack-go/packer"
 )
 

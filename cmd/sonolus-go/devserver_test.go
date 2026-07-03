@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
 )
 
 // TestDevServerEndpoints verifies that the dev server's HTTP endpoints return

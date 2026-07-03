@@ -12,9 +12,9 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/build"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/build"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize"
 )
 
 // compilePlayToDir compiles a minimal play engine and writes the packaged files

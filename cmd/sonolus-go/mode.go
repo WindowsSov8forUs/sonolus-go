@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/engine"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir"
-	"github.com/WindowsSov8forUs/sonolus-go/compiler/ir/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize"
 )
 
 // errUnknownMode is returned when the user supplies an unrecognized mode string.

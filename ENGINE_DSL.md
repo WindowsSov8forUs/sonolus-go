@@ -382,7 +382,7 @@ static analysis, and the `sonolus-go` compiler translates qualified calls to Son
 
 ## Reference
 
-- **Optimizer pipeline**: `compiler/ir/optimize/PIPELINE.md`
-- **Full builtin list**: `compiler/frontend/builtins.go`
-- **Example engines**: `compiler/engine/testdata/*.go`
+- **Optimizer pipeline**: `internal/compiler/ir/optimize/PIPELINE.md`
+- **Full builtin list**: `internal/compiler/frontend/builtins.go`
+- **Example engines**: `internal/compiler/engine/testdata/*.go`
 - **sonolus-core-go types**: `../sonolus-core-go/core/resource/`

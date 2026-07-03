@@ -1,7 +1,7 @@
 # Compiler Resource Handling — Completeness Matrix
 
 Status as of 2026-06-29 (updated per Stage 3 docs drift fix; Stage 5 items still pending). Cross-references:
-- `compiler/engine/parse_resources.go` — current Go frontend resource parsing
+- `internal/compiler/engine/parse_resources.go` — current Go frontend resource parsing
 - `sonolus-core-go/core/resource/` — target output data structures
 - `sonolus.py/sonolus/script/` — Python reference implementation
 
@@ -59,4 +59,4 @@ from engine source via a `type UI struct { ... }` with `sonolus:"key=value"` tag
 1. Verify skin sprite transform coverage **✅ Done (2026-06-29)** — Transform2d compose/translate/scale/rotate/transformVec
 2. Add Judgment/Metric/Visibility/Animation config parsing from engine source **✅ Done (2026-06-28)**
 3. Engine data value model now has explicit `NumKind` (Scalar/Record/Array) with array-of-records support **✅ Done (2026-06-29)**
-4. Container types (VarArray, ArrayMap, ArraySet, FrozenNumSet) with sort/search/iterate protocol — **✅ Done (2026-07)** (see `compiler/frontend/containers.go`)
+4. Container types (VarArray, ArrayMap, ArraySet, FrozenNumSet) with sort/search/iterate protocol — **✅ Done (2026-07)** (see `internal/compiler/frontend/containers.go`)

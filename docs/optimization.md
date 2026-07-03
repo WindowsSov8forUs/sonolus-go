@@ -3,7 +3,7 @@
 sonolus-go 实现了一个多级优化流水线，对标 sonolus.py 的优化器。
 
 sonolus-go 提供三级优化，通过 `pipeline.go` 中的 `Minimal()`/`Fast()`/`Standard()` 函数定义。
-完整的分歧说明和 pass-by-pass 对比见 [PIPELINE.md](../compiler/ir/optimize/PIPELINE.md)。
+完整的分歧说明和 pass-by-pass 对比见 [PIPELINE.md](../internal/compiler/ir/optimize/PIPELINE.md)。
 
 ### Standard（完整优化，44 passes）
 
@@ -107,4 +107,4 @@ Alloc: AllocateBasic
 ## 参考
 
 - sonolus.py 优化器: `../sonolus.py/sonolus/backend/optimize/`
-- sonolus.js-compiler SNode 优化: `../sonolus.js-compiler/src/snode/optimize/`
+- sonolus.js-compiler SNode 优化: `../sonolus.js-internal/compiler/src/snode/optimize/`

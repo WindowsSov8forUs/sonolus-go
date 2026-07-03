@@ -1,6 +1,6 @@
 # Supported Go Subset — Frontend Syntax Matrix
 
-The `compiler/frontend` package compiles a subset of Go source code into the
+The `internal/compiler/frontend` package compiles a subset of Go source code into the
 Sonolus engine IR. The supported subset is intentionally limited to constructs
 that map naturally to the engine runtime model.
 

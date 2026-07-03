@@ -4,7 +4,7 @@
 
 ## Go Compiler Benchmarks
 
-Run with: `go test ./compiler/engine/ -bench . -benchmem`
+Run with: `go test ./internal/compiler/engine/ -bench . -benchmem`
 
 ### Reference (Intel i7-13650HX, 20 threads)
 
@@ -23,8 +23,8 @@ Run with: `go test ./compiler/engine/ -bench . -benchmem`
 Full benchmark suite:
 
 ```bash
-go test ./compiler/engine/ -bench . -benchmem -benchtime=10x
-go test ./compiler/ir/optimize/ -bench . -benchmem -benchtime=10x
+go test ./internal/compiler/engine/ -bench . -benchmem -benchtime=10x
+go test ./internal/compiler/ir/optimize/ -bench . -benchmem -benchtime=10x
 ```
 
 ## Cross-Project Comparison (Go vs Python)
@@ -48,7 +48,7 @@ Run with: `bash scripts/bench_cross.sh [iterations]`
 
 ## Optimizer Benchmarks
 
-Run with: `go test ./compiler/ir/optimize/ -bench . -benchmem`
+Run with: `go test ./internal/compiler/ir/optimize/ -bench . -benchmem`
 
 | Benchmark | ns/op | B/op | allocs/op | Description |
 |-----------|-------|------|-----------|-------------|
