@@ -19,20 +19,20 @@
     {
       "name": "Note",
       "hasInput": false,
-      "imports": [
-        {
-          "name": "Beat",
-          "index": 0
-        }
-      ],
-      "exports": [],
       "initialize": {
         "index": 9
       },
       "updateParallel": {
         "index": 15,
         "order": 1
-      }
+      },
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ],
+      "exports": []
     }
   ],
   "nodes": [

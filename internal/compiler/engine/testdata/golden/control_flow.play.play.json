@@ -19,16 +19,16 @@
     {
       "name": "Note",
       "hasInput": false,
+      "updateSequential": {
+        "index": 70
+      },
       "imports": [
         {
           "name": "Beat",
           "index": 0
         }
       ],
-      "exports": [],
-      "updateSequential": {
-        "index": 70
-      }
+      "exports": []
     }
   ],
   "nodes": [

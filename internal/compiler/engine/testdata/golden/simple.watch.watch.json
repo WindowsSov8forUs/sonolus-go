@@ -19,12 +19,6 @@
     {
       "name": "Note",
       "hasInput": false,
-      "imports": [
-        {
-          "name": "Beat",
-          "index": 0
-        }
-      ],
       "spawnTime": {
         "index": 7
       },
@@ -35,7 +29,13 @@
       "updateParallel": {
         "index": 19,
         "order": 2
-      }
+      },
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ]
     }
   ],
   "nodes": [
