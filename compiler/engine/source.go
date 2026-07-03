@@ -157,11 +157,13 @@ func validatePackageName(files map[string]string) error {
 }
 
 // Access returns a frontend.EngineSourcesAccess for type-checking, avoiding a
-// circular import (engine → frontend ← engine).
+// circular import (engine → frontend ← engine). The Imports field enables the
+// type checker to validate sub-package callback bodies against the full prelude.
 func (ess *EngineSources) Access() *frontend.EngineSourcesAccess {
 	return &frontend.EngineSourcesAccess{
 		RootDir:   ess.RootDir,
 		MainFiles: ess.Main,
+		Imports:   ess.Imports,
 	}
 }
 

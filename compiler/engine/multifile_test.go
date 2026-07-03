@@ -123,6 +123,38 @@ func (n *Note) Initialize() {
 	})
 }
 
+// TestSubPkg_TypeCheckError verifies that type errors in sub-package callback
+// bodies are properly detected (gap fix: importer now uses full prelude).
+func TestSubPkg_TypeCheckError(t *testing.T) {
+	ess := &engine.EngineSources{
+		RootDir: ".",
+		Main: map[string]string{
+			"engine.go": `package test
+import "notes"
+type Skin struct { Note float64 }
+func UpdateSpawn() float64 { return 0 }
+`,
+		},
+		Imports: map[string]map[string]string{
+			"notes": {
+				"note.go": `package notes
+type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
+func (n *Note) Initialize() {
+    x := undefinedFunc(1, 2, 3)  // ← should fail type check
+    debugPause()
+}
+`,
+			},
+		},
+	}
+
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err == nil {
+		t.Fatal("expected type-check error for undefined function in sub-package, got nil")
+	}
+	t.Logf("sub-package type check works: %v", err)
+}
+
 // TestImportSubPackage_DuplicateArchetype verifies that duplicate archetype
 // names across packages produce a clear error.
 func TestImportSubPackage_DuplicateArchetype(t *testing.T) {
