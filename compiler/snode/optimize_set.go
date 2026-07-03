@@ -92,11 +92,19 @@ var setShiftedFuncMap = map[resource.RuntimeFunction]resource.RuntimeFunction{
 }
 
 // setFunc maps an arithmetic function to its compound-assignment counterpart.
+// Returns fn unchanged if no mapping exists (defensive fallback for future ops).
 func setFunc(fn resource.RuntimeFunction) resource.RuntimeFunction {
-	return setFuncMap[fn]
+	if mapped, ok := setFuncMap[fn]; ok {
+		return mapped
+	}
+	return fn
 }
 
 // setShiftedFunc mirrors setFunc for the Shifted variants.
+// Returns fn unchanged if no mapping exists (defensive fallback for future ops).
 func setShiftedFunc(fn resource.RuntimeFunction) resource.RuntimeFunction {
-	return setShiftedFuncMap[fn]
+	if mapped, ok := setShiftedFuncMap[fn]; ok {
+		return mapped
+	}
+	return fn
 }
