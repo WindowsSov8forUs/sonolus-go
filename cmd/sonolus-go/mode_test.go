@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
@@ -148,7 +149,7 @@ func TestEngineNameFromPath(t *testing.T) {
 	tests := []struct{ path, want string }{
 		{"engines/my-engine.go", "my-engine"},
 		{"engine.go", "engine"},
-		{`a\b\c.go`, "c"},
+		{filepath.Join("a", "b", "c.go"), "c"},
 		{"no-ext", "no-ext"},
 		{"/absolute/path/to/test.go", "test"},
 	}
