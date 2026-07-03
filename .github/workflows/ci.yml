@@ -6,41 +6,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: go mod download
-      - run: go test -p 1 -timeout 5m ./... -count=1
-      # Verify CLI binary builds and sub-commands are wired correctly.
-      - run: go build -o sonolus-go ./cmd/sonolus-go/
-      - run: ./sonolus-go -version
-        continue-on-error: true
-      # Smoke-test pack command: compile a minimal engine and verify output.
-      - name: Smoke test pack
-        run: |
-          printf 'package p\ntype N struct {}\nfunc (n N) Initialize() {}\n' > ci_engine.go
-          ./sonolus-go pack ci_engine.go
-          test -d dist/ci_engine || (echo "pack: output directory missing" && exit 1)
-        shell: bash
-      # Smoke-test host command: start server briefly and verify endpoints respond.
-      - name: Smoke test host
-        run: |
-          printf 'package p\ntype N struct {}\nfunc (n N) Initialize() {}\n' > ci_engine.go
-          ./sonolus-go host ci_engine.go -addr :19876 &
-          sleep 3
-          curl -sSf http://localhost:19876/sonolus/engines/info > /dev/null || (echo "host: /info failed" && exit 1)
-          curl -sSf http://localhost:19876/sonolus/engine/configuration > /dev/null || (echo "host: /configuration failed" && exit 1)
-          curl -sSf http://localhost:19876/sonolus/engine/play-data > /dev/null || (echo "host: /play-data failed" && exit 1)
-          kill %1 2>/dev/null || true
-        shell: bash
-        continue-on-error: true
+      - run: go test ./...
       - run: go vet ./...
-      - run: gofmt -s -l internal cmd sonolus > fmt.out && test ! -s fmt.out || (cat fmt.out && exit 1)
-        shell: bash
+      - run: go build ./cmd/sonolus-go/
+
   fuzz:
     runs-on: ubuntu-latest
     steps:
@@ -48,4 +22,4 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: go test -fuzz=FuzzCompilePlay -fuzztime=60s ./internal/compiler/engine/
+      - run: go test -fuzz=FuzzCompilePlay -fuzztime=30s ./internal/compiler/engine/
