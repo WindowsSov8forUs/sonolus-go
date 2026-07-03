@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"reflect"
+	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 )
@@ -47,8 +48,10 @@ func buildSpriteIndex(skin resource.EngineSkinData, skinST *ast.StructType) map[
 		for _, f := range skinST.Fields.List {
 			if f.Tag != nil {
 				tag := reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus")
-				if tagName := tagVal(splitTag(tag), "sprite"); tagName != "" {
-					m[tagName] = float64(id)
+				// Tag without "=" is a sprite name override (e.g., "bandori:game_play_line").
+				// Tag with "=" is a semantic key=value (e.g., "renderMode=standard").
+				if !strings.Contains(tag, "=") && tag != "" {
+					m[tag] = float64(id)
 				}
 			}
 			id += len(f.Names)
@@ -66,11 +69,13 @@ func spriteID(skinST *ast.StructType, name string) (int, error) {
 	}
 	id := 0
 	for _, f := range skinST.Fields.List {
-		// Check for sprite name in struct tag.
+		// Tag without "=" is a sprite name override.
 		tagName := ""
 		if f.Tag != nil {
 			tag := reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus")
-			tagName = tagVal(splitTag(tag), "sprite")
+			if !strings.Contains(tag, "=") && tag != "" {
+				tagName = tag
+			}
 		}
 		for _, n := range f.Names {
 			if n.Name == name || (tagName != "" && tagName == name) {
