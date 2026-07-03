@@ -51,7 +51,8 @@ func CompilePlayFile(src string) (*resource.EnginePlayData, *resource.EngineConf
 
 // CompilePlayFileWithStats compiles a Go Play-mode engine source file. If opts
 // is non-nil and opts.Stats is non-nil, per-callback compilation timing is
-// recorded.
+// recorded. This is the single-file entry point; for multi-file engines, use
+// CompilePlaySources.
 func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
 	pes, err := parseEngineSource(src)
 	if err != nil {
@@ -97,6 +98,100 @@ func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.Engin
 		return nil, nil, err
 	}
 	return compileParsed(pes.fset, archetypes, order, pes.funcs, r, opts)
+}
+
+// CompilePlaySources compiles a multi-file, potentially multi-package engine
+// source tree for Play mode. It supports directory-based projects and inter-
+// package imports via import "subpkg" statements.
+func CompilePlaySources(ess *EngineSources, opts *CompileOptions) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
+	// 1. Resolve imports.
+	if err := ess.ResolveImports(); err != nil {
+		return nil, nil, err
+	}
+
+	// 2. Type-check the engine (main package + all imports).
+	if _, _, _, err := frontend.TypeCheckEngine(ess.Access()); err != nil {
+		return nil, nil, fmt.Errorf("typecheck: %w", err)
+	}
+
+	// 3. Parse main package.
+	mainPES, err := parseEngineSourceFiles(ess.Main, true)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 4. Parse imported packages and collect archetypes.
+	allFuncs := make(map[string]*ast.FuncDecl)
+	for k, v := range mainPES.funcs {
+		allFuncs[k] = v
+	}
+
+	archetypes := map[string]*parsedArchetype{}
+	var order []string
+
+	get := func(name string) *parsedArchetype {
+		a, ok := archetypes[name]
+		if !ok {
+			a = &parsedArchetype{name: name, helpers: map[string]*ast.FuncDecl{}}
+			archetypes[name] = a
+			order = append(order, name)
+		}
+		return a
+	}
+
+	// Collect from main package.
+	for _, td := range mainPES.typeDecls {
+		if err := parseFields(get(td.name), td.structType); err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, m := range mainPES.methods {
+		a := get(m.receiverType)
+		if cb, ok := methodCallbacks[m.methodName]; ok {
+			a.methods = append(a.methods, parsedMethod{callback: cb, receiver: m.receiverName, body: m.funcDecl.Body})
+		} else if m.funcDecl.Body != nil {
+			a.helpers[m.methodName] = m.funcDecl
+		}
+	}
+
+	// Collect from imported packages.
+	for impPath, files := range ess.Imports {
+		_, impPES, err := parseImportedPackage(files)
+		if err != nil {
+			return nil, nil, fmt.Errorf("import %q: %w", impPath, err)
+		}
+		for _, td := range impPES.typeDecls {
+			if _, exists := archetypes[td.name]; exists {
+				return nil, nil, fmt.Errorf("duplicate archetype %q in import %q and main package", td.name, impPath)
+			}
+			if err := parseFields(get(td.name), td.structType); err != nil {
+				return nil, nil, fmt.Errorf("import %q: %w", impPath, err)
+			}
+		}
+		for _, m := range impPES.methods {
+			a := get(m.receiverType)
+			if cb, ok := methodCallbacks[m.methodName]; ok {
+				a.methods = append(a.methods, parsedMethod{callback: cb, receiver: m.receiverName, body: m.funcDecl.Body})
+			} else if m.funcDecl.Body != nil {
+				a.helpers[m.methodName] = m.funcDecl
+			}
+		}
+		// Merge free functions from imported packages into allFuncs.
+		for k, v := range impPES.funcs {
+			if _, dup := allFuncs[k]; dup {
+				return nil, nil, fmt.Errorf("duplicate function %q in import %q and main package", k, impPath)
+			}
+			allFuncs[k] = v
+		}
+	}
+
+	// 5. Build resources from main package only.
+	r, err := buildResources(mainPES.resources)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return compileParsed(mainPES.fset, archetypes, order, allFuncs, r, opts)
 }
 
 func receiverInfo(field *ast.Field) (typeName, recvName string) {

@@ -254,16 +254,44 @@ var engineGlobals = []string{
 // Returns the *types.Info (for use in D2/D3 type-driven dispatch) or an error
 // if the source fails type checking.
 func TypeCheck(src string, records map[string][]string) (*token.FileSet, *ast.File, *types.Info, error) {
-	fset := token.NewFileSet()
-	userFile, err := parser.ParseFile(fset, "engine.go", src, 0)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("typecheck: parse: %w", err)
-	}
-	info, err := checkWithPrelude(fset, userFile.Name.Name, []*ast.File{userFile}, records)
+	fset, files, info, err := TypeCheckFiles(map[string]string{"engine.go": src}, records)
 	if err != nil {
 		return fset, nil, info, err
 	}
-	return fset, userFile, info, nil
+	if len(files) > 0 {
+		return fset, files[0], info, nil
+	}
+	return fset, nil, info, nil
+}
+
+// TypeCheckFiles type-checks multiple source files of the same package combined
+// with the prelude. Files are keyed by filename (relative or base name). All files
+// must share the same package name. Returns the token.FileSet, parsed AST files,
+// and populated types.Info.
+func TypeCheckFiles(files map[string]string, records map[string][]string) (*token.FileSet, []*ast.File, *types.Info, error) {
+	if len(files) == 0 {
+		return nil, nil, nil, fmt.Errorf("typecheck: no source files provided")
+	}
+	fset := token.NewFileSet()
+	var pkgName string
+	var userFiles []*ast.File
+	for name, src := range files {
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("typecheck: parse %s: %w", name, err)
+		}
+		if pkgName == "" {
+			pkgName = f.Name.Name
+		} else if f.Name.Name != pkgName {
+			return nil, nil, nil, fmt.Errorf("typecheck: conflicting package names: %q uses %q, expected %q", name, f.Name.Name, pkgName)
+		}
+		userFiles = append(userFiles, f)
+	}
+	info, err := checkWithPrelude(fset, pkgName, userFiles, records)
+	if err != nil {
+		return fset, userFiles, info, err
+	}
+	return fset, userFiles, info, nil
 }
 
 // checkWithPrelude runs type-checking on the prelude + user files and applies
@@ -271,13 +299,45 @@ func TypeCheck(src string, records map[string][]string) (*token.FileSet, *ast.Fi
 // counts are propagated; Go-strictness mismatches (float64 indices, implicit
 // callback returns) are treated as soft and ignored.
 func checkWithPrelude(fset *token.FileSet, pkgName string, userFiles []*ast.File, records map[string][]string) (*types.Info, error) {
+	return checkWithPreludeImp(fset, pkgName, userFiles, records, importer.Default())
+}
+
+// SubPreludeSource returns a minimal prelude for imported sub-packages.
+// Sub-packages only need type declarations (Vec2, Mat, Quad, Rect, Trans, Pair,
+// handle types) so their struct field types resolve correctly. They do not need
+// runtime function stubs, constructors, or engine globals — imported packages
+// define archetype structs but do not call Draw/Spawn/etc. at the package level.
+func SubPreludeSource(pkg string) string {
+	var b strings.Builder
+	b.WriteString("package " + pkg + "\n\n")
+	// Record types — needed for struct field types.
+	b.WriteString("type Vec2 struct { x, y float64 }\n")
+	b.WriteString("type Quad struct { blx, bly, tlx, tly, trx, try, brx, bry float64 }\n")
+	b.WriteString("type Mat struct { m11, m12, m13, m21, m22, m23 float64 }\n")
+	b.WriteString("type Rect struct { t, r, b, l float64 }\n")
+	b.WriteString("type Trans struct { m11, m12, m13, m21, m22, m23, m31, m32, m33 float64 }\n")
+	b.WriteString("type Pair struct { first, second float64 }\n")
+	// Handle types.
+	b.WriteString("type LoopedEffectHandle struct { id float64 }\n")
+	b.WriteString("type ScheduledLoopedEffectHandle struct { id float64 }\n")
+	b.WriteString("type ParticleHandle struct { id float64 }\n")
+	return b.String()
+}
+
+// checkWithPreludeImp is the internal variant of checkWithPrelude that accepts
+// a custom types.Importer. When imp is nil, importer.Default() is used.
+// TypeCheckEngine uses this with an engineImporter to resolve local imports.
+func checkWithPreludeImp(fset *token.FileSet, pkgName string, userFiles []*ast.File, records map[string][]string, imp types.Importer) (*types.Info, error) {
 	preludeSrc := PreludeSource(pkgName, records)
 	preludeFile, err := parser.ParseFile(fset, "prelude.go", preludeSrc, 0)
 	if err != nil {
 		return nil, fmt.Errorf("typecheck: prelude parse: %w", err)
 	}
 	allFiles := append([]*ast.File{preludeFile}, userFiles...)
-	conf := types.Config{Importer: importer.Default()}
+	if imp == nil {
+		imp = importer.Default()
+	}
+	conf := types.Config{Importer: imp}
 	info := &types.Info{
 		Types:      map[ast.Expr]types.TypeAndValue{},
 		Defs:       map[*ast.Ident]types.Object{},
@@ -308,6 +368,11 @@ func filterHardErrors(err error) error {
 	var te *types.Error
 	if errors.As(err, &te) {
 		msg := te.Msg
+		// sonolus package declarations exist for IDE support only; the compiler
+		// provides equivalent symbols via its internal prelude.
+		if strings.Contains(msg, "sonolus") {
+			return nil
+		}
 		if strings.Contains(msg, "undeclared name") ||
 			strings.Contains(msg, "not enough arguments") ||
 			strings.Contains(msg, "too many arguments") ||
@@ -318,6 +383,9 @@ func filterHardErrors(err error) error {
 	}
 	// Fallback: inspect the error message string.
 	msg := err.Error()
+	if strings.Contains(msg, "sonolus") {
+		return nil
+	}
 	if strings.Contains(msg, "undefined: ") ||
 		strings.Contains(msg, "not enough arguments") ||
 		strings.Contains(msg, "too many arguments") {

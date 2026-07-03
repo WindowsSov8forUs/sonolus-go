@@ -58,19 +58,25 @@ func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTa
 	for _, name := range field.Names {
 		switch tag {
 		case "imported":
-			tc.imported = append(tc.imported, ImportedField{Name: name.Name})
+			if fields, ok := resolveFieldLayout(field.Type); ok {
+				for _, sf := range fields {
+					tc.imported = append(tc.imported, ImportedField{Name: name.Name + "." + sf})
+				}
+			} else {
+				tc.imported = append(tc.imported, ImportedField{Name: name.Name})
+			}
 		case "memory":
-			tc.memory = append(tc.memory, name.Name)
+			tc.memory = appendFieldNames(tc.memory, name.Name, field.Type)
 		case "data":
-			tc.data = append(tc.data, name.Name)
+			tc.data = appendFieldNames(tc.data, name.Name, field.Type)
 		case "shared":
-			tc.shared = append(tc.shared, name.Name)
+			tc.shared = appendFieldNames(tc.shared, name.Name, field.Type)
 		case "input":
-			tc.input = append(tc.input, name.Name)
+			tc.input = appendFieldNames(tc.input, name.Name, field.Type)
 		case "despawn":
-			tc.despawn = append(tc.despawn, name.Name)
+			tc.despawn = appendFieldNames(tc.despawn, name.Name, field.Type)
 		case "info":
-			tc.info = append(tc.info, name.Name)
+			tc.info = appendFieldNames(tc.info, name.Name, field.Type)
 		case "exported", "scored", "lifed":
 			modeTag = tag
 		case "":
@@ -320,6 +326,123 @@ func runNonPlayPipeline(src string, cbSet map[string]string, mode ir.Mode, opts 
 	res.r = r
 	res.accessors = frontend.ModeAccessorsReadOnly(mode)
 	res.nodes = []resource.EngineDataNode{}
+	arcData, results, err := compileArchetypeCallbacks(res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
+	if err != nil {
+		return res, fmt.Errorf("compile callbacks: %w", err)
+	}
+	res.arcData = arcData
+	res.results = results
+	return res, nil
+}
+
+// runNonPlayPipelineSources is the multi-file variant of runNonPlayPipeline.
+// It resolves imports, type-checks, parses main + imported packages, and
+// merges archetypes and free functions from all packages before compilation.
+func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode ir.Mode, opts *CompileOptions) (nonPlayPipelineResult, error) {
+	var res nonPlayPipelineResult
+
+	// 1. Resolve imports and type-check.
+	if err := ess.ResolveImports(); err != nil {
+		return res, err
+	}
+	if _, _, _, err := frontend.TypeCheckEngine(ess.Access()); err != nil {
+		return res, fmt.Errorf("typecheck: %w", err)
+	}
+
+	// 2. Parse main package.
+	mainPES, err := parseEngineSourceFiles(ess.Main, true)
+	if err != nil {
+		return res, err
+	}
+
+	// 3. Build resources (main package only).
+	r, err := buildResources(mainPES.resources)
+	if err != nil {
+		return res, fmt.Errorf("build resources: %w", err)
+	}
+	res.r = r
+
+	// 4. Collect archetypes and free functions from all packages.
+	arcs := map[string]*modeArch{}
+	var order []string
+	allFuncs := make(map[string]*ast.FuncDecl)
+
+	get := func(name string) *modeArch {
+		a, ok := arcs[name]
+		if !ok {
+			a = &modeArch{name: name}
+			arcs[name] = a
+			order = append(order, name)
+		}
+		return a
+	}
+
+	collectFromParsed := func(pes *parsedEngineSource, pkgLabel string) error {
+		for _, td := range pes.typeDecls {
+			a := get(td.name)
+			tc := &tagCollector{}
+			for _, f := range td.structType.Fields.List {
+				unknown, _ := tc.collectSonolusTags(f)
+				if unknown != "" {
+					name := ""
+					if len(f.Names) > 0 {
+						name = f.Names[0].Name
+					}
+					return fmt.Errorf("%s: %s: unknown sonolus tag %q on field %q", pkgLabel, td.name, unknown, name)
+				}
+			}
+			a.imported = tc.imported
+			a.memory = tc.memory
+			a.data = tc.data
+			a.shared = tc.shared
+			a.input = tc.input
+			a.despawn = tc.despawn
+			a.info = tc.info
+		}
+		for _, m := range pes.methods {
+			a := get(m.receiverType)
+			if m.funcDecl.Body != nil {
+				a.methods = append(a.methods, modeMethod{methodName: m.methodName, receiver: m.receiverName, body: m.funcDecl.Body})
+			}
+		}
+		for k, v := range pes.funcs {
+			if _, dup := allFuncs[k]; dup {
+				return fmt.Errorf("duplicate function %q in %s", k, pkgLabel)
+			}
+			allFuncs[k] = v
+		}
+		return nil
+	}
+
+	// Collect from main package.
+	if err := collectFromParsed(mainPES, "main"); err != nil {
+		return res, err
+	}
+
+	// Collect from imported packages.
+	for impPath, files := range ess.Imports {
+		_, impPES, err := parseImportedPackage(files)
+		if err != nil {
+			return res, fmt.Errorf("import %q: %w", impPath, err)
+		}
+		if err := collectFromParsed(impPES, "import "+impPath); err != nil {
+			return res, err
+		}
+	}
+
+	res.gen = ir.NewIDGen()
+	res.accessors = frontend.ModeAccessorsReadOnly(mode)
+	res.nodes = []resource.EngineDataNode{}
+
+	pf := &parsedModeFile{
+		fset:      mainPES.fset,
+		arcs:      arcs,
+		order:     order,
+		funcs:     allFuncs,
+		resources: mainPES.resources,
+	}
+	res.pf = pf
+
 	arcData, results, err := compileArchetypeCallbacks(res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
 	if err != nil {
 		return res, fmt.Errorf("compile callbacks: %w", err)

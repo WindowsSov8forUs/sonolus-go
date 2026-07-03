@@ -149,7 +149,19 @@ func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.Engi
 	if err != nil {
 		return nil, err
 	}
+	return finishWatch(p, opts)
+}
 
+// CompileWatchSources compiles a multi-file engine source tree for Watch mode.
+func CompileWatchSources(ess *EngineSources, opts *CompileOptions) (*resource.EngineWatchData, error) {
+	p, err := runNonPlayPipelineSources(ess, watchCallbacks, ir.ModeWatch, opts)
+	if err != nil {
+		return nil, err
+	}
+	return finishWatch(p, opts)
+}
+
+func finishWatch(p nonPlayPipelineResult, opts *CompileOptions) (*resource.EngineWatchData, error) {
 	outArcs := make([]resource.EngineWatchDataArchetype, len(p.arcData))
 	for i, ad := range p.arcData {
 		outArcs[i] = resource.EngineWatchDataArchetype{Name: ad.name, Imports: ad.imports}
@@ -185,7 +197,19 @@ func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.En
 	if err != nil {
 		return nil, err
 	}
+	return finishPreview(p)
+}
 
+// CompilePreviewSources compiles a multi-file engine source tree for Preview mode.
+func CompilePreviewSources(ess *EngineSources, opts *CompileOptions) (*resource.EnginePreviewData, error) {
+	p, err := runNonPlayPipelineSources(ess, previewCallbacks, ir.ModePreview, opts)
+	if err != nil {
+		return nil, err
+	}
+	return finishPreview(p)
+}
+
+func finishPreview(p nonPlayPipelineResult) (*resource.EnginePreviewData, error) {
 	outArcs := make([]resource.EnginePreviewDataArchetype, len(p.arcData))
 	for i, ad := range p.arcData {
 		outArcs[i] = resource.EnginePreviewDataArchetype{Name: ad.name, Imports: ad.imports}
@@ -283,7 +307,49 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 	if err != nil {
 		return nil, err
 	}
-	r, err := buildResources(pf.resources)
+	if _, err := buildResources(pf.resources); err != nil {
+		return nil, err
+	}
+	return finishTutorial(pf.fset, pf.funcs, pf.resources, opts)
+}
+
+// CompileTutorialSources compiles a multi-file engine source tree for Tutorial mode.
+func CompileTutorialSources(ess *EngineSources, opts *CompileOptions) (*resource.EngineTutorialData, error) {
+	if err := ess.ResolveImports(); err != nil {
+		return nil, err
+	}
+	if _, _, _, err := frontend.TypeCheckEngine(ess.Access()); err != nil {
+		return nil, fmt.Errorf("typecheck: %w", err)
+	}
+
+	mainPES, err := parseEngineSourceFiles(ess.Main, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// Merge free functions from imported packages.
+	allFuncs := make(map[string]*ast.FuncDecl)
+	for k, v := range mainPES.funcs {
+		allFuncs[k] = v
+	}
+	for impPath, files := range ess.Imports {
+		_, impPES, err := parseImportedPackage(files)
+		if err != nil {
+			return nil, fmt.Errorf("import %q: %w", impPath, err)
+		}
+		for k, v := range impPES.funcs {
+			if _, dup := allFuncs[k]; dup {
+				return nil, fmt.Errorf("duplicate function %q in import %q and main package", k, impPath)
+			}
+			allFuncs[k] = v
+		}
+	}
+
+	return finishTutorial(mainPES.fset, allFuncs, mainPES.resources, opts)
+}
+
+func finishTutorial(fset *token.FileSet, funcs map[string]*ast.FuncDecl, resources map[string]*ast.StructType, opts *CompileOptions) (*resource.EngineTutorialData, error) {
+	r, err := buildResources(resources)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +359,7 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 
 	// Build job list in deterministic (sorted) order.
 	var jobs []callbackJob
-	for _, d := range sortedFuncDecls(pf.funcs) {
+	for _, d := range sortedFuncDecls(funcs) {
 		var cb string
 		switch d.Name.Name {
 		case "Preprocess":
@@ -311,13 +377,13 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 		jobs = append(jobs, callbackJob{
 			name: d.Name.Name, cb: cb, body: d.Body,
 			env: frontend.Env{
-				Names: accessors, Funcs: pf.funcs,
+				Names: accessors, Funcs: funcs,
 				Accessors: accessors, Mode: ir.ModeTutorial,
 			},
 		})
 	}
 
-	compiled, err := compileCallbacksParallel(pf.fset, jobs, ir.ModeTutorial, opts)
+	compiled, err := compileCallbacksParallel(fset, jobs, ir.ModeTutorial, opts)
 	if err != nil {
 		return nil, err
 	}
