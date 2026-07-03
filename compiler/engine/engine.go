@@ -25,9 +25,9 @@ import (
 // default options (no stats collection, standard optimization level, no
 // cancellation).
 type CompileOptions struct {
-	Context context.Context  // if non-nil, checked between optimization passes for cancellation
-	Stats   *CompileStats    // if non-nil, per-callback compilation timing is recorded
-	Opt     optimize.Level   // optimization level (0 = default → LevelStandard)
+	Context context.Context // if non-nil, checked between optimization passes for cancellation
+	Stats   *CompileStats   // if non-nil, per-callback compilation timing is recorded
+	Opt     optimize.Level  // optimization level (0 = default → LevelStandard)
 }
 
 // optsCtx extracts the context from opts, returning nil if opts is nil (safe
@@ -55,6 +55,11 @@ type ImportedField struct {
 	Name string
 	Def  float64
 }
+
+// ExportedBlock is the sentinel Block value for archetype-exported fields.
+// Fields with this block id are emitted as ExportValue nodes rather than
+// SetPlace (see emitBindingStore in compiler/frontend/trace_stmt.go).
+const ExportedBlock = -1
 
 // Entity memory block IDs — aliases of canonical ir.BlockEntity* constants.
 const (

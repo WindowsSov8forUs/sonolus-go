@@ -167,50 +167,15 @@ func uiSetFloat(field uiField[float64]) func(*resource.EngineConfigurationUI, st
 	}
 }
 
-// uiSetEase creates a setter for an ease-valued UI field.
-func uiSetEase(field uiField[resource.EngineConfigurationAnimationTweenEase]) func(*resource.EngineConfigurationUI, string) error {
+// uiSetEnum creates a setter for an enum-valued UI field that is looked up
+// from a name→value map. name is used in error messages (e.g. "ease").
+func uiSetEnum[T comparable](field uiField[T], lookup map[string]T, name string) func(*resource.EngineConfigurationUI, string) error {
 	return func(ui *resource.EngineConfigurationUI, v string) error {
-		e, ok := easeName[v]
+		val, ok := lookup[v]
 		if !ok {
-			return fmt.Errorf("engine: unknown ease %q", v)
+			return fmt.Errorf("engine: unknown %s %q", name, v)
 		}
-		*field(ui) = e
-		return nil
-	}
-}
-
-// uiSetMetric creates a setter for a metric-valued UI field.
-func uiSetMetric(field uiField[resource.EngineConfigurationMetric]) func(*resource.EngineConfigurationUI, string) error {
-	return func(ui *resource.EngineConfigurationUI, v string) error {
-		m, ok := metricName[v]
-		if !ok {
-			return fmt.Errorf("engine: unknown metric %q", v)
-		}
-		*field(ui) = m
-		return nil
-	}
-}
-
-// uiSetJudgmentStyle creates a setter for judgmentErrorStyle.
-func uiSetJudgmentStyle(field uiField[resource.EngineConfigurationJudgmentErrorStyle]) func(*resource.EngineConfigurationUI, string) error {
-	return func(ui *resource.EngineConfigurationUI, v string) error {
-		s, ok := judgmentErrorStyleName[v]
-		if !ok {
-			return fmt.Errorf("engine: unknown judgmentErrorStyle %q", v)
-		}
-		*field(ui) = s
-		return nil
-	}
-}
-
-// uiSetJudgmentPlacement creates a setter for judgmentErrorPlacement.
-func uiSetJudgmentPlacement(field uiField[resource.EngineConfigurationJudgmentErrorPlacement]) func(*resource.EngineConfigurationUI, string) error {
-	return func(ui *resource.EngineConfigurationUI, v string) error {
-		p, ok := judgmentErrorPlacementName[v]
-		if !ok {
-			return fmt.Errorf("engine: unknown judgmentErrorPlacement %q", v)
-		}
-		*field(ui) = p
+		*field(ui) = val
 		return nil
 	}
 }
@@ -222,18 +187,18 @@ func buildUISetters() map[string]func(*resource.EngineConfigurationUI, string) e
 	m := map[string]func(*resource.EngineConfigurationUI, string) error{}
 
 	// Metrics
-	m["primaryMetric"] = uiSetMetric(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationMetric { return &ui.PrimaryMetric })
-	m["secondaryMetric"] = uiSetMetric(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationMetric {
+	m["primaryMetric"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationMetric { return &ui.PrimaryMetric }, metricName, "metric")
+	m["secondaryMetric"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationMetric {
 		return &ui.SecondaryMetric
-	})
+	}, metricName, "metric")
 
 	// Judgment error
-	m["judgmentErrorStyle"] = uiSetJudgmentStyle(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationJudgmentErrorStyle {
+	m["judgmentErrorStyle"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationJudgmentErrorStyle {
 		return &ui.JudgmentErrorStyle
-	})
-	m["judgmentErrorPlacement"] = uiSetJudgmentPlacement(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationJudgmentErrorPlacement {
+	}, judgmentErrorStyleName, "judgmentErrorStyle")
+	m["judgmentErrorPlacement"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationJudgmentErrorPlacement {
 		return &ui.JudgmentErrorPlacement
-	})
+	}, judgmentErrorPlacementName, "judgmentErrorPlacement")
 	m["judgmentErrorMin"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.JudgmentErrorMin })
 
 	// Visibility
@@ -258,29 +223,29 @@ func buildUISetters() map[string]func(*resource.EngineConfigurationUI, string) e
 	m["judgmentAnimationScaleFrom"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.JudgmentAnimation.Scale.From })
 	m["judgmentAnimationScaleTo"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.JudgmentAnimation.Scale.To })
 	m["judgmentAnimationScaleDuration"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.JudgmentAnimation.Scale.Duration })
-	m["judgmentAnimationScaleEase"] = uiSetEase(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
+	m["judgmentAnimationScaleEase"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
 		return &ui.JudgmentAnimation.Scale.Ease
-	})
+	}, easeName, "ease")
 	m["judgmentAnimationAlphaFrom"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.JudgmentAnimation.Alpha.From })
 	m["judgmentAnimationAlphaTo"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.JudgmentAnimation.Alpha.To })
 	m["judgmentAnimationAlphaDuration"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.JudgmentAnimation.Alpha.Duration })
-	m["judgmentAnimationAlphaEase"] = uiSetEase(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
+	m["judgmentAnimationAlphaEase"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
 		return &ui.JudgmentAnimation.Alpha.Ease
-	})
+	}, easeName, "ease")
 
 	// Combo animation
 	m["comboAnimationScaleFrom"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.ComboAnimation.Scale.From })
 	m["comboAnimationScaleTo"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.ComboAnimation.Scale.To })
 	m["comboAnimationScaleDuration"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.ComboAnimation.Scale.Duration })
-	m["comboAnimationScaleEase"] = uiSetEase(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
+	m["comboAnimationScaleEase"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
 		return &ui.ComboAnimation.Scale.Ease
-	})
+	}, easeName, "ease")
 	m["comboAnimationAlphaFrom"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.ComboAnimation.Alpha.From })
 	m["comboAnimationAlphaTo"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.ComboAnimation.Alpha.To })
 	m["comboAnimationAlphaDuration"] = uiSetFloat(func(ui *resource.EngineConfigurationUI) *float64 { return &ui.ComboAnimation.Alpha.Duration })
-	m["comboAnimationAlphaEase"] = uiSetEase(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
+	m["comboAnimationAlphaEase"] = uiSetEnum(func(ui *resource.EngineConfigurationUI) *resource.EngineConfigurationAnimationTweenEase {
 		return &ui.ComboAnimation.Alpha.Ease
-	})
+	}, easeName, "ease")
 
 	return m
 }

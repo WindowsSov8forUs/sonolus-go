@@ -287,7 +287,9 @@ func TestBuildBuckets_Empty(t *testing.T) {
 
 func TestBuildBuckets_SingleBucket(t *testing.T) {
 	st := parseStructType(t, `type B struct {
-		TapNote float64 `+"`sonolus:\"bucket\"`"+`
+		TapNote struct {
+			Head float64 `+"`sonolus:\"sprite=TapNote\"`"+`
+		} `+"`sonolus:\"bucket\"`"+`
 	}`)
 	// Buckets reference skin sprites by name.
 	skinST := parseStructType(t, `type S struct {

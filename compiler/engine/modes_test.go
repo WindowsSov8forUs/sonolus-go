@@ -95,7 +95,7 @@ func TestCompileTutorialFile(t *testing.T) {
 		t.Fatal("preprocess missing")
 	}
 	if len(data.Instruction.Texts) != 0 || len(data.Instruction.Icons) != 0 {
-		// No Instruction struct in source → instruction data should be empty but
+		// No Instruction struct in source -- instruction data should be empty but
 		// present (not nil/missing). The zero value is correct for an absent resource.
 	}
 }
@@ -123,18 +123,18 @@ func TestCompileTutorialWithInstruction(t *testing.T) {
 }
 
 func TestComposeOrFirst(t *testing.T) {
-	// Empty slice → -1 (omitted).
+	// Empty slice -> -1 (omitted).
 	if got := composeOrFirst(nil, &[]resource.EngineDataNode{}); got != -1 {
 		t.Errorf("nil slice: got %d, want -1", got)
 	}
-	// Single element → returned directly.
+	// Single element -> returned directly.
 	nodes := []resource.EngineDataNode{
 		resource.EngineDataValueNode{Value: 42},
 	}
 	if got := composeOrFirst([]int{0}, &nodes); got != 0 {
 		t.Errorf("single element: got %d, want 0", got)
 	}
-	// Multiple elements → Execute composition.
+	// Multiple elements -> Execute composition.
 	multiNodes := []resource.EngineDataNode{
 		resource.EngineDataValueNode{Value: 1},
 		resource.EngineDataValueNode{Value: 2},
@@ -150,9 +150,9 @@ func TestComposeOrFirst(t *testing.T) {
 	if !ok || fn.Func != resource.RuntimeFunctionExecute {
 		t.Fatalf("expected Execute function node, got %T %v", multiNodes[2], fn.Func)
 	}
-	// Args: [0, 1, 0] — trailing 0 discards return value.
-	if len(fn.Args) != 3 || fn.Args[0] != 0 || fn.Args[1] != 1 || fn.Args[2] != 0 {
-		t.Errorf("args = %v, want [0, 1, 0]", fn.Args)
+	// Args: [0, 1] -- matching sonolus.js-compiler tutorial assemble.ts behavior.
+	if len(fn.Args) != 2 || fn.Args[0] != 0 || fn.Args[1] != 1 {
+		t.Errorf("args = %v, want [0, 1]", fn.Args)
 	}
 }
 

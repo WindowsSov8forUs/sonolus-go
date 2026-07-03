@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
@@ -15,6 +17,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/preview"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/snode"
+	"github.com/WindowsSov8forUs/sonolus-go/compiler/tutorial"
 	"github.com/WindowsSov8forUs/sonolus-go/compiler/watch"
 )
 
@@ -36,13 +39,13 @@ type modeArch struct {
 	methods  []modeMethod
 }
 
-var watchCBs = map[string]string{
+var watchCallbacks = map[string]string{
 	"Preprocess": "preprocess", "SpawnTime": "spawnTime", "DespawnTime": "despawnTime",
 	"Initialize": "initialize", "UpdateSequential": "updateSequential",
 	"UpdateParallel": "updateParallel", "Terminate": "terminate",
 }
 
-var previewCBs = map[string]string{
+var previewCallbacks = map[string]string{
 	"Preprocess": "preprocess", "Render": "render",
 }
 
@@ -113,9 +116,13 @@ func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func compileCallbackBlock(gen *ir.IDGen, fset *token.FileSet, body *ast.BlockStmt, env frontend.Env, methodName string, mode ir.Mode, opts *CompileOptions) (sn snode.SNode, err error) {
 	t0 := time.Now()
+	stats := (*CompileStats)(nil)
+	if opts != nil {
+		stats = opts.Stats
+	}
 	defer func() {
-		if opts != nil && opts.Stats != nil {
-			opts.Stats.Record(methodName, time.Since(t0))
+		if stats != nil {
+			stats.Record(methodName, time.Since(t0))
 		}
 	}()
 	entry, err := frontend.CompileBlock(fset, gen, body, env)
@@ -138,7 +145,7 @@ func CompileWatchFile(src string) (*resource.EngineWatchData, error) {
 // CompileWatchFileWithStats compiles a Go Watch-mode engine source file.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func CompileWatchFileWithStats(src string, opts *CompileOptions) (*resource.EngineWatchData, error) {
-	p, err := runNonPlayPipeline(src, watchCBs, ir.ModeWatch, opts)
+	p, err := runNonPlayPipeline(src, watchCallbacks, ir.ModeWatch, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +181,7 @@ func CompilePreviewFile(src string) (*resource.EnginePreviewData, error) {
 // CompilePreviewFileWithStats compiles a Go Preview-mode engine source file.
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.EnginePreviewData, error) {
-	p, err := runNonPlayPipeline(src, previewCBs, ir.ModePreview, opts)
+	p, err := runNonPlayPipeline(src, previewCallbacks, ir.ModePreview, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -191,6 +198,79 @@ func CompilePreviewFileWithStats(src string, opts *CompileOptions) (*resource.En
 	return &resource.EnginePreviewData{Skin: p.r.skin, Archetypes: outArcs, Nodes: p.nodes}, nil
 }
 
+// callbackJob describes one callback body to compile in parallel.
+type callbackJob struct {
+	name string         // Go method name (for error messages)
+	cb   string         // Sonolus callback name (e.g. "Preprocess")
+	body *ast.BlockStmt // function body to compile
+	env  frontend.Env   // compilation environment
+}
+
+// compileCallbacksParallel compiles a set of callback bodies in parallel.
+// Each callback gets its own IDGen for deterministic compilation. Results
+// are collected into a map keyed by callback name, suitable for
+// deterministic (sorted) assembly after all goroutines complete.
+func compileCallbacksParallel(
+	fset *token.FileSet,
+	jobs []callbackJob,
+	mode ir.Mode,
+	opts *CompileOptions,
+) (map[string][]snode.SNode, error) {
+	type compiled struct {
+		cb string
+		sn snode.SNode
+	}
+	ch := make(chan compiled, len(jobs))
+	errCh := make(chan error, len(jobs))
+	var wg sync.WaitGroup
+
+	for _, job := range jobs {
+		wg.Add(1)
+		go func(j callbackJob) {
+			defer wg.Done()
+			sn, err := compileCallbackBlock(
+				ir.NewIDGen(), fset, j.body, j.env,
+				j.name, mode, opts,
+			)
+			if err != nil {
+				errCh <- fmt.Errorf("%s %q: %w", j.cb, j.name, err)
+				return
+			}
+			ch <- compiled{cb: j.cb, sn: sn}
+		}(job)
+	}
+	wg.Wait()
+	close(ch)
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
+	result := make(map[string][]snode.SNode)
+	for c := range ch {
+		result[c.cb] = append(result[c.cb], c.sn)
+	}
+	return result, nil
+}
+
+// sortedFuncDecls returns the function declarations from a map sorted by name
+// for deterministic iteration order.
+func sortedFuncDecls(funcs map[string]*ast.FuncDecl) []*ast.FuncDecl {
+	sorted := make([]*ast.FuncDecl, 0, len(funcs))
+	for _, d := range funcs {
+		sorted = append(sorted, d)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Name.Name < sorted[j].Name.Name
+	})
+	return sorted
+}
+
 // CompileTutorialFile compiles a Go Tutorial-mode engine source file.
 func CompileTutorialFile(src string) (*resource.EngineTutorialData, error) {
 	return CompileTutorialFileWithStats(src, nil)
@@ -203,7 +283,6 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 	if err != nil {
 		return nil, err
 	}
-	gen := ir.NewIDGen()
 	r, err := buildResources(pf.resources)
 	if err != nil {
 		return nil, err
@@ -212,46 +291,57 @@ func CompileTutorialFileWithStats(src string, opts *CompileOptions) (*resource.E
 	nodes := []resource.EngineDataNode{}
 	app := snode.NewAppender(&nodes)
 
-	// Sort for deterministic output.
-	sortedFuncs := make([]*ast.FuncDecl, 0, len(pf.funcs))
-	for _, d := range pf.funcs {
-		sortedFuncs = append(sortedFuncs, d)
-	}
-	sort.Slice(sortedFuncs, func(i, j int) bool {
-		return sortedFuncs[i].Name.Name < sortedFuncs[j].Name.Name
-	})
-
-	var ppIdxs, navIdxs, updIdxs []int
-	for _, d := range sortedFuncs {
+	// Build job list in deterministic (sorted) order.
+	var jobs []callbackJob
+	for _, d := range sortedFuncDecls(pf.funcs) {
 		var cb string
 		switch d.Name.Name {
 		case "Preprocess":
-			cb = "Preprocess"
+			cb = string(tutorial.CallbackPreprocess)
 		case "Navigate":
-			cb = "Navigate"
+			cb = string(tutorial.CallbackNavigate)
 		case "Update":
-			cb = "Update"
+			cb = string(tutorial.CallbackUpdate)
 		default:
 			continue
 		}
 		if d.Body == nil {
 			continue
 		}
-		tutCtx := compileCtx{gen: gen, fset: pf.fset, mode: ir.ModeTutorial, opts: opts}
-		idx, err := tutCtx.compileTutorialCallback(d, pf.funcs, accessors, cb, app)
-		if err != nil {
-			return nil, err
-		}
-		if idx == 0 {
-			continue
-		}
-		switch cb {
-		case "Preprocess":
-			ppIdxs = append(ppIdxs, idx)
-		case "Navigate":
-			navIdxs = append(navIdxs, idx)
-		case "Update":
-			updIdxs = append(updIdxs, idx)
+		jobs = append(jobs, callbackJob{
+			name: d.Name.Name, cb: cb, body: d.Body,
+			env: frontend.Env{
+				Names: accessors, Funcs: pf.funcs,
+				Accessors: accessors, Mode: ir.ModeTutorial,
+			},
+		})
+	}
+
+	compiled, err := compileCallbacksParallel(pf.fset, jobs, ir.ModeTutorial, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deterministic assembly by callback name order.
+	var ppIdxs, navIdxs, updIdxs []int
+	for _, cb := range []string{string(tutorial.CallbackPreprocess), string(tutorial.CallbackNavigate), string(tutorial.CallbackUpdate)} {
+		for _, sn := range compiled[cb] {
+			r := modecompile.CompileCallbackForMode(-1, cb, sn, "tutorial")
+			if r == nil {
+				continue
+			}
+			idx, err := app.Append(r.Node)
+			if err != nil {
+				return nil, err
+			}
+			switch cb {
+			case string(tutorial.CallbackPreprocess):
+				ppIdxs = append(ppIdxs, idx)
+			case string(tutorial.CallbackNavigate):
+				navIdxs = append(navIdxs, idx)
+			case string(tutorial.CallbackUpdate):
+				updIdxs = append(updIdxs, idx)
+			}
 		}
 	}
 

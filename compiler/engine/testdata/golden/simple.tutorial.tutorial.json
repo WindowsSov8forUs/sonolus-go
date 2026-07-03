@@ -21,8 +21,8 @@
     ],
     "icons": null
   },
-  "preprocess": 11,
-  "navigate": 7,
+  "preprocess": 6,
+  "navigate": 11,
   "update": 17,
   "nodes": [
     {
@@ -30,6 +30,37 @@
     },
     {
       "value": 0
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "value": 1
+    },
+    {
+      "func": "Execute",
+      "args": [
+        2,
+        3
+      ]
+    },
+    {
+      "func": "JumpLoop",
+      "args": [
+        4,
+        1
+      ]
+    },
+    {
+      "func": "Block",
+      "args": [
+        5
+      ]
     },
     {
       "func": "Get",
@@ -43,45 +74,14 @@
       "args": [
         0,
         1,
-        2
-      ]
-    },
-    {
-      "value": 1
-    },
-    {
-      "func": "Execute",
-      "args": [
-        3,
-        4
-      ]
-    },
-    {
-      "func": "JumpLoop",
-      "args": [
-        5,
-        1
-      ]
-    },
-    {
-      "func": "Block",
-      "args": [
-        6
-      ]
-    },
-    {
-      "func": "Set",
-      "args": [
-        0,
-        1,
-        1
+        7
       ]
     },
     {
       "func": "Execute",
       "args": [
         8,
-        4
+        3
       ]
     },
     {
@@ -104,7 +104,7 @@
       "func": "Get",
       "args": [
         12,
-        4
+        3
       ]
     },
     {
@@ -119,7 +119,7 @@
       "func": "Execute",
       "args": [
         14,
-        4
+        3
       ]
     },
     {

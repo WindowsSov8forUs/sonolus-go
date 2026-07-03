@@ -9,8 +9,8 @@ import (
 )
 
 func TestCacheKeyDeterministic(t *testing.T) {
-	k1 := NewCacheKey("play", "package main\nfunc main() {}")
-	k2 := NewCacheKey("play", "package main\nfunc main() {}")
+	k1 := NewCacheKey("play", 0, "package main\nfunc main() {}")
+	k2 := NewCacheKey("play", 0, "package main\nfunc main() {}")
 	if k1 != k2 {
 		t.Errorf("same input produced different keys: %v vs %v", k1, k2)
 	}
@@ -18,16 +18,16 @@ func TestCacheKeyDeterministic(t *testing.T) {
 
 func TestCacheKeyModeDiffers(t *testing.T) {
 	src := "package main\nfunc main() {}"
-	k1 := NewCacheKey("play", src)
-	k2 := NewCacheKey("watch", src)
+	k1 := NewCacheKey("play", 0, src)
+	k2 := NewCacheKey("watch", 0, src)
 	if k1 == k2 {
 		t.Errorf("different modes produced same key: %v", k1)
 	}
 }
 
 func TestCacheKeySourceDiffers(t *testing.T) {
-	k1 := NewCacheKey("play", "a")
-	k2 := NewCacheKey("play", "b")
+	k1 := NewCacheKey("play", 0, "a")
+	k2 := NewCacheKey("play", 0, "b")
 	if k1 == k2 {
 		t.Errorf("different sources produced same key: %v", k1)
 	}
@@ -35,7 +35,7 @@ func TestCacheKeySourceDiffers(t *testing.T) {
 
 func TestCompileCachePutGet(t *testing.T) {
 	c := NewCache()
-	key := NewCacheKey("play", "test")
+	key := NewCacheKey("play", 0, "test")
 	if d, cfg := c.GetPlay(key); d != nil || cfg != nil {
 		t.Error("empty cache returned non-nil")
 	}
@@ -49,7 +49,7 @@ func TestCompileCachePutGet(t *testing.T) {
 
 func TestCompileCacheConcurrent(t *testing.T) {
 	c := NewCache()
-	c.MaxEntries = 16
+	c.MaxEntriesPerMode = 16
 
 	const N = 20
 	var wg sync.WaitGroup
@@ -58,7 +58,7 @@ func TestCompileCacheConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			key := NewCacheKey("play", fmt.Sprintf("src-%d", n))
+			key := NewCacheKey("play", 0, fmt.Sprintf("src-%d", n))
 			data := &resource.EnginePlayData{}
 			cfg := &resource.EngineConfiguration{}
 			c.PutPlay(key, data, cfg)
@@ -82,52 +82,52 @@ func TestCompileCacheConcurrent(t *testing.T) {
 
 func TestCompileCacheEviction(t *testing.T) {
 	c := NewCache()
-	c.MaxEntries = 2
+	c.MaxEntriesPerMode = 2
 
-	c.PutPlay(NewCacheKey("play", "a"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
-	c.PutPlay(NewCacheKey("play", "b"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
-	c.PutPlay(NewCacheKey("play", "c"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
+	c.PutPlay(NewCacheKey("play", 0, "a"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
+	c.PutPlay(NewCacheKey("play", 0, "b"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
+	c.PutPlay(NewCacheKey("play", 0, "c"), &resource.EnginePlayData{}, &resource.EngineConfiguration{})
 
 	// The most recently inserted key should still be present.
-	if _, cfg := c.GetPlay(NewCacheKey("play", "c")); cfg == nil {
+	if _, cfg := c.GetPlay(NewCacheKey("play", 0, "c")); cfg == nil {
 		t.Error("most recently inserted key should be present after eviction")
 	}
 }
 
 func TestCompileCacheNonPlayEviction(t *testing.T) {
 	c := NewCache()
-	c.MaxEntries = 2
+	c.MaxEntriesPerMode = 2
 
 	// Watch eviction.
 	for i := range 3 {
-		c.PutWatch(NewCacheKey("watch", fmt.Sprintf("w%d", i)), &resource.EngineWatchData{})
+		c.PutWatch(NewCacheKey("watch", 0, fmt.Sprintf("w%d", i)), &resource.EngineWatchData{})
 	}
-	if d := c.GetWatch(NewCacheKey("watch", "w0")); d != nil {
+	if d := c.GetWatch(NewCacheKey("watch", 0, "w0")); d != nil {
 		t.Error("watch: oldest entry should have been evicted")
 	}
-	if d := c.GetWatch(NewCacheKey("watch", "w2")); d == nil {
+	if d := c.GetWatch(NewCacheKey("watch", 0, "w2")); d == nil {
 		t.Error("watch: most recent entry should still be present")
 	}
 
 	// Preview eviction.
 	for i := range 3 {
-		c.PutPreview(NewCacheKey("preview", fmt.Sprintf("p%d", i)), &resource.EnginePreviewData{})
+		c.PutPreview(NewCacheKey("preview", 0, fmt.Sprintf("p%d", i)), &resource.EnginePreviewData{})
 	}
-	if d := c.GetPreview(NewCacheKey("preview", "p0")); d != nil {
+	if d := c.GetPreview(NewCacheKey("preview", 0, "p0")); d != nil {
 		t.Error("preview: oldest entry should have been evicted")
 	}
-	if d := c.GetPreview(NewCacheKey("preview", "p2")); d == nil {
+	if d := c.GetPreview(NewCacheKey("preview", 0, "p2")); d == nil {
 		t.Error("preview: most recent entry should still be present")
 	}
 
 	// Tutorial eviction.
 	for i := range 3 {
-		c.PutTutorial(NewCacheKey("tutorial", fmt.Sprintf("t%d", i)), &resource.EngineTutorialData{})
+		c.PutTutorial(NewCacheKey("tutorial", 0, fmt.Sprintf("t%d", i)), &resource.EngineTutorialData{})
 	}
-	if d := c.GetTutorial(NewCacheKey("tutorial", "t0")); d != nil {
+	if d := c.GetTutorial(NewCacheKey("tutorial", 0, "t0")); d != nil {
 		t.Error("tutorial: oldest entry should have been evicted")
 	}
-	if d := c.GetTutorial(NewCacheKey("tutorial", "t2")); d == nil {
+	if d := c.GetTutorial(NewCacheKey("tutorial", 0, "t2")); d == nil {
 		t.Error("tutorial: most recent entry should still be present")
 	}
 }
@@ -135,7 +135,7 @@ func TestCompileCacheNonPlayEviction(t *testing.T) {
 func TestCompileCacheNonPlayRoundTrip(t *testing.T) {
 	c := NewCache()
 
-	watchKey := NewCacheKey("watch", "test")
+	watchKey := NewCacheKey("watch", 0, "test")
 	if d := c.GetWatch(watchKey); d != nil {
 		t.Error("empty cache returned non-nil for watch")
 	}
@@ -145,14 +145,14 @@ func TestCompileCacheNonPlayRoundTrip(t *testing.T) {
 		t.Error("watch cache returned wrong value")
 	}
 
-	previewKey := NewCacheKey("preview", "test")
+	previewKey := NewCacheKey("preview", 0, "test")
 	dummyP := &resource.EnginePreviewData{}
 	c.PutPreview(previewKey, dummyP)
 	if got := c.GetPreview(previewKey); got != dummyP {
 		t.Error("preview cache returned wrong value")
 	}
 
-	tutorialKey := NewCacheKey("tutorial", "test")
+	tutorialKey := NewCacheKey("tutorial", 0, "test")
 	dummyT := &resource.EngineTutorialData{}
 	c.PutTutorial(tutorialKey, dummyT)
 	if got := c.GetTutorial(tutorialKey); got != dummyT {

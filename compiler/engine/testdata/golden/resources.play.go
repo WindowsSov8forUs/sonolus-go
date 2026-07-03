@@ -9,8 +9,8 @@ type Skin struct {
 }
 
 type Effect struct {
-	Hit    float64
-	Miss   float64
+	Hit     float64
+	Miss    float64
 	Perfect float64
 }
 
@@ -20,7 +20,9 @@ type Particle struct {
 }
 
 type Buckets struct {
-	NoteBucket float64 `sonolus:"bucket"`
+	NoteBucket struct {
+		Note float64 `sonolus:"sprite=Note"`
+	} `sonolus:"bucket"`
 }
 
 type Note struct {

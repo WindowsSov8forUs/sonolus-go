@@ -50,7 +50,16 @@
   },
   "buckets": [
     {
-      "sprites": null
+      "sprites": [
+        {
+          "id": 0,
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "rotation": 0
+        }
+      ]
     }
   ],
   "archetypes": [

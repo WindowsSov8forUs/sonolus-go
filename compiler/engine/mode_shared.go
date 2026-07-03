@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"reflect"
+	"sync"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -27,7 +28,7 @@ func modeName(m ir.Mode) string {
 	case ir.ModeTutorial:
 		return "tutorial"
 	default:
-		return ""
+		panic(fmt.Sprintf("modeName: unknown mode %d", m))
 	}
 }
 
@@ -73,7 +74,7 @@ func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTa
 		case "exported", "scored", "lifed":
 			modeTag = tag
 		case "":
-			// empty tag — silently skip
+			// empty tag -- silently skip
 		default:
 			return tag, ""
 		}
@@ -81,7 +82,7 @@ func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTa
 	return "", modeTag
 }
 
-// buildBindings builds the name→Binding map and imports slice for an archetype
+// buildBindings builds the name->Binding map and imports slice for an archetype
 // from its parsed field lists. It is shared by play-mode compilation (parse.go)
 // and watch/preview-mode compilation (modes.go). The optional onExport callback
 // is invoked for each exported field (play-mode only).
@@ -105,7 +106,7 @@ func buildBindings(
 		if onExport != nil {
 			onExport(en, ek)
 		}
-		b[en] = frontend.Binding{Block: -1, Index: ek, Writable: true}
+		b[en] = frontend.Binding{Block: ExportedBlock, Index: ek, Writable: true}
 	}
 	for di, dn := range data {
 		b[dn] = frontend.Binding{Block: entityDataBlock, Index: di, Writable: false}
@@ -166,6 +167,10 @@ type compileCtx struct {
 // The envBuilder callback constructs the frontend.Env for each method (this
 // differs between Play and non-Play modes). The resultFn callback wraps the
 // compiled SNode into a mode-specific Result.
+//
+// Callbacks are compiled in parallel via goroutines since they share no mutable
+// state (each callback has its own IDGen, Env, and compilation pipeline). The
+// results slice preserves the original method order.
 func (ctx compileCtx) compileMethodCallbacks(
 	methods []callbackMethod,
 	archetypeName string,
@@ -173,15 +178,57 @@ func (ctx compileCtx) compileMethodCallbacks(
 	envBuilder func(receiver string) frontend.Env,
 	resultFn func(idx int, cb string, sn snode.SNode) *modecompile.Result,
 ) ([]*modecompile.Result, error) {
-	var results []*modecompile.Result
-	for _, m := range methods {
-		env := envBuilder(m.receiver)
-		sn, err := compileCallbackBlock(ctx.gen, ctx.fset, m.body, env, m.name, ctx.mode, ctx.opts)
-		if err != nil {
-			return nil, fmt.Errorf("archetype %q callback %s: %w", archetypeName, m.name, err)
+	if len(methods) == 0 {
+		return nil, nil
+	}
+
+	type compiled struct {
+		idx int
+		r   *modecompile.Result
+		err error
+	}
+
+	ch := make(chan compiled, len(methods))
+	var wg sync.WaitGroup
+
+	for i, m := range methods {
+		wg.Add(1)
+		go func(idx int, method callbackMethod) {
+			defer wg.Done()
+			// Each goroutine gets its own IDGen -- the compilation pipeline
+			// is instance-isolated and safe for concurrent use.
+			mCtx := compileCtx{
+				gen:  ir.NewIDGen(),
+				fset: ctx.fset,
+				mode: ctx.mode,
+				opts: ctx.opts,
+			}
+			env := envBuilder(method.receiver)
+			sn, err := compileCallbackBlock(mCtx.gen, mCtx.fset, method.body, env, method.name, mCtx.mode, mCtx.opts)
+			if err != nil {
+				ch <- compiled{idx: idx, err: fmt.Errorf("archetype %q callback %s: %w", archetypeName, method.name, err)}
+				return
+			}
+			ch <- compiled{idx: idx, r: resultFn(archetypeIndex, method.name, sn)}
+		}(i, m)
+	}
+
+	wg.Wait()
+	close(ch)
+
+	// Collect results in original method order.
+	out := make([]*compiled, len(methods))
+	for c := range ch {
+		out[c.idx] = &c
+	}
+
+	results := make([]*modecompile.Result, 0, len(methods))
+	for _, c := range out {
+		if c.err != nil {
+			return nil, c.err
 		}
-		if r := resultFn(archetypeIndex, m.name, sn); r != nil {
-			results = append(results, r)
+		if c.r != nil {
+			results = append(results, c.r)
 		}
 	}
 	return results, nil
@@ -192,7 +239,7 @@ func (ctx compileCtx) compileMethodCallbacks(
 // callback-compilation loop, returning archetype metadata and compiled results.
 //
 // The callbackSet maps Go method names to Sonolus callback names (e.g.
-// watchCBs {"Initialize": "initialize"} or previewCBs {"Render": "render"}).
+// watchCallbacks {"Initialize": "initialize"} or previewCallbacks {"Render": "render"}).
 // If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
 func compileArchetypeCallbacks(
 	gen *ir.IDGen,
@@ -206,7 +253,7 @@ func compileArchetypeCallbacks(
 	opts *CompileOptions,
 ) ([]archetypeData, []*modecompile.Result, error) {
 	arcData := make([]archetypeData, 0, len(order))
-	var results []*modecompile.Result
+	results := make([]*modecompile.Result, 0, len(order)*3)
 
 	for i, name := range order {
 		a := arcs[name]
@@ -219,7 +266,7 @@ func compileArchetypeCallbacks(
 		for k, v := range b {
 			names[k] = v
 		}
-		var cms []callbackMethod
+		cms := make([]callbackMethod, 0, len(a.methods))
 		for _, m := range a.methods {
 			if cb, ok := callbackSet[m.methodName]; ok {
 				cms = append(cms, callbackMethod{name: cb, receiver: m.receiver, body: m.body})
@@ -229,7 +276,8 @@ func compileArchetypeCallbacks(
 			return frontend.Env{Names: names, Receiver: receiver, Funcs: funcs, Accessors: accessors, Mode: mode}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
-			return modecompile.CompileCallbackForMode(idx, cb, sn, modeName(mode))
+			mn := modeName(mode)
+			return modecompile.CompileCallbackForMode(idx, cb, sn, mn)
 		}
 		ctx := compileCtx{gen: gen, fset: fset, mode: mode, opts: opts}
 		r, err := ctx.compileMethodCallbacks(cms, name, i, envBuilder, resultFn)
@@ -255,53 +303,32 @@ type nonPlayPipelineResult struct {
 }
 
 // runNonPlayPipeline executes the shared Watch/Preview compilation pipeline:
-// parse → build resources → compile callbacks. Each mode function then performs
+// parse -> build resources -> compile callbacks. Each mode function then performs
 // mode-specific finalisation (UpdateSpawn for Watch, different output types).
 func runNonPlayPipeline(src string, cbSet map[string]string, mode ir.Mode, opts *CompileOptions) (nonPlayPipelineResult, error) {
 	var res nonPlayPipelineResult
 	pf, err := parseModeFile(src)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("parse: %w", err)
 	}
 	res.pf = pf
 	res.gen = ir.NewIDGen()
 	r, err := buildResources(pf.resources)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("build resources: %w", err)
 	}
 	res.r = r
 	res.accessors = frontend.ModeAccessorsReadOnly(mode)
 	res.nodes = []resource.EngineDataNode{}
 	arcData, results, err := compileArchetypeCallbacks(res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("compile callbacks: %w", err)
 	}
 	res.arcData = arcData
 	res.results = results
 	return res, nil
 }
 
-// compileTutorialCallback compiles a single tutorial global callback body
-// (Preprocess, Navigate, or Update) and returns the appended SNode index.
-// It is the per-callback helper used by CompileTutorialFile.
-// If opts is non-nil and opts.Stats is non-nil, per-callback timing is recorded.
-func (ctx compileCtx) compileTutorialCallback(
-	d *ast.FuncDecl,
-	funcs map[string]*ast.FuncDecl,
-	accessors map[string]frontend.Binding,
-	callback string,
-	app *snode.Appender,
-) (int, error) {
-	env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ctx.mode}
-	sn, err := compileCallbackBlock(ctx.gen, ctx.fset, d.Body, env, d.Name.Name, ctx.mode, ctx.opts)
-	if err != nil {
-		return -1, fmt.Errorf("tutorial %q: %w", d.Name.Name, err)
-	}
-	if r := modecompile.CompileCallbackForMode(-1, callback, sn, "tutorial"); r != nil {
-		return app.Append(r.Node)
-	}
-	return -1, nil
-}
 // compileUpdateSpawn compiles the standalone UpdateSpawn global function for
 // Watch mode. It returns the appended SNode index, or -1 if the function is
 // absent or compiles to a no-op.
@@ -346,15 +373,13 @@ func composeOrFirst(idxs []int, nodes *[]resource.EngineDataNode) int {
 	if len(idxs) == 1 {
 		return idxs[0]
 	}
-	// Compose: Execute(idx1, idx2, ..., 0) — the trailing 0 discards the return
-	// value of the last callback, matching the existing Execute convention in
-	// modecompile.ignoreReturn.
-	args := make([]int, len(idxs)+1)
-	copy(args, idxs)
-	args[len(args)-1] = 0
+	// Compose: Execute(idx1, idx2, ...) -- each callback's individual return
+	// value has already been processed by ignoreReturn during compilation.
+	// The Execute composition preserves the last callback's return value,
+	// matching sonolus.js-compiler's tutorial assemble.ts behaviour.
 	node := resource.EngineDataFunctionNode{
 		Func: resource.RuntimeFunctionExecute,
-		Args: args,
+		Args: idxs,
 	}
 	*nodes = append(*nodes, node)
 	return len(*nodes) - 1

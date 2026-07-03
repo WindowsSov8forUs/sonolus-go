@@ -180,7 +180,7 @@ func compileParsed(
 
 	data := play.BuildPlayData(r.skin, r.effect, r.particle, r.buckets, defs)
 
-	var results []*modecompile.Result
+	results := make([]*modecompile.Result, 0, len(order)*3)
 	for i, name := range order {
 		a := archetypes[name]
 		names := frontend.ModeAccessors(ir.ModePlay)

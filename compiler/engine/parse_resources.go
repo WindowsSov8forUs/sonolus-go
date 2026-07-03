@@ -51,7 +51,7 @@ func buildResources(typeSpecs map[string]*ast.StructType) (parsedResources, erro
 			continue
 		}
 		if seen[role] {
-			return parsedResources{}, fmt.Errorf("duplicate resource type %q: only one %s struct is allowed", name, name)
+			return parsedResources{}, fmt.Errorf("duplicate resource type %q (role %s): only one resource of this role is allowed", name, role)
 		}
 		seen[role] = true
 		switch role {

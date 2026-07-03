@@ -8,50 +8,68 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 )
 
-// CacheKey identifies a compiled artifact by hashing (mode, source).
-// Different modes with the same source produce different keys.
+const defaultMaxCacheEntries = 256
+
+// CacheKey identifies a compiled artifact by hashing (mode, opt level, namespace, source).
+// Different modes, opt levels, or namespaces with the same source produce different keys.
 type CacheKey struct {
 	mode string
+	opt  int // optimization level (0=minimal, 1=fast, 2=standard)
 	hash string
 }
 
-// NewCacheKey returns a deterministic cache key for the given mode and source.
-func NewCacheKey(mode, src string) CacheKey {
-	h := sha256.Sum256([]byte(src))
-	return CacheKey{mode: mode, hash: hex.EncodeToString(h[:])}
+// NewCacheKey returns a deterministic cache key for the given mode, opt level,
+// source, and optional namespace(s). The namespace distinguishes otherwise-
+// identical source that belongs to different files or compilation contexts
+// (e.g. dev server path). When no namespace is given, the key only depends on
+// mode, opt level, and source content.
+func NewCacheKey(mode string, optLevel int, src string, namespace ...string) CacheKey {
+	h := sha256.New()
+	h.Write([]byte(mode))
+	h.Write([]byte{0})
+	h.Write([]byte{byte(optLevel)})
+	h.Write([]byte{0})
+	for _, ns := range namespace {
+		h.Write([]byte(ns))
+		h.Write([]byte{0})
+	}
+	h.Write([]byte(src))
+	sum := h.Sum(nil)
+	return CacheKey{mode: mode, opt: optLevel, hash: hex.EncodeToString(sum)}
 }
 
 // CompileCache stores compiled engine data indexed by CacheKey, enabling
 // fast recompilation when source has not changed (e.g. in the dev server).
 // All methods are safe for concurrent use.
 //
-// MaxEntries controls the maximum number of entries per mode map. When a map
-// exceeds this limit, the oldest entry (FIFO order) is evicted.
+// MaxEntriesPerMode controls the maximum number of entries per mode map. When
+// a map exceeds this limit, the oldest entry (FIFO order) is evicted. Total
+// cache capacity is MaxEntriesPerMode × 5 (one map per mode + config).
 // Set to 0 to disable eviction (unbounded growth). Default: 256.
 type CompileCache struct {
-	mu            sync.RWMutex
-	MaxEntries    int
-	play          map[CacheKey]*resource.EnginePlayData
-	playOrder     []CacheKey // FIFO insertion order for eviction
-	watch         map[CacheKey]*resource.EngineWatchData
-	watchOrder    []CacheKey
-	preview       map[CacheKey]*resource.EnginePreviewData
-	previewOrder  []CacheKey
-	tutorial      map[CacheKey]*resource.EngineTutorialData
-	tutorialOrder []CacheKey
-	config        map[CacheKey]*resource.EngineConfiguration
-	configOrder   []CacheKey
+	mu                sync.RWMutex
+	MaxEntriesPerMode int
+	play              map[CacheKey]*resource.EnginePlayData
+	playOrder         []CacheKey // FIFO insertion order for eviction
+	watch             map[CacheKey]*resource.EngineWatchData
+	watchOrder        []CacheKey
+	preview           map[CacheKey]*resource.EnginePreviewData
+	previewOrder      []CacheKey
+	tutorial          map[CacheKey]*resource.EngineTutorialData
+	tutorialOrder     []CacheKey
+	config            map[CacheKey]*resource.EngineConfiguration
+	configOrder       []CacheKey
 }
 
 // NewCache creates an empty compile cache with the default max entries (256).
 func NewCache() *CompileCache {
 	return &CompileCache{
-		MaxEntries: 256,
-		play:       make(map[CacheKey]*resource.EnginePlayData),
-		watch:      make(map[CacheKey]*resource.EngineWatchData),
-		preview:    make(map[CacheKey]*resource.EnginePreviewData),
-		tutorial:   make(map[CacheKey]*resource.EngineTutorialData),
-		config:     make(map[CacheKey]*resource.EngineConfiguration),
+		MaxEntriesPerMode: defaultMaxCacheEntries,
+		play:              make(map[CacheKey]*resource.EnginePlayData),
+		watch:             make(map[CacheKey]*resource.EngineWatchData),
+		preview:           make(map[CacheKey]*resource.EnginePreviewData),
+		tutorial:          make(map[CacheKey]*resource.EngineTutorialData),
+		config:            make(map[CacheKey]*resource.EngineConfiguration),
 	}
 }
 
@@ -71,7 +89,7 @@ func (c *CompileCache) GetPlay(key CacheKey) (*resource.EnginePlayData, *resourc
 	return d, cfg
 }
 
-// PutPlay stores Play-mode compilation results in the cache. When MaxEntries
+// PutPlay stores Play-mode compilation results in the cache. When MaxEntriesPerMode
 // is exceeded, the oldest entry (FIFO) is evicted from both play and config maps.
 func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg *resource.EngineConfiguration) {
 	c.mu.Lock()
@@ -79,7 +97,7 @@ func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg 
 
 	// Evict oldest from play map if needed and key is new.
 	if _, exists := c.play[key]; !exists {
-		if c.MaxEntries > 0 && len(c.play) >= c.MaxEntries {
+		if c.MaxEntriesPerMode > 0 && len(c.play) >= c.MaxEntriesPerMode {
 			oldest := c.playOrder[0]
 			c.playOrder = c.playOrder[1:]
 			delete(c.play, oldest)
@@ -100,7 +118,8 @@ func (c *CompileCache) PutPlay(key CacheKey, data *resource.EnginePlayData, cfg 
 }
 
 // removeFromOrder removes the first occurrence of key from a FIFO order slice.
-// It is used by both putKeyed and putPlayKeyed for eviction bookkeeping.
+// It is used by PutPlay for config-order eviction bookkeeping (putKeyed uses
+// inline eviction since its map and order are generic type parameters).
 func removeFromOrder(order []CacheKey, key CacheKey) []CacheKey {
 	for i, k := range order {
 		if k == key {
@@ -111,7 +130,7 @@ func removeFromOrder(order []CacheKey, key CacheKey) []CacheKey {
 }
 
 // putKeyed is a generic helper for map stores under the write lock.
-// When MaxEntries > 0 and the map reaches the limit, the oldest entry
+// When MaxEntriesPerMode > 0 and the map reaches the limit, the oldest entry
 // (FIFO order) is evicted before inserting the new one.
 func putKeyed[T any](c *CompileCache, m map[CacheKey]T, order *[]CacheKey, key CacheKey, data T) {
 	// Re-insert of existing key: update value, keep original order.
@@ -119,7 +138,7 @@ func putKeyed[T any](c *CompileCache, m map[CacheKey]T, order *[]CacheKey, key C
 		m[key] = data
 		return
 	}
-	if c.MaxEntries > 0 && len(m) >= c.MaxEntries {
+	if c.MaxEntriesPerMode > 0 && len(m) >= c.MaxEntriesPerMode {
 		oldest := (*order)[0]
 		*order = (*order)[1:]
 		delete(m, oldest)
