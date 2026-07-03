@@ -36,6 +36,10 @@ Go源文件 (.go)
   ▼ cmd/sonolus-go        ← CLI: build / serve / host / pack / level
 ```
 
+## 代码生成
+
+- `go generate ./compiler/ir/` — 从 `sonolus.py/sonolus/backend/ops.py` 重新生成 `ops_gen.go`（需要同级目录存在 sonolus.py 克隆）
+
 ### 关键设计决策
 
 - **前端**: 使用 Go 标准库 `go/ast` + `go/types` 解析引擎源码。引擎源码是 Go 语法的受限子集——仅支持 struct 定义、方法、基本控制流、运行时函数调用。不支持 defer/go/select/channel/map/interface。
