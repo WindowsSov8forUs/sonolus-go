@@ -6,11 +6,11 @@ clean:
 
 # Format all Go source files.
 fmt:
-	gofmt -w compiler cmd
+	gofmt -w internal cmd sonolus
 
 # Fail if any Go file is not gofmt-compliant.
 fmt-check:
-	test -z "$$(gofmt -l compiler cmd)"
+	test -z "$$(gofmt -l internal cmd sonolus)"
 
 # Run go vet.
 vet:
