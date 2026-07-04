@@ -39,10 +39,21 @@ type Env struct {
 	Mode        ir.Mode
 	Records     map[string][]string // user-defined record: name → field names
 	Info        *types.Info         // go/types type-check result (D1 diagnostic layer)
-	Constants   map[string]float64  // named compile-time constants (e.g. archetype indices)
-	SpriteIndex map[string]float64  // sprite name → index (from Skin struct fields)
-	MaxUnroll    int // general loop unroll limit (0 = default 256)
-	MaxUnrollCont int // container unroll limit (0 = default 64)
+	Constants        map[string]float64        // named compile-time constants (e.g. archetype indices)
+	SpriteIndex      map[string]float64        // sprite name → index (from Skin struct fields)
+	ContainerFields  []ContainerFieldMeta      // container-typed struct field metadata
+	MaxUnroll        int                       // general loop unroll limit (0 = default 256)
+	MaxUnrollCont    int                       // container unroll limit (0 = default 64)
+}
+
+// ContainerFieldMeta mirrors engine.ContainerFieldMeta in the frontend package
+// to avoid a circular import. It stores compile-time metadata for a container-typed
+// struct field so the tracer can emit container-aware IR.
+type ContainerFieldMeta struct {
+	Name     string // Go field name
+	TypeName string // record type: "varArray", "arrayMap", "arraySet", "frozenNumSet"
+	Capacity int    // max element count
+	ElemSize int    // slots per element
 }
 
 // loopCtx records the jump targets for break/continue inside a loop.
@@ -330,6 +341,7 @@ func CompileBlock(fset *token.FileSet, gen *ir.IDGen, body *ast.BlockStmt, env E
 	if t.maxUnrollCont == 0 {
 		t.maxUnrollCont = 64
 	}
+	t.populateFieldContainers()
 	t.entry = ir.NewBlock()
 	t.current = t.entry
 	// Callback-level return context: a value return becomes Break on the

@@ -370,14 +370,7 @@ func (t *tracer) varArrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 	}
 	t.records[arrName.Name] = ri
 
-	ci := &containerInfo{
-		tb:       tb,
-		sizeSlot: 0,
-		dataOff:  1,
-		capacity: capacity,
-		elemSize: elemSize,
-		val:      ri.val,
-	}
+	ci := newContainerInfoLocal(tb, capacity, elemSize, ri.val)
 	t.containers[arrName.Name] = ci
 
 	return nil
