@@ -36,6 +36,10 @@ func (t *tracer) multiAssign(n *ast.AssignStmt) error {
 		return err
 	}
 	for i, lhs := range n.Lhs {
+		// Blank identifier: discard this field value.
+		if id, ok := lhs.(*ast.Ident); ok && id.Name == "_" {
+			continue
+		}
 		// Resolve field: prefer positional (fields[i]), fall back to lhs name.
 		var fval Num
 		var okField bool
@@ -108,6 +112,12 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 	lhsName, ok := n.Lhs[0].(*ast.Ident)
 	if !ok {
 		return t.errf(n, "assignment target must be an identifier")
+	}
+
+	// Blank identifier: evaluate RHS for side effects and discard the value.
+	if lhsName.Name == "_" {
+		_, err := t.expr(n.Rhs[0])
+		return err
 	}
 
 	// Field write: `=` to an env binding not shadowed by a local. (`:=` always
@@ -452,6 +462,10 @@ func (t *tracer) compoundAssign(n *ast.AssignStmt, binOp token.Token) error {
 func (t *tracer) writePlace(lhs ast.Expr, val Num) error {
 	switch l := lhs.(type) {
 	case *ast.Ident:
+		// Blank identifier: discard the value.
+		if l.Name == "_" {
+			return nil
+		}
 		if tb, ok := t.vars[l.Name]; ok {
 			t.emit(t.gen.SetPlace(t.cell(tb), val.mustNode()))
 			return nil
