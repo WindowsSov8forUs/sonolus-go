@@ -502,11 +502,7 @@ func (t *tracer) writePlace(lhs ast.Expr, val Num) error {
 }
 
 func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
-	varName, ok := idx.X.(*ast.Ident)
-	if !ok {
-		return t.errf(idx, "array index target must be an identifier")
-	}
-	place, err := t.arrayElemPlace(varName, idx.Index)
+	place, err := t.indexPlace(idx)
 	if err != nil {
 		return err
 	}

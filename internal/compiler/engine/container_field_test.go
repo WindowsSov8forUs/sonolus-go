@@ -159,3 +159,31 @@ func UpdateSpawn() float64 { return 0 }
 	}
 	t.Log("OK")
 }
+
+func TestContainerField_IndexExpr(t *testing.T) {
+	// Struct field container with bracket indexing: n.Arr[i]
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat float64 ` + "`sonolus:\"imported\"`" + `
+    Arr  VarArray ` + "`sonolus:\"memory,cap=64\"`" + `
+    X    float64 ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.Arr.append(n.Beat)
+    n.Arr.append(10)
+    x := n.Arr[0]                     // read via index
+    n.Arr[1] = x + 1                  // write via index
+    n.X = n.Arr[1]                    // read back
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, &engine.CompileOptions{
+		Opt: optimize.LevelStandard,
+	})
+	if err != nil {
+		t.Fatalf("IndexExpr: %v", err)
+	}
+	t.Log("OK")
+}
