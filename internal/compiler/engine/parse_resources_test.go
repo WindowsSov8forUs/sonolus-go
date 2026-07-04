@@ -34,7 +34,7 @@ func parseStructType(t *testing.T, src string) *ast.StructType {
 
 func TestBuildConfig_Empty(t *testing.T) {
 	st := parseStructType(t, "type C struct{}")
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestBuildConfig_SliderOption(t *testing.T) {
 	st := parseStructType(t, `type C struct {
 		Speed float64 `+"`sonolus:\"slider,min=0,max=2,step=0.1,def=1\"`"+`
 	}`)
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestBuildConfig_ToggleOption(t *testing.T) {
 	st := parseStructType(t, `type C struct {
 		Enable float64 `+"`sonolus:\"toggle,def=1\"`"+`
 	}`)
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestBuildConfig_SelectOption(t *testing.T) {
 	st := parseStructType(t, `type C struct {
 		Style float64 `+"`sonolus:\"select,values=a,def=1\"`"+`
 	}`)
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestBuildConfig_AdvancedOption(t *testing.T) {
 	st := parseStructType(t, `type C struct {
 		Extra float64 `+"`sonolus:\"toggle,def=0,advanced,scope=extra\"`"+`
 	}`)
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestBuildConfig_SkipsUntagged(t *testing.T) {
 		A float64 `+"`sonolus:\"slider,def=0.5\"`"+`
 		B float64
 	}`)
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestBuildConfig_MultipleOptions(t *testing.T) {
 		Vol  float64 `+"`sonolus:\"slider,min=0,max=1,def=0.8\"`"+`
 		Mute float64 `+"`sonolus:\"toggle,def=0\"`"+`
 	}`)
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestBuildConfig_ReplayFallbackOptionNames(t *testing.T) {
 		Speed       float64 `+"`sonolus:\"slider,min=0,max=2,def=1\"`"+`
 		ReplaySpeed string  `+"`sonolus:\"replayFallback\"`"+`
 	}`)
-	cfg, err := buildConfig(st)
+	cfg, _, err := buildConfig(st)
 	if err != nil {
 		t.Fatalf("buildConfig: %v", err)
 	}

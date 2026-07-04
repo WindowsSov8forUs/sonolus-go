@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -284,6 +285,9 @@ spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 		names := frontend.ModeAccessors(ir.ModePlay)
 		for k, v := range bindings[i] {
 			names[k] = v
+		}
+		for optName, optIdx := range r.configOptionIndices {
+			names[strings.ToLower(optName[:1])+optName[1:]] = frontend.Binding{Block: 1007, Index: optIdx, Writable: false}
 		}
 		var cms []callbackMethod
 		for _, m := range a.methods {

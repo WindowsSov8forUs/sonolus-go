@@ -32,14 +32,15 @@ func resourceRole(name string) string {
 }
 
 type parsedResources struct {
-	skin        resource.EngineSkinData
-	skinST      *ast.StructType // Skin AST (for tag-based sprite name resolution)
-	effect      resource.EngineEffectData
-	particle    resource.EngineParticleData
-	buckets     []resource.EngineDataBucket
-	config      resource.EngineConfiguration
-	instruction resource.EngineInstructionData
-	ui          *resource.EngineConfigurationUI // non-nil if a UI struct was parsed
+	skin                resource.EngineSkinData
+	skinST              *ast.StructType // Skin AST (for tag-based sprite name resolution)
+	effect              resource.EngineEffectData
+	particle            resource.EngineParticleData
+	buckets             []resource.EngineDataBucket
+	config              resource.EngineConfiguration
+	configOptionIndices map[string]int // field name → option index
+	instruction         resource.EngineInstructionData
+	ui                  *resource.EngineConfigurationUI // non-nil if a UI struct was parsed
 }
 
 func buildResources(typeSpecs map[string]*ast.StructType, uiVarLit *ast.CompositeLit) (parsedResources, error) {
@@ -90,7 +91,7 @@ func buildResources(typeSpecs map[string]*ast.StructType, uiVarLit *ast.Composit
 			}
 		case "config":
 			var err error
-			r.config, err = buildConfig(st)
+			r.config, r.configOptionIndices, err = buildConfig(st)
 			if err != nil {
 				return parsedResources{}, err
 			}

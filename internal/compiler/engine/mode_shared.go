@@ -276,6 +276,7 @@ func compileArchetypeCallbacks(spriteIndex map[string]float64,
 	callbackSet map[string]string,
 	mode ir.Mode,
 	opts *CompileOptions,
+	configOptionIndices map[string]int,
 ) ([]archetypeData, []*modecompile.Result, error) {
 	arcData := make([]archetypeData, 0, len(order))
 	results := make([]*modecompile.Result, 0, len(order)*3)
@@ -290,6 +291,9 @@ func compileArchetypeCallbacks(spriteIndex map[string]float64,
 		names := frontend.CloneBindings(accessors)
 		for k, v := range b {
 			names[k] = v
+		}
+		for optName, optIdx := range configOptionIndices {
+			names[strings.ToLower(optName[:1])+optName[1:]] = frontend.Binding{Block: 1007, Index: optIdx, Writable: false}
 		}
 		cms := make([]callbackMethod, 0, len(a.methods))
 		for _, m := range a.methods {
@@ -345,7 +349,7 @@ func runNonPlayPipeline(src string, cbSet map[string]string, mode ir.Mode, opts 
 	res.r = r
 	res.accessors = frontend.ModeAccessorsReadOnly(mode)
 	res.nodes = []resource.EngineDataNode{}
-	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin, r.skinST), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
+	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin, r.skinST), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts, r.configOptionIndices)
 	if err != nil {
 		return res, fmt.Errorf("compile callbacks: %w", err)
 	}
@@ -462,7 +466,7 @@ func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode
 	}
 	res.pf = pf
 
-	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin, r.skinST), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts)
+	arcData, results, err := compileArchetypeCallbacks(buildSpriteIndex(r.skin, r.skinST), res.gen, pf.fset, pf.arcs, pf.order, pf.funcs, res.accessors, cbSet, mode, opts, r.configOptionIndices)
 	if err != nil {
 		return res, fmt.Errorf("compile callbacks: %w", err)
 	}

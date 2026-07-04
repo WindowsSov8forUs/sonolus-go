@@ -187,3 +187,53 @@ func UpdateSpawn() float64 { return 0 }
 	}
 	t.Log("OK")
 }
+
+func TestContainerField_SetAddSetRemoveIsFull(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat float64 ` + "`sonolus:\"imported\"`" + `
+    Arr  VarArray ` + "`sonolus:\"memory,cap=8\"`" + `
+    X    float64 ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.Arr.setAdd(n.Beat)
+    n.Arr.setAdd(n.Beat + 1)
+    x := n.Arr.contains(n.Beat)
+    n.Arr.setRemove(n.Beat)
+    n.X = n.Arr.isFull()
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, &engine.CompileOptions{
+		Opt: optimize.LevelStandard,
+	})
+	if err != nil {
+		t.Fatalf("SetAdd/SetRemove/IsFull: %v", err)
+	}
+	t.Log("OK")
+}
+
+func TestConfigOptionAccess(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
+type Config struct {
+    Speed float64 ` + "`sonolus:\"slider,min=0,max=100,def=50\"`" + `
+    Boost float64 ` + "`sonolus:\"toggle,def=1\"`" + `
+}
+func (n *Note) Initialize() {
+    x := sonolus.Speed              // slider option
+    y := sonolus.Boost              // toggle option
+    set(0, 0, x + y)
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err != nil {
+		t.Fatalf("Config option access: %v", err)
+	}
+	t.Log("OK")
+}
