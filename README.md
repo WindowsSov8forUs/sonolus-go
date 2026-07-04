@@ -6,41 +6,24 @@
 EnginePlayData / EngineWatchData / EnginePreviewData / EngineTutorialData），
 支持四种模式完整打包与本地开发服务器。
 
-## 构建
+## 安装
 
-### 前置条件
+从 [GitHub Releases](https://github.com/WindowsSov8forUs/sonolus-go/releases) 下载预编译二进制，无需 Go 环境。
 
-- Go 1.25+
-- 三个兄弟仓库必须相邻 checkout（与 `sonolus-go` 在同一父目录）：
-
-```
-VSCode/
-  sonolus-go/              # 本仓库
-  sonolus-core-go/         # EngineData 数据结构定义
-  sonolus-pack-go/         # sonolus-pack 打包工具
-  sonolus-server-go/       # Sonolus HTTP 服务器接口
-```
+或从源码编译（需 Go 1.25+，依赖自动拉取）：
 
 ```bash
-# 一键 clone 全部依赖
 git clone https://github.com/WindowsSov8forUs/sonolus-go.git
-git clone https://github.com/WindowsSov8forUs/sonolus-core-go.git
-git clone https://github.com/WindowsSov8forUs/sonolus-pack-go.git
-git clone https://github.com/WindowsSov8forUs/sonolus-server-go.git
+cd sonolus-go
+go build ./cmd/sonolus-go/
 ```
 
-模块通过 `go.mod` 中的 `replace` 指令指向本地路径（`../sonolus-core-go` 等），
-对外部使用者需先发布 tagged 版本后删除 `replace` 块。
-
-### 命令
+### 开发
 
 ```bash
-make build       # 编译所有包
-make test        # 运行全部测试
-make vet         # 运行 go vet
-make fmt         # 格式化所有源文件
-make fmt-check   # 检查格式 (CI)
-make clean       # 清除构建产物
+go build ./...    # 编译
+go test ./...     # 测试
+go vet ./...      # 静态分析
 ```
 
 ## 架构
@@ -75,12 +58,14 @@ sonolus-go build -m play ./engine/
 # 编译全部四种模式
 sonolus-go build -m all ./engine/
 
-# 本地开发服务器 (带热编译)
-sonolus-go serve -m play ./engine/
+# 本地开发服务器 (带热编译，自动编译四种模式)
+sonolus-go serve ./engine/
 
 # 生产模式打包 + 服务
-sonolus-go pack serve ./engine/ -author "YourName"
+sonolus-go host ./engine/ -author "YourName"
 ```
+
+详见 [快速入门](docs/getting-started.md) 和 [CLI 参考](docs/cli.md)。
 
 ## 参照项目
 
