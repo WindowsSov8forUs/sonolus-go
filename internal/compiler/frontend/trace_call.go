@@ -745,7 +745,11 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 		if base, ok2 := inner.X.(*ast.Ident); ok2 && base.Name == t.env.Receiver {
 			if recordNum, recordType, ok3 := t.resolveRecordField(inner); ok3 {
 				if methods, ok4 := recordMethods[recordType]; ok4 {
-					if entry, ok5 := methods[sel.Sel.Name]; ok5 {
+					entry, ok5 := methods[sel.Sel.Name]
+					if !ok5 {
+						entry, ok5 = methods[strings.ToLower(sel.Sel.Name)]
+					}
+					if ok5 {
 						args := make([]Num, len(n.Args))
 						for i, a := range n.Args {
 							v, err := t.expr(a)
@@ -775,7 +779,11 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 	if base, ok := sel.X.(*ast.Ident); ok {
 		if rec, ok := t.records[base.Name]; ok && rec.typeName != "" {
 			if methods, ok2 := recordMethods[rec.typeName]; ok2 {
-				if entry, ok3 := methods[sel.Sel.Name]; ok3 {
+				entry, ok3 := methods[sel.Sel.Name]
+				if !ok3 {
+					entry, ok3 = methods[strings.ToLower(sel.Sel.Name)]
+				}
+				if ok3 {
 					if len(n.Args) < entry.minArity {
 						return Num{}, t.errf(sel, "method %q expects at least %d args, got %d", sel.Sel.Name, entry.minArity, len(n.Args))
 					}

@@ -167,6 +167,8 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		for i, f := range rec.order {
 			rec.fields[f] = i
 		}
+		// Infer record type name from field list for method dispatch.
+		rec.typeName = recordTypeNameFromFields(order)
 		t.records[lhsName.Name] = rec
 		return nil
 	}
@@ -588,11 +590,17 @@ func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
 	}
 	off, ok := rec.fields[sel.Sel.Name]
 	if !ok {
+		off, ok = rec.fields[strings.ToLower(sel.Sel.Name)]
+	}
+	if !ok {
 		return Num{}, t.errf(sel, "record %q has no field %q", base.Name, sel.Sel.Name)
 	}
 	// Return the tracked field Num if it's a constant or pure expression; fall
 	// back to a memory read for mutable-backed fields.
 	if v, ok := rec.val.fields[sel.Sel.Name]; ok && (v.isConst || v.e != nil) {
+		return v, nil
+	}
+	if v, ok := rec.val.fields[strings.ToLower(sel.Sel.Name)]; ok && (v.isConst || v.e != nil) {
 		return v, nil
 	}
 	return exprNum(ir.GetPlace(ir.BlockPlace{Block: rec.tb, Index: ir.Const(off), Offset: 0})), nil

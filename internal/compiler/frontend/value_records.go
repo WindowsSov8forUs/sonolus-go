@@ -57,6 +57,31 @@ var builtinRecords = []builtinRecordDef{
 	{"particleHandle", particleHandleFields},
 }
 
+// recordTypeNameFromFields matches a field list against builtin records and
+// returns the record type name (e.g. ["t","r","b","l"] → "rect").
+func recordTypeNameFromFields(fields []string) string {
+	fieldSet := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		fieldSet[f] = true
+	}
+	for _, rd := range builtinRecords {
+		if len(rd.fields) != len(fields) {
+			continue
+		}
+		match := true
+		for _, f := range rd.fields {
+			if !fieldSet[f] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return rd.name
+		}
+	}
+	return ""
+}
+
 // builtinRecordFields returns the fields for name if it is a built-in record.
 func builtinRecordFields(name string) ([]string, bool) {
 	for _, r := range builtinRecords {
