@@ -31,12 +31,12 @@ type Binding struct {
 // functions callable from the body (inlined when called); Accessors is the base
 // binding set those inlined functions see (no archetype fields).
 type Env struct {
-	Names     map[string]Binding
-	Receiver  string
-	Funcs     map[string]*ast.FuncDecl // free helper functions
-	Methods   map[string]*ast.FuncDecl // non-callback methods of the current archetype
-	Accessors map[string]Binding
-	Mode      ir.Mode
+	Names       map[string]Binding
+	Receiver    string
+	Funcs       map[string]*ast.FuncDecl // free helper functions
+	Methods     map[string]*ast.FuncDecl // non-callback methods of the current archetype
+	Accessors   map[string]Binding
+	Mode        ir.Mode
 	Records     map[string][]string // user-defined record: name → field names
 	Info        *types.Info         // go/types type-check result (D1 diagnostic layer)
 	Constants   map[string]float64  // named compile-time constants (e.g. archetype indices)
@@ -47,6 +47,7 @@ type Env struct {
 type loopCtx struct {
 	breakTo    *ir.BasicBlock
 	continueTo *ir.BasicBlock
+	label      string // for labeled break/continue, empty if unlabeled
 }
 
 // returnCtx records how a `return` is handled. For a callback (target==nil) a
@@ -81,6 +82,15 @@ type tracer struct {
 	loops      []loopCtx
 	returns    []returnCtx
 	inlining   map[string]bool
+	stmtLabel  string // label of the currently-being-traced labeled statement
+
+	// fallthroughTarget is the CFG block created by the most recent
+	// fallthrough statement in a switch case body. The next case picks it
+	// up as its body block so that execution transfers directly into the
+	// next case's body, bypassing the condition check.
+	fallthroughTarget *ir.BasicBlock
+
+	labels map[string]*ir.BasicBlock // label -> block mapping for goto
 }
 
 // arrayInfo is a fixed-size array local, backed by a multi-slot temp.
@@ -164,6 +174,60 @@ func Compile(src string, env Env) (*ir.BasicBlock, *ir.IDGen, error) {
 			}
 		}
 	}
+
+	// Expand embedded struct fields into parent struct records.
+	// When env.Info is available (set by callers that type-check before compiling),
+	// resolve each embedded field's underlying struct type and promote its fields
+	// into the parent's field list. Named fields always take precedence
+	// (shadowing) over promoted fields of the same name.
+	if env.Info != nil {
+		for _, d := range file.Decls {
+			g, ok := d.(*ast.GenDecl)
+			if !ok || g.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range g.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				fullFields := make([]string, 0)
+				seen := make(map[string]bool)
+				for _, field := range st.Fields.List {
+					if len(field.Names) == 1 {
+						name := field.Names[0].Name
+						fullFields = append(fullFields, name)
+						seen[name] = true
+					} else if len(field.Names) == 0 {
+						// Embedded: expand fields from underlying struct type
+						named, ok2 := env.Info.TypeOf(field.Type).(*types.Named)
+						if ok2 {
+							if embeddedSt, ok3 := named.Underlying().(*types.Struct); ok3 {
+								for i := range embeddedSt.NumFields() {
+									name := embeddedSt.Field(i).Name()
+									if !seen[name] {
+										fullFields = append(fullFields, name)
+										seen[name] = true
+									}
+								}
+							}
+						}
+					}
+				}
+				if len(fullFields) > 0 {
+					if env.Records == nil {
+						env.Records = make(map[string][]string)
+					}
+					env.Records[ts.Name.Name] = fullFields
+				}
+			}
+		}
+	}
+
 	if fn == nil {
 		return nil, nil, fmt.Errorf("no function with a body found")
 	}
@@ -179,7 +243,11 @@ func Compile(src string, env Env) (*ir.BasicBlock, *ir.IDGen, error) {
 func validateStructFields(st *ast.StructType) error {
 	for _, field := range st.Fields.List {
 		if len(field.Names) == 0 {
-			continue // embedded field — handled separately by the type checker
+			// Embedded field: validate the type itself
+			if err := validateFieldType(field.Type, "(embedded)"); err != nil {
+				return err
+			}
+			continue
 		}
 		if err := validateFieldType(field.Type, field.Names[0].Name); err != nil {
 			return err
@@ -275,6 +343,19 @@ func (t *tracer) stmt(s ast.Stmt) error {
 		return t.ifStmt(n)
 	case *ast.SwitchStmt:
 		return t.switchStmt(n)
+	case *ast.LabeledStmt:
+		prev := t.stmtLabel
+		t.stmtLabel = n.Label.Name
+		labelBlock := ir.NewBlock()
+		t.fallthroughTo(labelBlock)
+		if t.labels == nil {
+			t.labels = make(map[string]*ir.BasicBlock)
+		}
+		t.labels[n.Label.Name] = labelBlock
+		t.enter(labelBlock)
+		err := t.stmt(n.Stmt)
+		t.stmtLabel = prev
+		return err
 	case *ast.ForStmt:
 		return t.forStmt(n)
 	case *ast.RangeStmt:

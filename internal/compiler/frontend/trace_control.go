@@ -107,7 +107,8 @@ func (t *tracer) forStmt(n *ast.ForStmt) error {
 		header.ConnectTo(body, nil)
 	}
 
-	t.loops = append(t.loops, loopCtx{breakTo: exit, continueTo: latch})
+	t.loops = append(t.loops, loopCtx{breakTo: exit, continueTo: latch, label: t.stmtLabel})
+	t.stmtLabel = ""
 	t.enter(body)
 	if err := t.stmtList(n.Body.List); err != nil {
 		return err
@@ -196,6 +197,39 @@ func (t *tracer) returnStmt(n *ast.ReturnStmt) error {
 }
 
 func (t *tracer) branch(n *ast.BranchStmt) error {
+	// Goto: jump to a labeled statement (handled before labeled loop branch check).
+	if n.Tok == token.GOTO {
+		if t.labels == nil {
+			return t.errf(n, "goto %s: no labels defined", n.Label.Name)
+		}
+		target, ok := t.labels[n.Label.Name]
+		if !ok {
+			return t.errf(n, "goto %s: label not found", n.Label.Name)
+		}
+		t.current.ConnectTo(target, nil)
+		t.terminated = true
+		return nil
+	}
+
+	// Labeled break/continue: walk the loop stack looking for a matching label.
+	if n.Label != nil {
+		for i := len(t.loops) - 1; i >= 0; i-- {
+			if t.loops[i].label == n.Label.Name {
+				switch n.Tok {
+				case token.BREAK:
+					t.current.ConnectTo(t.loops[i].breakTo, nil)
+				case token.CONTINUE:
+					t.current.ConnectTo(t.loops[i].continueTo, nil)
+				default:
+					return t.errf(n, "unsupported branch statement %s (only break and continue are supported; no goto)", n.Tok)
+				}
+				t.terminated = true
+				return nil
+			}
+		}
+		return t.errf(n, "label %q not found in enclosing loops", n.Label.Name)
+	}
+	// Unlabeled: use innermost loop (existing behavior).
 	if len(t.loops) == 0 {
 		return t.errf(n, "%s outside of a loop", n.Tok)
 	}
@@ -205,8 +239,14 @@ func (t *tracer) branch(n *ast.BranchStmt) error {
 		t.current.ConnectTo(loop.breakTo, nil)
 	case token.CONTINUE:
 		t.current.ConnectTo(loop.continueTo, nil)
+	case token.FALLTHROUGH:
+		target := ir.NewBlock()
+		t.current.ConnectTo(target, nil)
+		t.fallthroughTarget = target
+		t.terminated = true
+		return nil
 	default:
-		return t.errf(n, "unsupported branch statement %s (only break and continue are supported; no goto or fallthrough)", n.Tok)
+		return t.errf(n, "unsupported branch statement %s (only break and continue are supported; no goto)", n.Tok)
 	}
 	// The rest of this block is unreachable; stmtList stops here.
 	t.terminated = true

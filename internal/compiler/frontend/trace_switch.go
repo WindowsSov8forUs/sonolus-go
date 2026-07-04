@@ -27,6 +27,10 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 	merge := ir.NewBlock()
 	var defaultBody []ast.Stmt
 
+	// Save and reset fallthrough state for nested switches.
+	savedFallthrough := t.fallthroughTarget
+	t.fallthroughTarget = nil
+
 	for _, clause := range n.Body.List {
 		cc, ok := clause.(*ast.CaseClause)
 		if !ok {
@@ -80,23 +84,57 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 			}
 		}
 
-		caseBlock := ir.NewBlock()
+		// Pick up the fallthrough target from the previous case (if any).
+		// When a case body ends with fallthrough, it creates a target block
+		// that the next case should use as its body, bypassing condition check.
+		caseBlock := t.fallthroughTarget
+		if caseBlock == nil {
+			caseBlock = ir.NewBlock()
+		}
 
 		if cond.isConst {
 			if cond.c != 0 {
-				// This case is always true: execute body and skip everything after.
+				// This case is always true: execute body.
+				t.current.ConnectTo(caseBlock, nil)
+				t.fallthroughTarget = nil
 				t.enter(caseBlock)
 				if err := t.stmtList(cc.Body); err != nil {
 					return err
 				}
 				t.fallthroughTo(merge)
-				break
+				if t.fallthroughTarget == nil {
+					// No fallthrough — remaining cases are unreachable.
+					break
+				}
+				// Body ended with fallthrough. Advance t.current to a dummy
+				// block so the next case can set up its condition without
+				// clobbering the current body block.
+				t.enter(ir.NewBlock())
+				continue
 			}
-			// Constant false: skip this case entirely.
+			// Constant false: skip this case's condition check —
+			// but the body may still be reachable via fallthrough.
+			if t.fallthroughTarget != nil {
+				// Reached via fallthrough from the previous case.
+				// caseBlock already equals t.fallthroughTarget (set above).
+				t.fallthroughTarget = nil
+				t.enter(caseBlock)
+				if err := t.stmtList(cc.Body); err != nil {
+					return err
+				}
+				t.fallthroughTo(merge)
+				if t.fallthroughTarget == nil {
+					// No fallthrough — remaining cases unreachable.
+					break
+				}
+				t.enter(ir.NewBlock())
+				continue
+			}
 			continue
 		}
 
 		// Non-constant: generate Branch.
+		t.fallthroughTarget = nil
 		nextBlock := ir.NewBlock()
 		t.current.Test = cond.mustNode()
 		t.current.ConnectTo(nextBlock, ir.Cond(0)) // false → next case
@@ -114,7 +152,11 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 	// Process default case after all non-default cases so that t.current
 	// (the last nextBlock) correctly falls through to the default body.
 	if defaultBody != nil {
-		defaultBlock := ir.NewBlock()
+		defaultBlock := t.fallthroughTarget
+		if defaultBlock == nil {
+			defaultBlock = ir.NewBlock()
+		}
+		t.fallthroughTarget = nil
 		t.fallthroughTo(defaultBlock)
 		t.enter(defaultBlock)
 		if err := t.stmtList(defaultBody); err != nil {
@@ -123,6 +165,7 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 		t.fallthroughTo(merge)
 	}
 
+	t.fallthroughTarget = savedFallthrough
 	t.enter(merge)
 	t.terminated = len(merge.Incoming) == 0
 	return nil

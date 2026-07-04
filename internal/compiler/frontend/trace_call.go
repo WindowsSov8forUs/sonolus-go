@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -92,6 +93,42 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		return t.compositeLit(n)
 	case *ast.CallExpr:
 		return t.call(n)
+	case *ast.FuncLit:
+		// Non-capturing anonymous function: compile as an unnamed helper.
+		// Check for captured variables via free-variable analysis.
+		hasCaptures := false
+		ast.Inspect(n.Body, func(node ast.Node) bool {
+			if id, ok := node.(*ast.Ident); ok {
+				// Check if this identifier refers to an outer-scope variable
+				if _, inVars := t.vars[id.Name]; inVars {
+					hasCaptures = true
+					return false
+				}
+				if _, inNames := t.env.Names[id.Name]; inNames {
+					hasCaptures = true
+					return false
+				}
+				if _, inRecs := t.records[id.Name]; inRecs {
+					hasCaptures = true
+					return false
+				}
+			}
+			return true
+		})
+		if hasCaptures {
+			return Num{}, t.errf(n, "closures capturing outer variables are not supported (only non-capturing closures are allowed; lift captured variables to parameters)")
+		}
+		// Register as a synthetic helper function.
+		synthName := fmt.Sprintf("$closure_%d", t.gen.Next())
+		decl := &ast.FuncDecl{
+			Name: &ast.Ident{Name: synthName},
+			Type: n.Type,
+			Body: n.Body,
+		}
+		t.env.Funcs[synthName] = decl
+		// Return a placeholder value — the closure is not callable as a value,
+		// but it's registered for potential use.
+		return constNum(0), nil
 	default:
 		return Num{}, t.errf(e, "unsupported expression %T (closures, func literals, and channel receives are not supported because the engine has no heap and no concurrency)", e)
 	}
@@ -176,6 +213,15 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 	// Name-based dispatch that does not require pre-evaluated arguments.
 	if r, handled, err := t.resolveBuiltinCall(fn, n); handled {
 		return r, err
+	}
+
+	// Calling a local variable as a function is unsupported (closures and
+	// function values cannot be stored in variables).
+	if _, ok := t.vars[fn.Name]; ok {
+		return Num{}, t.errf(n, "unsupported call through variable %q (closures and function values cannot be stored in variables; call functions directly instead)", fn.Name)
+	}
+	if _, ok := t.records[fn.Name]; ok {
+		return Num{}, t.errf(n, "unsupported call through variable %q (closures and function values cannot be stored in variables; call functions directly instead)", fn.Name)
 	}
 
 	// Functions that need pre-evaluated numeric arguments.
@@ -651,7 +697,24 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 		return Num{}, t.errf(node, "recursive call to %q is not supported (helper functions are inlined at every call site, so recursion would cause infinite expansion)", decl.Name.Name)
 	}
 	params := funcParams(decl)
-	if len(args) != len(params) {
+
+	// Detect variadic function: last parameter has ...Type (*ast.Ellipsis).
+	isVariadic := false
+	var variadicName string
+	if decl.Type.Params != nil && len(decl.Type.Params.List) > 0 {
+		lastParam := decl.Type.Params.List[len(decl.Type.Params.List)-1]
+		if _, isVar := lastParam.Type.(*ast.Ellipsis); isVar && len(lastParam.Names) > 0 {
+			isVariadic = true
+			variadicName = lastParam.Names[0].Name
+		}
+	}
+
+	if isVariadic {
+		minArgs := len(params) - 1
+		if len(args) < minArgs {
+			return Num{}, t.errf(node, "%s expects at least %d arguments, got %d", decl.Name.Name, minArgs, len(args))
+		}
+	} else if len(args) != len(params) {
 		return Num{}, t.errf(node, "%s expects %d arguments, got %d", decl.Name.Name, len(params), len(args))
 	}
 
@@ -665,7 +728,12 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	t.containers = map[string]*containerInfo{}
 	t.env = childEnv
 
-	for i, p := range params {
+	// Bind regular (non-variadic) parameters.
+	boundParams := params
+	if isVariadic {
+		boundParams = params[:len(params)-1]
+	}
+	for i, p := range boundParams {
 		// D3: try type-driven composite detection via declared parameter type.
 		isComp := args[i].IsComposite()
 		if !isComp && t.env.Info != nil && i < len(decl.Type.Params.List) {
@@ -698,6 +766,25 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 		} else {
 			pt := t.alloc(p)
 			t.emit(t.gen.SetPlace(ir.TempCell(pt), args[i].mustNode()))
+		}
+	}
+
+	// Bind variadic extra args as a compile-time-sized array.
+	if isVariadic {
+		extraArgs := args[len(params)-1:]
+		varTB := &ir.TempBlock{Name: variadicName, Size: len(extraArgs)}
+		for i, a := range extraArgs {
+			t.emit(t.gen.SetPlace(ir.BlockPlace{Block: varTB, Index: ir.Const(i), Offset: 0}, a.mustNode()))
+		}
+		elems := make([]Num, len(extraArgs))
+		for i := range extraArgs {
+			elems[i] = exprNum(ir.GetPlace(ir.BlockPlace{Block: varTB, Index: ir.Const(i), Offset: 0}))
+		}
+		t.arrays[variadicName] = &arrayInfo{
+			tb:       varTB,
+			count:    len(extraArgs),
+			elemSize: 1,
+			elemNum:  arrayNum(elems),
 		}
 	}
 

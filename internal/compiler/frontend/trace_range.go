@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 
@@ -12,8 +13,21 @@ import (
 func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 	// Lower for-range over a count/collection into a standard integer for-loop:
 	//   for i := range counts → for i := 0; i < counts; i++ { ... }
+	// Synthesize key variable if not provided: for range N {}.
+	// Non-identifier keys (e.g., a.x, b[0]) are synthesized into a temp
+	// and assigned to the user's LHS at the top of each iteration via writePlace.
+	var synthKeyLHS ast.Expr
+	hasSyntheticKey := false
 	if n.Key == nil {
-		return t.errf(n, "range statement requires a key variable")
+		hasSyntheticKey = true
+		name := fmt.Sprintf("_rkey_%d", t.gen.Next())
+		n.Key = &ast.Ident{Name: name}
+		t.alloc(name)
+	} else if _, ok := n.Key.(*ast.Ident); !ok {
+		synthKeyLHS = n.Key
+		name := fmt.Sprintf("_rk_%d", t.gen.Next())
+		t.alloc(name)
+		n.Key = &ast.Ident{Name: name}
 	}
 	keyName, ok := n.Key.(*ast.Ident)
 	if !ok {
@@ -22,20 +36,26 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 	if n.Tok != token.DEFINE && n.Tok != token.ASSIGN {
 		return t.errf(n, "range requires := or =")
 	}
-	// Extract value variable name if present.
+	// Extract value variable name. Non-identifier values (e.g., a.x, b[0])
+	// are synthesized into a temp and assigned to the user's LHS at iteration top.
+	var synthValLHS ast.Expr
 	var valName string
 	if n.Value != nil {
-		v, ok := n.Value.(*ast.Ident)
-		if !ok {
-			return t.errf(n, "range value must be an identifier")
+		if v, ok := n.Value.(*ast.Ident); !ok {
+			synthValLHS = n.Value
+			name := fmt.Sprintf("_rv_%d", t.gen.Next())
+			t.alloc(name)
+			n.Value = &ast.Ident{Name: name}
+			valName = name
+		} else {
+			valName = v.Name
 		}
-		valName = v.Name
 	}
 
 	// Container iteration: for i, v := range containerName
 	if id, ok := n.X.(*ast.Ident); ok {
 		if ci, ok2 := t.containers[id.Name]; ok2 {
-			return t.containerIter(n, ci, keyName.Name, valName)
+			return t.containerIter(n, ci, keyName.Name, valName, synthKeyLHS, synthValLHS)
 		}
 	}
 
@@ -82,8 +102,18 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 					}
 				}
 			}
+			// Assign synthesized temps to user LHS at top of each iteration.
+			if err := t.emitRangeSynthAssignments(synthKeyLHS, iTB, synthValLHS, valName); err != nil {
+				return err
+			}
 			if err := t.stmtList(n.Body.List); err != nil {
 				return err
+			}
+		}
+		// Remove synthetic key from vars after loop
+		if hasSyntheticKey {
+			if keyIdent, ok := n.Key.(*ast.Ident); ok {
+				delete(t.vars, keyIdent.Name)
 			}
 		}
 		t.cleanupLoopVars(keyName.Name, valName)
@@ -122,7 +152,12 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 			}
 		}
 	}
-	t.loops = append(t.loops, loopCtx{breakTo: merge, continueTo: loopHead})
+	// Assign synthesized temps to user LHS at top of each iteration.
+	if err := t.emitRangeSynthAssignments(synthKeyLHS, iTB, synthValLHS, valName); err != nil {
+		return err
+	}
+	t.loops = append(t.loops, loopCtx{breakTo: merge, continueTo: loopHead, label: t.stmtLabel})
+	t.stmtLabel = ""
 	if err := t.stmtList(n.Body.List); err != nil {
 		return err
 	}
@@ -136,6 +171,12 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 	t.enter(merge)
 	t.terminated = len(merge.Incoming) == 0
 
+	// Remove synthetic key from vars after loop
+	if hasSyntheticKey {
+		if keyIdent, ok := n.Key.(*ast.Ident); ok {
+			delete(t.vars, keyIdent.Name)
+		}
+	}
 	t.cleanupLoopVars(keyName.Name, valName)
 	return nil
 }
@@ -143,7 +184,7 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 // containerIter lowers `for i, v := range container` for VarArray/ArrayMap/ArraySet.
 // It emits a runtime loop that reads elements from the backing array, using
 // ci.readSize() as the dynamic bound and ci.elemPlace for element access.
-func (t *tracer) containerIter(n *ast.RangeStmt, ci *containerInfo, keyName, valName string) error {
+func (t *tracer) containerIter(n *ast.RangeStmt, ci *containerInfo, keyName, valName string, synthKeyLHS, synthValLHS ast.Expr) error {
 	// Allocate index variable (i).
 	iTB := ir.NewTemp("range")
 	t.vars[keyName] = iTB
@@ -172,6 +213,10 @@ func (t *tracer) containerIter(n *ast.RangeStmt, ci *containerInfo, keyName, val
 				valTB := t.alloc(valName)
 				elemNode := ir.GetPlace(ci.elemPlace(t.gen, ir.Const(iter)))
 				t.emit(t.gen.SetPlace(ir.TempCell(valTB), elemNode))
+			}
+			// Assign synthesized temps to user LHS at top of each iteration.
+			if err := t.emitRangeSynthAssignments(synthKeyLHS, iTB, synthValLHS, valName); err != nil {
+				return err
 			}
 			if err := t.stmtList(n.Body.List); err != nil {
 				return err
@@ -208,8 +253,13 @@ func (t *tracer) containerIter(n *ast.RangeStmt, ci *containerInfo, keyName, val
 		elemNode := ir.GetPlace(ci.elemPlace(t.gen, idxNode))
 		t.emit(t.gen.SetPlace(ir.TempCell(valTB), elemNode))
 	}
+	// Assign synthesized temps to user LHS at top of each iteration.
+	if err := t.emitRangeSynthAssignments(synthKeyLHS, iTB, synthValLHS, valName); err != nil {
+		return err
+	}
 
-	t.loops = append(t.loops, loopCtx{breakTo: merge, continueTo: loopHead})
+	t.loops = append(t.loops, loopCtx{breakTo: merge, continueTo: loopHead, label: t.stmtLabel})
+	t.stmtLabel = ""
 	if err := t.stmtList(n.Body.List); err != nil {
 		return err
 	}
@@ -246,4 +296,24 @@ func (t *tracer) enterMerge() *ir.BasicBlock {
 	t.enter(merge)
 	t.terminated = len(merge.Incoming) == 0
 	return merge
+}
+
+// emitRangeSynthAssignments emits writePlace calls to assign synthesized range
+// key/value temps to the user's original LHS expressions at the top of each
+// loop iteration. This supports range statements where the key or value is a
+// non-identifier expression such as a.x or b[0].
+func (t *tracer) emitRangeSynthAssignments(synthKeyLHS ast.Expr, keyTB *ir.TempBlock, synthValLHS ast.Expr, valName string) error {
+	if synthKeyLHS != nil {
+		if err := t.writePlace(synthKeyLHS, exprNum(ir.GetPlace(t.cell(keyTB)))); err != nil {
+			return err
+		}
+	}
+	if synthValLHS != nil && valName != "" {
+		if valTB := t.vars[valName]; valTB != nil {
+			if err := t.writePlace(synthValLHS, exprNum(ir.GetPlace(t.cell(valTB)))); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
