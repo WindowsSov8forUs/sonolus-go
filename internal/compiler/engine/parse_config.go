@@ -12,9 +12,11 @@ import (
 // buildConfig parses a Config struct from the engine source and returns an
 // EngineConfiguration. It reads sonolus struct tags on each field to determine
 // option type (slider/toggle/select) and parameters.
-func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
+func buildConfig(st *ast.StructType) (resource.EngineConfiguration, map[string]int, error) {
 	var opts []resource.EngineConfigurationOption
 	var replayFallbackNames []core.Text
+	optionIndices := make(map[string]int)
+	optIndex := 0
 	for _, f := range st.Fields.List {
 		if f.Tag == nil || len(f.Names) == 0 {
 			continue
@@ -39,19 +41,19 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
 		case "slider":
 			min, err := parseFloatParam(tagVals, "min", 0)
 			if err != nil {
-				return resource.EngineConfiguration{}, fmt.Errorf("field %q min: %w", f.Names[0].Name, err)
+				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q min: %w", f.Names[0].Name, err)
 			}
 			max, err := parseFloatParam(tagVals, "max", 1)
 			if err != nil {
-				return resource.EngineConfiguration{}, fmt.Errorf("field %q max: %w", f.Names[0].Name, err)
+				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q max: %w", f.Names[0].Name, err)
 			}
 			step, err := parseFloatParam(tagVals, "step", 0.01)
 			if err != nil {
-				return resource.EngineConfiguration{}, fmt.Errorf("field %q step: %w", f.Names[0].Name, err)
+				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q step: %w", f.Names[0].Name, err)
 			}
 			def, err := parseFloatParam(tagVals, "def", 0)
 			if err != nil {
-				return resource.EngineConfiguration{}, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
+				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
 			}
 			opts = append(opts, resource.EngineConfigurationSliderOption{
 				EngineConfigurationOptionBase: base,
@@ -61,12 +63,14 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
 				Step:                          step,
 				Def:                           def,
 			})
+			optionIndices[string(name)] = optIndex
+			optIndex++
 		case "toggle":
 			def, err := parseFloatParam(tagVals, "def", 1)
 			if err != nil {
-				return resource.EngineConfiguration{}, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
+				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
 			}
-			opts = append(opts, resource.EngineConfigurationToggleOption{
+			optionIndices[string(name)] = optIndex; optIndex++; opts = append(opts, resource.EngineConfigurationToggleOption{
 				EngineConfigurationOptionBase: base,
 				Type:                          resource.EngineConfigurationOptionTypeToggle,
 				Def:                           int(def),
@@ -81,9 +85,9 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
 			}
 			def, err := parseFloatParam(tagVals, "def", 0)
 			if err != nil {
-				return resource.EngineConfiguration{}, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
+				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
 			}
-			opts = append(opts, resource.EngineConfigurationSelectOption{
+			optionIndices[string(name)] = optIndex; optIndex++; opts = append(opts, resource.EngineConfigurationSelectOption{
 				EngineConfigurationOptionBase: base,
 				Type:                          resource.EngineConfigurationOptionTypeSelect,
 				Values:                        vals,
@@ -91,5 +95,5 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, error) {
 			})
 		}
 	}
-	return resource.EngineConfiguration{Options: opts, UI: defaultUI(), ReplayFallbackOptionNames: replayFallbackNames}, nil
+	return resource.EngineConfiguration{Options: opts, UI: defaultUI(), ReplayFallbackOptionNames: replayFallbackNames}, optionIndices, nil
 }
