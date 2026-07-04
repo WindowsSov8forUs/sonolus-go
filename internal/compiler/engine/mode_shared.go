@@ -121,7 +121,7 @@ func buildBindings(
 		imports[j] = resource.EngineDataArchetypeImport{
 			Name: resource.EngineArchetypeDataName(f.Name), Index: j, Def: f.Def,
 		}
-		b[f.Name] = frontend.Binding{Block: entityMemoryBlock, Index: j, Writable: false}
+		b[f.Name] = frontend.Binding{Block: entityMemoryBlock, Index: j, Writable: true}
 	}
 	for k, m := range memory {
 		b[m] = frontend.Binding{Block: entityMemoryBlock, Index: len(imported) + k, Writable: true}

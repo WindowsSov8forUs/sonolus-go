@@ -129,16 +129,13 @@ func TestRecursionError(t *testing.T) {
 	}
 }
 
-func TestCompilePlayFileImportedReadOnly(t *testing.T) {
+func TestCompilePlayFileImportedWritable(t *testing.T) {
 	src := "package p\n" +
 		"type Note struct {\n\tBeat float64 `sonolus:\"imported\"`\n}\n" +
 		"func (n Note) Initialize() {\n\tn.Beat = 5\n}\n"
 	_, _, err := CompilePlayFile(src)
-	if err == nil {
-		t.Fatal("expected read-only error writing n.Beat")
-	}
-	if !strings.Contains(err.Error(), "read-only") {
-		t.Errorf("error should mention read-only: %v", err)
+	if err != nil {
+		t.Fatalf("imported field should be writable: %v", err)
 	}
 }
 

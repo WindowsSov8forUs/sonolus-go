@@ -809,7 +809,7 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 				if methods, ok4 := recordMethods[recordType]; ok4 {
 					entry, ok5 := methods[sel.Sel.Name]
 					if !ok5 {
-						entry, ok5 = methods[strings.ToLower(sel.Sel.Name)]
+						entry, ok5 = methods[lowerFirst(sel.Sel.Name)]
 					}
 					if ok5 {
 						args := make([]Num, len(n.Args))
@@ -845,7 +845,7 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 			if methods, ok2 := recordMethods[rec.typeName]; ok2 {
 				entry, ok3 := methods[sel.Sel.Name]
 				if !ok3 {
-					entry, ok3 = methods[strings.ToLower(sel.Sel.Name)]
+					entry, ok3 = methods[lowerFirst(sel.Sel.Name)]
 				}
 				if ok3 {
 					if len(n.Args) < entry.minArity {
