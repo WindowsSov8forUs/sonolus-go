@@ -220,7 +220,8 @@ func TestErrorMessages(t *testing.T) {
 		{"break outside loop", `package p; func f() { break }`, "outside of a loop"},
 		{"continue outside loop", `package p; func f() { continue }`, "outside of a loop"},
 		{"multi-assign non-composite", `package p; func f() { a, b := 1 }`, "composite"},
-		{"range no key variable", `package p; func f() { for range xs {} }`, "key variable"},
+		// for range without key variable is now supported (synthesizes throwaway key)
+		// {"range no key variable", `package p; func f() { for range xs {} }`, "key variable"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

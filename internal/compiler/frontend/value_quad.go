@@ -81,7 +81,7 @@ func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 			}), nil
 		}
 	}
-	return Num{}, fmt.Errorf("quad.permute: non-constant rotation is not supported")
+	return Num{}, fmt.Errorf("quad.permute: non-constant rotation is not supported (the rotation must be a compile-time constant 0, 1, 2, or 3 so field remapping can be resolved statically)")
 }
 
 func quadContains(t *tracer, q Num, args []Num) (Num, error) {

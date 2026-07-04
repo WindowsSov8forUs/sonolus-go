@@ -36,10 +36,6 @@ func (t *tracer) multiAssign(n *ast.AssignStmt) error {
 		return err
 	}
 	for i, lhs := range n.Lhs {
-		id, okIdent := lhs.(*ast.Ident)
-		if !okIdent {
-			return t.errf(lhs, "multi-assignment target must be an identifier")
-		}
 		// Resolve field: prefer positional (fields[i]), fall back to lhs name.
 		var fval Num
 		var okField bool
@@ -47,21 +43,37 @@ func (t *tracer) multiAssign(n *ast.AssignStmt) error {
 			fval, okField = rhs.TryField(fields[i])
 		}
 		if !okField {
-			fval, okField = rhs.TryField(id.Name)
+			// For identifier LHS, try name-based lookup.
+			if id, okID := lhs.(*ast.Ident); okID {
+				fval, okField = rhs.TryField(id.Name)
+			}
 		}
 		if !okField {
-			return t.errf(lhs, "multi-assignment: no field for %q in composite (available: %v)", id.Name, fields)
+			return t.errf(lhs, "multi-assignment: no field for position %d in composite (available: %v)", i, fields)
 		}
 		if n.Tok == token.DEFINE {
+			// := requires identifier LHS
+			id, okIdent := lhs.(*ast.Ident)
+			if !okIdent {
+				return t.errf(lhs, "multi-assignment := requires identifier targets (use = for field/index targets)")
+			}
 			tb := t.alloc(id.Name)
 			t.emit(t.gen.SetPlace(ir.TempCell(tb), fval.mustNode()))
 		} else {
-			if tb, ok2 := t.vars[id.Name]; ok2 {
-				t.emit(t.gen.SetPlace(ir.TempCell(tb), fval.mustNode()))
-			} else if b, ok2 := t.env.Names[id.Name]; ok2 && b.Writable {
-				t.emitBindingStore(b, fval)
+			// = can target identifiers, fields, or array elements
+			if id, okIdent := lhs.(*ast.Ident); okIdent {
+				if tb, ok2 := t.vars[id.Name]; ok2 {
+					t.emit(t.gen.SetPlace(ir.TempCell(tb), fval.mustNode()))
+				} else if b, ok2 := t.env.Names[id.Name]; ok2 && b.Writable {
+					t.emitBindingStore(b, fval)
+				} else {
+					return t.errf(lhs, "cannot assign to %q (variable has no local or writable binding; use := to declare a new variable)", id.Name)
+				}
 			} else {
-				return t.errf(lhs, "cannot assign to %q", id.Name)
+				// Non-identifier LHS: use writePlace
+				if err := t.writePlace(lhs, fval); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -74,7 +86,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		if binOp, ok := compoundOps[nt]; ok {
 			return t.compoundAssign(n, binOp)
 		}
-		return t.errf(n, "unsupported assignment %s", n.Tok)
+		return t.errf(n, "unsupported assignment %s (only =, :=, +=, -=, *=, /=, %%= are supported; no bitwise &=, |=, <<=, >>=, etc.)", n.Tok)
 	}
 	// Multi-LHS (tuple assignment): a, b := f() where f() returns a composite.
 	if len(n.Lhs) > 1 && len(n.Rhs) == 1 {
@@ -117,7 +129,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 	// Composite declarations: a := array(n) / v := vec2(x, y).
 	// If the constructor is not recognized, fall through to regular assignment.
 	if call, ok := n.Rhs[0].(*ast.CallExpr); ok {
-		if fn, ok := call.Fun.(*ast.Ident); ok {
+		if fn, ok := unwrapCallFun(call.Fun).(*ast.Ident); ok {
 			handled, err := t.compositeDecl(lhsName, fn, call)
 			if handled {
 				return err
@@ -152,7 +164,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 	tb, ok := t.vars[lhsName.Name]
 	if !ok {
 		if n.Tok != token.DEFINE {
-			return t.errf(n, "assignment to undefined variable %q", lhsName.Name)
+			return t.errf(n, "assignment to undefined variable %q (use := to declare a new variable, or declare it before assigning with =)", lhsName.Name)
 		}
 		tb = t.alloc(lhsName.Name)
 	}
@@ -219,21 +231,47 @@ func (t *tracer) compositeDecl(varName *ast.Ident, fn *ast.Ident, call *ast.Call
 }
 
 func (t *tracer) incDec(n *ast.IncDecStmt) error {
-	varName, ok := n.X.(*ast.Ident)
-	if !ok {
-		return t.errf(n, "increment target must be an identifier")
-	}
-	tb, ok := t.vars[varName.Name]
-	if !ok {
-		return t.errf(n, "increment of undefined variable %q", varName.Name)
-	}
-	op := binOps[token.ADD]
+	binOp := token.ADD
 	if n.Tok == token.DEC {
-		op = binOps[token.SUB]
+		binOp = token.SUB
 	}
-	cur := ir.GetPlace(t.cell(tb))
-	t.emit(t.gen.SetPlace(t.cell(tb), t.gen.PureInstr(op, cur, ir.Const(1))))
-	return nil
+
+	// Read the current value from the LHS.
+	var cur Num
+	switch lhs := n.X.(type) {
+	case *ast.Ident:
+		tb, ok := t.vars[lhs.Name]
+		if !ok {
+			return t.errf(n, "increment of undefined variable %q", lhs.Name)
+		}
+		cur = exprNum(ir.GetPlace(t.cell(tb)))
+	case *ast.SelectorExpr:
+		place, err := t.fieldPlace(lhs)
+		if err != nil {
+			return err
+		}
+		cur = exprNum(ir.GetPlace(place))
+	case *ast.IndexExpr:
+		varName, ok := lhs.X.(*ast.Ident)
+		if !ok {
+			return t.errf(n, "increment target must be an identifier (++ and -- only work on named variables, not field access or array indexing)")
+		}
+		place, err := t.arrayElemPlace(varName, lhs.Index)
+		if err != nil {
+			return err
+		}
+		cur = exprNum(ir.GetPlace(place))
+	default:
+		return t.errf(n, "increment target must be an identifier (++ and -- only work on named variables, not field access or array indexing)")
+	}
+
+	// Apply the increment/decrement.
+	result, ok := applyBinary(t.gen, binOp, cur, constNum(1))
+	if !ok {
+		return t.errf(n, "cannot apply increment/decrement")
+	}
+
+	return t.writePlace(n.X, result)
 }
 
 // arrayDecl handles `varName := array(count)` and `varName := array[Type](count)`:
@@ -279,9 +317,9 @@ func (t *tracer) arrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 // creates a recordInfo for field tracking (so method dispatch works), and stores
 // a containerInfo for methods that need the backing array.
 func (t *tracer) varArrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
-	fnIdent, ok := call.Fun.(*ast.Ident)
+	fnIdent, ok := unwrapCallFun(call.Fun).(*ast.Ident)
 	if !ok {
-		return t.errf(call, "varArray/arrayMap constructor must be called by name, not expression")
+		return t.errf(call, "varArray/arrayMap constructor must be called by name, not expression (use varArray(n) directly, not via a variable or function return)")
 	}
 	if len(call.Args) != 1 {
 		return t.errf(call, "varArray expects exactly 1 argument (capacity)")
@@ -401,12 +439,12 @@ func (t *tracer) compoundAssign(n *ast.AssignStmt, binOp token.Token) error {
 		}
 		cur = exprNum(ir.GetPlace(place))
 	default:
-		return t.errf(n, "unsupported compound assign target %T", lhs)
+		return t.errf(n, "unsupported compound assign target %T (compound assignment +=, -=, etc. requires a variable, struct field, or array element)", lhs)
 	}
 
 	result, ok := applyBinary(t.gen, binOp, cur, rhs)
 	if !ok {
-		return t.errf(n, "unsupported compound operation")
+		return t.errf(n, "unsupported compound operation (only +, -, *, /, %% are supported in compound assignments; no bitwise or logical operators)")
 	}
 	return t.writePlace(lhs, result)
 }
@@ -451,7 +489,7 @@ func (t *tracer) writePlace(lhs ast.Expr, val Num) error {
 		t.emit(t.gen.SetPlace(place, val.mustNode()))
 		return nil
 	}
-	return t.errf(lhs, "cannot write compound assign to %T", lhs)
+	return t.errf(lhs, "cannot write compound assign to %T (compound assignment requires a variable, struct field, or array element)", lhs)
 }
 
 func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
@@ -475,9 +513,9 @@ func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
 // reserves a temp with one slot per field, stores the initializers, and tracks
 // each field as an individual Num for scalar-replaceable reads.
 func (t *tracer) recordDecl(varName *ast.Ident, call *ast.CallExpr, fields []string) error {
-	fnIdent, ok := call.Fun.(*ast.Ident)
+	fnIdent, ok := unwrapCallFun(call.Fun).(*ast.Ident)
 	if !ok {
-		return t.errf(call, "record constructor must be called by name, not expression")
+		return t.errf(call, "record constructor must be called by name, not expression (use vec2(x, y) directly, not via a variable or function return)")
 	}
 	if len(call.Args) != len(fields) {
 		return t.errf(call, "%s expects %d arguments", fnIdent.Name, len(fields))
@@ -670,4 +708,17 @@ func (t *tracer) resolveRecordType(fn *ast.Ident) (st *types.Struct, typeName st
 		return nil, "", false
 	}
 	return st, named.Obj().Name(), true
+}
+
+// unwrapCallFun strips parenthesized expressions from a call's function target.
+// (vec2)(x, y) -> vec2(x, y)
+func unwrapCallFun(fun ast.Expr) ast.Expr {
+	for {
+		if p, ok := fun.(*ast.ParenExpr); ok {
+			fun = p.X
+		} else {
+			break
+		}
+	}
+	return fun
 }
