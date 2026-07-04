@@ -146,6 +146,12 @@ func (t *tracer) returnStmt(n *ast.ReturnStmt) error {
 		vals = append(vals, v)
 	}
 
+	// Emit deferred calls before returning (Go semantics: defers run after
+	// return values are evaluated but before the function actually returns).
+	if err := t.emitDefers(); err != nil {
+		return err
+	}
+
 	if rc.target == nil {
 		// Callback: only single scalar return is valid (callback yields a float
 		// via Break). Composite / multi returns are rejected at the callback level.

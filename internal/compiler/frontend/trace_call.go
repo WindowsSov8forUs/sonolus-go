@@ -94,41 +94,74 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 	case *ast.CallExpr:
 		return t.call(n)
 	case *ast.FuncLit:
-		// Non-capturing anonymous function: compile as an unnamed helper.
-		// Check for captured variables via free-variable analysis.
-		hasCaptures := false
+		// Collect captured outer variables via free-variable analysis.
+		var captures []string
+		seen := make(map[string]bool)
 		ast.Inspect(n.Body, func(node ast.Node) bool {
 			if id, ok := node.(*ast.Ident); ok {
-				// Check if this identifier refers to an outer-scope variable
+				if seen[id.Name] {
+					return true
+				}
 				if _, inVars := t.vars[id.Name]; inVars {
-					hasCaptures = true
-					return false
+					captures = append(captures, id.Name)
+					seen[id.Name] = true
 				}
 				if _, inNames := t.env.Names[id.Name]; inNames {
-					hasCaptures = true
-					return false
+					captures = append(captures, id.Name)
+					seen[id.Name] = true
 				}
 				if _, inRecs := t.records[id.Name]; inRecs {
-					hasCaptures = true
-					return false
+					captures = append(captures, id.Name)
+					seen[id.Name] = true
 				}
 			}
 			return true
 		})
-		if hasCaptures {
-			return Num{}, t.errf(n, "closures capturing outer variables are not supported (only non-capturing closures are allowed; lift captured variables to parameters)")
+
+		if len(captures) == 0 {
+			// Non-capturing: register as a synthetic helper.
+			synthName := fmt.Sprintf("$closure_%d", t.gen.Next())
+			decl := &ast.FuncDecl{
+				Name: &ast.Ident{Name: synthName},
+				Type: n.Type,
+				Body: n.Body,
+			}
+			t.env.Funcs[synthName] = decl
+			return constNum(0), nil
 		}
-		// Register as a synthetic helper function.
+
+		// Capturing closure: allocate a capture frame and store captured values.
 		synthName := fmt.Sprintf("$closure_%d", t.gen.Next())
-		decl := &ast.FuncDecl{
-			Name: &ast.Ident{Name: synthName},
-			Type: n.Type,
-			Body: n.Body,
+		frame := &ir.TempBlock{Name: synthName + "_cap", Size: len(captures)}
+		// Initialize each capture slot from the outer variable's current value.
+		for i, capName := range captures {
+			if tb, ok := t.vars[capName]; ok {
+				val := exprNum(ir.GetPlace(t.cell(tb)))
+				t.emit(t.gen.SetPlace(ir.BlockPlace{Block: frame, Index: ir.Const(i), Offset: 0}, val.mustNode()))
+			} else if b, ok := t.env.Names[capName]; ok {
+				val := exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index)))
+				t.emit(t.gen.SetPlace(ir.BlockPlace{Block: frame, Index: ir.Const(i), Offset: 0}, val.mustNode()))
+			} else if rec, ok := t.records[capName]; ok {
+				// For record captures, capture the full record by reading
+				// its composite value and storing field-by-field.
+				offset := i
+				for j := range rec.order {
+					val := exprNum(ir.GetPlace(ir.BlockPlace{Block: rec.tb, Index: ir.Const(j), Offset: 0}))
+					t.emit(t.gen.SetPlace(ir.BlockPlace{Block: frame, Index: ir.Const(offset + j), Offset: 0}, val.mustNode()))
+				}
+			}
 		}
-		t.env.Funcs[synthName] = decl
-		// Return a placeholder value — the closure is not callable as a value,
-		// but it's registered for potential use.
-		return constNum(0), nil
+		if t.closures == nil {
+			t.closures = make(map[string]*closureInfo)
+		}
+		t.closures[synthName] = &closureInfo{
+			fn:       n,
+			captures: captures,
+			frame:    frame,
+		}
+		// Store the closure name as a temp so it can be referenced for calls.
+		tb := t.alloc(synthName)
+		return exprNum(ir.GetPlace(t.cell(tb))), nil
 	default:
 		return Num{}, t.errf(e, "unsupported expression %T (closures, func literals, and channel receives are not supported because the engine has no heap and no concurrency)", e)
 	}
@@ -215,9 +248,11 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 		return r, err
 	}
 
-	// Calling a local variable as a function is unsupported (closures and
-	// function values cannot be stored in variables).
+	// Calling a local variable as a function — check if it's a captured closure.
 	if _, ok := t.vars[fn.Name]; ok {
+		if ci, ok2 := t.closures[fn.Name]; ok2 {
+			return t.callClosure(fn, n, ci)
+		}
 		return Num{}, t.errf(n, "unsupported call through variable %q (closures and function values cannot be stored in variables; call functions directly instead)", fn.Name)
 	}
 	if _, ok := t.records[fn.Name]; ok {
@@ -789,9 +824,14 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	}
 
 	t.returns = append(t.returns, returnCtx{temp: retTemp, target: cont})
+	t.defers = append(t.defers, deferCtx{})
 	t.inlining[decl.Name.Name] = true
 	err := t.stmtList(decl.Body.List)
 	t.fallthroughTo(cont)
+	// Emit deferred calls at function exit before restoring scope.
+	if defErr := t.emitDefers(); defErr != nil && err == nil {
+		err = defErr
+	}
 	addRet := t.returns[len(t.returns)-1]
 	compositeFields := addRet.compositeFields
 	delete(t.inlining, decl.Name.Name)
@@ -813,3 +853,59 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	}
 	return exprNum(ir.GetPlace(ir.TempCell(retTemp))), nil
 }
+
+// callClosure invokes a captured closure. It sets up a fresh scope with
+// capture bindings, then traces the closure body inline.
+func (t *tracer) callClosure(fn *ast.Ident, call *ast.CallExpr, ci *closureInfo) (Num, error) {
+	// Evaluate call arguments.
+	args := make([]Num, len(call.Args))
+	for i, a := range call.Args {
+		v, err := t.expr(a)
+		if err != nil {
+			return Num{}, err
+		}
+		args[i] = v
+	}
+
+	// Build a synthetic FuncDecl for inlineFunc.
+	decl := &ast.FuncDecl{
+		Name: &ast.Ident{Name: fn.Name},
+		Type: ci.fn.Type,
+		Body: ci.fn.Body,
+	}
+
+	// Create a child environment — captures are bound as writable accessors
+	// via t.vars (not env.Names, since captures are scope locals).
+	childEnv := Env{
+		Funcs:     t.env.Funcs,
+		Accessors: t.env.Accessors,
+		Mode:      t.env.Mode,
+		Info:      t.env.Info,
+	}
+	if childEnv.Funcs == nil {
+		childEnv.Funcs = map[string]*ast.FuncDecl{}
+	}
+	delete(childEnv.Funcs, fn.Name)
+
+	// Save scope, create fresh scope with capture bindings.
+	savedVars := t.vars
+	savedRecords := t.records
+	t.vars = make(map[string]*ir.TempBlock)
+	t.records = make(map[string]*recordInfo)
+
+	// Bind captures into the fresh scope by reading from the capture frame.
+	for i, capName := range ci.captures {
+		tb := t.alloc(capName)
+		capVal := exprNum(ir.GetPlace(ir.BlockPlace{Block: ci.frame, Index: ir.Const(i), Offset: 0}))
+		t.emit(t.gen.SetPlace(t.cell(tb), capVal.mustNode()))
+	}
+
+	// inlineFunc will save/restore scope and bind parameters.
+	result, err := t.inlineFunc(call, decl, args, childEnv)
+
+	// Restore outer scope.
+	t.vars = savedVars
+	t.records = savedRecords
+	return result, err
+}
+

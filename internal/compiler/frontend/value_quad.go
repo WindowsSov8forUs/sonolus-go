@@ -1,8 +1,6 @@
 package frontend
 
 import (
-	"fmt"
-
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
@@ -81,7 +79,47 @@ func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 			}), nil
 		}
 	}
-	return Num{}, fmt.Errorf("quad.permute: non-constant rotation is not supported (the rotation must be a compile-time constant 0, 1, 2, or 3 so field remapping can be resolved statically)")
+
+	// Runtime path: branch-free blend using boolean math for non-constant rotation.
+	// For each output field, blend the 4 rotation layouts:
+	//   out[i] = (n_mod==0)*src0[i] + (n_mod==1)*src1[i] + (n_mod==2)*src2[i] + (n_mod==3)*src3[i]
+	// The conditions are computed as Equal(n_mod, 0..2), with cond3 = Not(cond0|cond1|cond2).
+	quadFields := []string{"blx", "bly", "tlx", "tly", "trx", "try", "brx", "bry"}
+
+	nMod := exprNum(t.gen.PureInstr(resource.RuntimeFunctionMod, n.mustNode(), ir.Const(4)))
+
+	eq := func(a, b Num) Num {
+		return exprNum(t.gen.PureInstr(resource.RuntimeFunctionEqual, a.mustNode(), b.mustNode()))
+	}
+	cond0 := eq(nMod, constNum(0))
+	cond1 := eq(nMod, constNum(1))
+	cond2 := eq(nMod, constNum(2))
+	// cond3 = Not(cond0 | cond1 | cond2) — cheaper than a 4th Equal.
+	or01 := exprNum(t.gen.PureInstr(resource.RuntimeFunctionOr, cond0.mustNode(), cond1.mustNode()))
+	or012 := exprNum(t.gen.PureInstr(resource.RuntimeFunctionOr, or01.mustNode(), cond2.mustNode()))
+	cond3 := exprNum(t.gen.PureInstr(resource.RuntimeFunctionNot, or012.mustNode()))
+
+	src := make([]Num, 8)
+	for i, name := range quadFields {
+		src[i] = q.MustField(name)
+	}
+	conds := [4]Num{cond0, cond1, cond2, cond3}
+
+	out := make(map[string]Num, 8)
+	for i, name := range quadFields {
+		var sum Num
+		for r := 0; r < 4; r++ {
+			srcIdx := (i + r*2) % 8
+			term := exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, conds[r].mustNode(), src[srcIdx].mustNode()))
+			if r == 0 {
+				sum = term
+			} else {
+				sum = exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, sum.mustNode(), term.mustNode()))
+			}
+		}
+		out[name] = sum
+	}
+	return compNum(out), nil
 }
 
 func quadContains(t *tracer, q Num, args []Num) (Num, error) {

@@ -41,6 +41,8 @@ type Env struct {
 	Info        *types.Info         // go/types type-check result (D1 diagnostic layer)
 	Constants   map[string]float64  // named compile-time constants (e.g. archetype indices)
 	SpriteIndex map[string]float64  // sprite name → index (from Skin struct fields)
+	MaxUnroll    int // general loop unroll limit (0 = default 256)
+	MaxUnrollCont int // container unroll limit (0 = default 64)
 }
 
 // loopCtx records the jump targets for break/continue inside a loop.
@@ -90,7 +92,32 @@ type tracer struct {
 	// next case's body, bypassing the condition check.
 	fallthroughTarget *ir.BasicBlock
 
+	maxUnroll     int // general loop unroll limit (default 256)
+	maxUnrollCont int // container iteration unroll limit (default 64)
+
 	labels map[string]*ir.BasicBlock // label -> block mapping for goto
+
+	defers   []deferCtx              // stack of defer scopes, one per function level
+	closures map[string]*closureInfo // captured closures by synthetic name
+}
+
+// deferRecord stores a deferred call with arguments evaluated at defer-time.
+type deferRecord struct {
+	call *ast.CallExpr
+	args []Num
+}
+
+// deferCtx holds the deferred calls for a single function scope.
+type deferCtx struct {
+	records []deferRecord
+}
+
+// closureInfo holds a capturing closure that has been lifted to a synthetic helper.
+// The capture frame stores the captured variable values at closure creation time.
+type closureInfo struct {
+	fn       *ast.FuncLit    // the closure body
+	captures []string        // captured variable names in order
+	frame    *ir.TempBlock   // capture frame (one slot per capture)
 }
 
 // arrayInfo is a fixed-size array local, backed by a multi-slot temp.
@@ -286,24 +313,60 @@ func CompileBlock(fset *token.FileSet, gen *ir.IDGen, body *ast.BlockStmt, env E
 		return nil, fmt.Errorf("frontend: nil function body")
 	}
 	t := &tracer{
-		fset:       fset,
-		gen:        gen,
-		env:        env,
-		vars:       map[string]*ir.TempBlock{},
-		arrays:     map[string]*arrayInfo{},
-		records:    map[string]*recordInfo{},
-		containers: map[string]*containerInfo{},
-		inlining:   map[string]bool{},
+		fset:         fset,
+		gen:          gen,
+		env:          env,
+		vars:         map[string]*ir.TempBlock{},
+		arrays:       map[string]*arrayInfo{},
+		records:      map[string]*recordInfo{},
+		containers:   map[string]*containerInfo{},
+		inlining:     map[string]bool{},
+		maxUnroll:    env.MaxUnroll,
+		maxUnrollCont: env.MaxUnrollCont,
+	}
+	if t.maxUnroll == 0 {
+		t.maxUnroll = 256
+	}
+	if t.maxUnrollCont == 0 {
+		t.maxUnrollCont = 64
 	}
 	t.entry = ir.NewBlock()
 	t.current = t.entry
 	// Callback-level return context: a value return becomes Break on the
 	// callback's JumpLoop (target == nil).
 	t.returns = append(t.returns, returnCtx{})
+	// Push defer scope for this function.
+	t.defers = append(t.defers, deferCtx{})
 	if err := t.stmtList(body.List); err != nil {
 		return nil, err
 	}
+	// Emit deferred calls at function exit (implicit return with no value).
+	if err := t.emitDefers(); err != nil {
+		return nil, err
+	}
 	return t.entry, nil
+}
+
+// emitDefers emits all deferred calls for the current function scope in LIFO order.
+func (t *tracer) emitDefers() error {
+	if len(t.defers) == 0 {
+		return nil
+	}
+	ctx := &t.defers[len(t.defers)-1]
+	for i := len(ctx.records) - 1; i >= 0; i-- {
+		d := ctx.records[i]
+		// Re-evaluate the deferred call with stored arguments.
+		// We need to call via the normal call path with pre-evaluated args.
+		fn, ok := d.call.Fun.(*ast.Ident)
+		if !ok {
+			return t.errf(d.call, "deferred call must use a plain function name")
+		}
+		if _, err := t.callWithArgs(fn, d.call, d.args); err != nil {
+			return err
+		}
+	}
+	t.defers = t.defers[:len(t.defers)-1]
+	return nil
 }
 
 func (t *tracer) errf(node ast.Node, format string, args ...any) error {
@@ -356,6 +419,22 @@ func (t *tracer) stmt(s ast.Stmt) error {
 		err := t.stmt(n.Stmt)
 		t.stmtLabel = prev
 		return err
+	case *ast.DeferStmt:
+		if len(t.defers) == 0 {
+			return t.errf(n, "defer outside of a function")
+		}
+		call := n.Call
+		args := make([]Num, len(call.Args))
+		for i, a := range call.Args {
+			v, err := t.expr(a)
+			if err != nil {
+				return err
+			}
+			args[i] = v
+		}
+		ctx := &t.defers[len(t.defers)-1]
+		ctx.records = append(ctx.records, deferRecord{call: call, args: args})
+		return nil
 	case *ast.ForStmt:
 		return t.forStmt(n)
 	case *ast.RangeStmt:
