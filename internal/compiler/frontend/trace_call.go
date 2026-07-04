@@ -632,7 +632,7 @@ func (t *tracer) inlineComposite(fnName *ast.Ident, call *ast.CallExpr, fields [
 // callUserFunc inlines a free helper function: it sees only accessors and other
 // functions (no archetype fields).
 func (t *tracer) callUserFunc(fnName *ast.Ident, decl *ast.FuncDecl, args []Num) (Num, error) {
-	child := Env{Names: t.env.Accessors, Accessors: t.env.Accessors, Funcs: t.env.Funcs, Methods: t.env.Methods, Constants: t.env.Constants}
+	child := Env{Names: t.env.Names, Accessors: t.env.Accessors, Funcs: t.env.Funcs, Methods: t.env.Methods, Constants: t.env.Constants}
 	return t.inlineFunc(fnName, decl, args, child)
 }
 
