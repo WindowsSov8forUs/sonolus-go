@@ -22,19 +22,20 @@ var methodCallbacks = map[string]play.Callback{
 }
 
 type parsedArchetype struct {
-	name     string
-	imported []ImportedField
-	memory   []string
-	exported []string
-	data     []string
-	shared   []string
-	input    []string
-	despawn  []string
-	info     []string
-	scored   bool
-	lifed    bool
-	methods  []parsedMethod
-	helpers  map[string]*ast.FuncDecl
+	name       string
+	imported   []ImportedField
+	memory     []string
+	exported   []string
+	data       []string
+	shared     []string
+	input      []string
+	despawn    []string
+	info       []string
+	scored     bool
+	lifed      bool
+	methods    []parsedMethod
+	helpers    map[string]*ast.FuncDecl
+	containers []ContainerFieldMeta
 }
 
 type parsedMethod struct {
@@ -239,6 +240,7 @@ func parseFields(a *parsedArchetype, st *ast.StructType) error {
 	a.input = tc.input
 	a.despawn = tc.despawn
 	a.info = tc.info
+	a.containers = tc.containers
 	return nil
 }
 
@@ -291,7 +293,8 @@ spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 			return frontend.Env{
 				Names: names, Receiver: receiver, Funcs: funcs, Methods: a.helpers,
 				Accessors: frontend.ModeAccessorsReadOnly(ir.ModePlay),
-				Mode:        ir.ModePlay, SpriteIndex: spriteIndex,
+				Mode:            ir.ModePlay, SpriteIndex: spriteIndex,
+			ContainerFields: frontendContainerFieldMeta(a.containers),
 			}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {

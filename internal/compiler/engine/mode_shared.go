@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
@@ -36,13 +37,14 @@ func modeName(m ir.Mode) string {
 // both parseFields (Play mode, which also handles exported/scored/lifed) and
 // parseModeFile (Watch/Preview/Tutorial modes).
 type tagCollector struct {
-	imported []ImportedField
-	memory   []string
-	data     []string
-	shared   []string
-	input    []string
-	despawn  []string
-	info     []string
+	imported   []ImportedField
+	memory     []string
+	data       []string
+	shared     []string
+	input      []string
+	despawn    []string
+	info       []string
+	containers []ContainerFieldMeta
 }
 
 // collectSonolusTags reads sonolus struct tags from a field and appends field
@@ -55,8 +57,11 @@ func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTa
 		return "", ""
 	}
 	tag := reflect.StructTag(stringLit(field.Tag.Value)).Get("sonolus")
+	// Extract base tag for switch matching. Extended tags like
+	// "memory,capacity:64" carry additional parameters via comma.
+	baseTag, _, _ := strings.Cut(tag, ",")
 	for _, name := range field.Names {
-		switch tag {
+		switch baseTag {
 		case "imported":
 			if fields, ok := resolveFieldLayout(field.Type); ok {
 				for _, sf := range fields {
@@ -66,6 +71,19 @@ func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTa
 				tc.imported = append(tc.imported, ImportedField{Name: name.Name})
 			}
 		case "memory":
+			if ctName := resolveFieldTypeName(field.Type); ctName != "" {
+				if ct, ok := containerTypeNames[ctName]; ok {
+					if capVal, hasCap := parseContainerTag(tag); hasCap {
+						tc.memory = appendContainerFieldNames(tc.memory, name.Name, ctName, capVal)
+						tc.containers = append(tc.containers, ContainerFieldMeta{
+							Name: name.Name, TypeName: ct.recordName,
+							Capacity: capVal, ElemSize: ct.elemSize,
+						})
+						continue
+					}
+					return tag + " (container type " + ctName + " requires cap=N)", ""
+				}
+			}
 			tc.memory = appendFieldNames(tc.memory, name.Name, field.Type)
 		case "data":
 			tc.data = appendFieldNames(tc.data, name.Name, field.Type)
@@ -280,7 +298,7 @@ func compileArchetypeCallbacks(spriteIndex map[string]float64,
 			}
 		}
 		envBuilder := func(receiver string) frontend.Env {
-			return frontend.Env{Names: names, Receiver: receiver, Funcs: funcs, Accessors: accessors, Mode: mode}
+			return frontend.Env{Names: names, Receiver: receiver, Funcs: funcs, Accessors: accessors, Mode: mode, ContainerFields: frontendContainerFieldMeta(a.containers)}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
 			mn := modeName(mode)

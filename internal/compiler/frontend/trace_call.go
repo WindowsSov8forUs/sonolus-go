@@ -675,6 +675,13 @@ func (t *tracer) resolvePkgName(x ast.Expr) string {
 func (t *tracer) resolveRecordField(sel *ast.SelectorExpr) (Num, string, bool) {
 	fieldName := sel.Sel.Name
 
+	// Check container struct fields first.
+	for _, cf := range t.env.ContainerFields {
+		if cf.Name == fieldName {
+			return t.resolveContainerField(fieldName, cf)
+		}
+	}
+
 	// Match expanded sub-field bindings against builtin and user record types.
 	var recordName string
 	var recordFields []string
@@ -726,6 +733,41 @@ FieldLoop:
 	return compNum(fieldVals), recordName, true
 }
 
+// resolveContainerField builds a composite Num and a containerInfo for a
+// container-typed struct field (VarArray, ArrayMap, ArraySet, FrozenNumSet).
+// The field is backed by EntityMemory slots and uses the containerFn dispatch.
+func (t *tracer) resolveContainerField(fieldName string, cf ContainerFieldMeta) (Num, string, bool) {
+	// Look up the _size binding to get the base block and slot.
+	sizeBinding, ok := t.env.Names[fieldName+".__size__"]
+	if !ok {
+		return Num{}, "", false
+	}
+	blockID := sizeBinding.Block
+	baseIdx := sizeBinding.Index
+
+	// Build composite Num matching the container's record type.
+	fieldVals := map[string]Num{
+		"_size":  exprNum(ir.GetPlace(ir.Cell(blockID, baseIdx))),
+		"_array": constNum(float64(cf.Capacity)),
+	}
+	recordNum := compNum(fieldVals)
+
+	// Register a field-backed containerInfo so containerFn dispatch finds it.
+	ci := newContainerInfoField(blockID, baseIdx, cf.Capacity, cf.ElemSize, recordNum)
+	t.containers[fieldName] = ci
+
+	return recordNum, cf.TypeName, true
+}
+
+// populateFieldContainers creates containerInfo entries for container-typed
+// struct fields declared in the archetype. Called once at the start of each
+// callback compilation.
+func (t *tracer) populateFieldContainers() {
+	for _, cf := range t.env.ContainerFields {
+		t.resolveContainerField(cf.Name, cf)
+	}
+}
+
 // lowerFirst returns s with the first character lowercased.
 // e.g. "Draw" → "draw", "DebugPause" → "debugPause".
 func lowerFirst(s string) string {
@@ -764,7 +806,9 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 							}
 						}
 						if entry.containerFn != nil {
-							return Num{}, t.errf(sel, "container methods not supported on struct field records")
+							if ci, ok := t.containers[inner.Sel.Name]; ok {
+								return entry.containerFn(t, ci, recordNum, args)
+							}
 						}
 						return entry.fn(t, recordNum, args)
 					}

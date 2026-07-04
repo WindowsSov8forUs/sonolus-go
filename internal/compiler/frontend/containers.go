@@ -48,32 +48,48 @@ func pairTuple(t *tracer, p Num, args []Num) (Num, error) {
 
 // ── Container info type ─────────────────────────────────────────────────────
 
-// containerInfo tracks a VarArray / ArrayMap / ArraySet local. It stores the
-// compile-time capacity and the backing TempBlock so that methods can emit
-// correct IR for element access and size manipulation.
+// containerInfo tracks a VarArray / ArrayMap / ArraySet local or struct field.
+// For locals the backing is a TempBlock (block=TempBlock, baseIndex=0).
+// For struct fields the backing is EntityMemory (block=Const(blockID), baseIndex=slotOffset).
 type containerInfo struct {
-	tb       *ir.TempBlock // backing memory: slot[0]=_size, slot[1..]=elements
-	sizeSlot int           // slot index for _size (always 0)
-	dataOff  int           // first data slot (always 1)
-	capacity int           // max element count (compile-time constant)
-	elemSize int           // slots per element (1 for scalar, N for N-field record)
-	val      Num           // tracked composite Num for field reads
+	block    ir.Node // *ir.TempBlock for locals, ir.Const(blockID) for fields
+	baseIdx  int     // 0 for locals, slot offset within block for fields
+	sizeSlot int     // slot index for _size (always 0)
+	dataOff  int     // first data slot (always 1)
+	capacity int     // max element count (compile-time constant)
+	elemSize int     // slots per element (1 for scalar, N for N-field record)
+	val      Num     // tracked composite Num for field reads
+}
+
+// newContainerInfoLocal creates a containerInfo backed by a TempBlock (local variable).
+func newContainerInfoLocal(tb *ir.TempBlock, capacity, elemSize int, val Num) *containerInfo {
+	return &containerInfo{
+		block: tb, baseIdx: 0, sizeSlot: 0, dataOff: 1,
+		capacity: capacity, elemSize: elemSize, val: val,
+	}
+}
+
+// newContainerInfoField creates a containerInfo backed by an EntityMemory block (struct field).
+func newContainerInfoField(blockID, baseIdx, capacity, elemSize int, val Num) *containerInfo {
+	return &containerInfo{
+		block: ir.Const(blockID), baseIdx: baseIdx, sizeSlot: 0, dataOff: 1,
+		capacity: capacity, elemSize: elemSize, val: val,
+	}
 }
 
 // sizePlace returns the BlockPlace for the _size field.
 func (ci *containerInfo) sizePlace() ir.BlockPlace {
-	return ir.BlockPlace{Block: ci.tb, Index: ir.Const(ci.sizeSlot), Offset: 0}
+	return ir.BlockPlace{Block: ci.block, Index: ir.Const(ci.baseIdx + ci.sizeSlot), Offset: 0}
 }
 
 // elemPlace returns the BlockPlace for element at the given logical index.
-// The index is multiplied by elemSize and added to dataOff.
 func (ci *containerInfo) elemPlace(gen *ir.IDGen, index ir.Node) ir.BlockPlace {
+	off := ci.baseIdx + ci.dataOff
 	if ci.elemSize == 1 {
-		return ir.BlockPlace{Block: ci.tb, Index: gen.PureInstr(resource.RuntimeFunctionAdd, ir.Const(ci.dataOff), index), Offset: 0}
+		return ir.BlockPlace{Block: ci.block, Index: gen.PureInstr(resource.RuntimeFunctionAdd, ir.Const(off), index), Offset: 0}
 	}
-	// elemSize > 1: compute dataOff + index * elemSize
 	scaled := gen.PureInstr(resource.RuntimeFunctionMultiply, index, ir.Const(ci.elemSize))
-	return ir.BlockPlace{Block: ci.tb, Index: gen.PureInstr(resource.RuntimeFunctionAdd, ir.Const(ci.dataOff), scaled), Offset: 0}
+	return ir.BlockPlace{Block: ci.block, Index: gen.PureInstr(resource.RuntimeFunctionAdd, ir.Const(off), scaled), Offset: 0}
 }
 
 // readSize returns an IR Get node that reads the current _size value.
@@ -409,7 +425,7 @@ func varArraySetRemoveCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, 
 //
 // Helper: valuePlace returns the place of the value slot for a given key place.
 func (ci *containerInfo) valuePlace(gen *ir.IDGen, keySlot ir.Node) ir.BlockPlace {
-	return ir.BlockPlace{Block: ci.tb, Index: gen.PureInstr(resource.RuntimeFunctionAdd, keySlot, ir.Const(1)), Offset: 0}
+	return ir.BlockPlace{Block: ci.block, Index: gen.PureInstr(resource.RuntimeFunctionAdd, keySlot, ir.Const(1)), Offset: 0}
 }
 
 // arrayMapGetCI searches by key and returns the associated value, or 0 if not found.
@@ -439,7 +455,7 @@ func arrayMapSetCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, error)
 			// Not found — append {key, value} at position _size.
 			sizeNode := ci.readSize()
 			keySlot := ci.elemPlace(t.gen, sizeNode).Index
-			t.emit(t.gen.SetPlace(ir.BlockPlace{Block: ci.tb, Index: keySlot, Offset: 0}, key))
+			t.emit(t.gen.SetPlace(ir.BlockPlace{Block: ci.block, Index: keySlot, Offset: 0}, key))
 			t.emit(t.gen.SetPlace(ci.valuePlace(t.gen, keySlot), val))
 			ci.writeSize(t, t.gen.PureInstr(resource.RuntimeFunctionAdd, sizeNode, ir.Const(1)))
 			return ir.Const(0)
@@ -457,9 +473,9 @@ func arrayMapDeleteCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, err
 			lastIdx := t.gen.PureInstr(resource.RuntimeFunctionSubtract, sizeNode, ir.Const(1))
 			idxKeySlot := ci.elemPlace(t.gen, idx).Index
 			lastKeySlot := ci.elemPlace(t.gen, lastIdx).Index
-			lastKey := ir.GetPlace(ir.BlockPlace{Block: ci.tb, Index: lastKeySlot, Offset: 0})
+			lastKey := ir.GetPlace(ir.BlockPlace{Block: ci.block, Index: lastKeySlot, Offset: 0})
 			lastVal := ir.GetPlace(ci.valuePlace(t.gen, lastKeySlot))
-			t.emit(t.gen.SetPlace(ir.BlockPlace{Block: ci.tb, Index: idxKeySlot, Offset: 0}, lastKey))
+			t.emit(t.gen.SetPlace(ir.BlockPlace{Block: ci.block, Index: idxKeySlot, Offset: 0}, lastKey))
 			t.emit(t.gen.SetPlace(ci.valuePlace(t.gen, idxKeySlot), lastVal))
 			ci.writeSize(t, lastIdx)
 			return ir.Const(1)
@@ -490,9 +506,9 @@ func arrayMapPopCI(t *tracer, ci *containerInfo, v Num, args []Num) (Num, error)
 			sizeNode := ci.readSize()
 			lastIdx := t.gen.PureInstr(resource.RuntimeFunctionSubtract, sizeNode, ir.Const(1))
 			lastKeySlot := ci.elemPlace(t.gen, lastIdx).Index
-			lastKey := ir.GetPlace(ir.BlockPlace{Block: ci.tb, Index: lastKeySlot, Offset: 0})
+			lastKey := ir.GetPlace(ir.BlockPlace{Block: ci.block, Index: lastKeySlot, Offset: 0})
 			lastVal := ir.GetPlace(ci.valuePlace(t.gen, lastKeySlot))
-			t.emit(t.gen.SetPlace(ir.BlockPlace{Block: ci.tb, Index: idxKeySlot, Offset: 0}, lastKey))
+			t.emit(t.gen.SetPlace(ir.BlockPlace{Block: ci.block, Index: idxKeySlot, Offset: 0}, lastKey))
 			t.emit(t.gen.SetPlace(ci.valuePlace(t.gen, idxKeySlot), lastVal))
 			ci.writeSize(t, lastIdx)
 			return savedVal

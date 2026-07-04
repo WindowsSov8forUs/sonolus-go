@@ -28,15 +28,16 @@ type modeMethod struct {
 }
 
 type modeArch struct {
-	name     string
-	imported []ImportedField
-	memory   []string
-	data     []string
-	shared   []string
-	input    []string
-	despawn  []string
-	info     []string
-	methods  []modeMethod
+	name       string
+	imported   []ImportedField
+	memory     []string
+	data       []string
+	shared     []string
+	input      []string
+	despawn    []string
+	info       []string
+	methods    []modeMethod
+	containers []ContainerFieldMeta
 }
 
 var watchCallbacks = map[string]string{
@@ -94,6 +95,7 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 		a.input = tc.input
 		a.despawn = tc.despawn
 		a.info = tc.info
+		a.containers = tc.containers
 	}
 
 	for _, m := range pes.methods {
