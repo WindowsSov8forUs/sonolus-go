@@ -85,6 +85,11 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 				if f, ok := v.TryField(n.Sel.Name); ok {
 					return f, nil
 				}
+				// Try lowercase: Go field names are exported (uppercase)
+				// but record composite fields are stored lowercase (t, r, b, l).
+				if f, ok := v.TryField(strings.ToLower(n.Sel.Name)); ok {
+					return f, nil
+				}
 				return Num{}, t.errf(n, "record has no field %q", n.Sel.Name)
 			}
 		}
@@ -460,6 +465,15 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 	case "debugTerminate":
 		t.terminated = true
 		return constNum(0), true, nil
+	case "entityInfo":
+		if len(n.Args) == 1 {
+			indexVal, err := t.expr(n.Args[0])
+			if err != nil {
+				return Num{}, true, err
+			}
+			return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(4103), indexVal.mustNode(), 0))), true, nil
+		}
+		return Num{}, true, t.errf(n, "entityInfo expects 1 argument (index)")
 	default:
 		if strings.HasPrefix(fn.Name, "vec2") {
 			key := strings.ToLower(fn.Name[4:])
@@ -484,7 +498,7 @@ func (t *tracer) callWithArgs(fn *ast.Ident, n *ast.CallExpr, args []Num) (Num, 
 		}
 		place := ir.NewBlockPlace(args[0].mustNode(), args[1].mustNode(), 0)
 		return exprNum(ir.GetPlace(place)), nil
-	case "touchId":
+	case "touchId", "touchID": // touchID: lowerFirst("TouchID") produces "touchID"
 		return t.touchField(n, args, 0)
 	case "touchStarted":
 		return t.touchField(n, args, 1)
@@ -654,6 +668,64 @@ func (t *tracer) resolvePkgName(x ast.Expr) string {
 	return ""
 }
 
+// resolveRecordField resolves a struct field access like n.Ref (where n is the
+// receiver and Ref is a record-typed field) into a composite Num and the record
+// type name. It matches expanded field bindings (e.g. "Ref.index") against known
+// record types to determine the type, then reads each field slot from memory.
+func (t *tracer) resolveRecordField(sel *ast.SelectorExpr) (Num, string, bool) {
+	fieldName := sel.Sel.Name
+
+	// Match expanded sub-field bindings against builtin and user record types.
+	var recordName string
+	var recordFields []string
+FieldLoop:
+	for _, rd := range builtinRecords {
+		for _, f := range rd.fields {
+			fullName := fieldName + "." + strings.ToLower(f)
+			if _, ok := t.env.Names[fullName]; !ok {
+				continue FieldLoop
+			}
+		}
+		recordName = rd.name
+		recordFields = rd.fields
+		break
+	}
+	if recordName == "" {
+	UserLoop:
+		for rn, fields := range t.env.Records {
+			for _, f := range fields {
+				fullName := fieldName + "." + strings.ToLower(f)
+				if _, ok := t.env.Names[fullName]; !ok {
+					continue UserLoop
+				}
+			}
+			recordName = rn
+			recordFields = fields
+			break
+		}
+	}
+	if recordName == "" {
+		return Num{}, "", false
+	}
+
+	// Derive base memory location from the first sub-field binding.
+	firstField := fieldName + "." + strings.ToLower(recordFields[0])
+	if _, ok := t.env.Names[firstField]; !ok {
+		return Num{}, "", false
+	}
+
+	// Build a composite Num by reading each field slot from memory.
+	// Slots are contiguous: field.index occupies the same slot as the sub-field binding.
+	fieldVals := make(map[string]Num, len(recordFields))
+	for i, f := range recordFields {
+		fullName := fieldName + "." + strings.ToLower(f)
+		bf, _ := t.env.Names[fullName]
+		fieldVals[f] = exprNum(ir.GetPlace(ir.Cell(bf.Block, bf.Index)))
+		_ = i
+	}
+	return compNum(fieldVals), recordName, true
+}
+
 // lowerFirst returns s with the first character lowercased.
 // e.g. "Draw" → "draw", "DebugPause" → "debugPause".
 func lowerFirst(s string) string {
@@ -667,6 +739,37 @@ func lowerFirst(s string) string {
 // receiver.Method(args); the method body sees the archetype's fields via its own
 // receiver.
 func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error) {
+	// Record method on a struct field: n.Ref.get(...) where Ref is a
+	// record-typed field (EntityRef, Vec2, etc.).
+	if inner, ok := sel.X.(*ast.SelectorExpr); ok {
+		if base, ok2 := inner.X.(*ast.Ident); ok2 && base.Name == t.env.Receiver {
+			if recordNum, recordType, ok3 := t.resolveRecordField(inner); ok3 {
+				if methods, ok4 := recordMethods[recordType]; ok4 {
+					if entry, ok5 := methods[sel.Sel.Name]; ok5 {
+						args := make([]Num, len(n.Args))
+						for i, a := range n.Args {
+							v, err := t.expr(a)
+							if err != nil {
+								return Num{}, err
+							}
+							args[i] = v
+						}
+						for _, idx := range entry.compositeArgAt {
+							if idx < len(args) && !args[idx].IsComposite() {
+								return Num{}, t.errf(sel, "method %q arg %d must be a composite value", sel.Sel.Name, idx+1)
+							}
+						}
+						if entry.containerFn != nil {
+							return Num{}, t.errf(sel, "container methods not supported on struct field records")
+						}
+						return entry.fn(t, recordNum, args)
+					}
+				}
+			}
+		}
+		// Continue to next dispatch if not resolved as a record field method.
+	}
+
 	// Record method call: v.mul(s) where v is a vec2/quad/mat/rect/trans.
 	// Uses the unified recordMethods registry (value.go) for table-driven dispatch.
 	if base, ok := sel.X.(*ast.Ident); ok {

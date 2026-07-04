@@ -160,6 +160,9 @@ func (s *sccpState) init(entry *ir.BasicBlock) {
 			incomingBySrc[e.Src] = append(incomingBySrc[e.Src], e)
 		}
 		for _, phi := range block.Phis {
+			if phi.Target == nil {
+				continue
+			}
 			p := phi.Target.(ir.SSAPlace)
 			pd := map[*ir.FlowEdge]ir.Place{}
 			for srcBlock, arg := range phi.Args {
@@ -227,7 +230,9 @@ func (s *sccpState) drainFlowWork() {
 		block := edge.Dst
 
 		for _, phi := range block.Phis {
-			s.visitPhi(phi.Target.(ir.SSAPlace))
+			if phi.Target != nil {
+				s.visitPhi(phi.Target.(ir.SSAPlace))
+			}
 		}
 
 		executableIncoming := 0

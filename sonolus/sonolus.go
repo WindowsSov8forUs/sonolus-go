@@ -32,6 +32,7 @@ type FrozenNumSet struct{ Size float64; Array []float64 }
 type LoopedEffectHandle struct{ ID float64 }
 type ScheduledLoopedEffectHandle struct{ ID float64 }
 type ParticleHandle struct{ ID float64 }
+type EntityRef struct{ Index float64 }
 
 // ── Handle methods ──
 
@@ -39,6 +40,8 @@ func (h LoopedEffectHandle) Stop()                                 {}
 func (h ScheduledLoopedEffectHandle) Stop(endTime float64)         {}
 func (h ParticleHandle) Move(quad Quad)                            {}
 func (h ParticleHandle) Destroy()                                  {}
+func (r EntityRef) Get(block, index float64) float64               { return 0 }
+func (r EntityRef) Set(block, index, value float64)                {}
 
 // ── Vec2 methods ──
 
@@ -293,6 +296,24 @@ func DebugRequire(cond, msg float64)       {}
 func DebugAssertTrue(cond, msg float64)    {}
 func DebugAssertFalse(cond, msg float64)   {}
 func DebugTerminate()                     {}
+
+// ── Convenience wrappers ──
+
+// EntityInfo reads the EntityInfoArray at the given index. This is a convenience
+// wrapper around get(4103, index) for cross-entity info queries.
+func EntityInfo(index float64) float64 { return 0 }
+
+// ── Memory block constants ──
+
+// Block ID constants for commonly accessed engine memory blocks.
+const (
+	BlockLevelMemory       = 2000
+	BlockSkinTransform     = 1003
+	BlockParticleTransform = 1004
+	BlockBackground        = 1005
+	BlockUI                = 1006
+	BlockUIConfiguration   = 1007
+)
 
 // ── Runtime functions — memory ──
 

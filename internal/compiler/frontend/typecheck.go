@@ -43,6 +43,10 @@ func PreludeSource(pkg string, records map[string][]string) string {
 	// ParticleHandle methods
 	b.WriteString("func (h ParticleHandle) move(quad Quad) {}\n")
 	b.WriteString("func (h ParticleHandle) destroy() {}\n")
+	// EntityRef methods
+	b.WriteString("type EntityRef struct { index float64 }\n")
+	b.WriteString("func (r EntityRef) get(block, index float64) float64 { return 0 }\n")
+	b.WriteString("func (r EntityRef) set(block, index, value float64) {}\n")
 
 	// User-defined records — type declarations are already in the user source.
 	// The prelude generates constructor stubs with lowercase names to avoid

@@ -107,7 +107,7 @@ func (c *cseState) rewrite(n ir.Node, pre *[]ir.Node, added *[]cseKeyType, h has
 		}
 		nb := c.rewrite(bp.Block, pre, added, h)
 		ni := c.rewrite(bp.Index, pre, added, h)
-		if nb != bp.Block || ni != bp.Index {
+		if safeNodeCompare(nb, bp.Block) || safeNodeCompare(ni, bp.Index) {
 			return ir.Get{Place: ir.BlockPlace{Block: nb, Index: ni, Offset: bp.Offset}}
 		}
 		return t
@@ -219,3 +219,18 @@ func (CSE) Preserves() []Analysis { return []Analysis{AnalysisSSA} }
 
 // Destroys implements ManagedPass.
 func (CSE) Destroys() []Analysis { return nil }
+
+// safeNodeCompare reports whether a and b differ, avoiding the interface
+// comparison panic when the dynamic type is ir.Instr (non-comparable due to
+// []Node slice field). Returns true when the values are known to differ.
+func safeNodeCompare(a, b ir.Node) bool {
+	// Check type first to avoid interface comparison panic.
+	_, aInstr := a.(ir.Instr)
+	_, bInstr := b.(ir.Instr)
+	if aInstr || bInstr {
+		// Instr values are never equal in CSE unless they're the same object.
+		// Different Instr values always differ from each other and from other types.
+		return true
+	}
+	return a != b
+}
