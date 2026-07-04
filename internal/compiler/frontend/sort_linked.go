@@ -142,14 +142,14 @@ func sortLinkedEntitiesCall(t *tracer, args []Num) (Num, error) {
 	}
 	// Offset arguments must be compile-time constants.
 	if !args[1].isConst || !args[2].isConst {
-		return Num{}, fmt.Errorf("frontend: sortLinkedEntities: sortKeyOffset and nextOffset must be compile-time constants")
+		return Num{}, fmt.Errorf("frontend: sortLinkedEntities: sortKeyOffset and nextOffset must be compile-time constants (the sort algorithm needs fixed memory offsets to generate the comparison chain statically)")
 	}
 	sortKeyOff := int(args[1].c)
 	nextOff := int(args[2].c)
 	prevOff := 0
 	if len(args) >= 4 {
 		if !args[3].isConst {
-			return Num{}, fmt.Errorf("frontend: sortLinkedEntities: prevOffset must be a compile-time constant")
+			return Num{}, fmt.Errorf("frontend: sortLinkedEntities: prevOffset must be a compile-time constant (the sort algorithm needs fixed memory offsets to generate the comparison chain statically)")
 		}
 		prevOff = int(args[3].c)
 	}

@@ -25,7 +25,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		res, ok := applyUnary(t.gen, n.Op, x)
 		if !ok {
-			return Num{}, t.errf(n, "unsupported unary operator %s", n.Op)
+			return Num{}, t.errf(n, "unsupported unary operator %s (only +, -, ! are supported; no ^, &, or <-)", n.Op)
 		}
 		return res, nil
 	case *ast.BinaryExpr:
@@ -39,7 +39,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		res, ok := applyBinary(t.gen, n.Op, x, y)
 		if !ok {
-			return Num{}, t.errf(n, "binary operator %s requires scalar operands", n.Op)
+			return Num{}, t.errf(n, "binary operator %s is not supported (only arithmetic +, -, *, /, %%, comparison, and logical &&, || operators are supported; no bitwise &, |, ^, <<, >>)", n.Op)
 		}
 		return res, nil
 	case *ast.IndexExpr:
@@ -93,7 +93,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 	case *ast.CallExpr:
 		return t.call(n)
 	default:
-		return Num{}, t.errf(e, "unsupported expression %T", e)
+		return Num{}, t.errf(e, "unsupported expression %T (closures, func literals, and channel receives are not supported because the engine has no heap and no concurrency)", e)
 	}
 }
 
@@ -112,7 +112,7 @@ func (t *tracer) literal(n *ast.BasicLit) (Num, error) {
 		}
 		return constNum(v), nil
 	default:
-		return Num{}, t.errf(n, "unsupported literal %s", n.Kind)
+		return Num{}, t.errf(n, "unsupported literal %s (only int and float literals are supported; all values are float64 at runtime)", n.Kind)
 	}
 }
 
@@ -165,7 +165,7 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 	}
 	fn, ok := n.Fun.(*ast.Ident)
 	if !ok {
-		return Num{}, t.errf(n, "unsupported call target")
+		return Num{}, t.errf(n, "unsupported call target (function calls must use a plain identifier or selector expression, e.g. foo() or obj.Method())")
 	}
 
 	// Type-driven dispatch from go/types info.
@@ -197,11 +197,11 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 func (t *tracer) compositeLit(n *ast.CompositeLit) (Num, error) {
 	typeName, ok := n.Type.(*ast.Ident)
 	if !ok {
-		return Num{}, t.errf(n, "composite literal type must be an identifier")
+		return Num{}, t.errf(n, "composite literal type must be an identifier (use TypeName{...} directly, not a qualified or parameterized type)")
 	}
 	fields, known := knownRecordFields(typeName.Name, t.env.Records)
 	if !known {
-		return Num{}, t.errf(n, "unknown record type %q in composite literal", typeName.Name)
+		return Num{}, t.errf(n, "unknown record type %q in composite literal (composite literals are only supported for known record types: Vec2, Quad, Mat, Rect, Trans, Pair)", typeName.Name)
 	}
 
 	// Build field → value map from the composite literal elements.
@@ -211,7 +211,7 @@ func (t *tracer) compositeLit(n *ast.CompositeLit) (Num, error) {
 		case *ast.KeyValueExpr:
 			key, ok := kv.Key.(*ast.Ident)
 			if !ok {
-				return Num{}, t.errf(kv, "composite literal key must be an identifier")
+				return Num{}, t.errf(kv, "composite literal key must be an identifier (use FieldName: value, not a string or expression key)")
 			}
 			v, err := t.expr(kv.Value)
 			if err != nil {
@@ -621,7 +621,7 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 
 	base, ok := sel.X.(*ast.Ident)
 	if !ok || t.env.Receiver == "" || base.Name != t.env.Receiver {
-		return Num{}, t.errf(sel, "unsupported method call")
+		return Num{}, t.errf(sel, "unsupported method call (only methods on archetype receivers and known record types like Vec2, Quad are supported)")
 	}
 	decl, ok := t.env.Methods[sel.Sel.Name]
 	if !ok {
@@ -648,7 +648,7 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 // and yields the return value.
 func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, childEnv Env) (Num, error) {
 	if t.inlining[decl.Name.Name] {
-		return Num{}, t.errf(node, "recursive call to %q is not supported", decl.Name.Name)
+		return Num{}, t.errf(node, "recursive call to %q is not supported (helper functions are inlined at every call site, so recursion would cause infinite expansion)", decl.Name.Name)
 	}
 	params := funcParams(decl)
 	if len(args) != len(params) {

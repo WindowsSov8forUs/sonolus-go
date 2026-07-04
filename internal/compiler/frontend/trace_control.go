@@ -206,7 +206,7 @@ func (t *tracer) branch(n *ast.BranchStmt) error {
 	case token.CONTINUE:
 		t.current.ConnectTo(loop.continueTo, nil)
 	default:
-		return t.errf(n, "unsupported branch statement %s", n.Tok)
+		return t.errf(n, "unsupported branch statement %s (only break and continue are supported; no goto or fallthrough)", n.Tok)
 	}
 	// The rest of this block is unreachable; stmtList stops here.
 	t.terminated = true
@@ -226,7 +226,7 @@ func (t *tracer) dispatchElse(elseStmt ast.Stmt) error {
 	case *ast.IfStmt:
 		return t.ifStmt(e)
 	default:
-		return t.errf(elseStmt, "unsupported else %T", elseStmt)
+		return t.errf(elseStmt, "unsupported else %T (only block else {...} and else if {...} are supported)", elseStmt)
 	}
 }
 
@@ -249,7 +249,7 @@ func (t *tracer) traceElseBranch(elseStmt ast.Stmt, elseBlock, merge *ir.BasicBl
 			return err
 		}
 	default:
-		return t.errf(elseStmt, "unsupported else %T", elseStmt)
+		return t.errf(elseStmt, "unsupported else %T (only block else {...} and else if {...} are supported)", elseStmt)
 	}
 	t.fallthroughTo(merge)
 	return nil

@@ -288,7 +288,7 @@ func (t *tracer) stmt(s ast.Stmt) error {
 	case *ast.EmptyStmt:
 		return nil
 	default:
-		return t.errf(s, "unsupported statement %T", s)
+		return t.errf(s, "unsupported statement %T (the Sonolus engine is single-threaded with a float64-only runtime; defer, go, select, and type switches are not supported)", s)
 	}
 }
 

@@ -61,7 +61,7 @@ func (t *tracer) multiAssign(n *ast.AssignStmt) error {
 			} else if b, ok2 := t.env.Names[id.Name]; ok2 && b.Writable {
 				t.emitBindingStore(b, fval)
 			} else {
-				return t.errf(lhs, "cannot assign to %q", id.Name)
+				return t.errf(lhs, "cannot assign to %q (variable has no local or writable binding; use := to declare a new variable)", id.Name)
 			}
 		}
 	}
@@ -74,7 +74,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 		if binOp, ok := compoundOps[nt]; ok {
 			return t.compoundAssign(n, binOp)
 		}
-		return t.errf(n, "unsupported assignment %s", n.Tok)
+		return t.errf(n, "unsupported assignment %s (only =, :=, +=, -=, *=, /=, %%= are supported; no bitwise &=, |=, <<=, >>=, etc.)", n.Tok)
 	}
 	// Multi-LHS (tuple assignment): a, b := f() where f() returns a composite.
 	if len(n.Lhs) > 1 && len(n.Rhs) == 1 {
@@ -152,7 +152,7 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 	tb, ok := t.vars[lhsName.Name]
 	if !ok {
 		if n.Tok != token.DEFINE {
-			return t.errf(n, "assignment to undefined variable %q", lhsName.Name)
+			return t.errf(n, "assignment to undefined variable %q (use := to declare a new variable, or declare it before assigning with =)", lhsName.Name)
 		}
 		tb = t.alloc(lhsName.Name)
 	}
@@ -221,7 +221,7 @@ func (t *tracer) compositeDecl(varName *ast.Ident, fn *ast.Ident, call *ast.Call
 func (t *tracer) incDec(n *ast.IncDecStmt) error {
 	varName, ok := n.X.(*ast.Ident)
 	if !ok {
-		return t.errf(n, "increment target must be an identifier")
+		return t.errf(n, "increment target must be an identifier (++ and -- only work on named variables, not field access or array indexing)")
 	}
 	tb, ok := t.vars[varName.Name]
 	if !ok {
@@ -281,7 +281,7 @@ func (t *tracer) arrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 func (t *tracer) varArrayDecl(arrName *ast.Ident, call *ast.CallExpr) error {
 	fnIdent, ok := call.Fun.(*ast.Ident)
 	if !ok {
-		return t.errf(call, "varArray/arrayMap constructor must be called by name, not expression")
+		return t.errf(call, "varArray/arrayMap constructor must be called by name, not expression (use varArray(n) directly, not via a variable or function return)")
 	}
 	if len(call.Args) != 1 {
 		return t.errf(call, "varArray expects exactly 1 argument (capacity)")
@@ -401,12 +401,12 @@ func (t *tracer) compoundAssign(n *ast.AssignStmt, binOp token.Token) error {
 		}
 		cur = exprNum(ir.GetPlace(place))
 	default:
-		return t.errf(n, "unsupported compound assign target %T", lhs)
+		return t.errf(n, "unsupported compound assign target %T (compound assignment +=, -=, etc. requires a variable, struct field, or array element)", lhs)
 	}
 
 	result, ok := applyBinary(t.gen, binOp, cur, rhs)
 	if !ok {
-		return t.errf(n, "unsupported compound operation")
+		return t.errf(n, "unsupported compound operation (only +, -, *, /, %% are supported in compound assignments; no bitwise or logical operators)")
 	}
 	return t.writePlace(lhs, result)
 }
@@ -451,7 +451,7 @@ func (t *tracer) writePlace(lhs ast.Expr, val Num) error {
 		t.emit(t.gen.SetPlace(place, val.mustNode()))
 		return nil
 	}
-	return t.errf(lhs, "cannot write compound assign to %T", lhs)
+	return t.errf(lhs, "cannot write compound assign to %T (compound assignment requires a variable, struct field, or array element)", lhs)
 }
 
 func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
@@ -477,7 +477,7 @@ func (t *tracer) arrayStore(idx *ast.IndexExpr, rhs ast.Expr) error {
 func (t *tracer) recordDecl(varName *ast.Ident, call *ast.CallExpr, fields []string) error {
 	fnIdent, ok := call.Fun.(*ast.Ident)
 	if !ok {
-		return t.errf(call, "record constructor must be called by name, not expression")
+		return t.errf(call, "record constructor must be called by name, not expression (use vec2(x, y) directly, not via a variable or function return)")
 	}
 	if len(call.Args) != len(fields) {
 		return t.errf(call, "%s expects %d arguments", fnIdent.Name, len(fields))

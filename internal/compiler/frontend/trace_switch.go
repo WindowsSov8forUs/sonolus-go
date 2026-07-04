@@ -58,7 +58,7 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 				var ok bool
 				cond, ok = applyBinary(t.gen, token.LOR, cond, cv)
 				if !ok {
-					return t.errf(cc, "unsupported || in switch case")
+					return t.errf(cc, "unsupported || in switch case (conditions in untagged switches must be simple boolean expressions)")
 				}
 			}
 		} else {
@@ -71,11 +71,11 @@ func (t *tracer) switchStmt(n *ast.SwitchStmt) error {
 			for _, cv := range caseValues[1:] {
 				eq2, ok = applyBinary(t.gen, token.EQL, tag, cv)
 				if !ok {
-					return t.errf(cc, "unsupported == in switch case")
+					return t.errf(cc, "unsupported == in switch case (switch case values must be comparable scalar expressions)")
 				}
 				cond, ok = applyBinary(t.gen, token.LOR, cond, eq2)
 				if !ok {
-					return t.errf(cc, "unsupported || in switch case")
+					return t.errf(cc, "unsupported || in switch case (tagged switch cases only support combining multiple == checks with ,)")
 				}
 			}
 		}
