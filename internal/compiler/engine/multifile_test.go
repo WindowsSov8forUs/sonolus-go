@@ -521,8 +521,8 @@ func UpdateSpawn() float64 { return 0 }
 	}
 }
 
-// TestRecordField_ImportedWriteFails tests that writing imported record field fails.
-func TestRecordField_ImportedWriteFails(t *testing.T) {
+// TestRecordField_ImportedWritable tests that imported record fields are writable.
+func TestRecordField_ImportedWritable(t *testing.T) {
 	src := `package test
 type Skin struct { Note float64 }
 type Note struct {
@@ -536,10 +536,9 @@ func UpdateSpawn() float64 { return 0 }
 `
 	ess := engine.NewSingleFileSources(src)
 	_, _, err := engine.CompilePlaySources(ess, nil)
-	if err == nil {
-		t.Fatal("expected error for writing read-only field, got nil")
+	if err != nil {
+		t.Fatalf("imported record field should be writable: %v", err)
 	}
-	t.Logf("expected: %v", err)
 }
 
 // TestRecordField_Mat exercises Mat (6-field) record type.

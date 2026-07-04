@@ -198,7 +198,9 @@ func (n Note) UpdateParallel() { draw(1, n.TargetTime, 0, n.TargetTime, 1, 0, 1,
 	}
 }
 
-func TestArchetypeImportedFieldReadOnly(t *testing.T) {
+func TestArchetypeImportedFieldWritable(t *testing.T) {
+	// Imported fields are writable — they reside in EntityMemory which is
+	// writable during preprocess and other callbacks (mirroring JS behavior).
 	src := `package engine
 type Note struct {
 	Beat float64 ` + "`sonolus:\"imported\"`" + `
@@ -206,11 +208,8 @@ type Note struct {
 func (n Note) Initialize() { n.Beat = 5 }
 `
 	_, _, err := CompilePlayFile(src)
-	if err == nil {
-		t.Fatal("expected error writing to imported (read-only) field")
-	}
-	if !strings.Contains(err.Error(), "read-only") {
-		t.Errorf("error should mention read-only: %v", err)
+	if err != nil {
+		t.Fatalf("imported field should be writable: %v", err)
 	}
 }
 
