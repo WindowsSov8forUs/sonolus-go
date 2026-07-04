@@ -97,7 +97,8 @@ type tracer struct {
 
 	labels map[string]*ir.BasicBlock // label -> block mapping for goto
 
-	defers []deferCtx // stack of defer scopes, one per function level
+	defers   []deferCtx              // stack of defer scopes, one per function level
+	closures map[string]*closureInfo // captured closures by synthetic name
 }
 
 // deferRecord stores a deferred call with arguments evaluated at defer-time.
@@ -109,6 +110,14 @@ type deferRecord struct {
 // deferCtx holds the deferred calls for a single function scope.
 type deferCtx struct {
 	records []deferRecord
+}
+
+// closureInfo holds a capturing closure that has been lifted to a synthetic helper.
+// The capture frame stores the captured variable values at closure creation time.
+type closureInfo struct {
+	fn       *ast.FuncLit    // the closure body
+	captures []string        // captured variable names in order
+	frame    *ir.TempBlock   // capture frame (one slot per capture)
 }
 
 // arrayInfo is a fixed-size array local, backed by a multi-slot temp.
