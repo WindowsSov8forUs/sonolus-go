@@ -789,9 +789,14 @@ func (t *tracer) inlineFunc(node ast.Node, decl *ast.FuncDecl, args []Num, child
 	}
 
 	t.returns = append(t.returns, returnCtx{temp: retTemp, target: cont})
+	t.defers = append(t.defers, deferCtx{})
 	t.inlining[decl.Name.Name] = true
 	err := t.stmtList(decl.Body.List)
 	t.fallthroughTo(cont)
+	// Emit deferred calls at function exit before restoring scope.
+	if defErr := t.emitDefers(); defErr != nil && err == nil {
+		err = defErr
+	}
 	addRet := t.returns[len(t.returns)-1]
 	compositeFields := addRet.compositeFields
 	delete(t.inlining, decl.Name.Name)

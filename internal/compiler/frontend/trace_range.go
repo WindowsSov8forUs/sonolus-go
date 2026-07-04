@@ -82,8 +82,7 @@ func (t *tracer) rangeStmt(n *ast.RangeStmt) error {
 	// body N times instead of emitting a runtime loop. This matches sonolus.py and
 	// sonolus.js-compiler behaviour where loops over comptime-known iterables are
 	// always unrolled (flat code runs faster than handshake-branch loops).
-	const maxUnroll = 256
-	if bound.isConst && bound.c > 0 && bound.c <= maxUnroll && bound.c == float64(int(bound.c)) {
+	if bound.isConst && bound.c > 0 && bound.c <= float64(t.maxUnroll) && bound.c == float64(int(bound.c)) {
 		count := int(bound.c)
 		for iter := 0; iter < count; iter++ {
 			// Set i = iter at the start of each unrolled copy.
@@ -191,8 +190,7 @@ func (t *tracer) containerIter(n *ast.RangeStmt, ci *containerInfo, keyName, val
 	t.emit(t.gen.SetPlace(t.cell(iTB), ir.Const(0)))
 
 	// If capacity is small and constant, unroll the loop.
-	const maxUnroll = 64
-	if ci.capacity <= maxUnroll {
+	if ci.capacity <= t.maxUnrollCont {
 		for iter := 0; iter < ci.capacity; iter++ {
 			// If _size <= iter, skip remaining iterations.
 			var skipBlock, bodyBlock *ir.BasicBlock

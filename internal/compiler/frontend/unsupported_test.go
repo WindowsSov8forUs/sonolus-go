@@ -23,16 +23,33 @@ func statusEnv() Env {
 }
 
 func TestUnsupportedDefer(t *testing.T) {
+	// Defer with a plain function call is now supported.
+	// f is the entry point; g is a helper called via defer.
+	src := `package p
+func f() {
+	defer g()
+	set(0, 0, 2)
+}
+func g() { set(0, 0, 1) }
+`
+	_, _, err := Compile(src, statusEnv())
+	if err != nil {
+		t.Fatalf("expected defer to compile, got: %v", err)
+	}
+}
+
+func TestUnsupportedDeferClosure(t *testing.T) {
+	// Defer with a closure/expression call should give a clear error.
 	_, _, err := Compile(`package p
 func f() {
 	defer func() { }()
 }
 `, statusEnv())
 	if err == nil {
-		t.Fatal("expected error for defer")
+		t.Fatal("expected error for deferred closure call")
 	}
-	if !strings.Contains(err.Error(), "unsupported") {
-		t.Errorf("error should mention unsupported, got: %v", err)
+	if !strings.Contains(err.Error(), "plain function name") {
+		t.Errorf("error should mention plain function name, got: %v", err)
 	}
 }
 
