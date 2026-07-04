@@ -1,22 +1,37 @@
 # 快速入门
 
-## 环境
+## 安装
 
-- Go 1.25+
-- 依赖仓库（本地开发时相邻 checkout）：
+### 方式一：下载预编译二进制（推荐）
 
+从 [GitHub Releases](https://github.com/WindowsSov8forUs/sonolus-go/releases) 下载对应平台的最新版本，解压后放入 PATH 即可使用，无需安装 Go 或任何依赖仓库。
+
+```bash
+# Linux x86_64
+curl -L https://github.com/WindowsSov8forUs/sonolus-go/releases/latest/download/sonolus-go_linux_x86_64.tar.gz | tar xz
+sudo mv sonolus-go /usr/local/bin/
+
+# macOS (Apple Silicon)
+curl -L https://github.com/WindowsSov8forUs/sonolus-go/releases/latest/download/sonolus-go_darwin_arm64.tar.gz | tar xz
+sudo mv sonolus-go /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/WindowsSov8forUs/sonolus-go/releases/latest/download/sonolus-go_darwin_x86_64.tar.gz | tar xz
+sudo mv sonolus-go /usr/local/bin/
+
+# Windows — 从 Releases 页面下载 zip 解压，或 PowerShell：
+Invoke-WebRequest -Uri "https://github.com/WindowsSov8forUs/sonolus-go/releases/latest/download/sonolus-go_windows_x86_64.zip" -OutFile sonolus-go.zip
+Expand-Archive sonolus-go.zip -DestinationPath .
 ```
-sonolus-go/          ← 本仓库
-sonolus-core-go/     ← EngineData 数据结构
-sonolus-pack-go/     ← 打包工具
-sonolus-server-go/   ← HTTP 服务器接口
-```
+
+### 方式二：从源码编译
+
+需要 Go 1.25+。依赖仓库会通过 Go 模块代理自动拉取，无需手动 clone。
 
 ```bash
 git clone https://github.com/WindowsSov8forUs/sonolus-go.git
-git clone https://github.com/WindowsSov8forUs/sonolus-core-go.git
-git clone https://github.com/WindowsSov8forUs/sonolus-pack-go.git
-git clone https://github.com/WindowsSov8forUs/sonolus-server-go.git
+cd sonolus-go
+go build ./cmd/sonolus-go/
 ```
 
 ## 快速构建
