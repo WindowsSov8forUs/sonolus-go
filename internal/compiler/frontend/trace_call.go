@@ -44,11 +44,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		return res, nil
 	case *ast.IndexExpr:
-		fnName, ok := n.X.(*ast.Ident)
-		if !ok {
-			return Num{}, t.errf(n, "array index target must be an identifier")
-		}
-		place, err := t.arrayElemPlace(fnName, n.Index)
+		place, err := t.indexPlace(n)
 		if err != nil {
 			return Num{}, err
 		}
@@ -229,6 +225,30 @@ func (t *tracer) ident(n *ast.Ident) (Num, error) {
 		return constNum(v), nil
 	}
 	return Num{}, t.errf(n, "undefined identifier %q", n.Name)
+}
+
+// indexPlace resolves arr[i] for both local arrays (bare ident) and
+// struct-field container arrays (selector expression).
+func (t *tracer) indexPlace(n *ast.IndexExpr) (ir.BlockPlace, error) {
+	switch target := n.X.(type) {
+	case *ast.Ident:
+		return t.arrayElemPlace(target, n.Index)
+	case *ast.SelectorExpr:
+		// struct field: n.Arr[i] → resolve field binding and container.
+		if base, ok := target.X.(*ast.Ident); ok && base.Name == t.env.Receiver {
+			fieldName := target.Sel.Name
+			if ci, ok2 := t.containers[fieldName]; ok2 {
+				index, err := t.expr(n.Index)
+				if err != nil {
+					return ir.BlockPlace{}, err
+				}
+				return ci.elemPlace(t.gen, index.mustNode()), nil
+			}
+		}
+		return ir.BlockPlace{}, t.errf(n, "array index target must be a local array or container struct field")
+	default:
+		return ir.BlockPlace{}, t.errf(n, "array index target must be an identifier or struct field")
+	}
 }
 
 // call handles the memory builtins get(block, index) and set(block, index, value).
