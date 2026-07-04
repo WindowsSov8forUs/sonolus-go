@@ -155,6 +155,10 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"move":    {fn: particleHandleMove, minArity: 1, compositeArgAt: []int{0}},
 		"destroy": {fn: particleHandleDestroy, minArity: 0},
 	},
+	"entityRef": {
+		"get": {fn: entityRefGet, minArity: 2},
+		"set": {fn: entityRefSet, minArity: 3},
+	},
 	"pair": {
 		"lt":    {fn: pairLt, minArity: 1, compositeArgAt: []int{0}},
 		"le":    {fn: pairLe, minArity: 1, compositeArgAt: []int{0}},
@@ -337,6 +341,21 @@ func particleHandleDestroy(t *tracer, h Num, args []Num) (Num, error) {
 	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionDestroyParticleEffect,
 		h.MustField("id").mustNode(),
 	))
+	return constNum(0), nil
+}
+
+// entityRefGet implements EntityRef.get(block, index) → Get(block, ref.index + index).
+func entityRefGet(t *tracer, r Num, args []Num) (Num, error) {
+	idx := t.gen.PureInstr(resource.RuntimeFunctionAdd,
+		r.MustField("index").mustNode(), args[1].mustNode())
+	return exprNum(ir.GetPlace(ir.NewBlockPlace(args[0].mustNode(), idx, 0))), nil
+}
+
+// entityRefSet implements EntityRef.set(block, index, value) → Set(block, ref.index + index, value).
+func entityRefSet(t *tracer, r Num, args []Num) (Num, error) {
+	idx := t.gen.PureInstr(resource.RuntimeFunctionAdd,
+		r.MustField("index").mustNode(), args[1].mustNode())
+	t.emit(t.gen.SetPlace(ir.NewBlockPlace(args[0].mustNode(), idx, 0), args[2].mustNode()))
 	return constNum(0), nil
 }
 

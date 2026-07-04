@@ -6,12 +6,13 @@ import "go/ast"
 // (in memory order). Used to expand record-typed struct fields into multiple
 // float64 slots.
 var recordFieldLayouts = map[string][]string{
-	"Vec2":  {"x", "y"},
-	"Quad":  {"blx", "bly", "tlx", "tly", "trx", "try", "brx", "bry"},
-	"Mat":   {"m11", "m12", "m13", "m21", "m22", "m23"},
-	"Rect":  {"t", "r", "b", "l"},
-	"Trans": {"m11", "m12", "m13", "m21", "m22", "m23", "m31", "m32", "m33"},
-	"Pair":  {"first", "second"},
+	"Vec2":     {"x", "y"},
+	"Quad":     {"blx", "bly", "tlx", "tly", "trx", "try", "brx", "bry"},
+	"Mat":      {"m11", "m12", "m13", "m21", "m22", "m23"},
+	"Rect":     {"t", "r", "b", "l"},
+	"Trans":    {"m11", "m12", "m13", "m21", "m22", "m23", "m31", "m32", "m33"},
+	"Pair":     {"first", "second"},
+	"EntityRef": {"index"},
 }
 
 // resolveFieldTypeName extracts the Go type name from a field's type AST node.

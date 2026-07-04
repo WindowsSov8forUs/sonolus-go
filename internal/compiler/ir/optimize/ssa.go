@@ -293,6 +293,9 @@ func (f *fromSSAState) processBlock(block *ir.BasicBlock) {
 
 	// Break swap cycles: copy values that another assignment may overwrite.
 	for _, phi := range block.Phis {
+		if phi.Target == nil {
+			continue
+		}
 		target := phi.Target.(ir.SSAPlace)
 		for src, arg := range phi.Args {
 			if !incomingBlocks[src] {
@@ -305,6 +308,9 @@ func (f *fromSSAState) processBlock(block *ir.BasicBlock) {
 		}
 	}
 	for _, phi := range block.Phis {
+		if phi.Target == nil {
+			continue
+		}
 		target := phi.Target.(ir.SSAPlace)
 		for src, arg := range phi.Args {
 			if !incomingBlocks[src] {
