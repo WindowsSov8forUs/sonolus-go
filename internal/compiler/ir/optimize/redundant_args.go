@@ -78,7 +78,28 @@ func sameArgs(a, b []ir.Node) bool {
 	if len(a) != len(b) {
 		return false
 	}
+	if len(a) == 0 {
+		return true
+	}
+	// Fast path: same backing array means no elements were filtered.
+	if &a[0] == &b[0] {
+		return true
+	}
+	// Safe element-wise comparison. ir.Instr is non-comparable (contains
+	// []Node slice), so a[i] != b[i] would panic at runtime. Use the
+	// monotonic ID as a stable identity check.
 	for i := range a {
+		ai, aiOK := a[i].(ir.Instr)
+		bi, biOK := b[i].(ir.Instr)
+		if aiOK && biOK {
+			if ai.ID != bi.ID {
+				return false
+			}
+			continue
+		}
+		if aiOK != biOK {
+			return false
+		}
 		if a[i] != b[i] {
 			return false
 		}

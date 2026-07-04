@@ -192,6 +192,8 @@ func (t *tracer) ident(n *ast.Ident) (Num, error) {
 		return constNum(1), nil
 	case "false":
 		return constNum(0), nil
+	case "_":
+		return Num{}, t.errf(n, "cannot use _ as value (blank identifier is write-only)")
 	}
 	// D2: use go/types Info for type-driven local-variable resolution.
 	if info := t.env.Info; info != nil {
