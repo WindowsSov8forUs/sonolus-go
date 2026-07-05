@@ -1,0 +1,85 @@
+{
+  "skin": {
+    "renderMode": "lightweight",
+    "sprites": [
+      {
+        "name": "Note",
+        "id": 0
+      }
+    ]
+  },
+  "effect": {
+    "clips": null
+  },
+  "particle": {
+    "effects": null
+  },
+  "buckets": [],
+  "archetypes": [
+    {
+      "name": "Note",
+      "hasInput": true,
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ],
+      "exports": [],
+      "touch": {
+        "index": 8
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "value": 4005
+    },
+    {
+      "value": 0
+    },
+    {
+      "value": 1
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "value": 2
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        4,
+        1
+      ]
+    },
+    {
+      "func": "Execute",
+      "args": [
+        3,
+        5,
+        2
+      ]
+    },
+    {
+      "func": "JumpLoop",
+      "args": [
+        6,
+        1
+      ]
+    },
+    {
+      "func": "Block",
+      "args": [
+        7
+      ]
+    }
+  ]
+}
