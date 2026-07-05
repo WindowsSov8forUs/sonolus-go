@@ -193,27 +193,27 @@ x++             // 递增
 
 完整运行时函数列表见 `internal/compiler/frontend/builtins.go`。以下是分类概览：
 
+> **比较与逻辑运算符**使用原生 Go 语法：`==`、`!=`、`<`、`<=`、`>`、`>=`、`&&`、`||`、`!`。引擎对应的 `Equal`、`Less`、`And` 等 RuntimeFunction 由编译器通过 `applyBinary`/`applyUnary` 自动生成，不作为可调用 stub 暴露。
+
 | 分类 | 函数示例 | 个数 |
 |------|---------|------|
 | 算术 | `Abs`, `Sign`, `Floor`, `Ceil`, `Round`, `Frac` | ~10 |
-| 比较 | `Equal`, `NotEqual`, `Less`, `Greater` | 6 |
-| 逻辑 | `And`, `Or`, `Not` | 3 |
 | 数学 | `Sin`, `Cos`, `Tan`, `Log`, `Power`, `Clamp`, `Lerp` | ~30 |
 | 缓动 | `EaseInSine` ... `EaseOutInElastic` | 36 |
 | 内存 | `Get`, `Set`, `GetShifted`, `SetShifted`, `SetAdd*`, `SetMul*` 等 | ~40 |
-| 绘制 | `Draw`, `DrawCurvedB/T/L/R/BT/LR` | 7 |
-| 音频 | `PlayLooped`, `PlayLoopedScheduled`, `StopLooped`, `StopLoopedScheduled` | 4 |
-| 粒子 | `SpawnParticleEffect`, `MoveParticleEffect`, `DestroyParticleEffect` | 3 |
-| 实体 | `Spawn`, `Despawn`, `Move` | 3 |
-| 计分 | `AddScore`, `AddLife`, `Judge`, `JudgeSimple` | 4 |
+| 绘制 | `Draw`, `DrawCurvedB/T/L/R/BT/LR`, `Paint` | 8 |
+| 音频 | `Play`, `PlayScheduled`, `PlayLooped`, `PlayLoopedScheduled`, `StopLooped`, `StopLoopedScheduled` | 6 |
+| 粒子 | `SpawnParticle`, `MoveParticle`, `DestroyParticle` | 3 |
+| 实体 | `Spawn` | 1 |
+| 判定 | `Judge`, `JudgeSimple`, `ExportValue` | 3 |
+| 生命 | `AddLife` | 1 |
 | 调试 | `DebugLog`, `DebugPause`, `DebugError`, `DebugAssertTrue` 等 | 7 |
 | 随机 | `Random`, `RandomInteger` | 2 |
 | Stream | `StreamSet`, `StreamHas`, `StreamGetNextKey` 等 | 5 |
-| 触觉 | `Haptic` | 1 |
 | 时间 | `BeatToTime`, `TimeToScaledTime` 等 | 8 |
 | 栈 | `StackInit`, `StackPush`, `StackPop` 等 | 14 |
 | 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
-| 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticleEffect` | 3 |
+| 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticle` | 3 |
 | 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
 
 ### 引擎全局变量
@@ -235,7 +235,7 @@ entityLifePerfect, entityLifeGreat, entityLifeGood, entityLifeMiss
 |------|------|
 | `Vec2` | `Add`, `Sub`, `Mul`, `Div`, `Magnitude`, `Dot`, `Normalize`, `NormalizeOrZero`, `Angle`, `Rotate`, `RotateAbout`, `Orthogonal`, `AngleDiff`, `SignedAngleDiff` |
 | `Quad` | `Center`, `Translate`, `Scale`, `Permute`, `Rotate`, `Top`, `Right`, `Bottom`, `Left`, `Contains` |
-| `Mat` | `Scale`, `Translate` |
+| `Mat` | `Scale`, `Translate`, `Compose`, `Rotate` |
 | `Rect` | `W`, `H`, `Center`, `Translate`, `Scale` |
 | `Trans` | `Compose`, `Translate`, `Scale`, `Rotate`, `TransformVec` |
 | `Pair` | `Lt`, `Le`, `Gt`, `Ge`, `Tuple` |
@@ -320,15 +320,14 @@ sonolus.FrozenNumSet_(capacity)
 
 | 构造 | 原因 |
 |------|------|
-| `defer` | 无运行时 defer 机制 |
-| `go` (goroutine) | 引擎单线程 |
+| `defer` / `go` (goroutine) | 引擎单线程，无运行时调度 |
 | `chan` / `select` | 无并发支持 |
-| `map` / `interface` | 无堆类型 |
-| 闭包 / 匿名函数 | 无闭包支持 |
-| 递归 | 不支持 |
-| 多返回值 | 仅支持单返回值 |
-| 变参函数 (`...`) | 仅内置函数支持 |
-| struct 嵌套 / 匿名嵌入 | 不支持 |
+| `map` / `interface{}` | 运行时仅有 float64，无堆类型 |
+| 递归 | 函数内联展开，无法递归调用 |
+| 多返回值函数 (`func f() (a, b float64)`) | 用户函数仅单返回值；复合解构 `a, b := pair.Tuple()` 支持 |
+| 变参用户函数 (`func f(args ...float64)`) | 仅内置函数支持变参 |
+| struct 嵌套 / 匿名嵌入 | 内存布局必须平坦 |
+| 类型别名 / 类型定义 (`type A B`) | 仅支持 struct 定义 |
 
 ---
 
