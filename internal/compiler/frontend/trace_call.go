@@ -494,6 +494,26 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(4103), indexVal.mustNode(), 0))), true, nil
 		}
 		return Num{}, true, t.errf(n, "entityInfo expects 1 argument (index)")
+	case "skinTransform":
+		return t.builtinGetBlock(n, 1003)
+	case "setSkinTransform":
+		return t.builtinSetBlock(n, 1003)
+	case "particleTransform":
+		return t.builtinGetBlock(n, 1004)
+	case "setParticleTransform":
+		return t.builtinSetBlock(n, 1004)
+	case "background":
+		return t.builtinGetBlock(n, 1005)
+	case "setBackground":
+		return t.builtinSetBlock(n, 1005)
+	case "levelScore":
+		return t.builtinGetBlock(n, 2004)
+	case "setLevelScore":
+		return t.builtinSetBlock(n, 2004)
+	case "levelLife":
+		return t.builtinGetBlock(n, 2005)
+	case "setLevelLife":
+		return t.builtinSetBlock(n, 2005)
 	default:
 		if strings.HasPrefix(fn.Name, "vec2") {
 			key := strings.ToLower(fn.Name[4:])
@@ -786,6 +806,35 @@ func (t *tracer) populateFieldContainers() {
 	for _, cf := range t.env.ContainerFields {
 		t.resolveContainerField(cf.Name, cf)
 	}
+}
+
+// builtinGetBlock emits Get(block, index) for a fixed block ID.
+func (t *tracer) builtinGetBlock(n *ast.CallExpr, blockID int) (Num, bool, error) {
+	if len(n.Args) != 1 {
+		return Num{}, true, t.errf(n, "expects 1 argument (index)")
+	}
+	indexVal, err := t.expr(n.Args[0])
+	if err != nil {
+		return Num{}, true, err
+	}
+	return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(blockID), indexVal.mustNode(), 0))), true, nil
+}
+
+// builtinSetBlock emits Set(block, index, value) for a fixed block ID.
+func (t *tracer) builtinSetBlock(n *ast.CallExpr, blockID int) (Num, bool, error) {
+	if len(n.Args) != 2 {
+		return Num{}, true, t.errf(n, "expects 2 arguments (index, value)")
+	}
+	indexVal, err := t.expr(n.Args[0])
+	if err != nil {
+		return Num{}, true, err
+	}
+	val, err := t.expr(n.Args[1])
+	if err != nil {
+		return Num{}, true, err
+	}
+	t.emit(t.gen.SetPlace(ir.NewBlockPlace(ir.Const(blockID), indexVal.mustNode(), 0), val.mustNode()))
+	return constNum(0), true, nil
 }
 
 // lowerFirst returns s with the first character lowercased.
