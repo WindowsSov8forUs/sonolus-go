@@ -358,7 +358,7 @@ func compNumFromFields(typeName string, fields []string, vals map[string]Num) Nu
 			fieldMap[f] = constNum(0)
 		}
 	}
-	return compNum(fieldMap)
+	return compNumTyped(typeName, fieldMap)
 }
 
 // constructors via the type system. Returns handled=true when the call was
@@ -652,7 +652,7 @@ func (t *tracer) inlineComposite(fnName *ast.Ident, call *ast.CallExpr, fields [
 	for i, f := range fields {
 		fv[f] = args[i]
 	}
-	return compNum(fv), nil
+	return compNumTyped(fnName.Name, fv), nil
 }
 
 // callUserFunc inlines a free helper function: it sees only accessors and other
@@ -776,7 +776,7 @@ FieldLoop:
 		fieldVals[f] = exprNum(ir.GetPlace(ir.Cell(bf.Block, bf.Index)))
 		_ = i
 	}
-	return compNum(fieldVals), recordName, true
+	return compNumTyped(recordName, fieldVals), recordName, true
 }
 
 // resolveContainerField builds a composite Num and a containerInfo for a
@@ -900,7 +900,7 @@ func (t *tracer) entityInfoAt(n *ast.CallExpr) (Num, bool, error) {
 	if stride >= 3 {
 		fields["state"] = exprNum(t.gen.PureInstr(resource.RuntimeFunctionGetShifted, ir.Const(blockID), ir.Const(2), idx, ir.Const(stride)))
 	}
-	return compNum(fields), true, nil
+	return compNumTyped("entityInfo", fields), true, nil
 }
 
 // selfInfoRecord returns a composite EntityInfo record for the current entity.
@@ -919,7 +919,7 @@ func (t *tracer) selfInfoRecord(n *ast.CallExpr) (Num, bool, error) {
 	if stride >= 3 {
 		fields["state"] = exprNum(ir.GetPlace(ir.Cell(blockID, 2)))
 	}
-	return compNum(fields), true, nil
+	return compNumTyped("entityInfo", fields), true, nil
 }
 
 // lowerFirst returns s with the first character lowercased.
@@ -1014,6 +1014,43 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 				}
 			}
 		}
+	}
+
+	// Record method call on an expression result: f().Method(args).
+	// Enables chain calls like quad.Rotate(a).Translate(v).
+	if call, ok := sel.X.(*ast.CallExpr); ok {
+		v, err := t.expr(call)
+		if err != nil {
+			return Num{}, err
+		}
+		if v.IsComposite() && v.typeName != "" {
+			if methods, ok := recordMethods[v.typeName]; ok {
+				entry, ok := methods[sel.Sel.Name]
+				if !ok {
+					entry, ok = methods[lowerFirst(sel.Sel.Name)]
+				}
+				if ok {
+					args := make([]Num, len(n.Args))
+					for i, a := range n.Args {
+						av, err := t.expr(a)
+						if err != nil {
+							return Num{}, err
+						}
+						args[i] = av
+					}
+					for _, idx := range entry.compositeArgAt {
+						if idx < len(args) && !args[idx].IsComposite() {
+							return Num{}, t.errf(sel, "method %q arg %d must be a composite value", sel.Sel.Name, idx+1)
+						}
+					}
+					if entry.containerFn != nil {
+						return Num{}, t.errf(sel, "method %q on expression result requires a container-backed variable", sel.Sel.Name)
+					}
+					return entry.fn(t, v, args)
+				}
+			}
+		}
+		return Num{}, t.errf(sel, "unsupported method call on expression result")
 	}
 
 	base, ok := sel.X.(*ast.Ident)

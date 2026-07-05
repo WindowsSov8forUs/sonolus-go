@@ -18,7 +18,7 @@ func rectH(t *tracer, r Num, args []Num) (Num, error) {
 }
 
 func rectCenter(t *tracer, r Num, args []Num) (Num, error) {
-	return compNum(map[string]Num{
+	return compNumTyped("rect", map[string]Num{
 		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
 			t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("l").mustNode(), r.MustField("r").mustNode()),
 			ir.Const(2))),
@@ -31,7 +31,7 @@ func rectCenter(t *tracer, r Num, args []Num) (Num, error) {
 func rectTranslate(t *tracer, r Num, args []Num) (Num, error) {
 	p := args[0]
 	dx, dy := p.MustField("x").mustNode(), p.MustField("y").mustNode()
-	return compNum(map[string]Num{
+	return compNumTyped("rect", map[string]Num{
 		"t": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("t").mustNode(), dy)),
 		"r": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("r").mustNode(), dx)),
 		"b": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, r.MustField("b").mustNode(), dy)),
@@ -44,7 +44,7 @@ func rectScale(t *tracer, r Num, args []Num) (Num, error) {
 	if len(args) > 1 {
 		sy = args[1]
 	}
-	return compNum(map[string]Num{
+	return compNumTyped("rect", map[string]Num{
 		"t": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, r.MustField("t").mustNode(), sy.mustNode())),
 		"r": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, r.MustField("r").mustNode(), sx.mustNode())),
 		"b": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, r.MustField("b").mustNode(), sy.mustNode())),

@@ -639,6 +639,36 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 			}
 		}
 	}
+	// Composite writeback: decompose a record value into sub-field writes.
+	if base, ok := sel.X.(*ast.Ident); ok && base.Name == t.env.Receiver {
+		if _, recordType, ok2 := t.resolveRecordField(sel); ok2 {
+			val, err := t.expr(rhs)
+			if err != nil {
+				return err
+			}
+			if val.IsComposite() {
+				fields, ok3 := builtinRecordFields(recordType)
+				if !ok3 {
+					var ferr error
+					fields, ferr = val.CompositeFieldOrder()
+					if ferr != nil {
+						return ferr
+					}
+				}
+				for _, f := range fields {
+					fullName := sel.Sel.Name + "." + f
+					b, ok4 := t.env.Names[fullName]
+					if !ok4 {
+						continue
+					}
+					fv := val.MustField(f)
+					t.emitBindingStore(b, fv)
+				}
+				return nil
+			}
+		}
+	}
+
 
 	// Receiver field write (method-authored callback).
 	if b, isRecv, err := t.receiverBinding(sel); err != nil {

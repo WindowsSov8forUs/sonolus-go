@@ -24,7 +24,7 @@ func transCompose(t *tracer, m Num, args []Num) (Num, error) {
 	c0 := [3]string{"m11", "m21", "m31"}
 	c1 := [3]string{"m12", "m22", "m32"}
 	c2 := [3]string{"m13", "m23", "m33"}
-	return compNum(map[string]Num{
+	return compNumTyped("trans", map[string]Num{
 		"m11": exprNum(dot(r0, c0)), "m12": exprNum(dot(r0, c1)), "m13": exprNum(dot(r0, c2)),
 		"m21": exprNum(dot(r1, c0)), "m22": exprNum(dot(r1, c1)), "m23": exprNum(dot(r1, c2)),
 		"m31": exprNum(dot(r2, c0)), "m32": exprNum(dot(r2, c1)), "m33": exprNum(dot(r2, c2)),
@@ -33,7 +33,7 @@ func transCompose(t *tracer, m Num, args []Num) (Num, error) {
 
 func transTranslate(t *tracer, m Num, args []Num) (Num, error) {
 	v := args[0]
-	return compNum(map[string]Num{
+	return compNumTyped("trans", map[string]Num{
 		"m11": m.MustField("m11"), "m12": m.MustField("m12"),
 		"m13": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, m.MustField("m13").mustNode(), v.MustField("x").mustNode())),
 		"m21": m.MustField("m21"), "m22": m.MustField("m22"),
@@ -44,7 +44,7 @@ func transTranslate(t *tracer, m Num, args []Num) (Num, error) {
 
 func transScale(t *tracer, m Num, args []Num) (Num, error) {
 	v := args[0]
-	return compNum(map[string]Num{
+	return compNumTyped("trans", map[string]Num{
 		"m11": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("m11").mustNode(), v.MustField("x").mustNode())),
 		"m12": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("m12").mustNode(), v.MustField("x").mustNode())),
 		"m13": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("m13").mustNode(), v.MustField("x").mustNode())),
@@ -59,7 +59,7 @@ func transRotate(t *tracer, m Num, args []Num) (Num, error) {
 	a := args[0]
 	cos := exprNum(t.gen.PureInstr(resource.RuntimeFunctionCos, a.mustNode()))
 	sin := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSin, a.mustNode()))
-	return compNum(map[string]Num{
+	return compNumTyped("trans", map[string]Num{
 		"m11": cos, "m12": exprNum(t.gen.PureInstr(resource.RuntimeFunctionNegate, sin.mustNode())), "m13": m.MustField("m13"),
 		"m21": sin, "m22": cos, "m23": m.MustField("m23"),
 		"m31": m.MustField("m31"), "m32": m.MustField("m32"), "m33": m.MustField("m33"),
@@ -73,5 +73,5 @@ func transTransformVec(t *tracer, m Num, args []Num) (Num, error) {
 	y := v.MustField("y").mustNode()
 	nx := t.addNode(t.addNode(t.mulNode(m.MustField("m11").mustNode(), x), t.mulNode(m.MustField("m12").mustNode(), y)), m.MustField("m13").mustNode())
 	ny := t.addNode(t.addNode(t.mulNode(m.MustField("m21").mustNode(), x), t.mulNode(m.MustField("m22").mustNode(), y)), m.MustField("m23").mustNode())
-	return compNum(map[string]Num{"x": exprNum(nx), "y": exprNum(ny)}), nil
+	return compNumTyped("vec2", map[string]Num{"x": exprNum(nx), "y": exprNum(ny)}), nil
 }

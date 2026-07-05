@@ -7,7 +7,7 @@ import (
 )
 
 func quadCenter(t *tracer, q Num, args []Num) (Num, error) {
-	return compNum(map[string]Num{
+	return compNumTyped("quad", map[string]Num{
 		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
 			t.gen.PureInstr(resource.RuntimeFunctionAdd,
 				t.gen.PureInstr(resource.RuntimeFunctionAdd, q.MustField("blx").mustNode(), q.MustField("tlx").mustNode()),
@@ -25,7 +25,7 @@ func quadTranslate(t *tracer, q Num, args []Num) (Num, error) {
 	p := args[0]
 	dx, dy := p.MustField("x").mustNode(), p.MustField("y").mustNode()
 	add := func(n ir.Node, d ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, n, d) }
-	return compNum(map[string]Num{
+	return compNumTyped("quad", map[string]Num{
 		"blx": exprNum(add(q.MustField("blx").mustNode(), dx)),
 		"bly": exprNum(add(q.MustField("bly").mustNode(), dy)),
 		"tlx": exprNum(add(q.MustField("tlx").mustNode(), dx)),
@@ -40,7 +40,7 @@ func quadTranslate(t *tracer, q Num, args []Num) (Num, error) {
 func quadScale(t *tracer, q Num, args []Num) (Num, error) {
 	s := args[0]
 	mul := func(n ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, n, s.mustNode()) }
-	return compNum(map[string]Num{
+	return compNumTyped("quad", map[string]Num{
 		"blx": exprNum(mul(q.MustField("blx").mustNode())), "bly": exprNum(mul(q.MustField("bly").mustNode())),
 		"tlx": exprNum(mul(q.MustField("tlx").mustNode())), "tly": exprNum(mul(q.MustField("tly").mustNode())),
 		"trx": exprNum(mul(q.MustField("trx").mustNode())), "try": exprNum(mul(q.MustField("try").mustNode())),
@@ -57,21 +57,21 @@ func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 		case 0:
 			return q, nil
 		case 1:
-			return compNum(map[string]Num{
+			return compNumTyped("quad", map[string]Num{
 				"blx": q.MustField("tlx"), "bly": q.MustField("tly"),
 				"tlx": q.MustField("trx"), "tly": q.MustField("try"),
 				"trx": q.MustField("brx"), "try": q.MustField("bry"),
 				"brx": q.MustField("blx"), "bry": q.MustField("bly"),
 			}), nil
 		case 2:
-			return compNum(map[string]Num{
+			return compNumTyped("quad", map[string]Num{
 				"blx": q.MustField("trx"), "bly": q.MustField("try"),
 				"tlx": q.MustField("brx"), "tly": q.MustField("bry"),
 				"trx": q.MustField("blx"), "try": q.MustField("bly"),
 				"brx": q.MustField("tlx"), "bry": q.MustField("tly"),
 			}), nil
 		case 3:
-			return compNum(map[string]Num{
+			return compNumTyped("quad", map[string]Num{
 				"blx": q.MustField("brx"), "bly": q.MustField("bry"),
 				"tlx": q.MustField("blx"), "tly": q.MustField("bly"),
 				"trx": q.MustField("tlx"), "try": q.MustField("tly"),
@@ -119,7 +119,7 @@ func quadPermute(t *tracer, q Num, args []Num) (Num, error) {
 		}
 		out[name] = sum
 	}
-	return compNum(out), nil
+	return compNumTyped("quad", out), nil
 }
 
 func quadContains(t *tracer, q Num, args []Num) (Num, error) {
@@ -155,7 +155,7 @@ func quadContains(t *tracer, q Num, args []Num) (Num, error) {
 // quadEdge computes the midpoint of a quad edge defined by two corners.
 // fx1/fy1 and fx2/fy2 are the x/y field name pairs for the two corners.
 func quadEdge(t *tracer, q Num, fx1, fy1, fx2, fy2 string) (Num, error) {
-	return compNum(map[string]Num{
+	return compNumTyped("quad", map[string]Num{
 		"x": exprNum(t.gen.PureInstr(resource.RuntimeFunctionDivide,
 			t.gen.PureInstr(resource.RuntimeFunctionAdd,
 				q.MustField(fx1).mustNode(), q.MustField(fx2).mustNode()), ir.Const(2))),
@@ -196,5 +196,5 @@ func quadRotate(t *tracer, q Num, args []Num) (Num, error) {
 	tlx, tly := rot("tlx", "tly")
 	trx, try := rot("trx", "try")
 	brx, bry := rot("brx", "bry")
-	return compNum(map[string]Num{"blx": blx, "bly": bly, "tlx": tlx, "tly": tly, "trx": trx, "try": try, "brx": brx, "bry": bry}), nil
+	return compNumTyped("quad", map[string]Num{"blx": blx, "bly": bly, "tlx": tlx, "tly": tly, "trx": trx, "try": try, "brx": brx, "bry": bry}), nil
 }
