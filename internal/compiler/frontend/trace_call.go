@@ -343,6 +343,9 @@ func (t *tracer) compositeLit(n *ast.CompositeLit) (Num, error) {
 	}
 	fields, known := knownRecordFields(typeName.Name, t.env.Records)
 	if !known {
+		fields, known = knownRecordFields(lowerFirst(typeName.Name), t.env.Records)
+	}
+	if !known {
 		return Num{}, t.errf(n, "unknown record type %q in composite literal (composite literals are only supported for known record types: Vec2, Quad, Mat, Rect, Trans, Pair)", typeName.Name)
 	}
 

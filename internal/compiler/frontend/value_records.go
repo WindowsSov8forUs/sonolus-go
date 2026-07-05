@@ -58,7 +58,6 @@ var builtinRecords = []builtinRecordDef{
 	{"arraySet", arraySetFields},
 	{"box", boxFields},
 	{"printOptions", printOptionsFields},
-	{"PrintOptions", printOptionsFields},
 	{"consecutiveLife", consecutiveLifeFields},
 	{"frozenNumSet", frozenNumSetFields},
 	{"loopedEffectHandle", loopedEffectHandleFields},
