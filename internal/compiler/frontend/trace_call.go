@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
 )
 
@@ -69,6 +71,9 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 			bareName := lowerFirst(n.Sel.Name)
 			if b, ok2 := t.env.Names[bareName]; ok2 {
 				return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
+			}
+			if v, ok2 := t.env.Constants[bareName]; ok2 {
+				return constNum(v), nil
 			}
 		}
 		// Bare composite: evaluate vec2(...).x → extract field from the composite.
@@ -485,15 +490,16 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 	case "debugTerminate":
 		t.terminated = true
 		return constNum(0), true, nil
-	case "entityInfo":
-		if len(n.Args) == 1 {
-			indexVal, err := t.expr(n.Args[0])
-			if err != nil {
-				return Num{}, true, err
-			}
-			return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(4103), indexVal.mustNode(), 0))), true, nil
-		}
-		return Num{}, true, t.errf(n, "entityInfo expects 1 argument (index)")
+	case "entityInfoIndex":
+		return t.entityInfoField(n, 0)
+	case "entityInfoArchetype":
+		return t.entityInfoField(n, 1)
+	case "entityInfoState":
+		return t.entityInfoField(n, 2)
+	case "entityInfoAt":
+		return t.entityInfoAt(n)
+	case "selfInfo":
+		return t.selfInfoRecord(n)
 	case "skinTransform":
 		return t.builtinGetBlock(n, 1003)
 	case "setSkinTransform":
@@ -835,6 +841,85 @@ func (t *tracer) builtinSetBlock(n *ast.CallExpr, blockID int) (Num, bool, error
 	}
 	t.emit(t.gen.SetPlace(ir.NewBlockPlace(ir.Const(blockID), indexVal.mustNode(), 0), val.mustNode()))
 	return constNum(0), true, nil
+}
+
+// entityInfoField emits a GetShifted read from EntityInfoArray for the given field
+// offset within each entity info record. Stride and block ID are mode-dependent.
+func (t *tracer) entityInfoField(n *ast.CallExpr, fieldOffset int) (Num, bool, error) {
+	blockID := 4103
+	stride := 3
+	switch t.env.Mode {
+	case ir.ModePlay, ir.ModeWatch:
+	case ir.ModePreview:
+		blockID = 4102
+		stride = 2
+		if fieldOffset >= 2 {
+			return Num{}, true, t.errf(n, "entity info state is not available in preview mode")
+		}
+	case ir.ModeTutorial:
+		return Num{}, true, t.errf(n, "entity info is not available in tutorial mode")
+	}
+	if len(n.Args) != 1 {
+		return Num{}, true, t.errf(n, "entityInfo expects 1 argument (entity index)")
+	}
+	indexVal, err := t.expr(n.Args[0])
+	if err != nil {
+		return Num{}, true, err
+	}
+	result := t.gen.PureInstr(resource.RuntimeFunctionGetShifted,
+		ir.Const(blockID),
+		ir.Const(fieldOffset),
+		indexVal.mustNode(),
+		ir.Const(stride),
+	)
+	return exprNum(result), true, nil
+}
+
+// entityInfoAt returns a composite EntityInfo record for cross-entity queries.
+func (t *tracer) entityInfoAt(n *ast.CallExpr) (Num, bool, error) {
+	blockID, stride := 4103, 3
+	switch t.env.Mode {
+	case ir.ModePlay, ir.ModeWatch:
+	case ir.ModePreview:
+		blockID, stride = 4102, 2
+	case ir.ModeTutorial:
+		return Num{}, true, t.errf(n, "entity info is not available in tutorial mode")
+	}
+	if len(n.Args) != 1 {
+		return Num{}, true, t.errf(n, "entityInfoAt expects 1 argument (entity index)")
+	}
+	indexVal, err := t.expr(n.Args[0])
+	if err != nil {
+		return Num{}, true, err
+	}
+	idx := indexVal.mustNode()
+	fields := map[string]Num{
+		"index":     exprNum(t.gen.PureInstr(resource.RuntimeFunctionGetShifted, ir.Const(blockID), ir.Const(0), idx, ir.Const(stride))),
+		"archetype": exprNum(t.gen.PureInstr(resource.RuntimeFunctionGetShifted, ir.Const(blockID), ir.Const(1), idx, ir.Const(stride))),
+	}
+	if stride >= 3 {
+		fields["state"] = exprNum(t.gen.PureInstr(resource.RuntimeFunctionGetShifted, ir.Const(blockID), ir.Const(2), idx, ir.Const(stride)))
+	}
+	return compNum(fields), true, nil
+}
+
+// selfInfoRecord returns a composite EntityInfo record for the current entity.
+func (t *tracer) selfInfoRecord(n *ast.CallExpr) (Num, bool, error) {
+	if len(n.Args) != 0 {
+		return Num{}, true, t.errf(n, "selfInfo takes no arguments")
+	}
+	blockID, stride := 4003, 3
+	if t.env.Mode == ir.ModePreview {
+		blockID, stride = 4002, 2
+	}
+	fields := map[string]Num{
+		"index":     exprNum(ir.GetPlace(ir.Cell(blockID, 0))),
+		"archetype": exprNum(ir.GetPlace(ir.Cell(blockID, 1))),
+	}
+	if stride >= 3 {
+		fields["state"] = exprNum(ir.GetPlace(ir.Cell(blockID, 2)))
+	}
+	return compNum(fields), true, nil
 }
 
 // lowerFirst returns s with the first character lowercased.
