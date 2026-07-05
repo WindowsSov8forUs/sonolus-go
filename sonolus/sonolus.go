@@ -551,7 +551,29 @@ func StreamSet(args ...float64) float64            { return 0 }
 func HasSkinSprite(args ...float64) float64   { return 0 }
 func HasEffectClip(args ...float64) float64   { return 0 }
 func HasParticle(args ...float64) float64     { return 0 }
-func Sprite(name string) float64               { return 0 }
+// Sprite represents a skin sprite with a compile-time ID.
+type Sprite struct{ ID float64 }
+
+// Draw draws the sprite at the given quad, z-index, and alpha.
+func (s Sprite) Draw(args ...float64) {}
+
+// Exists returns 1 if the sprite is available, 0 otherwise.
+func (s Sprite) Exists() float64 { return 0 }
+
+// SkinInfo provides structured access to all skin sprites.
+type SkinInfo struct{ Sprites SkinSprites }
+
+// SkinSprites holds skin sprites accessible by name.
+type SkinSprites struct{}
+
+// Exists checks if a sprite with the given ID is available.
+func (s SkinSprites) Exists(id float64) float64 { return 0 }
+
+// Skin returns a SkinInfo record providing structured sprite access.
+func Skin() SkinInfo { return SkinInfo{} }
+
+// SkinSprite returns a Sprite record for the named skin sprite.
+func SkinSprite(name string) Sprite { return Sprite{} }
 
 // ── Runtime functions — mode checks ──
 
