@@ -399,6 +399,26 @@ sonolus.Judge(level)
 | 判定等级 | `Judgment.Perfect` (1) | `Judgment.PERFECT` (1) | 裸 float64: 0/1/2/3 |
 | 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Set) |
 
+### Canvas 打印 (Preview 模式)
+
+通过 `sonolus.Canvas().Print()` 在 Preview 模式打印数值。非 Preview 模式编译时消除（零 IR 节点）。
+
+```go
+sonolus.Canvas().Print(PrintOptions{
+    Value:   123,
+    Format:  0,          // 0=Number, 1=Percent, 10=Time, ...
+    AnchorX: 0.5, AnchorY: 0.5,
+    SizeX: 16, SizeY: 16,
+    // Color/Alpha/Rotation 等取零值默认值
+})
+```
+
+| 场景 | sonolus.js | sonolus.py | sonolus-go |
+|------|-----------|-----------|------------|
+| 打印数值 | `canvas.print({value,fmt,...})` | `print_number(value,fmt=...)` | `Canvas().Print(PrintOptions{...})` |
+| 默认值 | ❌ 全部必填 | ✅ 关键字默认值 | ✅ 零值 = 默认 |
+| 模式消除 | N/A (仅 Preview) | N/A (仅 Preview) | ✅ 编译时 no-op |
+
 ### 结构化 Score/Life (EntityScore / EntityLife)
 
 通过 `sonolus:"scored"` / `sonolus:"lifed"` 标签使用结构化记录类型：
