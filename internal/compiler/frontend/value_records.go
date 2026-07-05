@@ -57,6 +57,7 @@ var builtinRecords = []builtinRecordDef{
 	{"arrayMap", arrayMapFields},
 	{"arraySet", arraySetFields},
 	{"box", boxFields},
+	{"consecutiveLife", consecutiveLifeFields},
 	{"frozenNumSet", frozenNumSetFields},
 	{"loopedEffectHandle", loopedEffectHandleFields},
 	{"scheduledLoopedEffectHandle", scheduledLoopedEffectHandleFields},
@@ -198,6 +199,9 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"isActive":    {fn: entityInfoIsActive, minArity: 0},
 		"isDespawned": {fn: entityInfoIsDespawned, minArity: 0},
 	},
+	"lifeInfo": {
+		"addScheduled": {fn: lifeInfoAddScheduled, minArity: 2},
+	},
 	"entityRef": {
 		"get": {fn: entityRefGet, minArity: 2},
 		"set": {fn: entityRefSet, minArity: 3},
@@ -262,6 +266,9 @@ var particleHandleFields = []string{"id"}
 
 // EntityInfo is a structured record representing an entity's compile-time info.
 var entityInfoFields = []string{"index", "archetype", "state"}
+
+// ConsecutiveLife has two fields: increment (base) and step (combo bonus).
+var consecutiveLifeFields = []string{"increment", "step"}
 
 // EntityRef wraps an entity index, enabling cross-entity data access.
 var entityRefFields = []string{"index"}
@@ -431,6 +438,16 @@ func entityInfoIsActive(t *tracer, info Num, args []Num) (Num, error) {
 		return Num{}, fmt.Errorf("isActive: comparison not supported")
 	}
 	return eq, nil
+}
+
+
+// lifeInfoAddScheduled implements LifeInfo.AddScheduled(value, time).
+func lifeInfoAddScheduled(t *tracer, info Num, args []Num) (Num, error) {
+	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionAddLifeScheduled,
+		args[0].mustNode(),
+		args[1].mustNode(),
+	))
+	return constNum(0), nil
 }
 
 // entityInfoIsDespawned implements EntityInfo.IsDespawned() → state == 2.

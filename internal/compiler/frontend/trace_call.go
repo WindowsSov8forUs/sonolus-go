@@ -46,6 +46,23 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		return res, nil
 	case *ast.IndexExpr:
+		// archetypeArray indexed access: life.Archetypes[0]
+		if sel, ok := n.X.(*ast.SelectorExpr); ok {
+			v, err := t.expr(sel)
+			if err == nil && v.typeName == "archetypeArray" {
+				idx, err2 := t.expr(n.Index)
+				if err2 != nil {
+					return Num{}, err2
+				}
+				get := func(off int) Num {
+					return exprNum(t.gen.PureInstr(resource.RuntimeFunctionGetShifted,
+						ir.Const(5000), ir.Const(off), idx.mustNode(), ir.Const(4)))
+				}
+				return compNumTyped("entityLife", map[string]Num{
+					"perfect": get(0), "great": get(1), "good": get(2), "miss": get(3),
+				}), nil
+			}
+		}
 		place, err := t.indexPlace(n)
 		if err != nil {
 			return Num{}, err
@@ -82,7 +99,13 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 			}
 		}
 		// Bare composite: evaluate vec2(...).x → extract field from the composite.
-		if _, isCall := n.X.(*ast.CallExpr); isCall {
+		// Generalised composite extraction: works for CallExpr and SelectorExpr chains.
+			switch n.X.(type) {
+			case *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr:
+			default:
+				goto notComposite
+			}
+			{
 			v, err := t.expr(n.X)
 			if err != nil {
 				return Num{}, err
@@ -99,6 +122,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 				return Num{}, t.errf(n, "record has no field %q", n.Sel.Name)
 			}
 		}
+	notComposite:
 		return t.fieldValue(n)
 	case *ast.CompositeLit:
 		return t.compositeLit(n)
@@ -531,6 +555,35 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return t.entityInfoAt(n)
 	case "selfInfo":
 		return t.selfInfoRecord(n)
+	case "life":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "life takes no arguments")
+		}
+		cl := func(base int) Num {
+			return compNumTyped("consecutiveLife", map[string]Num{
+				"increment": exprNum(ir.GetPlace(ir.Cell(2005, base))),
+				"step":      exprNum(ir.GetPlace(ir.Cell(2005, base+1))),
+			})
+		}
+		return compNumTyped("lifeInfo", map[string]Num{
+			"consecutive": compNumTyped("lifeConsecutiveEntries", map[string]Num{
+				"perfect": cl(0),
+				"great":   cl(2),
+				"good":    cl(4),
+			}),
+			"archetypes": compNumTyped("archetypeArray", map[string]Num{}),
+			"initial": exprNum(ir.GetPlace(ir.Cell(2005, 6))),
+			"max":     exprNum(ir.GetPlace(ir.Cell(2005, 7))),
+		}), true, nil
+	case "archetypeLife":
+		if len(n.Args) != 1 {
+			return Num{}, true, t.errf(n, "archetypeLife expects 1 argument (archetype index)")
+		}
+		idx, err := t.expr(n.Args[0])
+		if err != nil {
+			return Num{}, true, err
+		}
+		return t.archetypeLifeRecord(n, idx.mustNode())
 	case "skinTransform":
 		return t.builtinGetBlock(n, 1003)
 	case "setSkinTransform":
@@ -951,6 +1004,21 @@ func (t *tracer) selfInfoRecord(n *ast.CallExpr) (Num, bool, error) {
 		fields["state"] = exprNum(ir.GetPlace(ir.Cell(blockID, 2)))
 	}
 	return compNumTyped("entityInfo", fields), true, nil
+}
+
+// archetypeLifeRecord returns an EntityLife record from block 5000 for the given archetype index.
+func (t *tracer) archetypeLifeRecord(n *ast.CallExpr, idx ir.Node) (Num, bool, error) {
+	get := func(off int) Num {
+		mul := t.gen.PureInstr(resource.RuntimeFunctionMultiply, idx, ir.Const(4))
+		add := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul, ir.Const(off))
+		return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(5000), add, 0)))
+	}
+	return compNumTyped("entityLife", map[string]Num{
+		"perfect": get(0),
+		"great":   get(1),
+		"good":    get(2),
+		"miss":    get(3),
+	}), true, nil
 }
 
 // lowerFirst returns s with the first character lowercased.

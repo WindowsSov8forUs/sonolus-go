@@ -42,6 +42,41 @@ type PlayEntityInput struct {
 	Haptic      float64
 }
 
+// EntityScore represents per-entity score contributions at block 4006.
+// Used with sonolus:"scored" tag. Equivalent to EntityScore in sonolus.js.
+type EntityScore struct{ Perfect, Great, Good, Miss float64 }
+
+// EntityLife represents per-entity life contributions at block 4007.
+// Used with sonolus:"lifed" tag. Equivalent to EntityLife in sonolus.js
+// and LifeInfo in sonolus.py.
+type EntityLife struct{ Perfect, Great, Good, Miss float64 }
+
+// ConsecutiveLife represents combo-scaling life increments at block 2005.
+// Equivalent to life.consecutive.perfect in sonolus.js.
+type ConsecutiveLife struct{ Increment, Step float64 }
+
+// LifeConsecutiveEntries groups the three ConsecutiveLife entries.
+type LifeConsecutiveEntries struct{ Perfect, Great, Good ConsecutiveLife }
+
+// ArchetypeArray is a marker type for indexed archetype access.
+// life.Archetypes[0] returns an EntityLife record from block 5000.
+type ArchetypeArray struct{}
+
+// LifeInfo provides a unified namespace for all life settings (block 2005).
+// Equivalent to the life object in sonolus.js.
+type LifeInfo struct {
+	Consecutive LifeConsecutiveEntries
+	Archetypes  ArchetypeArray
+	Initial     float64
+	Max         float64
+}
+
+// Life returns a LifeInfo record providing structured access to level life settings.
+func Life() LifeInfo { return LifeInfo{} }
+
+// AddScheduled schedules a life change at the given time.
+func (l LifeInfo) AddScheduled(value, time float64) {}
+
 // Judge evaluates the judgment for a hit given the actual and target times.
 // Returns EntityStateWaiting (0, Miss), 1 (Perfect), 2 (Great), or 3 (Good).
 // Equivalent to input.judge(actual, target, windows) in sonolus.js and

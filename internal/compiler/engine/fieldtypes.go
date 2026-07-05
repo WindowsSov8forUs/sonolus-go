@@ -23,6 +23,8 @@ var recordFieldLayouts = map[string][]string{
 	"EntityRef":         {"index"},
 	"JudgmentWindow":    {"perfectMin", "perfectMax", "greatMin", "greatMax", "goodMin", "goodMax"},
 	"PlayEntityInput":  {"judgment", "accuracy", "bucketIndex", "bucketValue", "haptic"},
+	"EntityScore":      {"perfect", "great", "good", "miss"},
+	"EntityLife":       {"perfect", "great", "good", "miss"},
 }
 
 // ContainerFieldMeta stores compile-time metadata for a container-typed struct

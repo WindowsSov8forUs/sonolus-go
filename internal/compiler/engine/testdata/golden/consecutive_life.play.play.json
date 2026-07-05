@@ -1,0 +1,144 @@
+{
+  "skin": {
+    "renderMode": "lightweight",
+    "sprites": [
+      {
+        "name": "Note",
+        "id": 0
+      }
+    ]
+  },
+  "effect": {
+    "clips": null
+  },
+  "particle": {
+    "effects": null
+  },
+  "buckets": [],
+  "archetypes": [
+    {
+      "name": "Note",
+      "hasInput": false,
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ],
+      "exports": [],
+      "preprocess": {
+        "index": 19
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "value": 10000
+    },
+    {
+      "value": 0
+    },
+    {
+      "value": 2005
+    },
+    {
+      "func": "Get",
+      "args": [
+        2,
+        1
+      ]
+    },
+    {
+      "value": 6
+    },
+    {
+      "func": "Get",
+      "args": [
+        2,
+        4
+      ]
+    },
+    {
+      "value": 5000
+    },
+    {
+      "value": 3
+    },
+    {
+      "func": "Get",
+      "args": [
+        6,
+        7
+      ]
+    },
+    {
+      "func": "Add",
+      "args": [
+        3,
+        5,
+        8
+      ]
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        1,
+        9
+      ]
+    },
+    {
+      "value": 4000
+    },
+    {
+      "value": 1
+    },
+    {
+      "func": "Get",
+      "args": [
+        0,
+        1
+      ]
+    },
+    {
+      "func": "Set",
+      "args": [
+        11,
+        12,
+        13
+      ]
+    },
+    {
+      "value": -100
+    },
+    {
+      "func": "AddLifeScheduled",
+      "args": [
+        15,
+        12
+      ]
+    },
+    {
+      "func": "Execute",
+      "args": [
+        10,
+        14,
+        16,
+        12
+      ]
+    },
+    {
+      "func": "JumpLoop",
+      "args": [
+        17,
+        1
+      ]
+    },
+    {
+      "func": "Block",
+      "args": [
+        18
+      ]
+    }
+  ]
+}

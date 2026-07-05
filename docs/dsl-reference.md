@@ -372,6 +372,28 @@ sonolus.Judge(level)
 | 判定等级 | `Judgment.Perfect` (1) | `Judgment.PERFECT` (1) | 裸 float64: 0/1/2/3 |
 | 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Set) |
 
+### 结构化 Score/Life (EntityScore / EntityLife)
+
+通过 `sonolus:"scored"` / `sonolus:"lifed"` 标签使用结构化记录类型：
+
+```go
+type Note struct {
+    Score EntityScore `sonolus:"scored"`  // block 4006: Score.Perfect..Miss
+    Life  EntityLife  `sonolus:"lifed"`   // block 4007: Life.Perfect..Miss
+}
+n.Score.Perfect = 100    // 对齐 JS: this.entityScore.perfect = 100
+n.Life.Miss = -50        // 对齐 JS: this.entityLife.miss = -50
+```
+
+| 场景 | sonolus.js | sonolus.py | sonolus-go |
+|------|-----------|-----------|------------|
+| 分数写入 | `this.entityScore.perfect = 100` | `self.entity_score_multiplier` | `n.Score.Perfect = 100` |
+| 生命写入 | `this.entityLife.miss = -50` | `self.entity_life.miss = -50` | `n.Life.Miss = -50` |
+| 连击递增 | `life.consecutive.perfect.increment` | ❌ | `sonolus.Life().Consecutive.Perfect.Increment` |
+| 初始/最大生命 | `life.initial` / `life.max` | ❌ | `sonolus.Life().Initial` / `.Max` |
+| 原型生命 | `life.archetypes.get(idx).miss` | `archetype_life` | `life.Archetypes[idx].Miss` |
+| 延迟变化 | `life.addScheduled(v, t)` | ❌ | `life.AddScheduled(v, t)` |
+
 ### 结构化 EntityInput
 
 通过 `sonolus:"input"` 标签使用 `PlayEntityInput` 记录类型，一个字段替代五个：
