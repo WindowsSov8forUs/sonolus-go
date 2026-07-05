@@ -217,6 +217,7 @@ x++             // 递增
 | 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
 | 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticle` | 3 |
 | 资源引用 | `SkinSprite`, `Skin`, `EffectClip`, `ParticleClip` | 4 |
+| 辅助数学 | `Screen`, `SafeArea`, `OffsetAdjustedTime`, `PrevTime`, `Pnpoly`, `PerspectiveApproach` | 6 |
 | 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
 
 ### 引擎全局变量
