@@ -31,6 +31,7 @@ func PreludeSource(pkg string, records map[string][]string) string {
 	b.WriteString("type Box struct { val float64 }\n")
 	b.WriteString("type FrozenNumSet struct { _size float64; _array []float64 }\n")
 	b.WriteString("type JudgmentWindow struct { perfectMin, perfectMax, greatMin, greatMax, goodMin, goodMax float64 }\n")
+	b.WriteString("type PlayEntityInput struct { judgment, accuracy, bucketIndex, bucketValue, haptic float64 }\n")
 
 	// Handle types — thin records wrapping runtime resource IDs.
 	b.WriteString("type LoopedEffectHandle struct { id float64 }\n")

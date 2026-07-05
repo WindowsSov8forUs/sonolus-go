@@ -367,9 +367,28 @@ sonolus.Judge(level)
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
 | 判定计算 | `input.judge(hitTime, targetTime, windows)` | `window.judge(actual, target)` | `windows.Judge(actual, target)` |
-| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `sonolus.Judge(level)` |
+| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `sonolus.Judge(level)` 或 `n.Result.Judgment = level` |
+| 桶写入 | `this.result.bucket.index = idx` | `self.result.bucket = Bucket(id=idx)` | `n.Result.BucketIndex = idx` |
 | 判定等级 | `Judgment.Perfect` (1) | `Judgment.PERFECT` (1) | 裸 float64: 0/1/2/3 |
-| 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Judge/Set) |
+| 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Set) |
+
+### 结构化 EntityInput
+
+通过 `sonolus:"input"` 标签使用 `PlayEntityInput` 记录类型，一个字段替代五个：
+
+```go
+type Note struct {
+    Result PlayEntityInput `sonolus:"input"`  // → Result.Judgment..Result.Haptic
+}
+
+func (n *Note) Touch() {
+    n.Result.Judgment = 1        // 4005[0]
+    n.Result.BucketIndex = 0     // 4005[2]
+    n.Result.Accuracy = sonolus.Abs(actual - target)  // 4005[1]
+}
+```
+
+对标 JS `this.result.bucket.index`，Python `self.result.bucket`。
 
 ## 静态构造器
 

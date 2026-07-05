@@ -30,6 +30,18 @@ type JudgmentWindow struct {
 	PerfectMin, PerfectMax, GreatMin, GreatMax, GoodMin, GoodMax float64
 }
 
+// PlayEntityInput represents the per-entity result written to the EntityInput
+// block (4005). Fields map to: judgment(0), accuracy(1), bucket index(2),
+// bucket value(3), haptic(4). Equivalent to EntityInputResult in sonolus.js
+// and PlayEntityInput in sonolus.py.
+type PlayEntityInput struct {
+	Judgment    float64
+	Accuracy    float64
+	BucketIndex float64
+	BucketValue float64
+	Haptic      float64
+}
+
 // Judge evaluates the judgment for a hit given the actual and target times.
 // Returns EntityStateWaiting (0, Miss), 1 (Perfect), 2 (Great), or 3 (Good).
 // Equivalent to input.judge(actual, target, windows) in sonolus.js and
