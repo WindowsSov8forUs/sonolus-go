@@ -58,7 +58,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		// Record-typed struct field: n.pos.X → look up "pos.x" in bindings.
 		if inner, ok := n.X.(*ast.SelectorExpr); ok {
 			if base, ok2 := inner.X.(*ast.Ident); ok2 && t.env.Receiver != "" && base.Name == t.env.Receiver {
-				fullName := inner.Sel.Name + "." + strings.ToLower(n.Sel.Name)
+				fullName := inner.Sel.Name + "." + lowerFirst(n.Sel.Name)
 				if b, ok3 := t.env.Names[fullName]; ok3 {
 					return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
 				}
@@ -83,7 +83,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 				}
 				// Try lowercase: Go field names are exported (uppercase)
 				// but record composite fields are stored lowercase (t, r, b, l).
-				if f, ok := v.TryField(strings.ToLower(n.Sel.Name)); ok {
+				if f, ok := v.TryField(lowerFirst(n.Sel.Name)); ok {
 					return f, nil
 				}
 				return Num{}, t.errf(n, "record has no field %q", n.Sel.Name)
@@ -516,7 +516,7 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return t.builtinSetBlock(n, 2005)
 	default:
 		if strings.HasPrefix(fn.Name, "vec2") {
-			key := strings.ToLower(fn.Name[4:])
+			key := lowerFirst(fn.Name[4:])
 			if f, ok := vec2Statics[key]; ok {
 				return f(), true, nil
 			}
