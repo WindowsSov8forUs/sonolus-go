@@ -167,7 +167,11 @@ func (t *tracer) assign(n *ast.AssignStmt) error {
 			rec.fields[f] = i
 		}
 		// Infer record type name from field list for method dispatch.
-		rec.typeName = recordTypeNameFromFields(order)
+		if val.typeName != "" {
+			rec.typeName = val.typeName
+		} else {
+			rec.typeName = recordTypeNameFromFields(order)
+		}
 		t.records[lhsName.Name] = rec
 		return nil
 	}
