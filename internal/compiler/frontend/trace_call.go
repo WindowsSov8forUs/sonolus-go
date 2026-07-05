@@ -615,12 +615,6 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			return Num{}, true, err
 		}
 		return t.archetypeLifeRecord(n, idx.mustNode())
-		return t.builtinGetBlock(n, 1003)
-		return t.builtinSetBlock(n, 1003)
-		return t.builtinGetBlock(n, 1004)
-		return t.builtinSetBlock(n, 1004)
-		return t.builtinGetBlock(n, 1005)
-		return t.builtinSetBlock(n, 1005)
 	case "skinTransform":
 		if len(n.Args) != 0 {
 			return Num{}, true, t.errf(n, "transform takes no arguments")
