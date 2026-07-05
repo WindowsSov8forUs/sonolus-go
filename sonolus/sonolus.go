@@ -58,6 +58,15 @@ func (c EffectClip) Play(distance float64) {}
 // Equivalent to clip.schedule(time, distance) in sonolus.js and effect.schedule(time, distance) in sonolus.py.
 func (c EffectClip) Schedule(time, distance float64) {}
 
+// ParticleClip represents a particle effect with a compile-time ID.
+// Created via sonolus.ParticleClip(name). Equivalent to ParticleEffect in sonolus.js
+// and ParticleEffect in sonolus.py.
+type ParticleClip struct{ ID float64 }
+
+// Spawn spawns the particle effect. Composite args (Quad, Vec2) are auto-destructured.
+// Returns a ParticleHandle for move/destroy.
+func (c ParticleClip) Spawn(args ...float64) ParticleHandle { return ParticleHandle{} }
+
 // ── Handle methods ──
 
 func (h LoopedEffectHandle) Stop()                                 {}
@@ -190,6 +199,7 @@ func ArrayMap_(capacity float64) ArrayMap                      { return ArrayMap
 func ArraySet_(capacity float64) ArraySet                      { return ArraySet{} }
 func Box_(val float64) Box                                     { return Box{} }
 func EffectClip_(id float64) EffectClip                        { return EffectClip{} }
+func ParticleClip_(id float64) ParticleClip                    { return ParticleClip{} }
 func FrozenNumSet_(capacity float64) FrozenNumSet              { return FrozenNumSet{} }
 func SortLinkedEntities(head, sortKeyOffset, nextOffset float64, prevOffset ...float64) float64 { return 0 }
 

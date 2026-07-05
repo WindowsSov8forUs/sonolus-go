@@ -322,6 +322,27 @@ sonolus.EffectClip("HitSound").Schedule(targetTime, 0.1)
 | 即时播放 | `clip.play(distance)` | `effect.play(distance)` | `sonolus.EffectClip("name").Play(d)` |
 | 预排程 | `clip.schedule(time, d)` | `effect.schedule(time, d)` | `sonolus.EffectClip("name").Schedule(t, d)` |
 
+### 粒子效果 (ParticleClip)
+
+通过 `sonolus.ParticleClip(name)` 按名引用 Particle 资源中定义的粒子效果，返回带方法的 `ParticleClip` 记录。支持复合参数（Quad）自动解构：
+
+```go
+type Particle struct {
+	Explosion float64  // ID = 0
+}
+
+// 命名引用 + 方法调用 + Quad 复合参数（对标 JS: effect.spawn(quad, dur, loop)）
+q := sonolus.Quad_(...)
+sonolus.ParticleClip("Explosion").Spawn(q, 1, 0)
+//                                    ^^ Quad 8 字段自动解构为标量
+```
+
+| 场景 | sonolus.js | sonolus.py | sonolus-go |
+|------|-----------|-----------|------------|
+| 生成粒子 | `effect.spawn(quad, dur, loop)` | `effect.spawn(quad, dur, loop)` | `ParticleClip("n").Spawn(quad, dur, loop)` |
+| 移动粒子 | `handle.move(quad)` | `handle.move(quad)` | `handle.Move(quad)`（已有） |
+| 销毁粒子 | `handle.destroy()` | `handle.destroy()` | `handle.Destroy()`（已有） |
+
 ### 判定 (Judgment)
 
 判定计算与写入的三方对照：

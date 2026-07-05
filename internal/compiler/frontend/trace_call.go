@@ -52,6 +52,11 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		return exprNum(ir.GetPlace(place)), nil
 	case *ast.SelectorExpr:
+			if base, ok := n.X.(*ast.Ident); ok && t.env.Receiver != "" && base.Name == t.env.Receiver {
+				if recordNum, _, ok2 := t.resolveRecordField(n); ok2 {
+					return recordNum, nil
+				}
+			}
 		if b, isRecv, err := t.receiverBinding(n); err != nil {
 			return Num{}, err
 		} else if isRecv {
@@ -436,6 +441,19 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			}
 		}
 		return Num{}, true, t.errf(n, "effectClip expects a string literal")
+	case "particleClip":
+		if len(n.Args) == 1 {
+			if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				name, err := strconv.Unquote(lit.Value)
+				if err == nil {
+					if id, ok2 := t.env.ParticleIndex[name]; ok2 {
+						return compNumTyped("particle", map[string]Num{"id": constNum(id)}), true, nil
+					}
+					return Num{}, true, t.errf(n, "unknown particle effect name %q", name)
+				}
+			}
+		}
+		return Num{}, true, t.errf(n, "particleClip expects a string literal")
 	case "len":
 		if len(n.Args) == 1 {
 			if id, ok := n.Args[0].(*ast.Ident); ok {
