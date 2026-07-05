@@ -308,12 +308,31 @@ func EntityInfo(index float64) float64 { return 0 }
 // Block ID constants for commonly accessed engine memory blocks.
 const (
 	BlockLevelMemory       = 2000
+	BlockLevelData         = 2001
 	BlockSkinTransform     = 1003
 	BlockParticleTransform = 1004
 	BlockBackground        = 1005
 	BlockUI                = 1006
 	BlockUIConfiguration   = 1007
+	BlockLevelScore        = 2004
+	BlockLevelLife         = 2005
 )
+
+// ── Transform / background convenience getters/setters ──
+
+func SkinTransform(index float64) float64          { return Get(BlockSkinTransform, index) }
+func SetSkinTransform(index, value float64)         { Set(BlockSkinTransform, index, value) }
+func ParticleTransform(index float64) float64       { return Get(BlockParticleTransform, index) }
+func SetParticleTransform(index, value float64)     { Set(BlockParticleTransform, index, value) }
+func Background(index float64) float64              { return Get(BlockBackground, index) }
+func SetBackground(index, value float64)            { Set(BlockBackground, index, value) }
+
+// ── Score / life configuration getters/setters ──
+
+func LevelScore(index float64) float64              { return Get(BlockLevelScore, index) }
+func SetLevelScore(index, value float64)            { Set(BlockLevelScore, index, value) }
+func LevelLife(index float64) float64               { return Get(BlockLevelLife, index) }
+func SetLevelLife(index, value float64)             { Set(BlockLevelLife, index, value) }
 
 // ── Runtime functions — memory ──
 
