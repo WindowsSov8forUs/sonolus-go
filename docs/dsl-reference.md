@@ -193,11 +193,11 @@ x++             // 递增
 
 完整运行时函数列表见 `internal/compiler/frontend/builtins.go`。以下是分类概览：
 
+> **比较与逻辑运算符**使用原生 Go 语法：`==`、`!=`、`<`、`<=`、`>`、`>=`、`&&`、`||`、`!`。引擎对应的 `Equal`、`Less`、`And` 等 RuntimeFunction 由编译器通过 `applyBinary`/`applyUnary` 自动生成，不作为可调用 stub 暴露。
+
 | 分类 | 函数示例 | 个数 |
 |------|---------|------|
 | 算术 | `Abs`, `Sign`, `Floor`, `Ceil`, `Round`, `Frac` | ~10 |
-| 比较 | `Equal`, `NotEqual`, `Less`, `Greater` | 6 |
-| 逻辑 | `And`, `Or`, `Not` | 3 |
 | 数学 | `Sin`, `Cos`, `Tan`, `Log`, `Power`, `Clamp`, `Lerp` | ~30 |
 | 缓动 | `EaseInSine` ... `EaseOutInElastic` | 36 |
 | 内存 | `Get`, `Set`, `GetShifted`, `SetShifted`, `SetAdd*`, `SetMul*` 等 | ~40 |

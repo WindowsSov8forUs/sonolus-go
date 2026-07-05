@@ -208,20 +208,13 @@ func UnlerpClamped(a, b, x float64) float64     { return 0 }
 func Remap(a1, b1, a2, b2, x float64) float64   { return 0 }
 func RemapClamped(a1, b1, a2, b2, x float64) float64 { return 0 }
 
-// ── Runtime functions — comparison ──
-
-func Equal(a, b float64) float64         { return 0 }
-func NotEqual(a, b float64) float64      { return 0 }
-func Less(a, b float64) float64          { return 0 }
-func LessOr(a, b float64) float64        { return 0 }
-func Greater(a, b float64) float64       { return 0 }
-func GreaterOr(a, b float64) float64     { return 0 }
-
-// ── Runtime functions — logic ──
-
-func And(a, b float64) float64  { return 0 }
-func Or(a, b float64) float64   { return 0 }
-func Not(x float64) float64     { return 0 }
+// ── Comparison and logic ──
+//
+// The engine runtime defines Equal, NotEqual, Less, LessOr, Greater, GreaterOr,
+// And, Or, and Not as RuntimeFunctions. In sonolus-go these are expressed through
+// native Go operators (== != < <= > >= && || !) compiled via applyBinary/applyUnary,
+// not through sonolus.Xxx() calls. The corresponding stub functions are intentionally
+// omitted — use Go operators directly.
 
 // ── Runtime functions — easing ──
 
