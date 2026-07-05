@@ -1,0 +1,70 @@
+{
+  "skin": {
+    "renderMode": "lightweight",
+    "sprites": [
+      {
+        "name": "Note",
+        "id": 0
+      }
+    ]
+  },
+  "effect": {
+    "clips": [
+      {
+        "name": "Hit",
+        "id": 0
+      },
+      {
+        "name": "Miss",
+        "id": 1
+      }
+    ]
+  },
+  "particle": {
+    "effects": null
+  },
+  "buckets": [],
+  "archetypes": [
+    {
+      "name": "Note",
+      "hasInput": false,
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ],
+      "exports": [],
+      "initialize": {
+        "index": 4
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "value": 1
+    },
+    {
+      "func": "Execute",
+      "args": [
+        0
+      ]
+    },
+    {
+      "value": 0
+    },
+    {
+      "func": "JumpLoop",
+      "args": [
+        1,
+        2
+      ]
+    },
+    {
+      "func": "Block",
+      "args": [
+        3
+      ]
+    }
+  ]
+}

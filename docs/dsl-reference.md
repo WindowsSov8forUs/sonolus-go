@@ -216,6 +216,7 @@ x++             // 递增
 | 栈 | `StackInit`, `StackPush`, `StackPop` 等 | 14 |
 | 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
 | 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticle` | 3 |
+| 资源引用 | `Sprite`, `EffectClip` | 2 |
 | 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
 
 ### 引擎全局变量
@@ -300,6 +301,26 @@ for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
 | 活跃检查 | `info.state === EntityState.Active` | `entity_info_at(idx).state == 1` | `info.IsActive()` |
 | 自身状态 | `this.info.state` | `self._info.state` | `sonolus.SelfInfo().State` |
 | 迭代 | `for (const info of entityInfos)` | `for idx: entity_info_at(idx)` | `for i := 0; EntityInfoIndex(i) == i; i++` |
+
+### 音效片段 (EffectClip)
+
+通过 `sonolus.EffectClip(name)` 按名引用 Effect 资源中定义的音效片段，返回带方法的 `EffectClip` 记录：
+
+```go
+type Effect struct {
+	HitSound  float64  // ID = 0
+	MissSound float64  // ID = 1
+}
+
+// 命名引用 + 方法调用（对标 JS: effect.clips.hitSound.schedule）
+sonolus.EffectClip("HitSound").Play(0.1)
+sonolus.EffectClip("HitSound").Schedule(targetTime, 0.1)
+```
+
+| 场景 | sonolus.js | sonolus.py | sonolus-go |
+|------|-----------|-----------|------------|
+| 即时播放 | `clip.play(distance)` | `effect.play(distance)` | `sonolus.EffectClip("name").Play(d)` |
+| 预排程 | `clip.schedule(time, d)` | `effect.schedule(time, d)` | `sonolus.EffectClip("name").Schedule(t, d)` |
 
 ### 判定 (Judgment)
 
