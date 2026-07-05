@@ -1,0 +1,180 @@
+{
+  "skin": {
+    "renderMode": "lightweight",
+    "sprites": [
+      {
+        "name": "Note",
+        "id": 0
+      }
+    ]
+  },
+  "effect": {
+    "clips": null
+  },
+  "particle": {
+    "effects": null
+  },
+  "buckets": [],
+  "archetypes": [
+    {
+      "name": "Note",
+      "hasInput": false,
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ],
+      "exports": [],
+      "initialize": {
+        "index": 23
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "value": 4000
+    },
+    {
+      "value": 1
+    },
+    {
+      "value": 1003
+    },
+    {
+      "value": 0
+    },
+    {
+      "func": "Get",
+      "args": [
+        2,
+        3
+      ]
+    },
+    {
+      "value": 0.5
+    },
+    {
+      "func": "Cos",
+      "args": [
+        5
+      ]
+    },
+    {
+      "func": "Multiply",
+      "args": [
+        4,
+        6
+      ]
+    },
+    {
+      "func": "Get",
+      "args": [
+        2,
+        1
+      ]
+    },
+    {
+      "func": "Sin",
+      "args": [
+        5
+      ]
+    },
+    {
+      "func": "Multiply",
+      "args": [
+        8,
+        9
+      ]
+    },
+    {
+      "func": "Subtract",
+      "args": [
+        7,
+        10
+      ]
+    },
+    {
+      "func": "Execute",
+      "args": [
+        11,
+        3
+      ]
+    },
+    {
+      "func": "Multiply",
+      "args": [
+        4,
+        9
+      ]
+    },
+    {
+      "func": "Multiply",
+      "args": [
+        8,
+        6
+      ]
+    },
+    {
+      "func": "Add",
+      "args": [
+        13,
+        14
+      ]
+    },
+    {
+      "func": "Execute",
+      "args": [
+        15,
+        3
+      ]
+    },
+    {
+      "value": 2
+    },
+    {
+      "func": "Get",
+      "args": [
+        2,
+        17
+      ]
+    },
+    {
+      "func": "Add",
+      "args": [
+        1,
+        12,
+        16,
+        18
+      ]
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        1,
+        19
+      ]
+    },
+    {
+      "func": "Execute",
+      "args": [
+        20,
+        1
+      ]
+    },
+    {
+      "func": "JumpLoop",
+      "args": [
+        21,
+        3
+      ]
+    },
+    {
+      "func": "Block",
+      "args": [
+        22
+      ]
+    }
+  ]
+}

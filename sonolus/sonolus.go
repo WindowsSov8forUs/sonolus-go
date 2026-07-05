@@ -474,14 +474,74 @@ const (
 	BlockLevelLife         = 2005
 )
 
-// ── Transform / background convenience getters/setters ──
+// ── Transform2d (Skin/Particle/Background 矩阵) ──
 
-func SkinTransform(index float64) float64          { return Get(BlockSkinTransform, index) }
-func SetSkinTransform(index, value float64)         { Set(BlockSkinTransform, index, value) }
-func ParticleTransform(index float64) float64       { return Get(BlockParticleTransform, index) }
-func SetParticleTransform(index, value float64)     { Set(BlockParticleTransform, index, value) }
-func Background(index float64) float64              { return Get(BlockBackground, index) }
-func SetBackground(index, value float64)            { Set(BlockBackground, index, value) }
+// Transform2d represents a 4x4 affine transformation matrix.
+// Equivalent to Transform2d in sonolus.py and the skin.transform Mat in sonolus.js.
+type Transform2d struct {
+	A00, A01, A02, A03 float64
+	A10, A11, A12, A13 float64
+	A20, A21, A22, A23 float64
+	A30, A31, A32, A33 float64
+}
+
+// SkinTransform returns the full skin transform matrix (block 1003, 16 slots).
+func SkinTransform() Transform2d { return Transform2d{} }
+
+// SetSkinTransform writes a Transform2d to the skin transform matrix.
+func SetSkinTransform(t Transform2d) {}
+
+// ParticleTransform returns the particle transform matrix (block 1004).
+func ParticleTransform() Transform2d { return Transform2d{} }
+
+// SetParticleTransform writes a Transform2d to the particle transform matrix.
+func SetParticleTransform(t Transform2d) {}
+
+// Background is the background transform (block 1005).
+func Background() Transform2d { return Transform2d{} }
+
+// SetBackground writes a Transform2d to the background matrix.
+func SetBackground(t Transform2d) {}
+
+// Translate returns a new Transform2d translated by the given vector.
+func (t Transform2d) Translate(v Vec2) Transform2d { return Transform2d{} }
+
+// Scale returns a new Transform2d scaled by the given vector.
+func (t Transform2d) Scale(v Vec2) Transform2d { return Transform2d{} }
+
+// Rotate returns a new Transform2d rotated by the given angle (radians).
+func (t Transform2d) Rotate(angle float64) Transform2d { return Transform2d{} }
+
+// Compose returns a new Transform2d composed with another.
+func (t Transform2d) Compose(o Transform2d) Transform2d { return Transform2d{} }
+
+// TransformVec applies the transform to a Vec2 and returns the result.
+func (t Transform2d) TransformVec(v Vec2) Vec2 { return Vec2{} }
+
+// ScaleAbout scales about the given pivot and returns a new Transform2d.
+func (t Transform2d) ScaleAbout(factor, pivot Vec2) Transform2d { return Transform2d{} }
+
+// RotateAbout rotates about the given pivot and returns a new Transform2d.
+func (t Transform2d) RotateAbout(angle float64, pivot Vec2) Transform2d { return Transform2d{} }
+
+// ComposeBefore composes with another transform applied before this one.
+func (t Transform2d) ComposeBefore(other Transform2d) Transform2d { return Transform2d{} }
+
+// PerspectiveX applies a perspective transformation along the x-axis.
+func (t Transform2d) PerspectiveX(foregroundX float64, vanishingPoint Vec2) Transform2d { return Transform2d{} }
+
+// PerspectiveY applies a perspective transformation along the y-axis.
+func (t Transform2d) PerspectiveY(foregroundY float64, vanishingPoint Vec2) Transform2d { return Transform2d{} }
+
+// SimplePerspectiveX applies perspective along x with a given vanishing point x.
+func (t Transform2d) SimplePerspectiveX(x float64) Transform2d { return Transform2d{} }
+
+// SimplePerspectiveY applies perspective along y with a given vanishing point y.
+func (t Transform2d) SimplePerspectiveY(y float64) Transform2d { return Transform2d{} }
+
+// TransformQuad transforms all corners of a Quad and returns a new Quad.
+func (t Transform2d) TransformQuad(q Quad) Quad { return Quad{} }
+
 
 // ── Score / life configuration getters/setters ──
 

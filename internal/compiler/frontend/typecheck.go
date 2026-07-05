@@ -39,6 +39,7 @@ func PreludeSource(pkg string, records map[string][]string) string {
 	b.WriteString("type SkinInfo struct { sprites SkinSprites }\n")
 	b.WriteString("type CanvasObj struct{}\n")
 	b.WriteString("type PrintOptions struct { value, format, decimalPlaces, anchorX, anchorY, pivotX, pivotY, sizeX, sizeY, rotation, color, alpha, horizontalAlign, background float64 }\n")
+	b.WriteString("type Transform2d struct { a00, a01, a02, a03, a10, a11, a12, a13, a20, a21, a22, a23, a30, a31, a32, a33 float64 }\n")
 
 	// Handle types — thin records wrapping runtime resource IDs.
 	b.WriteString("type LoopedEffectHandle struct { id float64 }\n")
