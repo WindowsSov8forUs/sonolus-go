@@ -237,3 +237,30 @@ func UpdateSpawn() float64 { return 0 }
 	}
 	t.Log("OK")
 }
+
+func TestJudgmentWindowStructField(t *testing.T) {
+	src := `package test
+type Skin struct { Note float64 }
+type Note struct {
+    Beat   float64 ` + "`sonolus:\"imported\"`" + `
+    Window JudgmentWindow ` + "`sonolus:\"memory\"`" + `
+}
+func (n *Note) Initialize() {
+    n.Window.perfectMin = -0.1
+    n.Window.perfectMax = 0.1
+    n.Window.greatMin = -0.2
+    n.Window.greatMax = 0.2
+    n.Window.goodMin = -0.4
+    n.Window.goodMax = 0.4
+    result := n.Window.judge(0, n.Beat)
+    set(0, 0, result)
+}
+func UpdateSpawn() float64 { return 0 }
+`
+	ess := engine.NewSingleFileSources(src)
+	_, _, err := engine.CompilePlaySources(ess, nil)
+	if err != nil {
+		t.Fatalf("JW: %v", err)
+	}
+	t.Log("OK")
+}

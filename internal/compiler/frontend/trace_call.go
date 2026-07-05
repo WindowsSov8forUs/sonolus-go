@@ -756,7 +756,7 @@ FieldLoop:
 	}
 
 	// Derive base memory location from the first sub-field binding.
-	firstField := fieldName + "." + strings.ToLower(recordFields[0])
+	firstField := fieldName + "." + lowerFirst(recordFields[0])
 	if _, ok := t.env.Names[firstField]; !ok {
 		return Num{}, "", false
 	}
