@@ -26,6 +26,9 @@ type ArrayMap struct{ Size float64; Array []float64 }
 type ArraySet struct{ Values VarArray }
 type Box struct{ Val float64 }
 type FrozenNumSet struct{ Size float64; Array []float64 }
+type JudgmentWindow struct {
+	PerfectMin, PerfectMax, GreatMin, GreatMax, GoodMin, GoodMax float64
+}
 
 // ── Handle types ──
 

@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
@@ -579,7 +578,7 @@ func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
 	}
 	off, ok := rec.fields[sel.Sel.Name]
 	if !ok {
-		off, ok = rec.fields[strings.ToLower(sel.Sel.Name)]
+		off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
 	}
 	if !ok {
 		return Num{}, t.errf(sel, "record %q has no field %q", base.Name, sel.Sel.Name)
@@ -589,7 +588,7 @@ func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
 	if v, ok := rec.val.fields[sel.Sel.Name]; ok && (v.isConst || v.e != nil) {
 		return v, nil
 	}
-	if v, ok := rec.val.fields[strings.ToLower(sel.Sel.Name)]; ok && (v.isConst || v.e != nil) {
+	if v, ok := rec.val.fields[lowerFirst(sel.Sel.Name)]; ok && (v.isConst || v.e != nil) {
 		return v, nil
 	}
 	return exprNum(ir.GetPlace(ir.BlockPlace{Block: rec.tb, Index: ir.Const(off), Offset: 0})), nil
@@ -600,7 +599,7 @@ func (t *tracer) fieldPlace(sel *ast.SelectorExpr) (ir.BlockPlace, error) {
 	// Record-typed struct field: n.pos.X → look up "pos.x" in bindings.
 	if inner, ok := sel.X.(*ast.SelectorExpr); ok {
 		if base, ok2 := inner.X.(*ast.Ident); ok2 && t.env.Receiver != "" && base.Name == t.env.Receiver {
-			fullName := inner.Sel.Name + "." + strings.ToLower(sel.Sel.Name)
+			fullName := inner.Sel.Name + "." + lowerFirst(sel.Sel.Name)
 			if b, ok3 := t.env.Names[fullName]; ok3 {
 				return ir.NewBlockPlace(ir.Const(b.Block), ir.Const(b.Index), 0), nil
 			}
@@ -626,7 +625,7 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 	// Record-typed struct field write: n.pos.X = value → look up "pos.x" in bindings.
 	if inner, ok := sel.X.(*ast.SelectorExpr); ok {
 		if base, ok2 := inner.X.(*ast.Ident); ok2 && t.env.Receiver != "" && base.Name == t.env.Receiver {
-			fullName := inner.Sel.Name + "." + strings.ToLower(sel.Sel.Name)
+			fullName := inner.Sel.Name + "." + lowerFirst(sel.Sel.Name)
 			if b, ok3 := t.env.Names[fullName]; ok3 {
 				if !b.Writable {
 					return t.errf(sel, "cannot assign to read-only field %q", fullName)
