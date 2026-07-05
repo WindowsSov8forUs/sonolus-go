@@ -50,6 +50,7 @@ var builtinRecords = []builtinRecordDef{
 	{"effectClip", effectFields},
 	{"entityInfo", entityInfoFields},
 	{"particle", particleFields},
+	{"particleClip", particleFields},
 	{"entityRef", entityRefFields},
 	{"pair", pairFields},
 	{"varArray", varArrayFields},
@@ -177,7 +178,10 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"schedule": {fn: effectSchedule, minArity: 2},
 	},
 	"particle": {
-		"spawn": {fn: particleSpawn, minArity: 0},
+		"spawn": {fn: particleSpawn, minArity: 0, compositeArgAt: []int{0}},
+	},
+	"particleClip": {
+		"spawn": {fn: particleSpawn, minArity: 0, compositeArgAt: []int{0}},
 	},
 	"loopedEffectHandle": {
 		"stop": {fn: loopedEffectHandleStop, minArity: 0},
@@ -340,11 +344,21 @@ func effectScheduleLoop(t *tracer, e Num, args []Num) (Num, error) {
 }
 
 // particleSpawn implements Particle.spawn(args...) → ParticleHandle.
+// Composite args (Quad, Vec2, etc.) are automatically destructured into scalar fields.
 func particleSpawn(t *tracer, p Num, args []Num) (Num, error) {
-	nodes := make([]ir.Node, 1+len(args))
-	nodes[0] = p.MustField("id").mustNode()
-	for i, a := range args {
-		nodes[i+1] = a.mustNode()
+	nodes := []ir.Node{p.MustField("id").mustNode()}
+	for _, a := range args {
+		if a.IsComposite() {
+			order, err := a.CompositeFieldOrder()
+			if err != nil {
+				return Num{}, err
+			}
+			for _, f := range order {
+				nodes = append(nodes, a.MustField(f).mustNode())
+			}
+		} else {
+			nodes = append(nodes, a.mustNode())
+		}
 	}
 	id := exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionSpawnParticleEffect, nodes...))
 	return compNumTyped("particleHandle", map[string]Num{"id": id}), nil
