@@ -247,6 +247,7 @@ entityLifePerfect, entityLifeGreat, entityLifeGood, entityLifeMiss
 | `FrozenNumSet` | `Len`, `Capacity`, `Contains` |
 | `EntityRef` | `Get`, `Set` |
 | `EntityInfo` | `IsWaiting`, `IsActive`, `IsDespawned` |
+| `JudgmentWindow` | `Judge` |
 
 ### 实体信息 (EntityInfo)
 
@@ -299,6 +300,34 @@ for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
 | 活跃检查 | `info.state === EntityState.Active` | `entity_info_at(idx).state == 1` | `info.IsActive()` |
 | 自身状态 | `this.info.state` | `self._info.state` | `sonolus.SelfInfo().State` |
 | 迭代 | `for (const info of entityInfos)` | `for idx: entity_info_at(idx)` | `for i := 0; EntityInfoIndex(i) == i; i++` |
+
+### 判定 (Judgment)
+
+判定计算与写入的三方对照：
+
+```go
+// 判定窗口定义
+var windows = sonolus.JudgmentWindow{
+    PerfectMin: -0.05, PerfectMax: 0.05,
+    GreatMin:   -0.1,  GreatMax:   0.1,
+    GoodMin:    -0.15, GoodMax:    0.15,
+}
+
+// 计算判定等级（对应 JS: input.judge, Python: window.judge）
+level := windows.Judge(actualTime, targetTime)
+// level = 0 (Miss), 1 (Perfect), 2 (Great), 3 (Good)
+
+// 写入判定结果
+sonolus.Judge(level)
+// 或通过 result 字段: n.Result = level (需 `sonolus:"input"` 标签)
+```
+
+| 场景 | sonolus.js | sonolus.py | sonolus-go |
+|------|-----------|-----------|------------|
+| 判定计算 | `input.judge(hitTime, targetTime, windows)` | `window.judge(actual, target)` | `windows.Judge(actual, target)` |
+| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `sonolus.Judge(level)` |
+| 判定等级 | `Judgment.Perfect` (1) | `Judgment.PERFECT` (1) | 裸 float64: 0/1/2/3 |
+| 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Judge/Set) |
 
 ## 静态构造器
 

@@ -30,6 +30,12 @@ type JudgmentWindow struct {
 	PerfectMin, PerfectMax, GreatMin, GreatMax, GoodMin, GoodMax float64
 }
 
+// Judge evaluates the judgment for a hit given the actual and target times.
+// Returns EntityStateWaiting (0, Miss), 1 (Perfect), 2 (Great), or 3 (Good).
+// Equivalent to input.judge(actual, target, windows) in sonolus.js and
+// window.judge(actual, target) in sonolus.py.
+func (jw JudgmentWindow) Judge(actual, target float64) float64 { return 0 }
+
 // ── Handle types ──
 
 type LoopedEffectHandle struct{ ID float64 }
