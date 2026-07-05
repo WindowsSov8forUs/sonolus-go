@@ -391,7 +391,7 @@ n.Life.Miss = -50        // 对齐 JS: this.entityLife.miss = -50
 | 生命写入 | `this.entityLife.miss = -50` | `self.entity_life.miss = -50` | `n.Life.Miss = -50` |
 | 连击递增 | `life.consecutive.perfect.increment` | ❌ | `sonolus.Life().Consecutive.Perfect.Increment` |
 | 初始/最大生命 | `life.initial` / `life.max` | ❌ | `sonolus.Life().Initial` / `.Max` |
-| 原型生命 | `life.archetypes.get(idx).miss` | `archetype_life` | `life.Archetype(idx).Miss` |
+| 原型生命 | `life.archetypes.get(idx).miss` | `archetype_life` | `life.Archetypes[idx].Miss` |
 | 延迟变化 | `life.addScheduled(v, t)` | ❌ | `life.AddScheduled(v, t)` |
 
 ### 结构化 EntityInput

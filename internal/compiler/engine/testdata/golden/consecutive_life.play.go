@@ -8,10 +8,9 @@ type Note struct {
 }
 
 func (n Note) Preprocess() {
-	// Unified Life namespace
 	life := sonolus.Life()
 	n.X = life.Consecutive.Perfect.Increment +
 		life.Initial +
-		life.Archetype(0).Miss
+		life.Archetypes[0].Miss
 	life.AddScheduled(-100, 1)
 }

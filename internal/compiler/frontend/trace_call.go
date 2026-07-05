@@ -46,6 +46,23 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		return res, nil
 	case *ast.IndexExpr:
+		// archetypeArray indexed access: life.Archetypes[0]
+		if sel, ok := n.X.(*ast.SelectorExpr); ok {
+			v, err := t.expr(sel)
+			if err == nil && v.typeName == "archetypeArray" {
+				idx, err2 := t.expr(n.Index)
+				if err2 != nil {
+					return Num{}, err2
+				}
+				get := func(off int) Num {
+					return exprNum(t.gen.PureInstr(resource.RuntimeFunctionGetShifted,
+						ir.Const(5000), ir.Const(off), idx.mustNode(), ir.Const(4)))
+				}
+				return compNumTyped("entityLife", map[string]Num{
+					"perfect": get(0), "great": get(1), "good": get(2), "miss": get(3),
+				}), nil
+			}
+		}
 		place, err := t.indexPlace(n)
 		if err != nil {
 			return Num{}, err
@@ -84,7 +101,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		// Bare composite: evaluate vec2(...).x → extract field from the composite.
 		// Generalised composite extraction: works for CallExpr and SelectorExpr chains.
 			switch n.X.(type) {
-			case *ast.CallExpr, *ast.SelectorExpr:
+			case *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr:
 			default:
 				goto notComposite
 			}
@@ -554,6 +571,7 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 				"great":   cl(2),
 				"good":    cl(4),
 			}),
+			"archetypes": compNumTyped("archetypeArray", map[string]Num{}),
 			"initial": exprNum(ir.GetPlace(ir.Cell(2005, 6))),
 			"max":     exprNum(ir.GetPlace(ir.Cell(2005, 7))),
 		}), true, nil

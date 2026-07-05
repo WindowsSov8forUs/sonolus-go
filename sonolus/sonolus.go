@@ -58,19 +58,21 @@ type ConsecutiveLife struct{ Increment, Step float64 }
 // LifeConsecutiveEntries groups the three ConsecutiveLife entries.
 type LifeConsecutiveEntries struct{ Perfect, Great, Good ConsecutiveLife }
 
+// ArchetypeArray is a marker type for indexed archetype access.
+// life.Archetypes[0] returns an EntityLife record from block 5000.
+type ArchetypeArray struct{}
+
 // LifeInfo provides a unified namespace for all life settings (block 2005).
 // Equivalent to the life object in sonolus.js.
 type LifeInfo struct {
 	Consecutive LifeConsecutiveEntries
+	Archetypes  ArchetypeArray
 	Initial     float64
 	Max         float64
 }
 
 // Life returns a LifeInfo record providing structured access to level life settings.
 func Life() LifeInfo { return LifeInfo{} }
-
-// Archetype returns the archetype life settings (block 5000) for the given archetype index.
-func (l LifeInfo) Archetype(idx float64) EntityLife { return EntityLife{} }
 
 // AddScheduled schedules a life change at the given time.
 func (l LifeInfo) AddScheduled(value, time float64) {}
