@@ -5,11 +5,10 @@ type Skin struct{ Note float64 }
 type Note struct {
 	Beat float64 `sonolus:"imported"`
 	X    float64 `sonolus:"memory"`
-	Tr   Transform2d `sonolus:"memory"`
 }
 
 func (n Note) Initialize() {
 	t := sonolus.SkinTransform()
-	n.X = t.A00 + t.A33
-	n.Tr = t
+	r := t.Translate(sonolus.Vec2_(1, 2)).Rotate(0.5)
+	n.X = r.TransformVec(sonolus.Vec2_(0, 0)).X
 }

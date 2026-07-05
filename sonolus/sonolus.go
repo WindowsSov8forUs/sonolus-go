@@ -503,23 +503,21 @@ func Background() Transform2d { return Transform2d{} }
 // SetBackground writes a Transform2d to the background matrix.
 func SetBackground(t Transform2d) {}
 
-// SkinTransformAt reads a single slot from the skin transform by index.
-func SkinTransformAt(index float64) float64 { return 0 }
+// Translate returns a new Transform2d translated by the given vector.
+func (t Transform2d) Translate(v Vec2) Transform2d { return Transform2d{} }
 
-// SetSkinTransformAt writes a single slot to the skin transform by index.
-func SetSkinTransformAt(index, value float64) {}
+// Scale returns a new Transform2d scaled by the given vector.
+func (t Transform2d) Scale(v Vec2) Transform2d { return Transform2d{} }
 
-// ParticleTransformAt reads a single slot from the particle transform by index.
-func ParticleTransformAt(index float64) float64 { return 0 }
+// Rotate returns a new Transform2d rotated by the given angle (radians).
+func (t Transform2d) Rotate(angle float64) Transform2d { return Transform2d{} }
 
-// SetParticleTransformAt writes a single slot to the particle transform.
-func SetParticleTransformAt(index, value float64) {}
+// Compose returns a new Transform2d composed with another.
+func (t Transform2d) Compose(o Transform2d) Transform2d { return Transform2d{} }
 
-// BackgroundAt reads a single slot from the background transform by index.
-func BackgroundAt(index float64) float64 { return 0 }
+// TransformVec applies the transform to a Vec2 and returns the result.
+func (t Transform2d) TransformVec(v Vec2) Vec2 { return Vec2{} }
 
-// SetBackgroundAt writes a single slot to the background transform.
-func SetBackgroundAt(index, value float64) {}
 
 // ── Score / life configuration getters/setters ──
 

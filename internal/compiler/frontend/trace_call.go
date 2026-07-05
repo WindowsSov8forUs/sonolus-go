@@ -615,17 +615,11 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			return Num{}, true, err
 		}
 		return t.archetypeLifeRecord(n, idx.mustNode())
-	case "skinTransformAt":
 		return t.builtinGetBlock(n, 1003)
-	case "setSkinTransformAt":
 		return t.builtinSetBlock(n, 1003)
-	case "particleTransformAt":
 		return t.builtinGetBlock(n, 1004)
-	case "setParticleTransformAt":
 		return t.builtinSetBlock(n, 1004)
-	case "backgroundAt":
 		return t.builtinGetBlock(n, 1005)
-	case "setBackgroundAt":
 		return t.builtinSetBlock(n, 1005)
 	case "skinTransform":
 		if len(n.Args) != 0 {

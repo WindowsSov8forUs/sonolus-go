@@ -581,6 +581,9 @@ func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
 		return Num{}, t.errf(sel, "undefined record %q", base.Name)
 	}
 	off, ok := rec.fields[sel.Sel.Name]
+		if !ok {
+			off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
+		}
 	if !ok {
 		off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
 	}
@@ -619,6 +622,9 @@ func (t *tracer) fieldPlace(sel *ast.SelectorExpr) (ir.BlockPlace, error) {
 		return ir.BlockPlace{}, t.errf(sel, "undefined record %q", base.Name)
 	}
 	off, ok := rec.fields[sel.Sel.Name]
+		if !ok {
+			off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
+		}
 	if !ok {
 		return ir.BlockPlace{}, t.errf(sel, "record %q has no field %q", base.Name, sel.Sel.Name)
 	}
