@@ -57,6 +57,7 @@ var builtinRecords = []builtinRecordDef{
 	{"arrayMap", arrayMapFields},
 	{"arraySet", arraySetFields},
 	{"box", boxFields},
+	{"consecutiveLife", consecutiveLifeFields},
 	{"frozenNumSet", frozenNumSetFields},
 	{"loopedEffectHandle", loopedEffectHandleFields},
 	{"scheduledLoopedEffectHandle", scheduledLoopedEffectHandleFields},
@@ -262,6 +263,9 @@ var particleHandleFields = []string{"id"}
 
 // EntityInfo is a structured record representing an entity's compile-time info.
 var entityInfoFields = []string{"index", "archetype", "state"}
+
+// ConsecutiveLife has two fields: increment (base) and step (combo bonus).
+var consecutiveLifeFields = []string{"increment", "step"}
 
 // EntityRef wraps an entity index, enabling cross-entity data access.
 var entityRefFields = []string{"index"}

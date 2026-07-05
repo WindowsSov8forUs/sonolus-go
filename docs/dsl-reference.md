@@ -389,6 +389,8 @@ n.Life.Miss = -50        // 对齐 JS: this.entityLife.miss = -50
 |------|-----------|-----------|------------|
 | 分数写入 | `this.entityScore.perfect = 100` | `self.entity_score_multiplier` | `n.Score.Perfect = 100` |
 | 生命写入 | `this.entityLife.miss = -50` | `self.entity_life.miss = -50` | `n.Life.Miss = -50` |
+| 连击递增 | `life.consecutive.perfect.increment` | ❌ | `sonolus.ConsecutiveLife("perfect").Increment` |
+| 原型生命 | `life.archetypes.get(idx).miss` | `archetype_life` | `sonolus.ArchetypeLife(idx).Miss` |
 
 ### 结构化 EntityInput
 
