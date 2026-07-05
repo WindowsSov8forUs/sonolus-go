@@ -728,7 +728,7 @@ func (t *tracer) resolveRecordField(sel *ast.SelectorExpr) (Num, string, bool) {
 FieldLoop:
 	for _, rd := range builtinRecords {
 		for _, f := range rd.fields {
-			fullName := fieldName + "." + strings.ToLower(f)
+			fullName := fieldName + "." + lowerFirst(f)
 			if _, ok := t.env.Names[fullName]; !ok {
 				continue FieldLoop
 			}
@@ -741,7 +741,7 @@ FieldLoop:
 	UserLoop:
 		for rn, fields := range t.env.Records {
 			for _, f := range fields {
-				fullName := fieldName + "." + strings.ToLower(f)
+				fullName := fieldName + "." + lowerFirst(f)
 				if _, ok := t.env.Names[fullName]; !ok {
 					continue UserLoop
 				}
@@ -765,7 +765,7 @@ FieldLoop:
 	// Slots are contiguous: field.index occupies the same slot as the sub-field binding.
 	fieldVals := make(map[string]Num, len(recordFields))
 	for i, f := range recordFields {
-		fullName := fieldName + "." + strings.ToLower(f)
+		fullName := fieldName + "." + lowerFirst(f)
 		bf, _ := t.env.Names[fullName]
 		fieldVals[f] = exprNum(ir.GetPlace(ir.Cell(bf.Block, bf.Index)))
 		_ = i

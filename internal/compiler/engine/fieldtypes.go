@@ -19,7 +19,8 @@ var recordFieldLayouts = map[string][]string{
 	"Rect":     {"t", "r", "b", "l"},
 	"Trans":    {"m11", "m12", "m13", "m21", "m22", "m23", "m31", "m32", "m33"},
 	"Pair":     {"first", "second"},
-	"EntityRef": {"index"},
+	"EntityRef":         {"index"},
+	"JudgmentWindow":    {"perfectMin", "perfectMax", "greatMin", "greatMax", "goodMin", "goodMax"},
 }
 
 // ContainerFieldMeta stores compile-time metadata for a container-typed struct
