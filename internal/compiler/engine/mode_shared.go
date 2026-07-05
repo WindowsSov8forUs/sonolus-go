@@ -293,7 +293,7 @@ func compileArchetypeCallbacks(spriteIndex map[string]float64,
 			names[k] = v
 		}
 		for optName, optIdx := range configOptionIndices {
-			names[strings.ToLower(optName[:1])+optName[1:]] = frontend.Binding{Block: 1007, Index: optIdx, Writable: false}
+			names[frontend.LowerFirst(optName)] = frontend.Binding{Block: 1007, Index: optIdx, Writable: false}
 		}
 		cms := make([]callbackMethod, 0, len(a.methods))
 		for _, m := range a.methods {

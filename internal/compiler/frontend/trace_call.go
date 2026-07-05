@@ -839,12 +839,17 @@ func (t *tracer) builtinSetBlock(n *ast.CallExpr, blockID int) (Num, bool, error
 
 // lowerFirst returns s with the first character lowercased.
 // e.g. "Draw" → "draw", "DebugPause" → "debugPause".
-func lowerFirst(s string) string {
+// LowerFirst returns s with the first character lowercased.
+// e.g. "Draw" → "draw", "DebugPause" → "debugPause", "TouchID" → "touchID".
+func LowerFirst(s string) string {
 	if s == "" {
 		return s
 	}
 	return strings.ToLower(s[:1]) + s[1:]
 }
+
+// lowerFirst is the package-internal alias kept for minimal diff.
+func lowerFirst(s string) string { return LowerFirst(s) }
 
 // methodCall inlines a non-callback method of the current archetype, invoked as
 // receiver.Method(args); the method body sees the archetype's fields via its own
