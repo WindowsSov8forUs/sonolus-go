@@ -113,7 +113,7 @@ type Note struct {
 // 访问: n.pos.X = value; x := n.pos.Y
 ```
 
-支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Pair`(2)。支持 `sonolus.Vec2` 等限定名。
+支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`JudgmentWindow`(6)。支持 `sonolus.Vec2` 等限定名。
 
 ## 回调方法
 
@@ -214,6 +214,7 @@ x++             // 递增
 | 栈 | `StackInit`, `StackPush`, `StackPop` 等 | 14 |
 | 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
 | 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticleEffect` | 3 |
+| 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
 
 ### 引擎全局变量
 
@@ -242,6 +243,60 @@ entityLifePerfect, entityLifeGreat, entityLifeGood, entityLifeMiss
 | `ArrayMap` | `Len`, `Capacity`, `Clear`, `Keys`, `Values`, `Items`, `Get`, `Set`, `Delete`, `Contains`, `Pop` |
 | `ArraySet` | `Len`, `Capacity`, `Clear`, `Add`, `Remove`, `Contains` |
 | `FrozenNumSet` | `Len`, `Capacity`, `Contains` |
+| `EntityRef` | `Get`, `Set` |
+| `EntityInfo` | `IsWaiting`, `IsActive`, `IsDespawned` |
+
+### 实体信息 (EntityInfo)
+
+跨实体信息查询与 JS/Python 对照：
+
+```go
+// 常量
+sonolus.EntityStateWaiting   // 0
+sonolus.EntityStateActive    // 1
+sonolus.EntityStateDespawned // 2
+
+// 跨实体 — 结构化访问（对应 sonolus.js: entityInfos.get(idx)）
+info := sonolus.EntityInfoAt(idx)
+info.State                   // entity idx 的状态 (0/1/2)
+info.Index                   // entity idx 的自身索引
+info.Archetype               // entity idx 的原型 ID
+info.IsActive()              // 等同于 info.State == 1
+
+// 跨实体 — 内联访问（不经过临时变量，最优 IR）
+if sonolus.EntityInfoAt(idx).State == sonolus.EntityStateActive {
+    // ...
+}
+
+// 跨实体 — 单字段访问（只需一个字段时避免生成多余 GetShifted）
+sonolus.EntityInfoState(idx)      // 等同于 sonolus.EntityInfoAt(idx).State
+sonolus.EntityInfoArchetype(idx)  // 等同于 sonolus.EntityInfoAt(idx).Archetype
+sonolus.EntityInfoIndex(idx)      // 等同于 sonolus.EntityInfoAt(idx).Index
+
+// 自身实体 — 结构化访问（对应 sonolus.js: this.info）
+sonolus.SelfInfo().State    // 从 block 4003 读取
+
+// 自身实体 — 标签展开
+type Note struct {
+    Self EntityInfo `sonolus:"info"`  // → Self.Index, Self.Archetype, Self.State (只读)
+}
+func (n *Note) Touch() {
+    if n.Self.State == sonolus.EntityStateActive { ... }
+    if n.Self.IsActive() { ... }
+}
+
+// 迭代所有实体（终止条件与 JS for..of 等价）
+for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
+    // i 遍历每个已存在的实体
+}
+```
+
+| 场景 | sonolus.js | sonolus.py | sonolus-go |
+|------|-----------|-----------|------------|
+| 跨实体状态 | `entityInfos.get(idx).state` | `entity_info_at(idx).state` | `sonolus.EntityInfoAt(idx).State` |
+| 活跃检查 | `info.state === EntityState.Active` | `entity_info_at(idx).state == 1` | `info.IsActive()` |
+| 自身状态 | `this.info.state` | `self._info.state` | `sonolus.SelfInfo().State` |
+| 迭代 | `for (const info of entityInfos)` | `for idx: entity_info_at(idx)` | `for i := 0; EntityInfoIndex(i) == i; i++` |
 
 ## 静态构造器
 
