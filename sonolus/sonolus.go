@@ -330,7 +330,7 @@ func Copy(args ...float64) float64                    { return 0 }
 
 func DebugLog(args ...float64) float64    { return 0 }
 func DebugPause(args ...float64) float64  { return 0 }
-func DebugError(msg float64)              { return }
+func DebugError(msg float64)              {}
 func DebugRequire(cond, msg float64)       {}
 func DebugAssertTrue(cond, msg float64)    {}
 func DebugAssertFalse(cond, msg float64)   {}
