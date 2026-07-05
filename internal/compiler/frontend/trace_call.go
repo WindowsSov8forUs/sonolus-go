@@ -615,18 +615,39 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			return Num{}, true, err
 		}
 		return t.archetypeLifeRecord(n, idx.mustNode())
-	case "skinTransform":
+	case "skinTransformAt":
 		return t.builtinGetBlock(n, 1003)
-	case "setSkinTransform":
+	case "setSkinTransformAt":
 		return t.builtinSetBlock(n, 1003)
-	case "particleTransform":
+	case "particleTransformAt":
 		return t.builtinGetBlock(n, 1004)
-	case "setParticleTransform":
+	case "setParticleTransformAt":
 		return t.builtinSetBlock(n, 1004)
-	case "background":
+	case "backgroundAt":
 		return t.builtinGetBlock(n, 1005)
-	case "setBackground":
+	case "setBackgroundAt":
 		return t.builtinSetBlock(n, 1005)
+	case "skinTransform":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "transform takes no arguments")
+		}
+		return t.transform2dRecord(n, 1003)
+	case "setSkinTransform":
+		return t.setTransform2d(n, 1003)
+	case "particleTransform":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "transform takes no arguments")
+		}
+		return t.transform2dRecord(n, 1004)
+	case "setParticleTransform":
+		return t.setTransform2d(n, 1004)
+	case "background":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "transform takes no arguments")
+		}
+		return t.transform2dRecord(n, 1005)
+	case "setBackground":
+		return t.setTransform2d(n, 1005)
 	case "levelScore":
 		return t.builtinGetBlock(n, 2004)
 	case "setLevelScore":
@@ -1050,6 +1071,33 @@ func (t *tracer) archetypeLifeRecord(n *ast.CallExpr, idx ir.Node) (Num, bool, e
 		"good":    get(2),
 		"miss":    get(3),
 	}), true, nil
+}
+
+// transform2dRecord returns a Transform2d composite for a 16-slot matrix block.
+func (t *tracer) transform2dRecord(n *ast.CallExpr, blockID int) (Num, bool, error) {
+	get := func(i int) Num { return exprNum(ir.GetPlace(ir.Cell(blockID, i))) }
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": get(0), "a01": get(1), "a02": get(2), "a03": get(3),
+		"a10": get(4), "a11": get(5), "a12": get(6), "a13": get(7),
+		"a20": get(8), "a21": get(9), "a22": get(10), "a23": get(11),
+		"a30": get(12), "a31": get(13), "a32": get(14), "a33": get(15),
+	}), true, nil
+}
+
+// setTransform2d writes a composite value to a 16-slot matrix block.
+func (t *tracer) setTransform2d(n *ast.CallExpr, blockID int) (Num, bool, error) {
+	if len(n.Args) != 1 {
+		return Num{}, true, t.errf(n, "setTransform expects 1 argument (Transform2d)")
+	}
+	val, err := t.expr(n.Args[0])
+	if err != nil {
+		return Num{}, true, err
+	}
+	fields := []string{"a00","a01","a02","a03","a10","a11","a12","a13","a20","a21","a22","a23","a30","a31","a32","a33"}
+	for i, f := range fields {
+		t.emit(t.gen.SetPlace(ir.Cell(blockID, i), val.MustField(f).mustNode()))
+	}
+	return constNum(0), true, nil
 }
 
 // lowerFirst returns s with the first character lowercased.

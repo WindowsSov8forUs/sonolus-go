@@ -27,6 +27,7 @@ var recordFieldLayouts = map[string][]string{
 	"EntityLife":       {"perfect", "great", "good", "miss"},
 	"CanvasObj":        {},
 	"PrintOptions":     {"value", "format", "decimalPlaces", "anchorX", "anchorY", "pivotX", "pivotY", "sizeX", "sizeY", "rotation", "color", "alpha", "horizontalAlign", "background"},
+	"Transform2d":      {"a00", "a01", "a02", "a03", "a10", "a11", "a12", "a13", "a20", "a21", "a22", "a23", "a30", "a31", "a32", "a33"},
 }
 
 // ContainerFieldMeta stores compile-time metadata for a container-typed struct

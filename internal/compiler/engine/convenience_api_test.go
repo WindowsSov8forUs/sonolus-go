@@ -13,8 +13,8 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 type Skin struct { Note float64 }
 type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
 func (n *Note) Initialize() {
-    sonolus.SetSkinTransform(0, 1)
-    x := sonolus.SkinTransform(0)
+    sonolus.SetSkinTransformAt(0, 1)
+    x := sonolus.SkinTransformAt(0)
     sonolus.Set(0, 0, x)
 }
 func UpdateSpawn() float64 { return 0 }
@@ -35,8 +35,8 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 type Skin struct { Note float64 }
 type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
 func (n *Note) Initialize() {
-    sonolus.SetParticleTransform(0, 1)
-    x := sonolus.ParticleTransform(0)
+    sonolus.SetParticleTransformAt(0, 1)
+    x := sonolus.ParticleTransformAt(0)
     sonolus.Set(0, 0, x)
 }
 func UpdateSpawn() float64 { return 0 }
@@ -57,8 +57,8 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 type Skin struct { Note float64 }
 type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
 func (n *Note) Initialize() {
-    sonolus.SetBackground(0, 1)
-    x := sonolus.Background(0)
+    sonolus.SetBackgroundAt(0, 1)
+    x := sonolus.BackgroundAt(0)
     sonolus.Set(0, 0, x)
 }
 func UpdateSpawn() float64 { return 0 }
@@ -108,12 +108,12 @@ type Note struct {
     X    float64 ` + "`sonolus:\"memory\"`" + `
 }
 func helper() {
-    sonolus.SetSkinTransform(0, 1)
-    sonolus.SetParticleTransform(1, 2)
+    sonolus.SetSkinTransformAt(0, 1)
+    sonolus.SetParticleTransformAt(1, 2)
 }
 func (n *Note) Initialize() {
     helper()
-    n.X = sonolus.SkinTransform(0)
+    n.X = sonolus.SkinTransformAt(0)
 }
 func UpdateSpawn() float64 { return 0 }
 `

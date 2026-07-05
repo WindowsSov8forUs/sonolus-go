@@ -72,7 +72,7 @@ func TestStubDispatchAudit(t *testing.T) {
 		"debugTerminate",
 		"entityInfoIndex", "entityInfoArchetype", "entityInfoState",
 		"entityInfoAt", "selfInfo", "life", "archetypeLife", "canvas", "skin", "skinSprite",
-		"skinTransform", "setSkinTransform",
+		"skinTransformAt", "setSkinTransformAt", "particleTransformAt", "setParticleTransformAt", "backgroundAt", "setBackgroundAt", "skinTransform", "setSkinTransform",
 		"particleTransform", "setParticleTransform",
 		"background", "setBackground",
 		"levelScore", "setLevelScore",
