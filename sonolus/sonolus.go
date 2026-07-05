@@ -518,6 +518,30 @@ func (t Transform2d) Compose(o Transform2d) Transform2d { return Transform2d{} }
 // TransformVec applies the transform to a Vec2 and returns the result.
 func (t Transform2d) TransformVec(v Vec2) Vec2 { return Vec2{} }
 
+// ScaleAbout scales about the given pivot and returns a new Transform2d.
+func (t Transform2d) ScaleAbout(factor, pivot Vec2) Transform2d { return Transform2d{} }
+
+// RotateAbout rotates about the given pivot and returns a new Transform2d.
+func (t Transform2d) RotateAbout(angle float64, pivot Vec2) Transform2d { return Transform2d{} }
+
+// ComposeBefore composes with another transform applied before this one.
+func (t Transform2d) ComposeBefore(other Transform2d) Transform2d { return Transform2d{} }
+
+// PerspectiveX applies a perspective transformation along the x-axis.
+func (t Transform2d) PerspectiveX(foregroundX float64, vanishingPoint Vec2) Transform2d { return Transform2d{} }
+
+// PerspectiveY applies a perspective transformation along the y-axis.
+func (t Transform2d) PerspectiveY(foregroundY float64, vanishingPoint Vec2) Transform2d { return Transform2d{} }
+
+// SimplePerspectiveX applies perspective along x with a given vanishing point x.
+func (t Transform2d) SimplePerspectiveX(x float64) Transform2d { return Transform2d{} }
+
+// SimplePerspectiveY applies perspective along y with a given vanishing point y.
+func (t Transform2d) SimplePerspectiveY(y float64) Transform2d { return Transform2d{} }
+
+// TransformQuad transforms all corners of a Quad and returns a new Quad.
+func (t Transform2d) TransformQuad(q Quad) Quad { return Quad{} }
+
 
 // ── Score / life configuration getters/setters ──
 

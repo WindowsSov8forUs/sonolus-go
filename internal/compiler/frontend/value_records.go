@@ -175,11 +175,19 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"exists": {fn: skinSpritesExists, minArity: 1},
 	},
 	"transform2d": {
-		"translate":    {fn: transform2dTranslate, minArity: 1, compositeArgAt: []int{0}},
-		"scale":        {fn: transform2dScale, minArity: 1, compositeArgAt: []int{0}},
-		"rotate":       {fn: transform2dRotate, minArity: 1},
-		"compose":      {fn: transform2dCompose, minArity: 1, compositeArgAt: []int{0}},
-		"transformVec": {fn: transform2dTransformVec, minArity: 1, compositeArgAt: []int{0}},
+		"translate":         {fn: transform2dTranslate, minArity: 1, compositeArgAt: []int{0}},
+		"scale":             {fn: transform2dScale, minArity: 1, compositeArgAt: []int{0}},
+		"scaleAbout":        {fn: transform2dScaleAbout, minArity: 2, compositeArgAt: []int{0, 1}},
+		"rotate":            {fn: transform2dRotate, minArity: 1},
+		"rotateAbout":       {fn: transform2dRotateAbout, minArity: 2, compositeArgAt: []int{1}},
+		"compose":           {fn: transform2dCompose, minArity: 1, compositeArgAt: []int{0}},
+		"composeBefore":     {fn: transform2dComposeBefore, minArity: 1, compositeArgAt: []int{0}},
+		"transformVec":      {fn: transform2dTransformVec, minArity: 1, compositeArgAt: []int{0}},
+		"transformQuad":     {fn: transform2dTransformQuad, minArity: 1, compositeArgAt: []int{0}},
+		"simplePerspectiveX": {fn: transform2dSimplePerspectiveX, minArity: 1},
+		"simplePerspectiveY": {fn: transform2dSimplePerspectiveY, minArity: 1},
+		"perspectiveX":      {fn: transform2dPerspectiveX, minArity: 2, compositeArgAt: []int{1}},
+		"perspectiveY":      {fn: transform2dPerspectiveY, minArity: 2, compositeArgAt: []int{1}},
 	},
 	"canvasObj": {
 		"print": {fn: canvasPrint, minArity: 1, compositeArgAt: []int{0}},
@@ -425,6 +433,167 @@ func transform2dTransformVec(t *tracer, m Num, args []Num) (Num, error) {
 		t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(m.MustField("a10").mustNode(), x), mul(m.MustField("a11").mustNode(), y)),
 		m.MustField("a12").mustNode())
 	return compNumTyped("vec2", map[string]Num{"x": exprNum(nx), "y": exprNum(ny)}), nil
+}
+
+// --- Transform2d remaining methods ---
+
+func transform2dScaleAbout(t *tracer, m Num, args []Num) (Num, error) {
+	factor := args[0]; pivot := args[1]
+	fx, fy := factor.MustField("x").mustNode(), factor.MustField("y").mustNode()
+	px, py := pivot.MustField("x").mustNode(), pivot.MustField("y").mustNode()
+	mulX := func(n ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionSubtract, n, px), fx), px) }
+	mulY := func(n ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionSubtract, n, py), fy), py) }
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": exprNum(mulX(m.MustField("a00").mustNode())), "a01": exprNum(mulX(m.MustField("a01").mustNode())),
+		"a02": exprNum(mulX(m.MustField("a02").mustNode())), "a03": m.MustField("a03"),
+		"a10": exprNum(mulY(m.MustField("a10").mustNode())), "a11": exprNum(mulY(m.MustField("a11").mustNode())),
+		"a12": exprNum(mulY(m.MustField("a12").mustNode())), "a13": m.MustField("a13"),
+		"a20": m.MustField("a20"), "a21": m.MustField("a21"), "a22": m.MustField("a22"), "a23": m.MustField("a23"),
+		"a30": m.MustField("a30"), "a31": m.MustField("a31"), "a32": m.MustField("a32"), "a33": m.MustField("a33"),
+	}), nil
+}
+
+func transform2dRotateAbout(t *tracer, m Num, args []Num) (Num, error) {
+	angle := args[0]; pivot := args[1]
+	px, py := pivot.MustField("x").mustNode(), pivot.MustField("y").mustNode()
+	c := exprNum(t.gen.PureInstr(resource.RuntimeFunctionCos, angle.mustNode()))
+	s := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSin, angle.mustNode()))
+	// Rotate matrix + adjust translation: a02' = a02 + a00*(-px) + a01*(-py) + px (rotated)
+	mul := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a, b) }
+	add := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, a, b) }
+	sub := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionSubtract, a, b) }
+	a00c := exprNum(mul(m.MustField("a00").mustNode(), c.mustNode()))
+	a01s := exprNum(mul(m.MustField("a01").mustNode(), s.mustNode()))
+	a00s := exprNum(mul(m.MustField("a00").mustNode(), s.mustNode()))
+	a01c := exprNum(mul(m.MustField("a01").mustNode(), c.mustNode()))
+	a10c := exprNum(mul(m.MustField("a10").mustNode(), c.mustNode()))
+	a11s := exprNum(mul(m.MustField("a11").mustNode(), s.mustNode()))
+	a10s := exprNum(mul(m.MustField("a10").mustNode(), s.mustNode()))
+	a11c := exprNum(mul(m.MustField("a11").mustNode(), c.mustNode()))
+	// a02' = a02 + a00*px + a01*py - (a00c - a01s)*px - (a00s + a01c)*py
+	// Simplified: a02' = a00*(px - c*px - s*py) + a01*(py + s*px - c*py) + a02
+	newA00 := exprNum(sub(a00c.mustNode(), a01s.mustNode()))
+	newA01 := exprNum(add(a00s.mustNode(), a01c.mustNode()))
+	newA10 := exprNum(sub(a10c.mustNode(), a11s.mustNode()))
+	newA11 := exprNum(add(a10s.mustNode(), a11c.mustNode()))
+	a02p := exprNum(add(add(mul(m.MustField("a00").mustNode(), px), mul(m.MustField("a01").mustNode(), py)), m.MustField("a02").mustNode()))
+	a02r := exprNum(add(add(mul(newA00.mustNode(), sub(ir.Const(0), px)), mul(newA01.mustNode(), sub(ir.Const(0), py))), a02p.mustNode()))
+	a12p := exprNum(add(add(mul(m.MustField("a10").mustNode(), px), mul(m.MustField("a11").mustNode(), py)), m.MustField("a12").mustNode()))
+	a12r := exprNum(add(add(mul(newA10.mustNode(), sub(ir.Const(0), px)), mul(newA11.mustNode(), sub(ir.Const(0), py))), a12p.mustNode()))
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": newA00, "a01": newA01, "a02": a02r, "a03": m.MustField("a03"),
+		"a10": newA10, "a11": newA11, "a12": a12r, "a13": m.MustField("a13"),
+		"a20": m.MustField("a20"), "a21": m.MustField("a21"), "a22": m.MustField("a22"), "a23": m.MustField("a23"),
+		"a30": m.MustField("a30"), "a31": m.MustField("a31"), "a32": m.MustField("a32"), "a33": m.MustField("a33"),
+	}), nil
+}
+
+func transform2dComposeBefore(t *tracer, m Num, args []Num) (Num, error) {
+	// composeBefore(other) = other.Compose(this)
+	o := args[0]
+	dot4 := func(row []Num, col string) Num {
+		mul := func(a, b Num) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a.mustNode(), b.mustNode()) }
+		sum01 := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(row[0], m.MustField("a0"+string(col[1]))), mul(row[1], m.MustField("a1"+string(col[1]))))
+		sum23 := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(row[2], m.MustField("a2"+string(col[1]))), mul(row[3], m.MustField("a3"+string(col[1]))))
+		return exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, sum01, sum23))
+	}
+	rows := [][]Num{
+		{o.MustField("a00"), o.MustField("a01"), o.MustField("a02"), o.MustField("a03")},
+		{o.MustField("a10"), o.MustField("a11"), o.MustField("a12"), o.MustField("a13")},
+		{o.MustField("a20"), o.MustField("a21"), o.MustField("a22"), o.MustField("a23")},
+		{o.MustField("a30"), o.MustField("a31"), o.MustField("a32"), o.MustField("a33")},
+	}
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": dot4(rows[0], "a0"), "a01": dot4(rows[0], "a1"), "a02": dot4(rows[0], "a2"), "a03": dot4(rows[0], "a3"),
+		"a10": dot4(rows[1], "a0"), "a11": dot4(rows[1], "a1"), "a12": dot4(rows[1], "a2"), "a13": dot4(rows[1], "a3"),
+		"a20": dot4(rows[2], "a0"), "a21": dot4(rows[2], "a1"), "a22": dot4(rows[2], "a2"), "a23": dot4(rows[2], "a3"),
+		"a30": dot4(rows[3], "a0"), "a31": dot4(rows[3], "a1"), "a32": dot4(rows[3], "a2"), "a33": dot4(rows[3], "a3"),
+	}), nil
+}
+
+func transform2dSimplePerspectiveX(t *tracer, m Num, args []Num) (Num, error) {
+	// 1 / (1 - x * a20) where x is vanishing point
+	x := args[0].mustNode()
+	f := t.gen.PureInstr(resource.RuntimeFunctionDivide, ir.Const(1),
+		t.gen.PureInstr(resource.RuntimeFunctionSubtract, ir.Const(1),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, x, m.MustField("a20").mustNode())))
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a00").mustNode(), f)), "a01": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a01").mustNode(), f)),
+		"a02": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a02").mustNode(), f), m.MustField("a00").mustNode()), t.gen.PureInstr(resource.RuntimeFunctionMultiply, x, f))),
+		"a03": m.MustField("a03"),
+		"a10": m.MustField("a10"), "a11": m.MustField("a11"), "a12": m.MustField("a12"), "a13": m.MustField("a13"),
+		"a20": m.MustField("a20"), "a21": m.MustField("a21"), "a22": m.MustField("a22"), "a23": m.MustField("a23"),
+		"a30": m.MustField("a30"), "a31": m.MustField("a31"), "a32": m.MustField("a32"), "a33": m.MustField("a33"),
+	}), nil
+}
+
+func transform2dSimplePerspectiveY(t *tracer, m Num, args []Num) (Num, error) {
+	y := args[0].mustNode()
+	f := t.gen.PureInstr(resource.RuntimeFunctionDivide, ir.Const(1),
+		t.gen.PureInstr(resource.RuntimeFunctionSubtract, ir.Const(1),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, y, m.MustField("a21").mustNode())))
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": m.MustField("a00"), "a01": m.MustField("a01"), "a02": m.MustField("a02"), "a03": m.MustField("a03"),
+		"a10": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a10").mustNode(), f)), "a11": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a11").mustNode(), f)),
+		"a12": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a12").mustNode(), f), m.MustField("a10").mustNode()), t.gen.PureInstr(resource.RuntimeFunctionMultiply, y, f))),
+		"a13": m.MustField("a13"),
+		"a20": m.MustField("a20"), "a21": m.MustField("a21"), "a22": m.MustField("a22"), "a23": m.MustField("a23"),
+		"a30": m.MustField("a30"), "a31": m.MustField("a31"), "a32": m.MustField("a32"), "a33": m.MustField("a33"),
+	}), nil
+}
+
+func transform2dPerspectiveX(t *tracer, m Num, args []Num) (Num, error) {
+	fg, vp := args[0].mustNode(), args[1]
+	vpx := vp.MustField("x").mustNode()
+	// perspectiveApproach(foregroundX - vpx, a20) applied to a00,a01,a02
+	x := t.gen.PureInstr(resource.RuntimeFunctionSubtract, fg, vpx)
+	p := t.gen.PureInstr(resource.RuntimeFunctionDivide, ir.Const(1),
+		t.gen.PureInstr(resource.RuntimeFunctionSubtract, ir.Const(1),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, x, m.MustField("a20").mustNode())))
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a00").mustNode(), p)), "a01": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a01").mustNode(), p)),
+		"a02": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a02").mustNode(), p), m.MustField("a00").mustNode()), t.gen.PureInstr(resource.RuntimeFunctionMultiply, x, p))),
+		"a03": m.MustField("a03"),
+		"a10": m.MustField("a10"), "a11": m.MustField("a11"), "a12": m.MustField("a12"), "a13": m.MustField("a13"),
+		"a20": m.MustField("a20"), "a21": m.MustField("a21"), "a22": m.MustField("a22"), "a23": m.MustField("a23"),
+		"a30": m.MustField("a30"), "a31": m.MustField("a31"), "a32": m.MustField("a32"), "a33": m.MustField("a33"),
+	}), nil
+}
+
+func transform2dPerspectiveY(t *tracer, m Num, args []Num) (Num, error) {
+	fg, vp := args[0].mustNode(), args[1]
+	vpy := vp.MustField("y").mustNode()
+	y := t.gen.PureInstr(resource.RuntimeFunctionSubtract, fg, vpy)
+	p := t.gen.PureInstr(resource.RuntimeFunctionDivide, ir.Const(1),
+		t.gen.PureInstr(resource.RuntimeFunctionSubtract, ir.Const(1),
+			t.gen.PureInstr(resource.RuntimeFunctionMultiply, y, m.MustField("a21").mustNode())))
+	return compNumTyped("transform2d", map[string]Num{
+		"a00": m.MustField("a00"), "a01": m.MustField("a01"), "a02": m.MustField("a02"), "a03": m.MustField("a03"),
+		"a10": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a10").mustNode(), p)), "a11": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a11").mustNode(), p)),
+		"a12": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("a12").mustNode(), p), m.MustField("a10").mustNode()), t.gen.PureInstr(resource.RuntimeFunctionMultiply, y, p))),
+		"a13": m.MustField("a13"),
+		"a20": m.MustField("a20"), "a21": m.MustField("a21"), "a22": m.MustField("a22"), "a23": m.MustField("a23"),
+		"a30": m.MustField("a30"), "a31": m.MustField("a31"), "a32": m.MustField("a32"), "a33": m.MustField("a33"),
+	}), nil
+}
+
+func transform2dTransformQuad(t *tracer, m Num, args []Num) (Num, error) {
+	quad := args[0]
+	tf := func(fx, fy string) (Num, Num) {
+		mul := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a, b) }
+		nx := t.gen.PureInstr(resource.RuntimeFunctionAdd,
+			t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(m.MustField("a00").mustNode(), quad.MustField(fx).mustNode()), mul(m.MustField("a01").mustNode(), quad.MustField(fy).mustNode())),
+			m.MustField("a02").mustNode())
+		ny := t.gen.PureInstr(resource.RuntimeFunctionAdd,
+			t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(m.MustField("a10").mustNode(), quad.MustField(fx).mustNode()), mul(m.MustField("a11").mustNode(), quad.MustField(fy).mustNode())),
+			m.MustField("a12").mustNode())
+		return exprNum(nx), exprNum(ny)
+	}
+	blx, bly := tf("blx", "bly")
+	tlx, tly := tf("tlx", "tly")
+	trx, try := tf("trx", "try")
+	brx, bry := tf("brx", "bry")
+	return compNumTyped("quad", map[string]Num{"blx": blx, "bly": bly, "tlx": tlx, "tly": tly, "trx": trx, "try": try, "brx": brx, "bry": bry}), nil
 }
 
 // canvasPrint implements CanvasObj.Print(opts) → Print(15 args).
