@@ -199,6 +199,10 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"isActive":    {fn: entityInfoIsActive, minArity: 0},
 		"isDespawned": {fn: entityInfoIsDespawned, minArity: 0},
 	},
+	"lifeInfo": {
+		"archetype":    {fn: lifeInfoArchetype, minArity: 1},
+		"addScheduled": {fn: lifeInfoAddScheduled, minArity: 2},
+	},
 	"entityRef": {
 		"get": {fn: entityRefGet, minArity: 2},
 		"set": {fn: entityRefSet, minArity: 3},
@@ -435,6 +439,31 @@ func entityInfoIsActive(t *tracer, info Num, args []Num) (Num, error) {
 		return Num{}, fmt.Errorf("isActive: comparison not supported")
 	}
 	return eq, nil
+}
+
+// lifeInfoArchetype implements LifeInfo.Archetype(idx) → EntityLife from block 5000.
+func lifeInfoArchetype(t *tracer, info Num, args []Num) (Num, error) {
+	idx := args[0].mustNode()
+	get := func(off int) Num {
+		mul := t.gen.PureInstr(resource.RuntimeFunctionMultiply, idx, ir.Const(4))
+		add := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul, ir.Const(off))
+		return exprNum(ir.GetPlace(ir.NewBlockPlace(ir.Const(5000), add, 0)))
+	}
+	return compNumTyped("entityLife", map[string]Num{
+		"perfect": get(0),
+		"great":   get(1),
+		"good":    get(2),
+		"miss":    get(3),
+	}), nil
+}
+
+// lifeInfoAddScheduled implements LifeInfo.AddScheduled(value, time).
+func lifeInfoAddScheduled(t *tracer, info Num, args []Num) (Num, error) {
+	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionAddLifeScheduled,
+		args[0].mustNode(),
+		args[1].mustNode(),
+	))
+	return constNum(0), nil
 }
 
 // entityInfoIsDespawned implements EntityInfo.IsDespawned() → state == 2.

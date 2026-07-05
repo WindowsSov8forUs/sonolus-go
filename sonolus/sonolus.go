@@ -69,6 +69,12 @@ type LifeInfo struct {
 // Life returns a LifeInfo record providing structured access to level life settings.
 func Life() LifeInfo { return LifeInfo{} }
 
+// Archetype returns the archetype life settings (block 5000) for the given archetype index.
+func (l LifeInfo) Archetype(idx float64) EntityLife { return EntityLife{} }
+
+// AddScheduled schedules a life change at the given time.
+func (l LifeInfo) AddScheduled(value, time float64) {}
+
 // Judge evaluates the judgment for a hit given the actual and target times.
 // Returns EntityStateWaiting (0, Miss), 1 (Perfect), 2 (Great), or 3 (Good).
 // Equivalent to input.judge(actual, target, windows) in sonolus.js and
