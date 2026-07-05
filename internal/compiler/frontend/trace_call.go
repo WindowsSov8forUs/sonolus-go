@@ -58,7 +58,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		// Record-typed struct field: n.pos.X → look up "pos.x" in bindings.
 		if inner, ok := n.X.(*ast.SelectorExpr); ok {
 			if base, ok2 := inner.X.(*ast.Ident); ok2 && t.env.Receiver != "" && base.Name == t.env.Receiver {
-				fullName := inner.Sel.Name + "." + strings.ToLower(n.Sel.Name)
+				fullName := inner.Sel.Name + "." + lowerFirst(n.Sel.Name)
 				if b, ok3 := t.env.Names[fullName]; ok3 {
 					return exprNum(ir.GetPlace(ir.Cell(b.Block, b.Index))), nil
 				}
@@ -83,7 +83,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 				}
 				// Try lowercase: Go field names are exported (uppercase)
 				// but record composite fields are stored lowercase (t, r, b, l).
-				if f, ok := v.TryField(strings.ToLower(n.Sel.Name)); ok {
+				if f, ok := v.TryField(lowerFirst(n.Sel.Name)); ok {
 					return f, nil
 				}
 				return Num{}, t.errf(n, "record has no field %q", n.Sel.Name)
@@ -516,7 +516,7 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return t.builtinSetBlock(n, 2005)
 	default:
 		if strings.HasPrefix(fn.Name, "vec2") {
-			key := strings.ToLower(fn.Name[4:])
+			key := lowerFirst(fn.Name[4:])
 			if f, ok := vec2Statics[key]; ok {
 				return f(), true, nil
 			}
@@ -756,7 +756,7 @@ FieldLoop:
 	}
 
 	// Derive base memory location from the first sub-field binding.
-	firstField := fieldName + "." + strings.ToLower(recordFields[0])
+	firstField := fieldName + "." + lowerFirst(recordFields[0])
 	if _, ok := t.env.Names[firstField]; !ok {
 		return Num{}, "", false
 	}
@@ -839,12 +839,17 @@ func (t *tracer) builtinSetBlock(n *ast.CallExpr, blockID int) (Num, bool, error
 
 // lowerFirst returns s with the first character lowercased.
 // e.g. "Draw" → "draw", "DebugPause" → "debugPause".
-func lowerFirst(s string) string {
+// LowerFirst returns s with the first character lowercased.
+// e.g. "Draw" → "draw", "DebugPause" → "debugPause", "TouchID" → "touchID".
+func LowerFirst(s string) string {
 	if s == "" {
 		return s
 	}
 	return strings.ToLower(s[:1]) + s[1:]
 }
+
+// lowerFirst is the package-internal alias kept for minimal diff.
+func lowerFirst(s string) string { return LowerFirst(s) }
 
 // methodCall inlines a non-callback method of the current archetype, invoked as
 // receiver.Method(args); the method body sees the archetype's fields via its own
