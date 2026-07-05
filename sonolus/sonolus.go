@@ -288,7 +288,6 @@ func JudgeSimple(args ...float64) float64             { return 0 }
 func ExportValue(args ...float64) float64             { return 0 }
 func AddLife(args ...float64) float64                 { return 0 }
 func Copy(args ...float64) float64                    { return 0 }
-func Haptic(args ...float64) float64                  { return 0 }
 
 // ── Runtime functions — debug ──
 
