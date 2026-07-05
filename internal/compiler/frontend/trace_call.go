@@ -576,6 +576,11 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return t.entityInfoField(n, 2)
 	case "entityInfoAt":
 		return t.entityInfoAt(n)
+	case "canvas":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "canvas takes no arguments")
+		}
+		return compNumTyped("canvasObj", map[string]Num{}), true, nil
 	case "selfInfo":
 		return t.selfInfoRecord(n)
 	case "life":

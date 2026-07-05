@@ -74,6 +74,34 @@ type LifeInfo struct {
 // Life returns a LifeInfo record providing structured access to level life settings.
 func Life() LifeInfo { return LifeInfo{} }
 
+// ── Canvas (Preview mode) ──
+
+// CanvasObj is the type for preview-mode canvas operations. In non-preview
+// modes, all method calls are no-ops (compile-time elimination).
+type CanvasObj struct{}
+
+// PrintOptions provides named parameters with defaults for canvas printing.
+// Zero values serve as defaults: Color=-1 (THEME), Alpha=1, etc.
+type PrintOptions struct {
+	Value                float64
+	Format               float64 // 0=Number, 1=Percent, 10=Time, etc.
+	DecimalPlaces        float64
+	AnchorX, AnchorY     float64
+	PivotX, PivotY       float64
+	SizeX, SizeY         float64
+	Rotation             float64
+	Color                float64 // -1=THEME
+	Alpha                float64
+	HorizontalAlign      float64 // 0=LEFT, 1=CENTER, 2=RIGHT
+	Background           float64 // 0=false, 1=true
+}
+
+// Canvas returns a CanvasObj. In non-preview modes, methods are no-ops.
+func Canvas() CanvasObj { return CanvasObj{} }
+
+// Print prints a value on the canvas with the given options.
+func (c CanvasObj) Print(opts PrintOptions) {}
+
 // AddScheduled schedules a life change at the given time.
 func (l LifeInfo) AddScheduled(value, time float64) {}
 
