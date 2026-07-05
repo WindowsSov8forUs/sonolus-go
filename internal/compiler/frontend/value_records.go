@@ -57,6 +57,7 @@ var builtinRecords = []builtinRecordDef{
 	{"arrayMap", arrayMapFields},
 	{"arraySet", arraySetFields},
 	{"box", boxFields},
+	{"printOptions", printOptionsFields},
 	{"consecutiveLife", consecutiveLifeFields},
 	{"frozenNumSet", frozenNumSetFields},
 	{"loopedEffectHandle", loopedEffectHandleFields},
@@ -172,6 +173,9 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 	"skinSprites": {
 		"exists": {fn: skinSpritesExists, minArity: 1},
 	},
+	"canvasObj": {
+		"print": {fn: canvasPrint, minArity: 1, compositeArgAt: []int{0}},
+	},
 	"effect": {
 		"play":         {fn: effectPlay, minArity: 1},
 		"schedule":     {fn: effectSchedule, minArity: 2},
@@ -272,6 +276,12 @@ var particleHandleFields = []string{"id"}
 var entityInfoFields = []string{"index", "archetype", "state"}
 
 // ConsecutiveLife has two fields: increment (base) and step (combo bonus).
+var printOptionsFields = []string{
+	"value", "format", "decimalPlaces",
+	"anchorX", "anchorY", "pivotX", "pivotY",
+	"sizeX", "sizeY", "rotation",
+	"color", "alpha", "horizontalAlign", "background",
+}
 var consecutiveLifeFields = []string{"increment", "step"}
 
 // EntityRef wraps an entity index, enabling cross-entity data access.
@@ -314,6 +324,25 @@ func judgmentWindowJudge(t *tracer, w Num, args []Num) (Num, error) {
 func spriteExists(t *tracer, s Num, args []Num) (Num, error) {
 	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionHasSkinSprite,
 		s.MustField("id").mustNode())), nil
+}
+
+// canvasPrint implements CanvasObj.Print(opts) → Print(15 args).
+// In non-preview modes, emits a no-op.
+func canvasPrint(t *tracer, c Num, args []Num) (Num, error) {
+	if t.env.Mode != ir.ModePreview {
+		return constNum(0), nil
+	}
+	opts := args[0]
+	fields := []string{"value", "format", "decimalPlaces",
+		"anchorX", "anchorY", "pivotX", "pivotY",
+		"sizeX", "sizeY", "rotation",
+		"color", "alpha", "horizontalAlign", "background"}
+	nodes := make([]ir.Node, len(fields))
+	for i, f := range fields {
+		nodes[i] = opts.MustField(f).mustNode()
+	}
+	t.emit(t.gen.ImpureInstr(resource.RuntimeFunctionPrint, nodes...))
+	return constNum(0), nil
 }
 
 // skinSpritesExists implements SkinSprites.Exists(id) → HasSkinSprite(id).

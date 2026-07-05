@@ -343,6 +343,9 @@ func (t *tracer) compositeLit(n *ast.CompositeLit) (Num, error) {
 	}
 	fields, known := knownRecordFields(typeName.Name, t.env.Records)
 	if !known {
+		fields, known = knownRecordFields(lowerFirst(typeName.Name), t.env.Records)
+	}
+	if !known {
 		return Num{}, t.errf(n, "unknown record type %q in composite literal (composite literals are only supported for known record types: Vec2, Quad, Mat, Rect, Trans, Pair)", typeName.Name)
 	}
 
@@ -576,6 +579,11 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return t.entityInfoField(n, 2)
 	case "entityInfoAt":
 		return t.entityInfoAt(n)
+	case "canvas":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "canvas takes no arguments")
+		}
+		return compNumTyped("canvasObj", map[string]Num{}), true, nil
 	case "selfInfo":
 		return t.selfInfoRecord(n)
 	case "life":
