@@ -25,14 +25,14 @@ func (t *tracer) screenFunc(n *ast.CallExpr) (Num, error) {
 	}
 	ar := exprNum(ir.GetPlace(ir.Cell(ir.BlockRuntimeEnvironment, 1)))
 	negAr := exprNum(t.gen.PureInstr(resource.RuntimeFunctionNegate, ar.mustNode()))
-	return compNum(map[string]Num{"t": constNum(1), "r": ar, "b": constNum(-1), "l": negAr}), nil
+	return compNumTyped("rect", map[string]Num{"t": constNum(1), "r": ar, "b": constNum(-1), "l": negAr}), nil
 }
 
 func (t *tracer) safeAreaFunc(n *ast.CallExpr) (Num, error) {
 	if len(n.Args) != 0 {
 		return Num{}, t.errf(n, "safeArea() takes no arguments")
 	}
-	return compNum(map[string]Num{
+	return compNumTyped("rect", map[string]Num{
 		"t": exprNum(ir.GetPlace(ir.Cell(ir.BlockRuntimeEnvironment, 8))),
 		"r": exprNum(ir.GetPlace(ir.Cell(ir.BlockRuntimeEnvironment, 6))),
 		"b": exprNum(ir.GetPlace(ir.Cell(ir.BlockRuntimeEnvironment, 7))),

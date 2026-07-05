@@ -14,7 +14,7 @@ func matScale(t *tracer, m Num, args []Num) (Num, error) {
 	if len(args) > 1 {
 		sy = args[1]
 	}
-	return compNum(map[string]Num{
+	return compNumTyped("mat", map[string]Num{
 		"m11": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("m11").mustNode(), sx.mustNode())),
 		"m12": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("m12").mustNode(), sx.mustNode())),
 		"m13": exprNum(t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField("m13").mustNode(), sx.mustNode())),
@@ -29,7 +29,7 @@ func matTranslate(t *tracer, m Num, args []Num) (Num, error) {
 	if len(args) > 1 {
 		ty = args[1]
 	}
-	return compNum(map[string]Num{
+	return compNumTyped("mat", map[string]Num{
 		"m11": m.MustField("m11"), "m12": m.MustField("m12"),
 		"m13": exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, m.MustField("m13").mustNode(), tx.mustNode())),
 		"m21": m.MustField("m21"), "m22": m.MustField("m22"),
@@ -47,7 +47,7 @@ func matCompose(t *tracer, m Num, args []Num) (Num, error) {
 			t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField(r0).mustNode(), n.MustField(c0).mustNode()),
 			t.gen.PureInstr(resource.RuntimeFunctionMultiply, m.MustField(r1).mustNode(), n.MustField(c1).mustNode()))
 	}
-	return compNum(map[string]Num{
+	return compNumTyped("mat", map[string]Num{
 		"m11": exprNum(dot2("m11", "m12", "m11", "m21")),
 		"m12": exprNum(dot2("m11", "m12", "m12", "m22")),
 		"m13": exprNum(t.addNode(dot2("m11", "m12", "m13", "m23"), m.MustField("m13").mustNode())),
@@ -63,7 +63,7 @@ func matRotate(t *tracer, m Num, args []Num) (Num, error) {
 	cos := exprNum(t.gen.PureInstr(resource.RuntimeFunctionCos, a.mustNode()))
 	sin := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSin, a.mustNode()))
 	negSin := exprNum(t.gen.PureInstr(resource.RuntimeFunctionNegate, sin.mustNode()))
-	return compNum(map[string]Num{
+	return compNumTyped("mat", map[string]Num{
 		"m11": exprNum(t.addNode(t.mulNode(m.MustField("m11").mustNode(), cos.mustNode()), t.mulNode(m.MustField("m12").mustNode(), sin.mustNode()))),
 		"m12": exprNum(t.addNode(t.mulNode(m.MustField("m11").mustNode(), negSin.mustNode()), t.mulNode(m.MustField("m12").mustNode(), cos.mustNode()))),
 		"m13": m.MustField("m13"),

@@ -322,7 +322,7 @@ func effectLoop(t *tracer, e Num, args []Num) (Num, error) {
 	id := exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionPlayLooped,
 		e.MustField("id").mustNode(),
 	))
-	return compNum(map[string]Num{"id": id}), nil
+	return compNumTyped("loopedEffectHandle", map[string]Num{"id": id}), nil
 }
 
 // effectScheduleLoop implements Effect.scheduleLoop(startTime) → ScheduledLoopedEffectHandle.
@@ -331,7 +331,7 @@ func effectScheduleLoop(t *tracer, e Num, args []Num) (Num, error) {
 		e.MustField("id").mustNode(),
 		args[0].mustNode(),
 	))
-	return compNum(map[string]Num{"id": id}), nil
+	return compNumTyped("scheduledLoopedEffectHandle", map[string]Num{"id": id}), nil
 }
 
 // particleSpawn implements Particle.spawn(args...) → ParticleHandle.
@@ -342,7 +342,7 @@ func particleSpawn(t *tracer, p Num, args []Num) (Num, error) {
 		nodes[i+1] = a.mustNode()
 	}
 	id := exprNum(t.gen.ImpureInstr(resource.RuntimeFunctionSpawnParticleEffect, nodes...))
-	return compNum(map[string]Num{"id": id}), nil
+	return compNumTyped("particleHandle", map[string]Num{"id": id}), nil
 }
 
 // loopedEffectHandleStop implements LoopedEffectHandle.stop() → native StopLooped(id).

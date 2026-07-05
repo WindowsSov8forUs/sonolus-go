@@ -115,6 +115,8 @@ type Note struct {
 
 支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`JudgmentWindow`(6)。支持 `sonolus.Vec2` 等限定名。
 
+记录类型字段支持**复合写回**（`n.Q = n.Q.Rotate(a)`）和**链式方法调用**（`n.Q.Rotate(a).Translate(v)`）。
+
 ## 回调方法
 
 方法名决定编译为哪个 Sonolus 回调：

@@ -18,7 +18,9 @@ const (
 )
 
 // Num is a traced value: scalar constant, IR expression, record (composite
-// with named fields), or array of elements.
+// with named fields), or array of elements. When typeName is non-empty, the
+// record carries a type tag (e.g. "quad", "vec2") enabling method dispatch on
+// expression results (chain calls like f().Rotate(...)).
 type Num struct {
 	kind numKind
 
@@ -28,7 +30,8 @@ type Num struct {
 
 	// Record: each field is tracked as a separate Num so reads can be
 	// constant-folded or SSA-folded by the optimizer without a memory read.
-	fields map[string]Num
+	fields   map[string]Num
+	typeName string // record type name for method dispatch; empty = untyped
 
 	// Array: per-element Nums. Fixed length, scalar or record elements.
 	arr []Num
@@ -44,8 +47,16 @@ func boolNum(b bool) Num {
 	return constNum(0)
 }
 
-// compNum creates a record Num with individually tracked fields.
+// compNum creates an untyped record Num with individually tracked fields.
+// For method return values that should support chaining, use compNumTyped.
 func compNum(fields map[string]Num) Num { return Num{kind: kindRecord, fields: fields} }
+
+// compNumTyped creates a typed record Num whose typeName enables method dispatch
+// on the returned composite (e.g. chain calls like f().Rotate(...)). typeName
+// must match a key in recordMethods (e.g. "quad", "vec2", "mat").
+func compNumTyped(typeName string, fields map[string]Num) Num {
+	return Num{kind: kindRecord, typeName: typeName, fields: fields}
+}
 
 // arrayNum creates an array Num with per-element values.
 func arrayNum(elems []Num) Num { return Num{kind: kindArray, arr: elems} }
@@ -102,12 +113,17 @@ func (n Num) CompositeFieldOrder() ([]string, error) {
 }
 
 // TryField returns the Num for a named field of a record, with ok=true.
+// The returned Num carries the same typeName as the parent record, enabling
+// chain calls through type-preserving methods.
 // Returns ok=false if the receiver is not a record or the field does not exist.
 func (n Num) TryField(name string) (Num, bool) {
 	if n.kind != kindRecord {
 		return Num{}, false
 	}
 	v, ok := n.fields[name]
+	if ok && v.IsComposite() && v.typeName == "" {
+		v.typeName = n.typeName
+	}
 	return v, ok
 }
 
