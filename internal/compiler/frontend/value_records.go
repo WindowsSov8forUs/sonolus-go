@@ -1,6 +1,9 @@
 package frontend
 
 import (
+	"fmt"
+	"go/token"
+
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
@@ -44,6 +47,7 @@ var builtinRecords = []builtinRecordDef{
 	{"judgmentWindow", judgmentWindowFields},
 	{"sprite", spriteFields},
 	{"effect", effectFields},
+	{"entityInfo", entityInfoFields},
 	{"particle", particleFields},
 	{"entityRef", entityRefFields},
 	{"pair", pairFields},
@@ -180,6 +184,11 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"move":    {fn: particleHandleMove, minArity: 1, compositeArgAt: []int{0}},
 		"destroy": {fn: particleHandleDestroy, minArity: 0},
 	},
+	"entityInfo": {
+		"isWaiting":   {fn: entityInfoIsWaiting, minArity: 0},
+		"isActive":    {fn: entityInfoIsActive, minArity: 0},
+		"isDespawned": {fn: entityInfoIsDespawned, minArity: 0},
+	},
 	"entityRef": {
 		"get": {fn: entityRefGet, minArity: 2},
 		"set": {fn: entityRefSet, minArity: 3},
@@ -241,6 +250,9 @@ var particleFields = []string{"id"}
 var loopedEffectHandleFields = []string{"id"}
 var scheduledLoopedEffectHandleFields = []string{"id"}
 var particleHandleFields = []string{"id"}
+
+// EntityInfo is a structured record representing an entity's compile-time info.
+var entityInfoFields = []string{"index", "archetype", "state"}
 
 // EntityRef wraps an entity index, enabling cross-entity data access.
 var entityRefFields = []string{"index"}
@@ -382,6 +394,33 @@ func entityRefSet(t *tracer, r Num, args []Num) (Num, error) {
 		r.MustField("index").mustNode(), args[1].mustNode())
 	t.emit(t.gen.SetPlace(ir.NewBlockPlace(args[0].mustNode(), idx, 0), args[2].mustNode()))
 	return constNum(0), nil
+}
+
+// entityInfoIsWaiting implements EntityInfo.IsWaiting() → state == 0.
+func entityInfoIsWaiting(t *tracer, info Num, args []Num) (Num, error) {
+	eq, ok := applyBinary(t.gen, token.EQL, info.MustField("state"), constNum(0))
+	if !ok {
+		return Num{}, fmt.Errorf("isWaiting: comparison not supported")
+	}
+	return eq, nil
+}
+
+// entityInfoIsActive implements EntityInfo.IsActive() → state == 1.
+func entityInfoIsActive(t *tracer, info Num, args []Num) (Num, error) {
+	eq, ok := applyBinary(t.gen, token.EQL, info.MustField("state"), constNum(1))
+	if !ok {
+		return Num{}, fmt.Errorf("isActive: comparison not supported")
+	}
+	return eq, nil
+}
+
+// entityInfoIsDespawned implements EntityInfo.IsDespawned() → state == 2.
+func entityInfoIsDespawned(t *tracer, info Num, args []Num) (Num, error) {
+	eq, ok := applyBinary(t.gen, token.EQL, info.MustField("state"), constNum(2))
+	if !ok {
+		return Num{}, fmt.Errorf("isDespawned: comparison not supported")
+	}
+	return eq, nil
 }
 
 // recordStatics maps record type name → static-constructor name → implementation.
