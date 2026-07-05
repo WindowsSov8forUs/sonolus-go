@@ -166,7 +166,11 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"judge": {fn: judgmentWindowJudge, minArity: 2},
 	},
 	"sprite": {
-		"draw": {fn: spriteDraw, minArity: 0},
+		"draw":   {fn: spriteDraw, minArity: 0},
+		"exists": {fn: spriteExists, minArity: 0},
+	},
+	"skinSprites": {
+		"exists": {fn: skinSpritesExists, minArity: 1},
 	},
 	"effect": {
 		"play":         {fn: effectPlay, minArity: 1},
@@ -304,6 +308,18 @@ func judgmentWindowJudge(t *tracer, w Num, args []Num) (Num, error) {
 		w.MustField("goodMin").mustNode(),
 		w.MustField("goodMax").mustNode(),
 	)), nil
+}
+
+// spriteExists implements Sprite.Exists() → HasSkinSprite(id).
+func spriteExists(t *tracer, s Num, args []Num) (Num, error) {
+	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionHasSkinSprite,
+		s.MustField("id").mustNode())), nil
+}
+
+// skinSpritesExists implements SkinSprites.Exists(id) → HasSkinSprite(id).
+func skinSpritesExists(t *tracer, ss Num, args []Num) (Num, error) {
+	return exprNum(t.gen.PureInstr(resource.RuntimeFunctionHasSkinSprite,
+		args[0].mustNode())), nil
 }
 
 // spriteDraw implements Sprite.draw(args...) → native Draw(id, args...).

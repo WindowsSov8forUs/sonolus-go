@@ -452,6 +452,29 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			}
 		}
 		return Num{}, true, t.errf(n, "sprite expects a string literal")
+	case "skin":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "skin takes no arguments")
+		}
+		sprites := map[string]Num{}
+		for name, id := range t.env.SpriteIndex {
+			sprites[lowerFirst(name)] = compNumTyped("sprite", map[string]Num{"id": constNum(id)})
+		}
+		return compNumTyped("skinInfo", map[string]Num{
+			"sprites": compNumTyped("skinSprites", sprites),
+		}), true, nil
+	case "skinSprite":
+		if len(n.Args) != 1 {
+			return Num{}, true, t.errf(n, "skinSprite expects 1 string argument")
+		}
+		if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			name, _ := strconv.Unquote(lit.Value)
+			if id, ok2 := t.env.SpriteIndex[name]; ok2 {
+				return compNumTyped("sprite", map[string]Num{"id": constNum(id)}), true, nil
+			}
+			return Num{}, true, t.errf(n, "unknown sprite name %q", name)
+		}
+		return Num{}, true, t.errf(n, "skinSprite expects a string literal")
 	case "effectClip":
 		if len(n.Args) == 1 {
 			if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
@@ -1117,8 +1140,13 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 
 	// Record method call on an expression result: f().Method(args).
 	// Enables chain calls like quad.Rotate(a).Translate(v).
-	if call, ok := sel.X.(*ast.CallExpr); ok {
-		v, err := t.expr(call)
+	switch sel.X.(type) {
+	case *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr:
+	default:
+		goto notChainCall
+	}
+	{
+		v, err := t.expr(sel.X)
 		if err != nil {
 			return Num{}, err
 		}
@@ -1151,6 +1179,7 @@ func (t *tracer) methodCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error)
 		}
 		return Num{}, t.errf(sel, "unsupported method call on expression result")
 	}
+notChainCall:
 
 	base, ok := sel.X.(*ast.Ident)
 	if !ok || t.env.Receiver == "" || base.Name != t.env.Receiver {

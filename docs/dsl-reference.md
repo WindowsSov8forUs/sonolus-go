@@ -216,7 +216,7 @@ x++             // 递增
 | 栈 | `StackInit`, `StackPush`, `StackPop` 等 | 14 |
 | 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
 | 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticle` | 3 |
-| 资源引用 | `Sprite`, `EffectClip` | 2 |
+| 资源引用 | `SkinSprite`, `Skin`, `EffectClip`, `ParticleClip` | 4 |
 | 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
 
 ### 引擎全局变量
@@ -301,6 +301,32 @@ for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
 | 活跃检查 | `info.state === EntityState.Active` | `entity_info_at(idx).state == 1` | `info.IsActive()` |
 | 自身状态 | `this.info.state` | `self._info.state` | `sonolus.SelfInfo().State` |
 | 迭代 | `for (const info of entityInfos)` | `for idx: entity_info_at(idx)` | `for i := 0; EntityInfoIndex(i) == i; i++` |
+
+### 皮肤精灵 (Skin / Sprite)
+
+通过 `sonolus.SkinSprite(name)` 或 `sonolus.Skin().Sprites.Name` 按名引用精灵：
+
+```go
+type Skin struct {
+	Note float64  // ID = 0
+	Hold float64  // ID = 1
+}
+
+// 方式 1: Sprite 记录引用
+sprite := sonolus.SkinSprite("Note")
+sprite.Draw(quad, z, a)
+if sprite.Exists() { ... }
+
+// 方式 2: Skin() 统一命名空间
+sonolus.Skin().Sprites.Note.Draw(quad, z, a)
+sonolus.Skin().Sprites.Exists(0)  // 按 ID 检查
+```
+
+| 场景 | sonolus.js | sonolus.py | sonolus-go |
+|------|-----------|-----------|------------|
+| 按名引用 | `skin.sprites.note` | N/A (装饰器模式) | `SkinSprite("Note")` |
+| 存在检查 | `sprite.exists` | `sprite.is_available` | `sprite.Exists()` |
+| 绘制 | `sprite.draw(quad,z,a)` | `sprite.draw(quad,z,a)` | `sprite.Draw(quad,z,a)` |
 
 ### 音效片段 (EffectClip)
 

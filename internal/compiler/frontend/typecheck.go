@@ -34,6 +34,9 @@ func PreludeSource(pkg string, records map[string][]string) string {
 	b.WriteString("type PlayEntityInput struct { judgment, accuracy, bucketIndex, bucketValue, haptic float64 }\n")
 	b.WriteString("type EntityScore struct { perfect, great, good, miss float64 }\n")
 	b.WriteString("type EntityLife struct { perfect, great, good, miss float64 }\n")
+	b.WriteString("type Sprite struct { id float64 }\n")
+	b.WriteString("type SkinSprites struct{}\n")
+	b.WriteString("type SkinInfo struct { sprites SkinSprites }\n")
 
 	// Handle types — thin records wrapping runtime resource IDs.
 	b.WriteString("type LoopedEffectHandle struct { id float64 }\n")
