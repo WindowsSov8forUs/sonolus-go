@@ -8,7 +8,6 @@ type Note struct {
 }
 
 func (n Note) Preprocess() {
-	// Combo-scaling life: perfect increment + step
-	n.X = sonolus.ConsecutiveLife("perfect").Increment +
-		sonolus.ConsecutiveLife("great").Step
+	n.X = sonolus.Life().Consecutive.Perfect.Increment +
+		sonolus.Life().Initial
 }

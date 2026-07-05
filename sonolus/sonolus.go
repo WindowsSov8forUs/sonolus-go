@@ -55,6 +55,20 @@ type EntityLife struct{ Perfect, Great, Good, Miss float64 }
 // Equivalent to life.consecutive.perfect in sonolus.js.
 type ConsecutiveLife struct{ Increment, Step float64 }
 
+// LifeConsecutiveEntries groups the three ConsecutiveLife entries.
+type LifeConsecutiveEntries struct{ Perfect, Great, Good ConsecutiveLife }
+
+// LifeInfo provides a unified namespace for all life settings (block 2005).
+// Equivalent to the life object in sonolus.js.
+type LifeInfo struct {
+	Consecutive LifeConsecutiveEntries
+	Initial     float64
+	Max         float64
+}
+
+// Life returns a LifeInfo record providing structured access to level life settings.
+func Life() LifeInfo { return LifeInfo{} }
+
 // Judge evaluates the judgment for a hit given the actual and target times.
 // Returns EntityStateWaiting (0, Miss), 1 (Perfect), 2 (Great), or 3 (Good).
 // Equivalent to input.judge(actual, target, windows) in sonolus.js and

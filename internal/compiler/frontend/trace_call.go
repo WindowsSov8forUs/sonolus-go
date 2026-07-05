@@ -82,7 +82,13 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 			}
 		}
 		// Bare composite: evaluate vec2(...).x → extract field from the composite.
-		if _, isCall := n.X.(*ast.CallExpr); isCall {
+		// Generalised composite extraction: works for CallExpr and SelectorExpr chains.
+			switch n.X.(type) {
+			case *ast.CallExpr, *ast.SelectorExpr:
+			default:
+				goto notComposite
+			}
+			{
 			v, err := t.expr(n.X)
 			if err != nil {
 				return Num{}, err
@@ -99,6 +105,7 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 				return Num{}, t.errf(n, "record has no field %q", n.Sel.Name)
 			}
 		}
+	notComposite:
 		return t.fieldValue(n)
 	case *ast.CompositeLit:
 		return t.compositeLit(n)
@@ -531,28 +538,25 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return t.entityInfoAt(n)
 	case "selfInfo":
 		return t.selfInfoRecord(n)
-	case "consecutiveLife":
-		if len(n.Args) == 1 {
-			if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-				name, _ := strconv.Unquote(lit.Value)
-				base := 0
-				switch name {
-				case "perfect":
-					base = 0
-				case "great":
-					base = 2
-				case "good":
-					base = 4
-				default:
-					return Num{}, true, t.errf(n, "unknown consecutive life %q (expected perfect, great, or good)", name)
-				}
-				return compNumTyped("consecutiveLife", map[string]Num{
-					"increment": exprNum(ir.GetPlace(ir.Cell(2005, base))),
-					"step":      exprNum(ir.GetPlace(ir.Cell(2005, base+1))),
-				}), true, nil
-			}
+	case "life":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "life takes no arguments")
 		}
-		return Num{}, true, t.errf(n, "consecutiveLife expects a string literal")
+		cl := func(base int) Num {
+			return compNumTyped("consecutiveLife", map[string]Num{
+				"increment": exprNum(ir.GetPlace(ir.Cell(2005, base))),
+				"step":      exprNum(ir.GetPlace(ir.Cell(2005, base+1))),
+			})
+		}
+		return compNumTyped("lifeInfo", map[string]Num{
+			"consecutive": compNumTyped("lifeConsecutiveEntries", map[string]Num{
+				"perfect": cl(0),
+				"great":   cl(2),
+				"good":    cl(4),
+			}),
+			"initial": exprNum(ir.GetPlace(ir.Cell(2005, 6))),
+			"max":     exprNum(ir.GetPlace(ir.Cell(2005, 7))),
+		}), true, nil
 	case "archetypeLife":
 		if len(n.Args) != 1 {
 			return Num{}, true, t.errf(n, "archetypeLife expects 1 argument (archetype index)")
