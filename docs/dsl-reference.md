@@ -98,7 +98,7 @@ type Name struct {
 | `Particle` | Play, Watch, Tutorial | 粒子效果定义 |
 | `Buckets` | Play, Watch | 桶/生成规则定义 |
 | `Instruction` | Tutorial | 教程文本/图标定义 |
-| `UI` | 全部 | EngineConfiguration UI 覆写（键值标签） |
+| `UI` | 全部 | EngineConfiguration UI 覆写。支持 `RuntimeUiConfig` 记录类型嵌套展开 |
 
 ### 记录类型字段
 

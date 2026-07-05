@@ -82,6 +82,16 @@ func evaluateUIConfig(uiType *ast.StructType, uiLit *ast.CompositeLit, ctx *uiEv
 		if key == "" {
 			continue
 		}
+		// RuntimeUiConfig: "ui" tag expands to field.scale + field.alpha
+		if key == "ui" && resolveFieldTypeName(f.Type) == "RuntimeUiConfig" {
+			for _, n := range f.Names {
+				name := n.Name
+				prefix := strings.ToLower(name[:1]) + name[1:]
+				fields = append(fields, uiField{name: name + ".Scale", tagKey: prefix + ".scale"})
+				fields = append(fields, uiField{name: name + ".Alpha", tagKey: prefix + ".alpha"})
+			}
+			continue
+		}
 		for _, n := range f.Names {
 			fields = append(fields, uiField{name: n.Name, tagKey: key})
 		}

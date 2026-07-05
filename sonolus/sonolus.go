@@ -98,6 +98,10 @@ type LifeInfo struct {
 // Life returns a LifeInfo record providing structured access to level life settings.
 func Life() LifeInfo { return LifeInfo{} }
 
+// RuntimeUiConfig represents a UI element's visual settings.
+// Used with sonolus:"ui" tag to auto-expand to field.scale/field.alpha.
+type RuntimeUiConfig struct{ Scale, Alpha float64 }
+
 // ── Canvas (Preview mode) ──
 
 // CanvasObj is the type for preview-mode canvas operations. In non-preview
