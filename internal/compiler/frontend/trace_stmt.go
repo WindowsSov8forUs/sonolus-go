@@ -585,10 +585,10 @@ func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
 	}
 	// Return the tracked field Num if it's a constant or pure expression; fall
 	// back to a memory read for mutable-backed fields.
-	if v, ok := rec.val.fields[sel.Sel.Name]; ok && (v.isConst || v.e != nil) {
+	if v, ok := rec.val.fields[sel.Sel.Name]; ok && (v.isConst || v.e != nil || v.IsComposite()) {
 		return v, nil
 	}
-	if v, ok := rec.val.fields[lowerFirst(sel.Sel.Name)]; ok && (v.isConst || v.e != nil) {
+	if v, ok := rec.val.fields[lowerFirst(sel.Sel.Name)]; ok && (v.isConst || v.e != nil || v.IsComposite()) {
 		return v, nil
 	}
 	return exprNum(ir.GetPlace(ir.BlockPlace{Block: rec.tb, Index: ir.Const(off), Offset: 0})), nil

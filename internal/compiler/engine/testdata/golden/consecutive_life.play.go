@@ -8,6 +8,8 @@ type Note struct {
 }
 
 func (n Note) Preprocess() {
-	n.X = sonolus.Life().Consecutive.Perfect.Increment +
-		sonolus.Life().Initial
+	life := sonolus.Life()
+	n.X = life.Consecutive.Perfect.Increment +
+		life.Initial +
+		life.Max
 }

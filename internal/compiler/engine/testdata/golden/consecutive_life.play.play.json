@@ -27,28 +27,25 @@
       ],
       "exports": [],
       "preprocess": {
-        "index": 11
+        "index": 16
       }
     }
   ],
   "nodes": [
     {
-      "value": 4000
-    },
-    {
-      "value": 1
-    },
-    {
-      "value": 2005
+      "value": 10000
     },
     {
       "value": 0
     },
     {
+      "value": 2005
+    },
+    {
       "func": "Get",
       "args": [
         2,
-        3
+        1
       ]
     },
     {
@@ -58,14 +55,25 @@
       "func": "Get",
       "args": [
         2,
-        5
+        4
+      ]
+    },
+    {
+      "value": 7
+    },
+    {
+      "func": "Get",
+      "args": [
+        2,
+        6
       ]
     },
     {
       "func": "Add",
       "args": [
-        4,
-        6
+        3,
+        5,
+        7
       ]
     },
     {
@@ -73,27 +81,49 @@
       "args": [
         0,
         1,
-        7
+        8
+      ]
+    },
+    {
+      "value": 4000
+    },
+    {
+      "value": 1
+    },
+    {
+      "func": "Get",
+      "args": [
+        0,
+        1
+      ]
+    },
+    {
+      "func": "Set",
+      "args": [
+        10,
+        11,
+        12
       ]
     },
     {
       "func": "Execute",
       "args": [
-        8,
-        1
+        9,
+        13,
+        11
       ]
     },
     {
       "func": "JumpLoop",
       "args": [
-        9,
-        3
+        14,
+        1
       ]
     },
     {
       "func": "Block",
       "args": [
-        10
+        15
       ]
     }
   ]
