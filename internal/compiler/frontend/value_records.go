@@ -47,6 +47,7 @@ var builtinRecords = []builtinRecordDef{
 	{"judgmentWindow", judgmentWindowFields},
 	{"sprite", spriteFields},
 	{"effect", effectFields},
+	{"effectClip", effectFields},
 	{"entityInfo", entityInfoFields},
 	{"particle", particleFields},
 	{"entityRef", entityRefFields},
@@ -170,6 +171,10 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"schedule":     {fn: effectSchedule, minArity: 2},
 		"loop":         {fn: effectLoop, minArity: 0},
 		"scheduleLoop": {fn: effectScheduleLoop, minArity: 1},
+	},
+	"effectClip": {
+		"play":     {fn: effectPlay, minArity: 1},
+		"schedule": {fn: effectSchedule, minArity: 2},
 	},
 	"particle": {
 		"spawn": {fn: particleSpawn, minArity: 0},

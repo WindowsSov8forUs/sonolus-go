@@ -276,6 +276,10 @@ func compileParsed(
 	}
 
 	data := play.BuildPlayData(r.skin, r.effect, r.particle, r.buckets, defs)
+	effectIndex := map[string]float64{}
+	for _, clip := range r.effect.Clips {
+		effectIndex[string(clip.Name)] = float64(clip.ID)
+	}
 spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 
 	results := make([]*modecompile.Result, 0, len(order)*3)
@@ -296,7 +300,7 @@ spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 			return frontend.Env{
 				Names: names, Receiver: receiver, Funcs: funcs, Methods: a.helpers,
 				Accessors: frontend.ModeAccessorsReadOnly(ir.ModePlay),
-				Mode:            ir.ModePlay, SpriteIndex: spriteIndex,
+				Mode:            ir.ModePlay, SpriteIndex: spriteIndex, EffectIndex: effectIndex,
 			ContainerFields: frontendContainerFieldMeta(a.containers),
 				Constants: map[string]float64{
 					"entityStateWaiting":   0,

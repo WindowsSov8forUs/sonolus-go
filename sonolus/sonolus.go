@@ -43,6 +43,21 @@ type ScheduledLoopedEffectHandle struct{ ID float64 }
 type ParticleHandle struct{ ID float64 }
 type EntityRef struct{ Index float64 }
 
+// ── Resource record types ──
+
+// EffectClip represents a sound effect clip with a compile-time ID.
+// Created via sonolus.EffectClip(name). Equivalent to EffectClip in sonolus.js
+// and Effect in sonolus.py.
+type EffectClip struct{ ID float64 }
+
+// Play plays the effect clip at the given distance.
+// Equivalent to clip.play(distance) in sonolus.js and effect.play(distance) in sonolus.py.
+func (c EffectClip) Play(distance float64) {}
+
+// Schedule schedules the effect clip to play at a specific time with the given distance.
+// Equivalent to clip.schedule(time, distance) in sonolus.js and effect.schedule(time, distance) in sonolus.py.
+func (c EffectClip) Schedule(time, distance float64) {}
+
 // ── Handle methods ──
 
 func (h LoopedEffectHandle) Stop()                                 {}
@@ -174,6 +189,7 @@ func VarArray_(capacity float64) VarArray                      { return VarArray
 func ArrayMap_(capacity float64) ArrayMap                      { return ArrayMap{} }
 func ArraySet_(capacity float64) ArraySet                      { return ArraySet{} }
 func Box_(val float64) Box                                     { return Box{} }
+func EffectClip_(id float64) EffectClip                        { return EffectClip{} }
 func FrozenNumSet_(capacity float64) FrozenNumSet              { return FrozenNumSet{} }
 func SortLinkedEntities(head, sortKeyOffset, nextOffset float64, prevOffset ...float64) float64 { return 0 }
 

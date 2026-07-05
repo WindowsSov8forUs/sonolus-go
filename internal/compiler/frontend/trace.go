@@ -41,6 +41,7 @@ type Env struct {
 	Info        *types.Info         // go/types type-check result (D1 diagnostic layer)
 	Constants        map[string]float64        // named compile-time constants (e.g. archetype indices)
 	SpriteIndex      map[string]float64        // sprite name → index (from Skin struct fields)
+	EffectIndex      map[string]float64        // effect clip name → ID (from Effect struct fields)
 	ContainerFields  []ContainerFieldMeta      // container-typed struct field metadata
 	MaxUnroll        int                       // general loop unroll limit (0 = default 256)
 	MaxUnrollCont    int                       // container unroll limit (0 = default 64)

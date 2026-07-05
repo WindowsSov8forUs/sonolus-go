@@ -423,6 +423,19 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			}
 		}
 		return Num{}, true, t.errf(n, "sprite expects a string literal")
+	case "effectClip":
+		if len(n.Args) == 1 {
+			if lit, ok := n.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				name, err := strconv.Unquote(lit.Value)
+				if err == nil {
+					if id, ok2 := t.env.EffectIndex[name]; ok2 {
+						return compNumTyped("effect", map[string]Num{"id": constNum(id)}), true, nil
+					}
+					return Num{}, true, t.errf(n, "unknown effect clip name %q", name)
+				}
+			}
+		}
+		return Num{}, true, t.errf(n, "effectClip expects a string literal")
 	case "len":
 		if len(n.Args) == 1 {
 			if id, ok := n.Args[0].(*ast.Ident); ok {
