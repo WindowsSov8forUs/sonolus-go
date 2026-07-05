@@ -31,9 +31,11 @@ type parsedArchetype struct {
 	input      []string
 	despawn    []string
 	info       []string
-	scored     bool
-	lifed      bool
-	methods    []parsedMethod
+	scored       bool
+	lifed        bool
+	scoredFields []string
+	lifedFields  []string
+	methods      []parsedMethod
 	helpers    map[string]*ast.FuncDecl
 	containers []ContainerFieldMeta
 }
@@ -241,6 +243,8 @@ func parseFields(a *parsedArchetype, st *ast.StructType) error {
 	a.despawn = tc.despawn
 	a.info = tc.info
 	a.containers = tc.containers
+	a.scoredFields = tc.scoredFields
+	a.lifedFields = tc.lifedFields
 	return nil
 }
 
@@ -264,7 +268,7 @@ func compileParsed(
 	for i, name := range order {
 		a := archetypes[name]
 		exports := make([]resource.EngineArchetypeDataName, len(a.exported))
-		imports, b := buildBindings(a.imported, a.memory, a.exported, a.data, a.shared, a.input, a.despawn, a.info,
+		imports, b := buildBindings(a.imported, a.memory, a.exported, a.data, a.shared, a.input, a.despawn, a.info, a.scoredFields, a.lifedFields,
 			func(name string, idx int) {
 				exports[idx] = resource.EngineArchetypeDataName(name)
 			})

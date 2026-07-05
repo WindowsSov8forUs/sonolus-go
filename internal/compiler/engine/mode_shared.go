@@ -37,14 +37,16 @@ func modeName(m ir.Mode) string {
 // both parseFields (Play mode, which also handles exported/scored/lifed) and
 // parseModeFile (Watch/Preview/Tutorial modes).
 type tagCollector struct {
-	imported   []ImportedField
-	memory     []string
-	data       []string
-	shared     []string
-	input      []string
-	despawn    []string
-	info       []string
-	containers []ContainerFieldMeta
+	imported    []ImportedField
+	memory      []string
+	data        []string
+	shared      []string
+	input       []string
+	despawn     []string
+	info        []string
+	scoredFields []string
+	lifedFields  []string
+	containers  []ContainerFieldMeta
 }
 
 // collectSonolusTags reads sonolus struct tags from a field and appends field
@@ -95,7 +97,13 @@ func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTa
 			tc.despawn = appendFieldNames(tc.despawn, name.Name, field.Type)
 		case "info":
 			tc.info = appendFieldNames(tc.info, name.Name, field.Type)
-		case "exported", "scored", "lifed":
+		case "scored":
+			tc.scoredFields = appendFieldNames(tc.scoredFields, name.Name, field.Type)
+			modeTag = tag
+		case "lifed":
+			tc.lifedFields = appendFieldNames(tc.lifedFields, name.Name, field.Type)
+			modeTag = tag
+		case "exported":
 			modeTag = tag
 		case "":
 			// empty tag -- silently skip
@@ -112,7 +120,7 @@ func (tc *tagCollector) collectSonolusTags(field *ast.Field) (unknownTag, modeTa
 // is invoked for each exported field (play-mode only).
 func buildBindings(
 	imported []ImportedField,
-	memory, exported, data, shared, input, despawn, info []string,
+	memory, exported, data, shared, input, despawn, info, scoredFields, lifedFields []string,
 	onExport func(name string, idx int),
 ) ([]resource.EngineDataArchetypeImport, map[string]frontend.Binding) {
 	imports := make([]resource.EngineDataArchetypeImport, len(imported))
@@ -146,6 +154,12 @@ func buildBindings(
 	}
 	for ii, in := range info {
 		b[in] = frontend.Binding{Block: entityInfoBlock, Index: ii, Writable: false}
+	}
+	for si, sn := range scoredFields {
+		b[sn] = frontend.Binding{Block: entityScoreBlock, Index: si, Writable: true}
+	}
+	for li, ln := range lifedFields {
+		b[ln] = frontend.Binding{Block: entityLifeBlock, Index: li, Writable: true}
 	}
 	return imports, b
 }

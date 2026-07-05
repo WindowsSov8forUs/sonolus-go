@@ -69,4 +69,6 @@ const (
 	entityInfoBlock    = ir.BlockEntityInfo
 	entityDespawnBlock = ir.BlockEntityDespawn
 	entityInputBlock   = ir.BlockEntityInput
+	entityScoreBlock   = ir.BlockEntityScore
+	entityLifeBlock    = ir.BlockEntityLife
 )

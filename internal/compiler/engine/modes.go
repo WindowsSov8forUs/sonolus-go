@@ -109,7 +109,7 @@ func parseModeFile(src string) (*parsedModeFile, error) {
 }
 
 func modeBindings(a *modeArch) ([]resource.EngineDataArchetypeImport, map[string]frontend.Binding) {
-	return buildBindings(a.imported, a.memory, nil, a.data, a.shared, a.input, a.despawn, a.info, nil)
+	return buildBindings(a.imported, a.memory, nil, a.data, a.shared, a.input, a.despawn, a.info, nil, nil, nil)
 }
 
 // compileCallbackBlock is the shared compile+optimize+lower pipeline for a single
