@@ -302,7 +302,13 @@ func compileArchetypeCallbacks(spriteIndex map[string]float64,
 			}
 		}
 		envBuilder := func(receiver string) frontend.Env {
-			return frontend.Env{Names: names, Receiver: receiver, Funcs: funcs, Accessors: accessors, Mode: mode, ContainerFields: frontendContainerFieldMeta(a.containers)}
+			return frontend.Env{Names: names, Receiver: receiver, Funcs: funcs, Accessors: accessors, Mode: mode, ContainerFields: frontendContainerFieldMeta(a.containers),
+				Constants: map[string]float64{
+					"entityStateWaiting":   0,
+					"entityStateActive":    1,
+					"entityStateDespawned": 2,
+				},
+			}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {
 			mn := modeName(mode)
@@ -488,7 +494,13 @@ func compileUpdateSpawn(
 ) (int, error) {
 	for _, d := range funcs {
 		if d.Name.Name == "UpdateSpawn" && d.Body != nil {
-			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch}
+			env := frontend.Env{Names: accessors, Funcs: funcs, Accessors: accessors, Mode: ir.ModeWatch,
+				Constants: map[string]float64{
+					"entityStateWaiting":   0,
+					"entityStateActive":    1,
+					"entityStateDespawned": 2,
+				},
+			}
 			sn, err := compileCallbackBlock(gen, fset, d.Body, env, "UpdateSpawn", ir.ModeWatch, opts)
 			if err != nil {
 				return -1, fmt.Errorf("UpdateSpawn: %w", err)

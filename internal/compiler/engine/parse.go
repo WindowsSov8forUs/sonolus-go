@@ -298,6 +298,11 @@ spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 				Accessors: frontend.ModeAccessorsReadOnly(ir.ModePlay),
 				Mode:            ir.ModePlay, SpriteIndex: spriteIndex,
 			ContainerFields: frontendContainerFieldMeta(a.containers),
+				Constants: map[string]float64{
+					"entityStateWaiting":   0,
+					"entityStateActive":    1,
+					"entityStateDespawned": 2,
+				},
 			}
 		}
 		resultFn := func(idx int, cb string, sn snode.SNode) *modecompile.Result {

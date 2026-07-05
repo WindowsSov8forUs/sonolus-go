@@ -300,11 +300,65 @@ func DebugAssertTrue(cond, msg float64)    {}
 func DebugAssertFalse(cond, msg float64)   {}
 func DebugTerminate()                     {}
 
+// ── Entity state constants ──
+
+// EntityState values for entity lifecycle tracking (Play/Watch modes).
+// Matches sonolus.js EntityState enum and sonolus.py is_waiting/is_active/is_despawned.
+const (
+	EntityStateWaiting   float64 = 0
+	EntityStateActive    float64 = 1
+	EntityStateDespawned float64 = 2
+)
+
+// ── EntityInfo record type ──
+
+// EntityInfo is a structured record representing an entity's compile-time
+// info. Fields: Index (entity's own index), Archetype (archetype ID),
+// State (lifecycle: 0=Waiting, 1=Active, 2=Despawned).
+// Matches PlayEntityInfo / WatchEntityInfo in sonolus.py and the EntityInfo
+// type in sonolus.js.
+type EntityInfo struct {
+	Index     float64
+	Archetype float64
+	State     float64
+}
+
+// IsWaiting returns 1 if the entity is in the Waiting state (state == 0).
+func (info EntityInfo) IsWaiting() float64 { return 0 }
+
+// IsActive returns 1 if the entity is in the Active state (state == 1).
+func (info EntityInfo) IsActive() float64 { return 0 }
+
+// IsDespawned returns 1 if the entity is in the Despawned state (state == 2).
+func (info EntityInfo) IsDespawned() float64 { return 0 }
+
 // ── Convenience wrappers ──
 
-// EntityInfo reads the EntityInfoArray at the given index. This is a convenience
-// wrapper around get(4103, index) for cross-entity info queries.
-func EntityInfo(index float64) float64 { return 0 }
+// EntityInfoIndex reads the entity's own index from EntityInfoArray at the given
+// entity index. Equivalent to entityInfos.get(index).index in sonolus.js and
+// entity_info_at(index).index in sonolus.py.
+func EntityInfoIndex(index float64) float64 { return 0 }
+
+// EntityInfoArchetype reads the entity's archetype ID from EntityInfoArray at the
+// given entity index. Equivalent to entityInfos.get(index).archetype in sonolus.js
+// and entity_info_at(index).archetype_id in sonolus.py.
+func EntityInfoArchetype(index float64) float64 { return 0 }
+
+// EntityInfoState reads the entity's lifecycle state from EntityInfoArray at the
+// given entity index. Returns EntityStateWaiting (0), EntityStateActive (1), or
+// EntityStateDespawned (2). Equivalent to entityInfos.get(index).state in
+// sonolus.js and entity_info_at(index).state in sonolus.py.
+// Not available in Preview mode.
+func EntityInfoState(index float64) float64 { return 0 }
+
+// EntityInfoAt returns the full EntityInfo record for the entity at the given
+// index. Equivalent to entityInfos.get(index) in sonolus.js and
+// entity_info_at(index) in sonolus.py.
+func EntityInfoAt(index float64) EntityInfo { return EntityInfo{} }
+
+// SelfInfo returns the EntityInfo record for the current entity.
+// Equivalent to this.info in sonolus.js and self._info in sonolus.py.
+func SelfInfo() EntityInfo { return EntityInfo{} }
 
 // ── Memory block constants ──
 

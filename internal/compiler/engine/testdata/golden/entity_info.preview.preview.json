@@ -1,0 +1,63 @@
+{
+  "skin": {
+    "sprites": null
+  },
+  "archetypes": [
+    {
+      "name": "Note",
+      "imports": [],
+      "render": {
+        "index": 8
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "value": 4000
+    },
+    {
+      "value": 0
+    },
+    {
+      "value": 4102
+    },
+    {
+      "func": "Get",
+      "args": [
+        2,
+        1
+      ]
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        1,
+        3
+      ]
+    },
+    {
+      "value": 1
+    },
+    {
+      "func": "Execute",
+      "args": [
+        4,
+        5
+      ]
+    },
+    {
+      "func": "JumpLoop",
+      "args": [
+        6,
+        1
+      ]
+    },
+    {
+      "func": "Block",
+      "args": [
+        7
+      ]
+    }
+  ]
+}
