@@ -217,6 +217,7 @@ x++             // 递增
 | 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
 | 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticle` | 3 |
 | 资源引用 | `SkinSprite`, `Skin`, `EffectClip`, `ParticleClip` | 4 |
+| 矩阵变换 | `SkinTransform`, `SetSkinTransform`, `ParticleTransform`, `SetParticleTransform`, `Background`, `SetBackground` | 6 |
 | 辅助数学 | `Screen`, `SafeArea`, `OffsetAdjustedTime`, `PrevTime`, `Pnpoly`, `PerspectiveApproach` | 6 |
 | 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
 
@@ -242,6 +243,7 @@ entityLifePerfect, entityLifeGreat, entityLifeGood, entityLifeMiss
 | `Mat` | `Scale`, `Translate`, `Compose`, `Rotate` |
 | `Rect` | `W`, `H`, `Center`, `Translate`, `Scale` |
 | `Trans` | `Compose`, `Translate`, `Scale`, `Rotate`, `TransformVec` |
+| `Transform2d` | `Translate`, `Scale`, `ScaleAbout`, `Rotate`, `RotateAbout`, `Compose`, `ComposeBefore`, `TransformVec`, `TransformQuad`, `PerspectiveX`, `PerspectiveY`, `SimplePerspectiveX`, `SimplePerspectiveY` |
 | `Pair` | `Lt`, `Le`, `Gt`, `Ge`, `Tuple` |
 | `VarArray` | `Len`, `Capacity`, `IsFull`, `Append`, `Pop`, `Insert`, `Sort`, `Clear`, `Contains`, `Index`, `Remove`, `SetAdd`, `SetRemove` |
 | `ArrayMap` | `Len`, `Capacity`, `Clear`, `Keys`, `Values`, `Items`, `Get`, `Set`, `Delete`, `Contains`, `Pop` |
