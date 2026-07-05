@@ -59,6 +59,8 @@ var builtinRecords = []builtinRecordDef{
 	{"box", boxFields},
 	{"printOptions", printOptionsFields},
 	{"consecutiveLife", consecutiveLifeFields},
+	{"consecutiveScore", consecutiveScoreFields},
+	{"scoreBase", scoreBaseFields},
 	{"transform2d", transform2dFields},
 	{"frozenNumSet", frozenNumSetFields},
 	{"loopedEffectHandle", loopedEffectHandleFields},
@@ -304,6 +306,8 @@ var transform2dFields = []string{
 	"a20", "a21", "a22", "a23",
 	"a30", "a31", "a32", "a33",
 }
+var consecutiveScoreFields = []string{"multiplier", "step", "cap"}
+var scoreBaseFields = []string{"perfect", "great", "good"}
 var consecutiveLifeFields = []string{"increment", "step"}
 
 // EntityRef wraps an entity index, enabling cross-entity data access.

@@ -71,7 +71,7 @@ func TestStubDispatchAudit(t *testing.T) {
 		"varArray", "arrayMap", "arraySet", "frozenNumSet",
 		"debugTerminate",
 		"entityInfoIndex", "entityInfoArchetype", "entityInfoState",
-		"entityInfoAt", "selfInfo", "life", "archetypeLife", "canvas", "skin", "skinSprite",
+		"entityInfoAt", "selfInfo", "life", "score", "archetypeLife", "canvas", "skin", "skinSprite",
 		"skinTransformAt", "setSkinTransformAt", "particleTransformAt", "setParticleTransformAt", "backgroundAt", "setBackgroundAt", "skinTransform", "setSkinTransform",
 		"particleTransform", "setParticleTransform",
 		"background", "setBackground",

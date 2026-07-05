@@ -586,6 +586,29 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 		return compNumTyped("canvasObj", map[string]Num{}), true, nil
 	case "selfInfo":
 		return t.selfInfoRecord(n)
+	case "score":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "score takes no arguments")
+		}
+		cs := func(base int) Num {
+			return compNumTyped("consecutiveScore", map[string]Num{
+				"multiplier": exprNum(ir.GetPlace(ir.Cell(2004, base))),
+				"step":       exprNum(ir.GetPlace(ir.Cell(2004, base+1))),
+				"cap":        exprNum(ir.GetPlace(ir.Cell(2004, base+2))),
+			})
+		}
+		return compNumTyped("scoreInfo", map[string]Num{
+			"base": compNumTyped("scoreBase", map[string]Num{
+				"perfect": exprNum(ir.GetPlace(ir.Cell(2004, 0))),
+				"great":   exprNum(ir.GetPlace(ir.Cell(2004, 1))),
+				"good":    exprNum(ir.GetPlace(ir.Cell(2004, 2))),
+			}),
+			"consecutive": compNumTyped("scoreConsecutiveEntries", map[string]Num{
+				"perfect": cs(3),
+				"great":   cs(6),
+				"good":    cs(9),
+			}),
+		}), true, nil
 	case "life":
 		if len(n.Args) != 0 {
 			return Num{}, true, t.errf(n, "life takes no arguments")

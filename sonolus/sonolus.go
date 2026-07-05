@@ -51,6 +51,30 @@ type EntityScore struct{ Perfect, Great, Good, Miss float64 }
 // and LifeInfo in sonolus.py.
 type EntityLife struct{ Perfect, Great, Good, Miss float64 }
 
+// ── Score (block 2004) ──
+
+// ConsecutiveScore represents combo-scaling score values at block 2004.
+// Equivalent to score.consecutive.perfect in sonolus.js.
+type ConsecutiveScore struct{ Multiplier, Step, Cap float64 }
+
+// ScoreBase holds the base score values for each judgment.
+type ScoreBase struct{ Perfect, Great, Good float64 }
+
+// ScoreConsecutiveEntries groups the three ConsecutiveScore entries.
+type ScoreConsecutiveEntries struct{ Perfect, Great, Good ConsecutiveScore }
+
+// ScoreInfo provides a unified namespace for all score settings (block 2004).
+// Equivalent to the score object in sonolus.js.
+type ScoreInfo struct {
+	Base        ScoreBase
+	Consecutive ScoreConsecutiveEntries
+}
+
+// Score returns a ScoreInfo record providing structured access to level score settings.
+func Score() ScoreInfo { return ScoreInfo{} }
+
+// ── Life ──
+
 // ConsecutiveLife represents combo-scaling life increments at block 2005.
 // Equivalent to life.consecutive.perfect in sonolus.js.
 type ConsecutiveLife struct{ Increment, Step float64 }
