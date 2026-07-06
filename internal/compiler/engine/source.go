@@ -6,10 +6,10 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/goparse"
 )
 
 // EngineSources bundles all source files for a multi-file engine compilation.
@@ -20,13 +20,22 @@ type EngineSources struct {
 	// All import paths are resolved relative to this directory.
 	RootDir string
 
+	// MainPkgName is the Go package declaration name of the main package
+	// (e.g. "main", "engine", "test"). Populated during source loading.
+	MainPkgName string
+
 	// Main holds the main package source files: filename (relative to RootDir)
 	// → source code. The engine name and resources (Skin, Effect, Buckets, etc.)
 	// are always defined in the main package.
 	Main map[string]string
 
+	// ImportPkgNames maps import paths to their declared Go package names.
+	// Populated during ResolveImports. Import paths not in this map have not
+	// been resolved yet.
+	ImportPkgNames map[string]string
+
 	// Imports holds imported sub-package source files: import path →
-	// (filename → source code). Populated lazily by resolveAndLoadImports.
+	// (filename → source code). Populated lazily by ResolveImports.
 	Imports map[string]map[string]string
 }
 
@@ -34,10 +43,13 @@ type EngineSources struct {
 // This is used by tests and backward-compatible single-file entry points.
 // RootDir is set to the current working directory (or "." if unavailable).
 func NewSingleFileSources(src string) *EngineSources {
+	pkgName, _ := extractPackageName(map[string]string{"engine.go": src})
 	return &EngineSources{
-		RootDir: ".",
-		Main:    map[string]string{"engine.go": src},
-		Imports: map[string]map[string]string{},
+		RootDir:        ".",
+		MainPkgName:    pkgName,
+		Main:           map[string]string{"engine.go": src},
+		Imports:        map[string]map[string]string{},
+		ImportPkgNames: map[string]string{},
 	}
 }
 
@@ -74,10 +86,18 @@ func loadEngineFile(absPath string) (*EngineSources, error) {
 	rootDir := filepath.Dir(absPath)
 	name := filepath.Base(absPath)
 
+	files := map[string]string{name: string(src)}
+	pkgName, err := extractPackageName(files)
+	if err != nil {
+		return nil, fmt.Errorf("source: %w", err)
+	}
+
 	return &EngineSources{
-		RootDir: rootDir,
-		Main:    map[string]string{name: string(src)},
-		Imports: map[string]map[string]string{},
+		RootDir:        rootDir,
+		MainPkgName:    pkgName,
+		Main:           files,
+		Imports:        map[string]map[string]string{},
+		ImportPkgNames: map[string]string{},
 	}, nil
 }
 
@@ -91,15 +111,18 @@ func loadEngineDir(absDir string) (*EngineSources, error) {
 		return nil, fmt.Errorf("source: no .go files found in %q", absDir)
 	}
 
-	// Validate that all files share the same package name.
-	if err := validatePackageName(files); err != nil {
+	// Extract and validate the package name.
+	pkgName, err := extractPackageName(files)
+	if err != nil {
 		return nil, fmt.Errorf("source: %w", err)
 	}
 
 	return &EngineSources{
-		RootDir: absDir,
-		Main:    files,
-		Imports: map[string]map[string]string{},
+		RootDir:        absDir,
+		MainPkgName:    pkgName,
+		Main:           files,
+		Imports:        map[string]map[string]string{},
+		ImportPkgNames: map[string]string{},
 	}, nil
 }
 
@@ -130,30 +153,14 @@ func collectGoFiles(dir string) (map[string]string, error) {
 	return files, nil
 }
 
-// validatePackageName checks that all files have the same package declaration.
-func validatePackageName(files map[string]string) error {
-	fset := token.NewFileSet()
-	var pkgName string
-	// Sort filenames for deterministic error messages.
-	names := make([]string, 0, len(files))
-	for n := range files {
-		names = append(names, n)
+// extractPackageName parses all files to extract their Go package declaration
+// name, validating that all files agree. Returns the package name on success.
+func extractPackageName(files map[string]string) (string, error) {
+	pkg, err := goparse.ParseFiles(files)
+	if err != nil {
+		return "", err
 	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		src := files[name]
-		f, err := parser.ParseFile(fset, name, src, parser.PackageClauseOnly)
-		if err != nil {
-			return fmt.Errorf("parse %q: %w", name, err)
-		}
-		if pkgName == "" {
-			pkgName = f.Name.Name
-		} else if f.Name.Name != pkgName {
-			return fmt.Errorf("conflicting package names: %q uses %q, expected %q", name, f.Name.Name, pkgName)
-		}
-	}
-	return nil
+	return pkg.Name, nil
 }
 
 // Access returns a frontend.EngineSourcesAccess for type-checking, avoiding a
@@ -178,6 +185,9 @@ func (ess *EngineSources) Access() *frontend.EngineSourcesAccess {
 func (ess *EngineSources) ResolveImports() error {
 	// If imports are already pre-populated (e.g., from tests), trust them.
 	if len(ess.Imports) > 0 {
+		if ess.ImportPkgNames == nil {
+			ess.ImportPkgNames = map[string]string{}
+		}
 		return nil
 	}
 
@@ -195,9 +205,14 @@ func (ess *EngineSources) ResolveImports() error {
 		if len(files) == 0 {
 			return fmt.Errorf("import %q: no .go files in %s", impPath, resolvedDir)
 		}
-		if err := validatePackageName(files); err != nil {
+		pkgName, err := extractPackageName(files)
+		if err != nil {
 			return fmt.Errorf("import %q: %w", impPath, err)
 		}
+		if ess.ImportPkgNames == nil {
+			ess.ImportPkgNames = map[string]string{}
+		}
+		ess.ImportPkgNames[impPath] = pkgName
 		ess.Imports[impPath] = files
 	}
 	return nil

@@ -3,8 +3,9 @@ package engine
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
+
+	"github.com/WindowsSov8forUs/sonolus-go/internal/goparse"
 )
 
 // parsedTypeDecl is a parsed struct type declaration from an engine source file.
@@ -28,6 +29,7 @@ type parsedMethodDecl struct {
 // build on this common structure.
 type parsedEngineSource struct {
 	fset      *token.FileSet
+	pkgName   string // package declaration name (e.g. "notes")
 	typeDecls []parsedTypeDecl
 	methods   []parsedMethodDecl
 	funcs     map[string]*ast.FuncDecl
@@ -48,77 +50,148 @@ func parseEngineSource(src string) (*parsedEngineSource, error) {
 // by filename. If allowResources is false, struct types matching resource roles
 // (Skin, Effect, Particle, etc.) are treated as errors — this prevents imported
 // packages from defining engine resources.
+//
+// Internally, this delegates pure Go parsing to goparse.ParseFiles, then applies
+// Sonolus-specific classification (resource roles, UI var detection).
 func parseEngineSourceFiles(files map[string]string, allowResources bool) (*parsedEngineSource, error) {
-	fset := token.NewFileSet()
+	pkg, err := goparse.ParseFiles(files)
+	if err != nil {
+		return nil, err
+	}
 
 	out := &parsedEngineSource{
-		fset:      fset,
+		fset:      pkg.Fset,
+		pkgName:   pkg.Name,
 		funcs:     map[string]*ast.FuncDecl{},
 		resources: map[string]*ast.StructType{},
 	}
 
-	for name, src := range files {
-		file, err := parser.ParseFile(fset, name, src, 0)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", name, err)
+	for _, file := range pkg.Files {
+		// Sonolus-specific: detect UI config variables.
+		if out.uiVar == nil {
+			out.uiVar = findUIVarFromPackage(file.Vars)
 		}
 
-			// Scan for var ui / var uiConfig (typed UI config).
-			if out.uiVar == nil {
-				out.uiVar = findUIVar(file.Decls)
-			}
-		for _, decl := range file.Decls {
-			switch d := decl.(type) {
-			case *ast.GenDecl:
-				for _, spec := range d.Specs {
-					ts, ok := spec.(*ast.TypeSpec)
-					if !ok {
-						continue
-					}
-					st, ok := ts.Type.(*ast.StructType)
-					if !ok {
-						continue
-					}
-					role := resourceRole(ts.Name.Name)
-					if role != "" {
-						if !allowResources {
-							return nil, fmt.Errorf("resource type %q (role %s) is not allowed in imported package; define it in the main package", ts.Name.Name, role)
-						}
-						if _, dup := out.resources[ts.Name.Name]; dup {
-							return nil, fmt.Errorf("duplicate resource type %q", ts.Name.Name)
-						}
-						out.resources[ts.Name.Name] = st
-					} else {
-						out.typeDecls = append(out.typeDecls, parsedTypeDecl{
-							name: ts.Name.Name, structType: st,
-						})
-					}
+		// Classify struct types: resource roles → resources, others → typeDecls.
+		for _, td := range file.Types {
+			role := resourceRole(td.Name)
+			if role != "" {
+				if !allowResources {
+					return nil, fmt.Errorf("resource type %q (role %s) is not allowed in imported package; define it in the main package", td.Name, role)
 				}
-			case *ast.FuncDecl:
-				if d.Recv == nil || len(d.Recv.List) == 0 {
-					if d.Body != nil {
-						if _, dup := out.funcs[d.Name.Name]; dup {
-							return nil, fmt.Errorf("duplicate function %q", d.Name.Name)
-						}
-						out.funcs[d.Name.Name] = d
-					}
-					continue
+				if _, dup := out.resources[td.Name]; dup {
+					return nil, fmt.Errorf("duplicate resource type %q", td.Name)
 				}
-				typeName, recvName := receiverInfo(d.Recv.List[0])
-				if typeName == "" {
-					continue
-				}
-				out.methods = append(out.methods, parsedMethodDecl{
-					receiverType: typeName,
-					receiverName: recvName,
-					methodName:   d.Name.Name,
-					funcDecl:     d,
+				// Reconstruct AST struct type from raw fields so downstream
+				// tag parsing has access to *ast.StructType.
+				st := reconstructStructType(td)
+				out.resources[td.Name] = st
+			} else {
+				// Non-resource struct — archetype candidate.
+				st := reconstructStructType(td)
+				out.typeDecls = append(out.typeDecls, parsedTypeDecl{
+					name: td.Name, structType: st,
 				})
+			}
+		}
+
+		// Methods.
+		for _, md := range file.Methods {
+			// Reconstruct a minimal *ast.FuncDecl so downstream callers work.
+			fd := reconstructFuncDecl(md.MethodName, nil, md.Body)
+			if md.ReceiverName != "" {
+				fd.Recv = &ast.FieldList{List: []*ast.Field{
+					{Names: []*ast.Ident{ast.NewIdent(md.ReceiverName)}, Type: ast.NewIdent(md.ReceiverType)},
+				}}
+			}
+			out.methods = append(out.methods, parsedMethodDecl{
+				receiverType: md.ReceiverType,
+				receiverName: md.ReceiverName,
+				methodName:   md.MethodName,
+				funcDecl:     fd,
+			})
+		}
+
+		// Free functions.
+		for _, fn := range file.Funcs {
+			if fn.Body != nil {
+				if _, dup := out.funcs[fn.Name]; dup {
+					return nil, fmt.Errorf("duplicate function %q", fn.Name)
+				}
+				out.funcs[fn.Name] = reconstructFuncDecl(fn.Name, fn.Params, fn.Body)
 			}
 		}
 	}
 	return out, nil
 }
+
+// findUIVarFromPackage scans parsed variable declarations for `var ui` or
+// `var uiConfig` with a UI-typed composite literal initializer.
+func findUIVarFromPackage(vars []*goparse.VarDecl) *ast.CompositeLit {
+	for _, vd := range vars {
+		for _, name := range vd.Names {
+			if name != "ui" && name != "uiConfig" {
+				continue
+			}
+			if len(vd.Values) == 0 {
+				continue
+			}
+			// Inferred type: var ui = UI{...}
+			if lit, ok := vd.Values[0].(*ast.CompositeLit); ok {
+				if typeIdent, ok2 := lit.Type.(*ast.Ident); ok2 && typeIdent.Name == "UI" {
+					return lit
+				}
+			}
+			// Explicit type: var ui UI = UI{...}
+			if vd.Type == "UI" {
+				if lit, ok := vd.Values[0].(*ast.CompositeLit); ok {
+					return lit
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// reconstructStructType builds a minimal *ast.StructType from a goparse.TypeDecl
+// so that downstream tag parsing (tagCollector, buildResources) has access to
+// the AST representation it expects.
+func reconstructStructType(td *goparse.TypeDecl) *ast.StructType {
+	st := &ast.StructType{Fields: &ast.FieldList{}}
+	for _, f := range td.Fields {
+		af := &ast.Field{Type: f.TypeExpr}
+		for _, n := range f.Names {
+			af.Names = append(af.Names, ast.NewIdent(n))
+		}
+		if f.Tag != "" {
+			af.Tag = &ast.BasicLit{Kind: token.STRING, Value: f.Tag}
+		}
+		st.Fields.List = append(st.Fields.List, af)
+	}
+	return st
+}
+
+// reconstructFuncDecl builds a minimal *ast.FuncDecl so that downstream
+// callers which expect the standard Go AST node work unchanged.
+func reconstructFuncDecl(name string, params []*goparse.Param, body *ast.BlockStmt) *ast.FuncDecl {
+	decl := &ast.FuncDecl{
+		Name: ast.NewIdent(name),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{},
+		},
+		Body: body,
+	}
+	for _, p := range params {
+		f := &ast.Field{Type: ast.NewIdent(p.Type)}
+		for _, n := range p.Names {
+			f.Names = append(f.Names, ast.NewIdent(n))
+		}
+		decl.Type.Params.List = append(decl.Type.Params.List, f)
+	}
+	return decl
+}
+
+
 
 // parseImportedPackage parses an imported sub-package's source files. It is
 // like parseEngineSourceFiles but always disallows resource definitions and
@@ -128,14 +201,5 @@ func parseImportedPackage(files map[string]string) (pkgName string, _ *parsedEng
 	if err != nil {
 		return "", nil, err
 	}
-	// Extract package name from the first file.
-	fset := token.NewFileSet()
-	for name, src := range files {
-		f, err := parser.ParseFile(fset, name, src, parser.PackageClauseOnly)
-		if err != nil {
-			return "", nil, fmt.Errorf("parse package name from %s: %w", name, err)
-		}
-		return f.Name.Name, pes, nil
-	}
-	return "", pes, nil
+	return pes.pkgName, pes, nil
 }

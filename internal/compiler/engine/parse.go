@@ -197,21 +197,6 @@ func CompilePlaySources(ess *EngineSources, opts *CompileOptions) (*resource.Eng
 	return compileParsed(mainPES.fset, archetypes, order, allFuncs, r, opts)
 }
 
-func receiverInfo(field *ast.Field) (typeName, recvName string) {
-	if len(field.Names) > 0 {
-		recvName = field.Names[0].Name
-	}
-	switch t := field.Type.(type) {
-	case *ast.Ident:
-		typeName = t.Name
-	case *ast.StarExpr:
-		if id, ok := t.X.(*ast.Ident); ok {
-			typeName = id.Name
-		}
-	}
-	return
-}
-
 func parseFields(a *parsedArchetype, st *ast.StructType) error {
 	tc := &tagCollector{}
 	for _, f := range st.Fields.List {
