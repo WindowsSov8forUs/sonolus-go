@@ -36,14 +36,27 @@ func CollectGoFiles(dir string) (map[string]string, error) {
 	return files, nil
 }
 
+// Built-in import filters. Each returns true if the import path should be
+// followed (loaded from a local directory). Multiple filters are ANDed:
+// an import is followed only if all filters return true.
+
+// FilterStdlib skips import paths containing a dot, which covers Go standard
+// library ("fmt", "math") and external packages ("github.com/...").
+func FilterStdlib(importPath string) bool {
+	return !strings.Contains(importPath, ".")
+}
+
+// FilterNonSonolus skips the sonolus declaration stub package, which is
+// resolved by the engine's custom type-checker importer and has no
+// filesystem presence.
+func FilterNonSonolus(importPath string) bool {
+	return importPath != "sonolus"
+}
+
 // ExtractImportPaths parses Go source files and returns all import paths found.
-// Each unique import path is returned once. The filter callback is invoked for
-// each path; returning false skips the path from the result set.
-//
-// Unlike scanImportPaths in the engine package, this function does not validate
-// that import paths resolve to filesystem directories — that is the caller's
-// responsibility.
-func ExtractImportPaths(files map[string]string, filter func(importPath string) bool) ([]string, error) {
+// Each unique import path is returned once. Optional filters constrain which
+// paths are included; if no filters are given, all imports are returned.
+func ExtractImportPaths(files map[string]string, filters ...func(importPath string) bool) ([]string, error) {
 	fset := token.NewFileSet()
 	seen := map[string]bool{}
 	var paths []string
@@ -58,7 +71,7 @@ func ExtractImportPaths(files map[string]string, filter func(importPath string) 
 			if path == "" {
 				continue
 			}
-			if filter != nil && !filter(path) {
+			if !applyFilters(path, filters) {
 				continue
 			}
 			if seen[path] {
@@ -71,17 +84,29 @@ func ExtractImportPaths(files map[string]string, filter func(importPath string) 
 	return paths, nil
 }
 
+// applyFilters returns true if path passes all filters (or no filters are given).
+func applyFilters(path string, filters []func(string) bool) bool {
+	for _, f := range filters {
+		if !f(path) {
+			return false
+		}
+	}
+	return true
+}
+
 // LoadProject loads a Go project from a root directory and returns all
-// packages keyed by import path ("" for the main package). The filter
-// callback controls which imports to resolve; returning false skips that
-// import (the engine layer uses this to skip "sonolus", standard library
-// paths, and other non-local imports).
+// packages keyed by import path ("" for the main package).
 //
-// Import resolution is non-recursive by default (only direct imports of
-// the main package are loaded). Sub-packages that import further
-// sub-packages are not resolved — this matches the engine compiler's
-// current behaviour where only the main package's imports are followed.
-func LoadProject(rootDir string, filter func(importPath string) bool) (map[string]*Package, error) {
+// Optional filters control which imports to resolve. An import is followed
+// only if every filter returns true. Typical usage:
+//
+//	LoadProject("./myengine", FilterStdlib, FilterNonSonolus)
+//
+// When no filters are given, all imports are followed.
+//
+// Import resolution is non-recursive: only direct imports of the main
+// package are loaded.
+func LoadProject(rootDir string, filters ...func(importPath string) bool) (map[string]*Package, error) {
 	abs, err := filepath.Abs(rootDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve path %q: %w", rootDir, err)
@@ -123,7 +148,7 @@ func LoadProject(rootDir string, filter func(importPath string) bool) (map[strin
 	pkgs := map[string]*Package{"": mainPkg}
 
 	// Resolve direct imports of the main package.
-	importPaths, err := ExtractImportPaths(mainFiles, filter)
+	importPaths, err := ExtractImportPaths(mainFiles, filters...)
 	if err != nil {
 		return nil, fmt.Errorf("scan imports: %w", err)
 	}

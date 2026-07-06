@@ -1,18 +1,11 @@
 package goparse
 
 import (
-	"strings"
 	"testing"
 )
 
 func TestLoadProject_Complex(t *testing.T) {
-	// Use the standard engine filter: skip paths containing dots
-	// (stdlib/external) and the sonolus stub package.
-	filter := func(path string) bool {
-		return !strings.Contains(path, ".") && path != "sonolus"
-	}
-
-	pkgs, err := LoadProject("testdata/complex", filter)
+	pkgs, err := LoadProject("testdata/complex", FilterStdlib, FilterNonSonolus)
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
@@ -156,7 +149,7 @@ func TestExtractImportPaths(t *testing.T) {
 	}
 
 	// No filter = all imports.
-	paths, err := ExtractImportPaths(files, nil)
+	paths, err := ExtractImportPaths(files)
 	if err != nil {
 		t.Fatalf("ExtractImportPaths: %v", err)
 	}
@@ -165,8 +158,7 @@ func TestExtractImportPaths(t *testing.T) {
 	}
 
 	// Filter that skips "stage".
-	filter := func(path string) bool { return path != "stage" }
-	paths2, err := ExtractImportPaths(files, filter)
+	paths2, err := ExtractImportPaths(files, func(path string) bool { return path != "stage" })
 	if err != nil {
 		t.Fatalf("ExtractImportPaths: %v", err)
 	}
@@ -176,14 +168,9 @@ func TestExtractImportPaths(t *testing.T) {
 }
 
 func TestLoadProject_SingleFile(t *testing.T) {
-	filter := func(path string) bool {
-		return !strings.Contains(path, ".") && path != "sonolus"
-	}
-
 	// Loading a single file that imports sub-packages resolves those imports
-	// relative to the file's parent directory — same behaviour as loading
-	// the directory.
-	pkgs, err := LoadProject("testdata/complex/engine.go", filter)
+	// relative to the file's parent directory.
+	pkgs, err := LoadProject("testdata/complex/engine.go", FilterStdlib, FilterNonSonolus)
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
@@ -195,14 +182,12 @@ func TestLoadProject_SingleFile(t *testing.T) {
 	if mainPkg.Name != "engine" {
 		t.Errorf("Name = %q, want %q", mainPkg.Name, "engine")
 	}
-	// Imports are resolved from the parent directory.
 	if pkgs["notes"] == nil || pkgs["stage"] == nil {
 		t.Error("imported packages not resolved")
 	}
 }
 
 func TestLoadProject_SingleFile_NoImports(t *testing.T) {
-	// A file with no local imports resolves to just the main package.
 	src := `package main
 type Skin struct { Note float64 }
 func UpdateSpawn() float64 { return 0 }
@@ -217,6 +202,42 @@ func UpdateSpawn() float64 { return 0 }
 	}
 	if pkgs[""].Name != "main" {
 		t.Errorf("Name = %q, want %q", pkgs[""].Name, "main")
+	}
+}
+
+func TestFilterStdlib(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"notes", true},
+		{"stage", true},
+		{"fmt", true},                    // bare name, not filtered
+		{"github.com/foo/bar", false},    // dotted → external
+		{"engine/sub", true},             // slash, no dot → local
+	}
+	for _, tt := range tests {
+		got := FilterStdlib(tt.path)
+		if got != tt.want {
+			t.Errorf("FilterStdlib(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestFilterNonSonolus(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"sonolus", false},
+		{"notes", true},
+		{"fmt", true},
+	}
+	for _, tt := range tests {
+		got := FilterNonSonolus(tt.path)
+		if got != tt.want {
+			t.Errorf("FilterNonSonolus(%q) = %v, want %v", tt.path, got, tt.want)
+		}
 	}
 }
 

@@ -3,7 +3,6 @@ package engine
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/goparse"
@@ -92,11 +91,7 @@ func LoadEngineSources(path string) (*EngineSources, error) {
 		return nil, fmt.Errorf("source: resolve path %q: %w", path, err)
 	}
 
-	filter := func(importPath string) bool {
-		return !strings.Contains(importPath, ".") && importPath != "sonolus"
-	}
-
-	pkgs, err := goparse.LoadProject(path, filter)
+	pkgs, err := goparse.LoadProject(path, goparse.FilterStdlib, goparse.FilterNonSonolus)
 	if err != nil {
 		return nil, fmt.Errorf("source: %w", err)
 	}
