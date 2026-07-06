@@ -337,9 +337,17 @@ func (t *tracer) call(n *ast.CallExpr) (Num, error) {
 // or Rect{0, 0, 100, 50}. It resolves the type name to a known record type and
 // constructs the record from the key-value or positional elements.
 func (t *tracer) compositeLit(n *ast.CompositeLit) (Num, error) {
-	typeName, ok := n.Type.(*ast.Ident)
-	if !ok {
-		return Num{}, t.errf(n, "composite literal type must be an identifier (use TypeName{...} directly, not a qualified or parameterized type)")
+	var typeName *ast.Ident
+	switch t := n.Type.(type) {
+	case *ast.Ident:
+		typeName = t
+	case *ast.SelectorExpr:
+		if pkg, ok2 := t.X.(*ast.Ident); ok2 && pkg.Name == "sonolus" {
+			typeName = t.Sel
+		}
+	}
+	if typeName == nil {
+		return Num{}, t.errf(n, "composite literal type must be an identifier or sonolus.Xxx")
 	}
 	fields, known := knownRecordFields(typeName.Name, t.env.Records)
 	if !known {

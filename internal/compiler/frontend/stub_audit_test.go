@@ -140,10 +140,6 @@ func TestStubDispatchAudit(t *testing.T) {
 		if _, ok := builtinRecordFields(trimmed); ok {
 			continue
 		}
-		// Handle NewXxx constructor pattern: strip "new" prefix.
-		if strings.HasPrefix(stubName, "new") {
-			if _, ok := builtinRecordFields(lowerFirst(strings.TrimPrefix(stubName, "new"))); ok {
-				continue
 			}
 		}
 		// EntityInfoIndex etc. are already in resolveBuiltinCases above.

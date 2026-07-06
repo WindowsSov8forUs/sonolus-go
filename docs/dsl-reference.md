@@ -18,7 +18,7 @@ type Note struct {
 
 func (n *Note) Initialize() {
     n.X = sonolus.Sin(n.Beat)
-    sonolus.SkinSprite("Note").Draw(sonolus.NewQuad(n.X, 0, n.X+1, 0, n.X+1, 1, n.X, 1))
+    sonolus.SkinSprite("Note").Draw(sonolus.Quad{n.X, 0, n.X+1, 0, n.X+1, 1, n.X, 1))
 	sonolus.EffectClip("Hit").Play(0.1)
 }
 ```
@@ -55,7 +55,7 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 ```go
 sonolus.Draw(...)        // 函数调用
 x := sonolus.Time        // 全局变量
-pos := sonolus.NewVec2(x, y) // 构造器
+pos := sonolus.Vec2{x, y) // 构造器
 sonolus.DebugPause()     // 调试
 ```
 
@@ -290,7 +290,7 @@ sonolus.SetSkinTransform(t)
 
 // 从引擎读取 + 方法链
 skin := sonolus.SkinTransform()
-result := skin.Translate(sonolus.NewVec2(1, 2)).Rotate(0.5)
+result := skin.Translate(sonolus.Vec2{1, 2)).Rotate(0.5)
 sonolus.SetSkinTransform(result)
 ```
 
@@ -407,7 +407,7 @@ type Particle struct {
 }
 
 // 命名空间引用（对标 JS: particle.effects.explosion）
-q := sonolus.NewQuad(...)
+q := sonolus.Quad{...)
 particle := sonolus.Particle()
 particle.Effects.Explosion.Spawn(q, 1, 0)
 //                                    ^^ Quad 8 字段自动解构为标量
@@ -514,17 +514,8 @@ func (n *Note) Touch() {
 ## 静态构造器
 
 ```go
-sonolus.NewVec2(x, y)
-sonolus.NewQuad(blx, bly, tlx, tly, trx, try, brx, bry)
-sonolus.NewMat(m11, m12, m13, m21, m22, m23)
-sonolus.NewRect(t, r, b, l)
-sonolus.NewPair(first, second)
-sonolus.NewVarArray(capacity)
-sonolus.NewArrayMap(capacity)
-sonolus.NewArraySet(capacity)
-sonolus.NewFrozenNumSet(capacity)
-sonolus.NewEffectClip(id)
-sonolus.NewParticleClip(id)
+sonolus.Vec2{x, y)
+sonolus.Quad{blx, bly, tlx, tly, trx, try, brx, bry)
 ```
 
 > 兼容旧式裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。 新项目建议使用 `sonolus.` 前缀构造器。
