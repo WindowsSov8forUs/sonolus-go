@@ -284,6 +284,7 @@ func buildUI(st *ast.StructType, uiLit *ast.CompositeLit) (resource.EngineConfig
 		tag := reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus")
 		if tag == "" {
 			continue
+		}
 		// RuntimeUiConfig: "ui" tag expands to field.scale + field.alpha
 		if tag == "ui" && resolveFieldTypeName(f.Type) == "RuntimeUiConfig" {
 			name := f.Names[0].Name
@@ -294,7 +295,6 @@ func buildUI(st *ast.StructType, uiLit *ast.CompositeLit) (resource.EngineConfig
 				}
 			}
 			continue
-		}
 		}
 		k, v := keyVal(tag)
 		if k == "" {
