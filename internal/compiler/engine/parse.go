@@ -107,23 +107,21 @@ func CompilePlayFileWithStats(src string, opts *CompileOptions) (*resource.Engin
 // source tree for Play mode. It supports directory-based projects and inter-
 // package imports via import "subpkg" statements.
 func CompilePlaySources(ess *EngineSources, opts *CompileOptions) (*resource.EnginePlayData, *resource.EngineConfiguration, error) {
-	// 1. Resolve imports.
+	// 1. Ensure packages are loaded and type-check.
 	if err := ess.ResolveImports(); err != nil {
 		return nil, nil, err
 	}
-
-	// 2. Type-check the engine (main package + all imports).
 	if _, _, _, err := frontend.TypeCheckEngine(ess.Access()); err != nil {
 		return nil, nil, fmt.Errorf("typecheck: %w", err)
 	}
 
-	// 3. Parse main package.
-	mainPES, err := parseEngineSourceFiles(ess.Main, true)
+	// 2. Process main package.
+	mainPES, err := souceToParsed(ess.MainPkg(), true)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 4. Parse imported packages and collect archetypes.
+	// 3. Collect archetypes from main package + imported packages.
 	allFuncs := make(map[string]*ast.FuncDecl)
 	for k, v := range mainPES.funcs {
 		allFuncs[k] = v
@@ -158,8 +156,11 @@ func CompilePlaySources(ess *EngineSources, opts *CompileOptions) (*resource.Eng
 	}
 
 	// Collect from imported packages.
-	for impPath, files := range ess.Imports {
-		_, impPES, err := parseImportedPackage(files)
+	for impPath, pkg := range ess.Packages {
+		if impPath == "" {
+			continue
+		}
+		_, impPES, err := parseImportedPackage(pkg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("import %q: %w", impPath, err)
 		}

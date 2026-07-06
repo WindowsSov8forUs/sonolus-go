@@ -20,7 +20,7 @@ func ParseFiles(files map[string]string) (*Package, error) {
 	}
 
 	fset := token.NewFileSet()
-	out := &Package{Fset: fset}
+	out := &Package{Fset: fset, Sources: make(map[string]string)}
 
 	// Sort filenames for deterministic iteration and error messages.
 	names := make([]string, 0, len(files))
@@ -43,6 +43,8 @@ func ParseFiles(files map[string]string) (*Package, error) {
 			return nil, fmt.Errorf("conflicting package names: %q uses %q, expected %q",
 				name, f.Name.Name, out.Name)
 		}
+
+		out.Sources[name] = src
 
 		fileIR := classifyDecls(f.Decls)
 		fileIR.Name = name

@@ -384,7 +384,7 @@ func runNonPlayPipeline(src string, cbSet map[string]string, mode ir.Mode, opts 
 func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode ir.Mode, opts *CompileOptions) (nonPlayPipelineResult, error) {
 	var res nonPlayPipelineResult
 
-	// 1. Resolve imports and type-check.
+	// 1. Ensure packages are loaded and type-check.
 	if err := ess.ResolveImports(); err != nil {
 		return res, err
 	}
@@ -392,8 +392,8 @@ func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode
 		return res, fmt.Errorf("typecheck: %w", err)
 	}
 
-	// 2. Parse main package.
-	mainPES, err := parseEngineSourceFiles(ess.Main, true)
+	// 2. Process main package.
+	mainPES, err := souceToParsed(ess.MainPkg(), true)
 	if err != nil {
 		return res, err
 	}
@@ -463,8 +463,11 @@ func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode
 	}
 
 	// Collect from imported packages.
-	for impPath, files := range ess.Imports {
-		_, impPES, err := parseImportedPackage(files)
+	for impPath, pkg := range ess.Packages {
+		if impPath == "" {
+			continue
+		}
+		_, impPES, err := parseImportedPackage(pkg)
 		if err != nil {
 			return res, fmt.Errorf("import %q: %w", impPath, err)
 		}

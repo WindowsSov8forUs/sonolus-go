@@ -42,22 +42,18 @@ type parsedEngineSource struct {
 // methods to build mode-specific archetype structures (modeArch for non-Play
 // modes, parsedArchetype for Play mode).
 func parseEngineSource(src string) (*parsedEngineSource, error) {
-	return parseEngineSourceFiles(map[string]string{"engine.go": src}, true)
-}
-
-// parseEngineSourceFiles parses multiple source files of the same package and
-// merges their declarations into a single parsedEngineSource. Files are keyed
-// by filename. If allowResources is false, struct types matching resource roles
-// (Skin, Effect, Particle, etc.) are treated as errors — this prevents imported
-// packages from defining engine resources.
-//
-// Internally, this delegates pure Go parsing to goparse.ParseFiles, then applies
-// Sonolus-specific classification (resource roles, UI var detection).
-func parseEngineSourceFiles(files map[string]string, allowResources bool) (*parsedEngineSource, error) {
-	pkg, err := goparse.ParseFiles(files)
+	pkg, err := goparse.ParseFiles(map[string]string{"engine.go": src})
 	if err != nil {
 		return nil, err
 	}
+	return souceToParsed(pkg, true)
+}
+
+// sourceToParsed converts a goparse.Package to a parsedEngineSource, applying
+// Sonolus-specific classification (resource roles, UI var detection).
+// If allowResources is false, struct types matching resource roles are treated
+// as errors — this prevents imported packages from defining engine resources.
+func souceToParsed(pkg *goparse.Package, allowResources bool) (*parsedEngineSource, error) {
 
 	out := &parsedEngineSource{
 		fset:      pkg.Fset,
@@ -193,11 +189,10 @@ func reconstructFuncDecl(name string, params []*goparse.Param, body *ast.BlockSt
 
 
 
-// parseImportedPackage parses an imported sub-package's source files. It is
-// like parseEngineSourceFiles but always disallows resource definitions and
-// returns the package name for cross-package type resolution.
-func parseImportedPackage(files map[string]string) (pkgName string, _ *parsedEngineSource, _ error) {
-	pes, err := parseEngineSourceFiles(files, false)
+// parseImportedPackage converts an already-parsed imported package to a
+// parsedEngineSource with resource definitions disallowed.
+func parseImportedPackage(pkg *goparse.Package) (pkgName string, _ *parsedEngineSource, _ error) {
+	pes, err := souceToParsed(pkg, false)
 	if err != nil {
 		return "", nil, err
 	}

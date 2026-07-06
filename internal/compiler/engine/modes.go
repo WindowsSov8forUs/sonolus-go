@@ -324,7 +324,7 @@ func CompileTutorialSources(ess *EngineSources, opts *CompileOptions) (*resource
 		return nil, fmt.Errorf("typecheck: %w", err)
 	}
 
-	mainPES, err := parseEngineSourceFiles(ess.Main, true)
+	mainPES, err := souceToParsed(ess.MainPkg(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -334,8 +334,11 @@ func CompileTutorialSources(ess *EngineSources, opts *CompileOptions) (*resource
 	for k, v := range mainPES.funcs {
 		allFuncs[k] = v
 	}
-	for impPath, files := range ess.Imports {
-		_, impPES, err := parseImportedPackage(files)
+	for impPath, pkg := range ess.Packages {
+		if impPath == "" {
+			continue
+		}
+		_, impPES, err := parseImportedPackage(pkg)
 		if err != nil {
 			return nil, fmt.Errorf("import %q: %w", impPath, err)
 		}

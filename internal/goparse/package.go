@@ -13,12 +13,22 @@ type Package struct {
 	// Name is the Go package declaration name (e.g. "notes" for `package notes`).
 	Name string
 
+	// Path is the import path that locates this package. For the main package
+	// this is ""; for imported packages it is the import path string
+	// (e.g. "notes", "engine/stage").
+	Path string
+
 	// Fset holds source position information for all parsed files, enabling
 	// downstream consumers to produce diagnostics with source locations.
 	Fset *token.FileSet
 
 	// Files holds the parsed files in declaration order.
 	Files []*File
+
+	// Sources stores the raw source text for each file, keyed by filename.
+	// This is retained so downstream consumers (e.g. type checkers) can
+	// re-parse or inspect the original source when needed.
+	Sources map[string]string
 }
 
 // File represents a single parsed Go source file.
