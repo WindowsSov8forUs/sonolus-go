@@ -104,29 +104,19 @@ type Name struct {
 #### UI 配置示例
 
 ```go
-// 之前：平坦标签路径
+// RuntimeUiConfig 自动展开（推荐）
 type UI struct {
-    MenuScale     float64 `sonolus:"ui=menu.scale"`
-    MenuAlpha     float64 `sonolus:"ui=menu.alpha"`
-    JudgmentScale float64 `sonolus:"ui=judgment.scale"`
-    JudgmentAlpha float64 `sonolus:"ui=judgment.alpha"`
-    // ×5 元素 × 2 属性 = 10 个平坦字段
-}
-
-// 之后：RuntimeUiConfig 自动展开
-type UI struct {
-    Menu      RuntimeUiConfig `sonolus:"ui"`  // → menu.scale + menu.alpha
-    Judgment  RuntimeUiConfig `sonolus:"ui"`  // → judgment.scale + judgment.alpha
+    Menu      RuntimeUiConfig `sonolus:"ui"`
+    Judgment  RuntimeUiConfig `sonolus:"ui"`
     Combo     RuntimeUiConfig `sonolus:"ui"`
     Primary   RuntimeUiConfig `sonolus:"ui"`
     Secondary RuntimeUiConfig `sonolus:"ui"`
 }
 
-var ui = UI{
-    Menu:     RuntimeUiConfig{Scale: 1.0, Alpha: 1.0},
-    Judgment: RuntimeUiConfig{Scale: 1.2, Alpha: 0.9},
-}
+var ui = UI{Menu: RuntimeUiConfig{Scale: 1.0, Alpha: 1.0}}
 ```
+
+> 兼容旧式平坦标签：`sonolus:"ui=menu.scale"`。新项目建议使用 `RuntimeUiConfig`。
 
 对标 Python `menu = RuntimeUiConfig(scale=1.0, alpha=1.0)`。
 
@@ -506,9 +496,11 @@ sonolus.VarArray_(capacity)
 sonolus.ArrayMap_(capacity)
 sonolus.ArraySet_(capacity)
 sonolus.FrozenNumSet_(capacity)
+sonolus.EffectClip_(id)
+sonolus.ParticleClip_(id)
 ```
 
-也可以用裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。
+> 兼容旧式裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。 新项目建议使用 `sonolus.` 前缀构造器。
 
 ## 不支持的特性
 
