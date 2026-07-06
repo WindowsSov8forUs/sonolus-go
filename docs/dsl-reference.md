@@ -22,18 +22,21 @@ func (n *Note) Initialize() {
 	sonolus.EffectClip("Hit").Play(0.1)
 }
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 编译：
 
 ```bash
 sonolus-go build -m play engine.go
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 ## 包声明与 Import
 
 ```go
 package myengine    // 包名用作引擎名
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 ### 导入子包（多文件引擎）
 
@@ -41,6 +44,7 @@ package myengine    // 包名用作引擎名
 import "notes"      // → 自动发现 ./notes/*.go 中的原型
 import "stage"      // → 自动发现 ./stage/*.go 中的原型
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 子目录中只能定义原型 struct 和回调——资源类型（Skin / Effect / Buckets / Instruction）必须在主包。
 
@@ -49,6 +53,7 @@ import "stage"      // → 自动发现 ./stage/*.go 中的原型
 ```go
 import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 之后所有运行时调用使用 `sonolus.` 前缀：
 
@@ -58,6 +63,7 @@ x := sonolus.Time        // 全局变量
 pos := sonolus.Vec2_(x, y) // 构造器
 sonolus.DebugPause()     // 调试
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 **函数名映射**：`lowerFirst(Sel.Name)` — `Draw` → `draw`，`DebugPause` → `debugPause`，`GetShifted` → `getShifted`。
 
@@ -72,6 +78,7 @@ type Name struct {
     Field Type `sonolus:"tag"`
 }
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 字段标签决定引擎内存布局：
 
@@ -115,6 +122,7 @@ type UI struct {
 
 var ui = UI{Menu: RuntimeUiConfig{Scale: 1.0, Alpha: 1.0}}
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 > 兼容旧式平坦标签：`sonolus:"ui=menu.scale"`。新项目建议使用 `RuntimeUiConfig`。
 
@@ -132,6 +140,7 @@ type Note struct {
 }
 // 访问: n.pos.X = value; x := n.pos.Y
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Transform2d`(16)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`EntityLife`(4)、`EntityScore`(4)、`PlayEntityInput`(5)、`JudgmentWindow`(6)、`ConsecutiveLife`(2)、`ConsecutiveScore`(3)、`RuntimeUiConfig`(2)。支持 `sonolus.Vec2` 等限定名。
 
@@ -187,6 +196,7 @@ if a || b { ... }  // a 为 true 时不求值 b
 // 复合赋值
 x += 1; x *= 2; x++
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 ## 变量与赋值
 
@@ -196,6 +206,7 @@ x = 2.0         // 覆写
 x += 1.0        // 复合赋值
 x++             // 递增
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 所有数值类型运行时均为 `float64`。
 
@@ -254,6 +265,7 @@ lifeInitial, lifeMaximum,
 entityPerfect, entityGreat, entityGood, entityMiss,
 entityLifePerfect, entityLifeGreat, entityLifeGood, entityLifeMiss
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 ### 记录类型方法
 
@@ -318,6 +330,7 @@ for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
     // i 遍历每个已存在的实体
 }
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
@@ -345,6 +358,7 @@ sprite := sonolus.Skin().Sprites.Note
 sprite.Draw(quad, z, a)
 if sprite.Exists() { ... }
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
@@ -366,6 +380,7 @@ type Effect struct {
 sonolus.Effect().Clips.HitSound.Play(0.1)
 sonolus.Effect().Clips.HitSound.Schedule(targetTime, 0.1)
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
@@ -386,6 +401,7 @@ q := sonolus.Quad_(...)
 sonolus.Particle().Effects.Explosion.Spawn(q, 1, 0)
 //                                    ^^ Quad 8 字段自动解构为标量
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
@@ -413,6 +429,7 @@ level := windows.Judge(actualTime, targetTime)
 n.Result.Judgment = level
 // 兼容旧式：sonolus.Judge(level)
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
@@ -435,6 +452,7 @@ sonolus.Canvas().Print(PrintOptions{
     // Color/Alpha/Rotation 等取零值默认值
 })
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
@@ -454,6 +472,7 @@ type Note struct {
 n.Score.Perfect = 100    // 对齐 JS: this.entityScore.perfect = 100
 n.Life.Miss = -50        // 对齐 JS: this.entityLife.miss = -50
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
@@ -481,6 +500,7 @@ func (n *Note) Touch() {
     n.Result.Accuracy = sonolus.Abs(actual - target)  // 4005[1]
 }
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 对标 JS `this.result.bucket.index`，Python `self.result.bucket`。
 
@@ -499,6 +519,7 @@ sonolus.FrozenNumSet_(capacity)
 sonolus.EffectClip_(id)
 sonolus.ParticleClip_(id)
 ```
+n> **提示**：所有命名空间函数均支持提取为局部变量复用：`skin := sonolus.Skin()`、`effect := sonolus.Effect()`、`life := sonolus.Life()` 等。
 
 > 兼容旧式裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。 新项目建议使用 `sonolus.` 前缀构造器。
 
