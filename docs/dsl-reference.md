@@ -337,11 +337,12 @@ type Skin struct {
 }
 
 // 命名空间引用（对标 JS: skin.sprites.note）
-sonolus.Skin().Sprites.Note.Draw(quad, z, a)
-sonolus.Skin().Sprites.Note.Exists()
-sonolus.Skin().Sprites.Exists(0)
+skin := sonolus.Skin()
+skin.Sprites.Note.Draw(quad, z, a)
+skin.Sprites.Note.Exists()
+skin.Sprites.Exists(0)
 // 局部变量复用（对标 JS: const note = skin.sprites.note）
-sprite := sonolus.Skin().Sprites.Note
+sprite := skin.Sprites.Note
 sprite.Draw(quad, z, a)
 if sprite.Exists() { ... }
 ```
