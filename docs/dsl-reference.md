@@ -496,12 +496,12 @@ sonolus.NewQuad(blx, bly, tlx, tly, trx, try, brx, bry)
 sonolus.NewMat(m11, m12, m13, m21, m22, m23)
 sonolus.NewRect(t, r, b, l)
 sonolus.NewPair(first, second)
-sonolus.VarArray_(capacity)
-sonolus.ArrayMap_(capacity)
-sonolus.ArraySet_(capacity)
-sonolus.FrozenNumSet_(capacity)
-sonolus.EffectClip_(id)
-sonolus.ParticleClip_(id)
+sonolus.NewVarArray(capacity)
+sonolus.NewArrayMap(capacity)
+sonolus.NewArraySet(capacity)
+sonolus.NewFrozenNumSet(capacity)
+sonolus.NewEffectClip(id)
+sonolus.NewParticleClip(id)
 ```
 
 > 兼容旧式裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。 新项目建议使用 `sonolus.` 前缀构造器。

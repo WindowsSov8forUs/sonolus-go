@@ -635,7 +635,7 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 type Skin struct { Note float64 }
 type Note struct { Beat float64 ` + "`sonolus:\"imported\"`" + ` }
 func (n *Note) Initialize() {
-    v := sonolus.Vec2_(n.Beat, 0)
+    v := sonolus.NewVec2(n.Beat, 0)
     sonolus.DebugPause()
 }
 func UpdateSpawn() float64 { return 0 }
