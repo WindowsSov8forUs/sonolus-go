@@ -18,7 +18,7 @@ type Note struct {
 
 func (n *Note) Initialize() {
     n.X = sonolus.Sin(n.Beat)
-    sonolus.SkinSprite("Note").Draw(sonolus.Quad{n.X, 0, n.X+1, 0, n.X+1, 1, n.X, 1))
+    sonolus.SkinSprite("Note").Draw(sonolus.Quad{Blx: n.X, Bly: 0, Tlx: n.X+1, Tly: 0, Trx: n.X+1, Try: 1, Brx: n.X, Bry: 1})
 	sonolus.EffectClip("Hit").Play(0.1)
 }
 ```
@@ -55,7 +55,7 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 ```go
 sonolus.Draw(...)        // 函数调用
 x := sonolus.Time        // 全局变量
-pos := sonolus.Vec2{x, y) // 构造器
+	sonolus.Vec2{X: x, Y: y}
 sonolus.DebugPause()     // 调试
 ```
 
@@ -290,7 +290,7 @@ sonolus.SetSkinTransform(t)
 
 // 从引擎读取 + 方法链
 skin := sonolus.SkinTransform()
-result := skin.Translate(sonolus.Vec2{1, 2)).Rotate(0.5)
+result := skin.Translate(sonolus.Vec2{X: 1, Y: 2}).Rotate(0.5)
 sonolus.SetSkinTransform(result)
 ```
 
@@ -514,8 +514,8 @@ func (n *Note) Touch() {
 ## 静态构造器
 
 ```go
-sonolus.Vec2{x, y)
-sonolus.Quad{blx, bly, tlx, tly, trx, try, brx, bry)
+	sonolus.Vec2{X: x, Y: y}
+	sonolus.Quad{Blx: blx, Bly: bly, Tlx: tlx, Tly: tly, Trx: trx, Try: try, Brx: brx, Bry: bry}
 ```
 
 > 兼容旧式裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。 新项目建议使用 `sonolus.` 前缀构造器。
