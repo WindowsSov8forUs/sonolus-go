@@ -486,8 +486,8 @@ n.Life.Miss = -50        // 对齐 JS: this.entityLife.miss = -50
 |------|-----------|-----------|------------|
 | 分数写入 | `this.entityScore.perfect = 100` | `self.entity_score_multiplier` | `n.Score.Perfect = 100` |
 | 生命写入 | `this.entityLife.miss = -50` | `self.entity_life.miss = -50` | `n.Life.Miss = -50` |
-| 关卡基础分 | `score.base.perfect` | 无独立 API | `sonolus.Score().Base.Perfect` |
-| 关卡连击分 | `score.consecutive.perfect.multiplier` | ❌ | `sonolus.Score().Consecutive.Perfect.Multiplier` |
+| 关卡基础分 | `score.base.perfect` | 无独立 API | `s.Base.Perfect`（支持链式写入） |
+| 关卡连击分 | `score.consecutive.perfect.multiplier` | ❌ | `s.Consecutive.Perfect.Multiplier` |
 | 连击生命递增 | `life.consecutive.perfect.increment` | ❌ | `sonolus.Life().Consecutive.Perfect.Increment` |
 | 初始/最大生命 | `life.initial` / `life.max` | ❌ | `sonolus.Life().Initial` / `.Max` |
 | 原型生命 | `life.archetypes.get(idx).miss` | `archetype_life` | `life.Archetypes[idx].Miss` |
