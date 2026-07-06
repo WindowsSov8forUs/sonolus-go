@@ -837,9 +837,9 @@ func (t *tracer) callUserFunc(fnName *ast.Ident, decl *ast.FuncDecl, args []Num)
 // Constructor names with trailing underscore (Vec2_, Quad_) are stripped:
 // sonolus.Vec2_ → vec2_ → vec2.
 func (t *tracer) sonolusCall(n *ast.CallExpr, sel *ast.SelectorExpr) (Num, error) {
-	fnName := lowerFirst(sel.Sel.Name)
-	// Strip trailing underscore from constructor names (Vec2_ → vec2).
-	fnName = strings.TrimSuffix(fnName, "_")
+	fnName := sel.Sel.Name
+	// Strip "New" prefix from constructor names (NewVec2 → vec2).
+	fnName = lowerFirst(strings.TrimPrefix(fnName, "New"))
 	fn := &ast.Ident{Name: fnName, NamePos: sel.Sel.NamePos}
 
 	// Type-driven dispatch.

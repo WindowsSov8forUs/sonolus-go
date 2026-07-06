@@ -9,5 +9,5 @@ type Note struct {
 }
 
 func (n Note) Initialize() {
-	n.V = sonolus.Vec2_(1, 2)
+	n.V = sonolus.NewVec2(1, 2)
 }

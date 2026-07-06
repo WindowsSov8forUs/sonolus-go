@@ -9,6 +9,6 @@ type Note struct {
 
 func (n Note) Initialize() {
 	t := sonolus.SkinTransform()
-	r := t.Translate(sonolus.Vec2_(1, 2)).Rotate(0.5)
-	n.X = r.TransformVec(sonolus.Vec2_(0, 0)).X
+	r := t.Translate(sonolus.NewVec2(1, 2)).Rotate(0.5)
+	n.X = r.TransformVec(sonolus.NewVec2(0, 0)).X
 }

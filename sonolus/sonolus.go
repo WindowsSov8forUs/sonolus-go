@@ -9,7 +9,7 @@
 //	import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 //
 //	func (n *Note) Initialize() {
-//	    sonolus.Draw(sonolus.SpriteNote, n.Beat, 0, 1, 1, 0, 1, 0, 0)
+//	    sonolus.Skin().Sprites.Note.Draw(sonolus.NewQuad(n.Beat, 0, n.Beat+1, 0, n.Beat+1, 1, n.Beat, 1))
 //	}
 package sonolus
 
@@ -285,25 +285,25 @@ func (s ArraySet) Contains(v float64) float64 { return 0 }
 
 // ── Static constructors ──
 
-func Vec2_(x, y float64) Vec2                                 { return Vec2{} }
+func NewVec2(x, y float64) Vec2                                 { return Vec2{} }
 func Vec2Zero() Vec2                                           { return Vec2{} }
 func Vec2One() Vec2                                            { return Vec2{} }
 func Vec2Up() Vec2                                             { return Vec2{} }
 func Vec2Down() Vec2                                           { return Vec2{} }
 func Vec2Left() Vec2                                           { return Vec2{} }
 func Vec2Right() Vec2                                          { return Vec2{} }
-func Quad_(blx, bly, tlx, tly, trx, try, brx, bry float64) Quad { return Quad{} }
-func Mat_(m11, m12, m13, m21, m22, m23 float64) Mat           { return Mat{} }
-func Rect_(t, r, b, l float64) Rect                            { return Rect{} }
-func Trans_(m11, m12, m13, m21, m22, m23, m31, m32, m33 float64) Trans { return Trans{} }
-func Pair_(first, second float64) Pair                         { return Pair{} }
-func VarArray_(capacity float64) VarArray                      { return VarArray{} }
-func ArrayMap_(capacity float64) ArrayMap                      { return ArrayMap{} }
-func ArraySet_(capacity float64) ArraySet                      { return ArraySet{} }
-func Box_(val float64) Box                                     { return Box{} }
-func EffectClip_(id float64) EffectClip                        { return EffectClip{} }
-func ParticleClip_(id float64) ParticleClip                    { return ParticleClip{} }
-func FrozenNumSet_(capacity float64) FrozenNumSet              { return FrozenNumSet{} }
+func NewQuad(blx, bly, tlx, tly, trx, try, brx, bry float64) Quad { return Quad{} }
+func NewMat(m11, m12, m13, m21, m22, m23 float64) Mat           { return Mat{} }
+func NewRect(t, r, b, l float64) Rect                            { return Rect{} }
+func NewTrans(m11, m12, m13, m21, m22, m23, m31, m32, m33 float64) Trans { return Trans{} }
+func NewPair(first, second float64) Pair                         { return Pair{} }
+func NewVarArray(capacity float64) VarArray                      { return VarArray{} }
+func NewArrayMap(capacity float64) ArrayMap                      { return ArrayMap{} }
+func NewArraySet(capacity float64) ArraySet                      { return ArraySet{} }
+func NewBox(val float64) Box                                     { return Box{} }
+func NewEffectClip(id float64) EffectClip                        { return EffectClip{} }
+func NewParticleClip(id float64) ParticleClip                    { return ParticleClip{} }
+func NewFrozenNumSet(capacity float64) FrozenNumSet              { return FrozenNumSet{} }
 func SortLinkedEntities(head, sortKeyOffset, nextOffset float64, prevOffset ...float64) float64 { return 0 }
 
 // ── Runtime functions — pure math ──
