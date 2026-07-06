@@ -354,7 +354,7 @@ sonolus.Skin().Sprites.Exists(0)  // 按 ID 检查
 
 ### 音效片段 (EffectClip)
 
-通过 `sonolus.EffectClip(name)` 按名引用 Effect 资源中定义的音效片段，返回带方法的 `EffectClip` 记录：
+通过 `sonolus.Effect().Clips.Name` 命名空间引用音效片段：
 
 ```go
 type Effect struct {
@@ -362,34 +362,34 @@ type Effect struct {
 	MissSound float64  // ID = 1
 }
 
-// 命名引用 + 方法调用（对标 JS: effect.clips.hitSound.schedule）
-sonolus.EffectClip("HitSound").Play(0.1)
-sonolus.EffectClip("HitSound").Schedule(targetTime, 0.1)
+// 命名空间引用（对标 JS: effect.clips.hitSound）
+sonolus.Effect().Clips.HitSound.Play(0.1)
+sonolus.Effect().Clips.HitSound.Schedule(targetTime, 0.1)
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
-| 即时播放 | `clip.play(distance)` | `effect.play(distance)` | `sonolus.EffectClip("name").Play(d)` |
-| 预排程 | `clip.schedule(time, d)` | `effect.schedule(time, d)` | `sonolus.EffectClip("name").Schedule(t, d)` |
+| 即时播放 | `clip.play(distance)` | `effect.play(distance)` | `Effect().Clips.Name.Play(d)` |
+| 预排程 | `clip.schedule(time, d)` | `effect.schedule(time, d)` | `Effect().Clips.Name.Schedule(t, d)` |
 
 ### 粒子效果 (ParticleClip)
 
-通过 `sonolus.ParticleClip(name)` 按名引用 Particle 资源中定义的粒子效果，返回带方法的 `ParticleClip` 记录。支持复合参数（Quad）自动解构：
+通过 `sonolus.Particle().Effects.Name` 命名空间引用粒子效果。支持复合参数（Quad）自动解构：
 
 ```go
 type Particle struct {
 	Explosion float64  // ID = 0
 }
 
-// 命名引用 + 方法调用 + Quad 复合参数（对标 JS: effect.spawn(quad, dur, loop)）
+// 命名空间引用（对标 JS: particle.effects.explosion）
 q := sonolus.Quad_(...)
-sonolus.ParticleClip("Explosion").Spawn(q, 1, 0)
+sonolus.Particle().Effects.Explosion.Spawn(q, 1, 0)
 //                                    ^^ Quad 8 字段自动解构为标量
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
-| 生成粒子 | `effect.spawn(quad, dur, loop)` | `effect.spawn(quad, dur, loop)` | `ParticleClip("n").Spawn(quad, dur, loop)` |
+| 生成粒子 | `effect.spawn(quad, dur, loop)` | `effect.spawn(quad, dur, loop)` | `Particle().Effects.Name.Spawn(quad, dur, loop)` |
 | 移动粒子 | `handle.move(quad)` | `handle.move(quad)` | `handle.Move(quad)`（已有） |
 | 销毁粒子 | `handle.destroy()` | `handle.destroy()` | `handle.Destroy()`（已有） |
 

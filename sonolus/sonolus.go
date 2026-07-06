@@ -688,6 +688,24 @@ func (s SkinSprites) Exists(id float64) float64 { return 0 }
 // Skin returns a SkinInfo record providing structured sprite access.
 func Skin() SkinInfo { return SkinInfo{} }
 
+// EffectInfo provides structured access to all effect clips.
+type EffectInfo struct{ Clips EffectClips }
+
+// EffectClips holds effect clips accessible by name.
+type EffectClips struct{}
+
+// Effect returns an EffectInfo record providing structured clip access.
+func Effect() EffectInfo { return EffectInfo{} }
+
+// ParticleInfo provides structured access to all particle effects.
+type ParticleInfo struct{ Effects ParticleEffects }
+
+// ParticleEffects holds particle effects accessible by name.
+type ParticleEffects struct{}
+
+// Particle returns a ParticleInfo record providing structured effect access.
+func Particle() ParticleInfo { return ParticleInfo{} }
+
 // SkinSprite returns a Sprite record for the named skin sprite.
 func SkinSprite(name string) Sprite { return Sprite{} }
 
