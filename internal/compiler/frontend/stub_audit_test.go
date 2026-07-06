@@ -140,8 +140,6 @@ func TestStubDispatchAudit(t *testing.T) {
 		if _, ok := builtinRecordFields(trimmed); ok {
 			continue
 		}
-			}
-		}
 		// EntityInfoIndex etc. are already in resolveBuiltinCases above.
 		funcGaps = append(funcGaps, stubName)
 	}
