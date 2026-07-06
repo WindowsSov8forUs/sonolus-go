@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"reflect"
+	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 )
@@ -282,6 +283,17 @@ func buildUI(st *ast.StructType, uiLit *ast.CompositeLit) (resource.EngineConfig
 		}
 		tag := reflect.StructTag(stringLit(f.Tag.Value)).Get("sonolus")
 		if tag == "" {
+			continue
+		}
+		// RuntimeUiConfig: "ui" tag expands to field.scale + field.alpha
+		if tag == "ui" && resolveFieldTypeName(f.Type) == "RuntimeUiConfig" {
+			name := f.Names[0].Name
+			key := strings.ToLower(name[:1]) + name[1:]
+			for _, sf := range []string{"scale", "alpha"} {
+				if set, ok := uiSetters[key+"."+sf]; ok {
+					set(&ui, "1.0")
+				}
+			}
 			continue
 		}
 		k, v := keyVal(tag)

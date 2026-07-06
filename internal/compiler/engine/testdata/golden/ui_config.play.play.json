@@ -1,0 +1,32 @@
+{
+  "skin": {
+    "renderMode": "lightweight",
+    "sprites": [
+      {
+        "name": "Note",
+        "id": 0
+      }
+    ]
+  },
+  "effect": {
+    "clips": null
+  },
+  "particle": {
+    "effects": null
+  },
+  "buckets": [],
+  "archetypes": [
+    {
+      "name": "Note",
+      "hasInput": false,
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ],
+      "exports": []
+    }
+  ],
+  "nodes": []
+}

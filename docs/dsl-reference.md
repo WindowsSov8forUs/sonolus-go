@@ -98,7 +98,36 @@ type Name struct {
 | `Particle` | Play, Watch, Tutorial | 粒子效果定义 |
 | `Buckets` | Play, Watch | 桶/生成规则定义 |
 | `Instruction` | Tutorial | 教程文本/图标定义 |
-| `UI` | 全部 | EngineConfiguration UI 覆写（键值标签） |
+| `UI` | 全部 | EngineConfiguration UI 覆写。支持 `RuntimeUiConfig` 记录类型嵌套展开 |
+
+#### UI 配置示例
+
+```go
+// 之前：平坦标签路径
+type UI struct {
+    MenuScale     float64 `sonolus:"ui=menu.scale"`
+    MenuAlpha     float64 `sonolus:"ui=menu.alpha"`
+    JudgmentScale float64 `sonolus:"ui=judgment.scale"`
+    JudgmentAlpha float64 `sonolus:"ui=judgment.alpha"`
+    // ×5 元素 × 2 属性 = 10 个平坦字段
+}
+
+// 之后：RuntimeUiConfig 自动展开
+type UI struct {
+    Menu      RuntimeUiConfig `sonolus:"ui"`  // → menu.scale + menu.alpha
+    Judgment  RuntimeUiConfig `sonolus:"ui"`  // → judgment.scale + judgment.alpha
+    Combo     RuntimeUiConfig `sonolus:"ui"`
+    Primary   RuntimeUiConfig `sonolus:"ui"`
+    Secondary RuntimeUiConfig `sonolus:"ui"`
+}
+
+var ui = UI{
+    Menu:     RuntimeUiConfig{Scale: 1.0, Alpha: 1.0},
+    Judgment: RuntimeUiConfig{Scale: 1.2, Alpha: 0.9},
+}
+```
+
+对标 Python `menu = RuntimeUiConfig(scale=1.0, alpha=1.0)`。
 
 ### 记录类型字段
 
@@ -217,6 +246,7 @@ x++             // 递增
 | 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
 | 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticle` | 3 |
 | 资源引用 | `SkinSprite`, `Skin`, `EffectClip`, `ParticleClip` | 4 |
+| 关卡设置 | `Score`, `Life` | 2 |
 | 矩阵变换 | `SkinTransform`, `SetSkinTransform`, `ParticleTransform`, `SetParticleTransform`, `Background`, `SetBackground` | 6 |
 | 辅助数学 | `Screen`, `SafeArea`, `OffsetAdjustedTime`, `PrevTime`, `Pnpoly`, `PerspectiveApproach` | 6 |
 | 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
@@ -438,7 +468,9 @@ n.Life.Miss = -50        // 对齐 JS: this.entityLife.miss = -50
 |------|-----------|-----------|------------|
 | 分数写入 | `this.entityScore.perfect = 100` | `self.entity_score_multiplier` | `n.Score.Perfect = 100` |
 | 生命写入 | `this.entityLife.miss = -50` | `self.entity_life.miss = -50` | `n.Life.Miss = -50` |
-| 连击递增 | `life.consecutive.perfect.increment` | ❌ | `sonolus.Life().Consecutive.Perfect.Increment` |
+| 关卡基础分 | `score.base.perfect` | 无独立 API | `sonolus.Score().Base.Perfect` |
+| 关卡连击分 | `score.consecutive.perfect.multiplier` | ❌ | `sonolus.Score().Consecutive.Perfect.Multiplier` |
+| 连击生命递增 | `life.consecutive.perfect.increment` | ❌ | `sonolus.Life().Consecutive.Perfect.Increment` |
 | 初始/最大生命 | `life.initial` / `life.max` | ❌ | `sonolus.Life().Initial` / `.Max` |
 | 原型生命 | `life.archetypes.get(idx).miss` | `archetype_life` | `life.Archetypes[idx].Miss` |
 | 延迟变化 | `life.addScheduled(v, t)` | ❌ | `life.AddScheduled(v, t)` |
