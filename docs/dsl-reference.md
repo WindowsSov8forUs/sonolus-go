@@ -409,15 +409,15 @@ var windows = sonolus.JudgmentWindow{
 level := windows.Judge(actualTime, targetTime)
 // level = 0 (Miss), 1 (Perfect), 2 (Great), 3 (Good)
 
-// 写入判定结果
-sonolus.Judge(level)
-// 或通过 result 字段: n.Result = level (需 `sonolus:"input"` 标签)
+// 写入判定结果（推荐：PlayEntityInput）
+n.Result.Judgment = level
+// 兼容旧式：sonolus.Judge(level)
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
 | 判定计算 | `input.judge(hitTime, targetTime, windows)` | `window.judge(actual, target)` | `windows.Judge(actual, target)` |
-| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `sonolus.Judge(level)` 或 `n.Result.Judgment = level` |
+| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `n.Result.Judgment = level` 或 `n.Result.Judgment = level` |
 | 桶写入 | `this.result.bucket.index = idx` | `self.result.bucket = Bucket(id=idx)` | `n.Result.BucketIndex = idx` |
 | 判定等级 | `Judgment.Perfect` (1) | `Judgment.PERFECT` (1) | 裸 float64: 0/1/2/3 |
 | 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Set) |
