@@ -681,6 +681,29 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 
 
 	// Receiver field write (method-authored callback).
+	// Nested composite field write: s.Base.Perfect = 1
+	if inner, ok := sel.X.(*ast.SelectorExpr); ok {
+		v, err := t.expr(inner)
+		if err == nil && v.IsComposite() {
+			val, err := t.expr(rhs)
+			if err != nil {
+				return err
+			}
+			fieldName := sel.Sel.Name
+			fv, ok := v.TryField(lowerFirst(fieldName))
+			if !ok {
+				fv, ok = v.TryField(fieldName)
+			}
+			if ok {
+				if get, isGet := fv.e.(ir.Get); isGet {
+					t.emit(t.gen.SetPlace(get.Place, val.mustNode()))
+					return nil
+				}
+			}
+			return t.errf(sel, "record has no field %q", fieldName)
+		}
+	}
+	
 	if b, isRecv, err := t.receiverBinding(sel); err != nil {
 		return err
 	} else if isRecv {
