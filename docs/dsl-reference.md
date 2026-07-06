@@ -274,6 +274,29 @@ entityLifePerfect, entityLifeGreat, entityLifeGood, entityLifeMiss
 | `EntityInfo` | `IsWaiting`, `IsActive`, `IsDespawned` |
 | `JudgmentWindow` | `Judge` |
 
+### 矩阵变换 (Transform2d)
+
+Transform2d 是 4×4 仿射变换矩阵，用于 Skin/Particle/Background 的渲染变换。
+支持复合字面量创建和方法链：
+
+```go
+// 复合字面量创建
+t := Transform2d{
+    A00: w, A11: h,
+    A22: 1, A33: 1,
+    A13: stageT,
+}
+sonolus.SetSkinTransform(t)
+
+// 从引擎读取 + 方法链
+skin := sonolus.SkinTransform()
+result := skin.Translate(sonolus.NewVec2(1, 2)).Rotate(0.5)
+sonolus.SetSkinTransform(result)
+```
+
+对标 Python `Transform2d(a00=w, a11=h)` 和 JS `skin.transform`。
+
+
 ### 实体信息 (EntityInfo)
 
 跨实体信息查询与 JS/Python 对照：
