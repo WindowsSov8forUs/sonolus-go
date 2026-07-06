@@ -100,6 +100,35 @@ type Name struct {
 | `Instruction` | Tutorial | 教程文本/图标定义 |
 | `UI` | 全部 | EngineConfiguration UI 覆写。支持 `RuntimeUiConfig` 记录类型嵌套展开 |
 
+#### UI 配置示例
+
+```go
+// 之前：平坦标签路径
+type UI struct {
+    MenuScale     float64 `sonolus:"ui=menu.scale"`
+    MenuAlpha     float64 `sonolus:"ui=menu.alpha"`
+    JudgmentScale float64 `sonolus:"ui=judgment.scale"`
+    JudgmentAlpha float64 `sonolus:"ui=judgment.alpha"`
+    // ×5 元素 × 2 属性 = 10 个平坦字段
+}
+
+// 之后：RuntimeUiConfig 自动展开
+type UI struct {
+    Menu      RuntimeUiConfig `sonolus:"ui"`  // → menu.scale + menu.alpha
+    Judgment  RuntimeUiConfig `sonolus:"ui"`  // → judgment.scale + judgment.alpha
+    Combo     RuntimeUiConfig `sonolus:"ui"`
+    Primary   RuntimeUiConfig `sonolus:"ui"`
+    Secondary RuntimeUiConfig `sonolus:"ui"`
+}
+
+var ui = UI{
+    Menu:     RuntimeUiConfig{Scale: 1.0, Alpha: 1.0},
+    Judgment: RuntimeUiConfig{Scale: 1.2, Alpha: 0.9},
+}
+```
+
+对标 Python `menu = RuntimeUiConfig(scale=1.0, alpha=1.0)`。
+
 ### 记录类型字段
 
 字段类型可以是已知记录类型——编译器自动展开为多个 float64 槽位：
