@@ -142,7 +142,7 @@ type Note struct {
 // 访问: n.pos.X = value; x := n.pos.Y
 ```
 
-支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`JudgmentWindow`(6)。支持 `sonolus.Vec2` 等限定名。
+支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Transform2d`(16)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`EntityLife`(4)、`EntityScore`(4)、`PlayEntityInput`(5)、`JudgmentWindow`(6)、`ConsecutiveLife`(2)、`ConsecutiveScore`(3)、`RuntimeUiConfig`(2)。支持 `sonolus.Vec2` 等限定名。
 
 记录类型字段支持**复合写回**（`n.Q = n.Q.Rotate(a)`）和**链式方法调用**（`n.Q.Rotate(a).Translate(v)`）。
 
@@ -215,7 +215,7 @@ x++             // 递增
 | `float64`, `int`, `bool` | float64 |
 | `Vec2` | 2 个 float64 (x, y) |
 | `Quad` | 8 个 float64 |
-| `Mat` / `Rect` / `Trans` / `Pair` | 2-9 个 float64 |
+| `Mat` / `Rect` / `Trans` / `Pair` / `Transform2d` | 2-16 个 float64 |
 | 用户定义 struct | 带标签的 float64 字段 |
 
 不支持：`string`、`map`、`chan`、`interface`、slice、函数类型。
