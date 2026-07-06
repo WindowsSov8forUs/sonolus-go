@@ -9,7 +9,7 @@ package myengine
 
 import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 
-type Skin struct { Note sonolus.Vec2 }
+type Skin struct { Note float64 }
 
 type Note struct {
     Beat float64 `sonolus:"imported"`
@@ -18,7 +18,8 @@ type Note struct {
 
 func (n *Note) Initialize() {
     n.X = sonolus.Sin(n.Beat)
-    sonolus.Draw(sonolus.SpriteNote, n.X, 0, 1, 1, 0, 1, 0, 0)
+    sonolus.SkinSprite("Note").Draw(sonolus.Quad_(n.X, 0, n.X+1, 0, n.X+1, 1, n.X, 1))
+	sonolus.EffectClip("Hit").Play(0.1)
 }
 ```
 
@@ -103,29 +104,19 @@ type Name struct {
 #### UI 配置示例
 
 ```go
-// 之前：平坦标签路径
+// RuntimeUiConfig 自动展开（推荐）
 type UI struct {
-    MenuScale     float64 `sonolus:"ui=menu.scale"`
-    MenuAlpha     float64 `sonolus:"ui=menu.alpha"`
-    JudgmentScale float64 `sonolus:"ui=judgment.scale"`
-    JudgmentAlpha float64 `sonolus:"ui=judgment.alpha"`
-    // ×5 元素 × 2 属性 = 10 个平坦字段
-}
-
-// 之后：RuntimeUiConfig 自动展开
-type UI struct {
-    Menu      RuntimeUiConfig `sonolus:"ui"`  // → menu.scale + menu.alpha
-    Judgment  RuntimeUiConfig `sonolus:"ui"`  // → judgment.scale + judgment.alpha
+    Menu      RuntimeUiConfig `sonolus:"ui"`
+    Judgment  RuntimeUiConfig `sonolus:"ui"`
     Combo     RuntimeUiConfig `sonolus:"ui"`
     Primary   RuntimeUiConfig `sonolus:"ui"`
     Secondary RuntimeUiConfig `sonolus:"ui"`
 }
 
-var ui = UI{
-    Menu:     RuntimeUiConfig{Scale: 1.0, Alpha: 1.0},
-    Judgment: RuntimeUiConfig{Scale: 1.2, Alpha: 0.9},
-}
+var ui = UI{Menu: RuntimeUiConfig{Scale: 1.0, Alpha: 1.0}}
 ```
+
+> 兼容旧式平坦标签：`sonolus:"ui=menu.scale"`。新项目建议使用 `RuntimeUiConfig`。
 
 对标 Python `menu = RuntimeUiConfig(scale=1.0, alpha=1.0)`。
 
@@ -142,7 +133,7 @@ type Note struct {
 // 访问: n.pos.X = value; x := n.pos.Y
 ```
 
-支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`JudgmentWindow`(6)。支持 `sonolus.Vec2` 等限定名。
+支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Transform2d`(16)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`EntityLife`(4)、`EntityScore`(4)、`PlayEntityInput`(5)、`JudgmentWindow`(6)、`ConsecutiveLife`(2)、`ConsecutiveScore`(3)、`RuntimeUiConfig`(2)。支持 `sonolus.Vec2` 等限定名。
 
 记录类型字段支持**复合写回**（`n.Q = n.Q.Rotate(a)`）和**链式方法调用**（`n.Q.Rotate(a).Translate(v)`）。
 
@@ -215,7 +206,7 @@ x++             // 递增
 | `float64`, `int`, `bool` | float64 |
 | `Vec2` | 2 个 float64 (x, y) |
 | `Quad` | 8 个 float64 |
-| `Mat` / `Rect` / `Trans` / `Pair` | 2-9 个 float64 |
+| `Mat` / `Rect` / `Trans` / `Pair` / `Transform2d` | 2-16 个 float64 |
 | 用户定义 struct | 带标签的 float64 字段 |
 
 不支持：`string`、`map`、`chan`、`interface`、slice、函数类型。
@@ -337,7 +328,7 @@ for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
 
 ### 皮肤精灵 (Skin / Sprite)
 
-通过 `sonolus.SkinSprite(name)` 或 `sonolus.Skin().Sprites.Name` 按名引用精灵：
+通过 `sonolus.Skin().Sprites.Name` 按名引用精灵，可赋给局部变量复用：
 
 ```go
 type Skin struct {
@@ -345,25 +336,26 @@ type Skin struct {
 	Hold float64  // ID = 1
 }
 
-// 方式 1: Sprite 记录引用
-sprite := sonolus.SkinSprite("Note")
+// 命名空间引用（对标 JS: skin.sprites.note）
+skin := sonolus.Skin()
+skin.Sprites.Note.Draw(quad, z, a)
+skin.Sprites.Note.Exists()
+skin.Sprites.Exists(0)
+// 局部变量复用（对标 JS: const note = skin.sprites.note）
+sprite := skin.Sprites.Note
 sprite.Draw(quad, z, a)
 if sprite.Exists() { ... }
-
-// 方式 2: Skin() 统一命名空间
-sonolus.Skin().Sprites.Note.Draw(quad, z, a)
-sonolus.Skin().Sprites.Exists(0)  // 按 ID 检查
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
-| 按名引用 | `skin.sprites.note` | N/A (装饰器模式) | `SkinSprite("Note")` |
+| 按名引用 | `skin.sprites.note` | N/A (装饰器模式) | `Skin().Sprites.Note` |
 | 存在检查 | `sprite.exists` | `sprite.is_available` | `sprite.Exists()` |
 | 绘制 | `sprite.draw(quad,z,a)` | `sprite.draw(quad,z,a)` | `sprite.Draw(quad,z,a)` |
 
 ### 音效片段 (EffectClip)
 
-通过 `sonolus.EffectClip(name)` 按名引用 Effect 资源中定义的音效片段，返回带方法的 `EffectClip` 记录：
+通过 `sonolus.Effect().Clips.Name` 命名空间引用音效片段：
 
 ```go
 type Effect struct {
@@ -371,34 +363,36 @@ type Effect struct {
 	MissSound float64  // ID = 1
 }
 
-// 命名引用 + 方法调用（对标 JS: effect.clips.hitSound.schedule）
-sonolus.EffectClip("HitSound").Play(0.1)
-sonolus.EffectClip("HitSound").Schedule(targetTime, 0.1)
+// 命名空间引用（对标 JS: effect.clips.hitSound）
+effect := sonolus.Effect()
+effect.Clips.HitSound.Play(0.1)
+effect.Clips.HitSound.Schedule(targetTime, 0.1)
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
-| 即时播放 | `clip.play(distance)` | `effect.play(distance)` | `sonolus.EffectClip("name").Play(d)` |
-| 预排程 | `clip.schedule(time, d)` | `effect.schedule(time, d)` | `sonolus.EffectClip("name").Schedule(t, d)` |
+| 即时播放 | `clip.play(distance)` | `effect.play(distance)` | `Effect().Clips.Name.Play(d)` |
+| 预排程 | `clip.schedule(time, d)` | `effect.schedule(time, d)` | `Effect().Clips.Name.Schedule(t, d)` |
 
 ### 粒子效果 (ParticleClip)
 
-通过 `sonolus.ParticleClip(name)` 按名引用 Particle 资源中定义的粒子效果，返回带方法的 `ParticleClip` 记录。支持复合参数（Quad）自动解构：
+通过 `sonolus.Particle().Effects.Name` 命名空间引用粒子效果。支持复合参数（Quad）自动解构：
 
 ```go
 type Particle struct {
 	Explosion float64  // ID = 0
 }
 
-// 命名引用 + 方法调用 + Quad 复合参数（对标 JS: effect.spawn(quad, dur, loop)）
+// 命名空间引用（对标 JS: particle.effects.explosion）
 q := sonolus.Quad_(...)
-sonolus.ParticleClip("Explosion").Spawn(q, 1, 0)
+particle := sonolus.Particle()
+particle.Effects.Explosion.Spawn(q, 1, 0)
 //                                    ^^ Quad 8 字段自动解构为标量
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
-| 生成粒子 | `effect.spawn(quad, dur, loop)` | `effect.spawn(quad, dur, loop)` | `ParticleClip("n").Spawn(quad, dur, loop)` |
+| 生成粒子 | `effect.spawn(quad, dur, loop)` | `effect.spawn(quad, dur, loop)` | `Particle().Effects.Name.Spawn(quad, dur, loop)` |
 | 移动粒子 | `handle.move(quad)` | `handle.move(quad)` | `handle.Move(quad)`（已有） |
 | 销毁粒子 | `handle.destroy()` | `handle.destroy()` | `handle.Destroy()`（已有） |
 
@@ -418,25 +412,26 @@ var windows = sonolus.JudgmentWindow{
 level := windows.Judge(actualTime, targetTime)
 // level = 0 (Miss), 1 (Perfect), 2 (Great), 3 (Good)
 
-// 写入判定结果
-sonolus.Judge(level)
-// 或通过 result 字段: n.Result = level (需 `sonolus:"input"` 标签)
+// 写入判定结果（推荐：PlayEntityInput）
+n.Result.Judgment = level
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
 | 判定计算 | `input.judge(hitTime, targetTime, windows)` | `window.judge(actual, target)` | `windows.Judge(actual, target)` |
-| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `sonolus.Judge(level)` 或 `n.Result.Judgment = level` |
+| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `n.Result.Judgment = level` 或 `n.Result.Judgment = level` |
 | 桶写入 | `this.result.bucket.index = idx` | `self.result.bucket = Bucket(id=idx)` | `n.Result.BucketIndex = idx` |
 | 判定等级 | `Judgment.Perfect` (1) | `Judgment.PERFECT` (1) | 裸 float64: 0/1/2/3 |
 | 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Set) |
 
 ### Canvas 打印 (Preview 模式)
 
-通过 `sonolus.Canvas().Print()` 在 Preview 模式打印数值。非 Preview 模式编译时消除（零 IR 节点）。
+canvas := sonolus.Canvas()
+通过 `canvas.Print()` 在 Preview 模式打印数值。非 Preview 模式编译时消除（零 IR 节点）。
 
 ```go
-sonolus.Canvas().Print(PrintOptions{
+canvas := sonolus.Canvas()
+canvas.Print(PrintOptions{
     Value:   123,
     Format:  0,          // 0=Number, 1=Percent, 10=Time, ...
     AnchorX: 0.5, AnchorY: 0.5,
@@ -505,9 +500,11 @@ sonolus.VarArray_(capacity)
 sonolus.ArrayMap_(capacity)
 sonolus.ArraySet_(capacity)
 sonolus.FrozenNumSet_(capacity)
+sonolus.EffectClip_(id)
+sonolus.ParticleClip_(id)
 ```
 
-也可以用裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。
+> 兼容旧式裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。 新项目建议使用 `sonolus.` 前缀构造器。
 
 ## 不支持的特性
 

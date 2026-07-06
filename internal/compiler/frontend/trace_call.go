@@ -455,6 +455,28 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 			}
 		}
 		return Num{}, true, t.errf(n, "sprite expects a string literal")
+	case "effect":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "effect takes no arguments")
+		}
+		clips := map[string]Num{}
+		for name, id := range t.env.EffectIndex {
+			clips[lowerFirst(name)] = compNumTyped("effectClip", map[string]Num{"id": constNum(id)})
+		}
+		return compNumTyped("effectInfo", map[string]Num{
+			"clips": compNumTyped("effectClips", clips),
+		}), true, nil
+	case "particle":
+		if len(n.Args) != 0 {
+			return Num{}, true, t.errf(n, "particle takes no arguments")
+		}
+		effects := map[string]Num{}
+		for name, id := range t.env.ParticleIndex {
+			effects[lowerFirst(name)] = compNumTyped("particleClip", map[string]Num{"id": constNum(id)})
+		}
+		return compNumTyped("particleInfo", map[string]Num{
+			"effects": compNumTyped("particleEffects", effects),
+		}), true, nil
 	case "skin":
 		if len(n.Args) != 0 {
 			return Num{}, true, t.errf(n, "skin takes no arguments")
