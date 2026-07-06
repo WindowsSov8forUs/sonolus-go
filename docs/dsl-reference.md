@@ -336,19 +336,15 @@ type Skin struct {
 	Hold float64  // ID = 1
 }
 
-// 方式 1: Sprite 记录引用
-sprite := sonolus.SkinSprite("Note")
-sprite.Draw(quad, z, a)
-if sprite.Exists() { ... }
-
-// 方式 2: Skin() 统一命名空间
+// 命名空间引用（对标 JS: skin.sprites.note）
 sonolus.Skin().Sprites.Note.Draw(quad, z, a)
-sonolus.Skin().Sprites.Exists(0)  // 按 ID 检查
+sonolus.Skin().Sprites.Note.Exists()
+sonolus.Skin().Sprites.Exists(0)
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
 |------|-----------|-----------|------------|
-| 按名引用 | `skin.sprites.note` | N/A (装饰器模式) | `SkinSprite("Note")` |
+| 按名引用 | `skin.sprites.note` | N/A (装饰器模式) | `Skin().Sprites.Note` |
 | 存在检查 | `sprite.exists` | `sprite.is_available` | `sprite.Exists()` |
 | 绘制 | `sprite.draw(quad,z,a)` | `sprite.draw(quad,z,a)` | `sprite.Draw(quad,z,a)` |
 
