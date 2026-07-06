@@ -9,7 +9,7 @@ package myengine
 
 import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 
-type Skin struct { Note sonolus.Vec2 }
+type Skin struct { Note float64 }
 
 type Note struct {
     Beat float64 `sonolus:"imported"`
@@ -18,7 +18,8 @@ type Note struct {
 
 func (n *Note) Initialize() {
     n.X = sonolus.Sin(n.Beat)
-    sonolus.Draw(sonolus.SpriteNote, n.X, 0, 1, 1, 0, 1, 0, 0)
+    sonolus.SkinSprite("Note").Draw(sonolus.Quad_(n.X, 0, n.X+1, 0, n.X+1, 1, n.X, 1))
+	sonolus.EffectClip("Hit").Play(0.1)
 }
 ```
 
