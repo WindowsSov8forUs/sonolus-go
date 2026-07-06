@@ -363,6 +363,7 @@ func (t *tracer) compositeLit(n *ast.CompositeLit) (Num, error) {
 				return Num{}, err
 			}
 			vals[key.Name] = v
+			vals[lowerFirst(key.Name)] = v
 		default:
 			// Positional: map to field order.
 			if i >= len(fields) {
