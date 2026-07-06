@@ -1,0 +1,250 @@
+{
+  "skin": {
+    "renderMode": "lightweight",
+    "sprites": [
+      {
+        "name": "Note",
+        "id": 0
+      }
+    ]
+  },
+  "effect": {
+    "clips": null
+  },
+  "particle": {
+    "effects": null
+  },
+  "buckets": [],
+  "archetypes": [
+    {
+      "name": "Note",
+      "hasInput": false,
+      "imports": [
+        {
+          "name": "Beat",
+          "index": 0
+        }
+      ],
+      "exports": [],
+      "preprocess": {
+        "index": 35
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "value": 1003
+    },
+    {
+      "value": 0
+    },
+    {
+      "value": 1
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        2,
+        1
+      ]
+    },
+    {
+      "value": 2
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        5,
+        1
+      ]
+    },
+    {
+      "value": 3
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        7,
+        1
+      ]
+    },
+    {
+      "value": 4
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        9,
+        1
+      ]
+    },
+    {
+      "value": 5
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        11,
+        2
+      ]
+    },
+    {
+      "value": 6
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        13,
+        1
+      ]
+    },
+    {
+      "value": 7
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        15,
+        11
+      ]
+    },
+    {
+      "value": 8
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        17,
+        1
+      ]
+    },
+    {
+      "value": 9
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        19,
+        1
+      ]
+    },
+    {
+      "value": 10
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        21,
+        2
+      ]
+    },
+    {
+      "value": 11
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        23,
+        1
+      ]
+    },
+    {
+      "value": 12
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        25,
+        1
+      ]
+    },
+    {
+      "value": 13
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        27,
+        1
+      ]
+    },
+    {
+      "value": 14
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        29,
+        1
+      ]
+    },
+    {
+      "value": 15
+    },
+    {
+      "func": "Set",
+      "args": [
+        0,
+        31,
+        2
+      ]
+    },
+    {
+      "func": "Execute",
+      "args": [
+        3,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        20,
+        22,
+        24,
+        26,
+        28,
+        30,
+        32,
+        2
+      ]
+    },
+    {
+      "func": "JumpLoop",
+      "args": [
+        33,
+        1
+      ]
+    },
+    {
+      "func": "Block",
+      "args": [
+        34
+      ]
+    }
+  ]
+}
