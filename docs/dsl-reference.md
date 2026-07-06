@@ -328,7 +328,7 @@ for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
 
 ### 皮肤精灵 (Skin / Sprite)
 
-通过 `sonolus.SkinSprite(name)` 或 `sonolus.Skin().Sprites.Name` 按名引用精灵：
+通过 `sonolus.Skin().Sprites.Name` 按名引用精灵，可赋给局部变量复用：
 
 ```go
 type Skin struct {
@@ -340,6 +340,10 @@ type Skin struct {
 sonolus.Skin().Sprites.Note.Draw(quad, z, a)
 sonolus.Skin().Sprites.Note.Exists()
 sonolus.Skin().Sprites.Exists(0)
+// 局部变量复用（对标 JS: const note = skin.sprites.note）
+sprite := sonolus.Skin().Sprites.Note
+sprite.Draw(quad, z, a)
+if sprite.Exists() { ... }
 ```
 
 | 场景 | sonolus.js | sonolus.py | sonolus-go |
