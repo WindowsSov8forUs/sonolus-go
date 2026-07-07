@@ -12,8 +12,8 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
 )
 
-func cmdBuild(srcPath, outDir, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
-	ess, name, err := resolveSourceArg(srcPath)
+func cmdBuild(srcPaths []string, outDir, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
+	ess, name, err := resolveSourceArg(srcPaths...)
 	if err != nil {
 		return err
 	}

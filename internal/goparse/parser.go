@@ -148,6 +148,12 @@ func (p *Parser) load(patterns ...string) (*packages.Package, []error) {
 	return pkg, errs
 }
 
+// SetFilters 自定义 packages.Config
+func (p *Parser) SetConfig(cfg *packages.Config) *Parser {
+	p.cfg = cfg
+	return p
+}
+
 // SetFilters 导入过滤，若遇到被过滤的导入则报错
 func (p *Parser) SetFilters(filters ...*PackageFilter) *Parser {
 	p.filters = filters

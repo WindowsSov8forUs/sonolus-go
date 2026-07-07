@@ -91,15 +91,13 @@ func engineNameFromPath(srcPath string) string {
 	return base
 }
 
-// resolveSourceArg loads engine sources from a file or directory path.
-// Returns the EngineSources, engine name, and the compile*Sources function
-// appropriate for each mode.
-func resolveSourceArg(path string) (ess *engine.EngineSources, engineName string, err error) {
-	ess, err = engine.LoadEngineSources(path)
+// resolveSourceArg loads engine sources from one or more file/directory paths.
+func resolveSourceArg(patterns ...string) (ess *engine.EngineSources, engineName string, err error) {
+	ess, err = engine.LoadEngineSources(patterns...)
 	if err != nil {
 		return nil, "", err
 	}
-	name := engineNameFromPath(path)
+	name := engineNameFromPath(patterns[0])
 	return ess, name, nil
 }
 

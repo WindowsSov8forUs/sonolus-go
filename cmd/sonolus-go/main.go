@@ -38,28 +38,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	cmd := flag.Arg(0)
-	srcPath := flag.Arg(1)
+	cmd, args := flag.Arg(0), flag.Args()[1:]
 
 	switch cmd {
 	case "serve":
-		if err := cmdServe(srcPath, *addrFlag, *romFlag); err != nil {
+		if err := cmdServe(args[0], *addrFlag, *romFlag); err != nil {
 			fatalf("%v", err)
 		}
 	case "level":
-		if err := cmdLevel(srcPath, *outDir); err != nil {
+		if err := cmdLevel(args[0], *outDir); err != nil {
 			fatalf("%v", err)
 		}
 	case "pack":
-		if err := cmdPack(srcPath, *authorFlag); err != nil {
+		if err := cmdPack(args[0], *authorFlag); err != nil {
 			fatalf("%v", err)
 		}
 	case "host":
-		if err := cmdHost(srcPath, *addrFlag, *authorFlag); err != nil {
+		if err := cmdHost(args[0], *addrFlag, *authorFlag); err != nil {
 			fatalf("%v", err)
 		}
 	case "build":
-		if err := cmdBuild(srcPath, *outDir, *modeFlag, *optFlag, *romFlag, *statsFlag); err != nil {
+		if err := cmdBuild(args, *outDir, *modeFlag, *optFlag, *romFlag, *statsFlag); err != nil {
 			fatalf("%v", err)
 		}
 	default:

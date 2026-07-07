@@ -7,18 +7,13 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/utils"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/goparse"
 	"golang.org/x/tools/go/packages"
 )
-
-func sonolusPkgPath() string {
-	info, _ := debug.ReadBuildInfo()
-	return info.Path
-}
 
 func packageFilterNotThirdParty(p *goparse.Parser) *goparse.PackageFilter {
 	filterFunc := func(pkg *packages.Package) bool {
@@ -26,7 +21,7 @@ func packageFilterNotThirdParty(p *goparse.Parser) *goparse.PackageFilter {
 		if strings.HasPrefix(path, p.Module()) {
 			return true
 		}
-		if path == sonolusPkgPath() {
+		if path == utils.SonolusPkgPath() {
 			return true
 		}
 		if !strings.Contains(path, ".") {
@@ -86,42 +81,16 @@ func NewEngineSources(main map[string]string, imports map[string]map[string]stri
 	return &EngineSources{Main: main, Imports: imports}, nil
 }
 
-func LoadEngineSources(path string) (*EngineSources, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("source: resolve path %q: %w", path, err)
+func LoadEngineSources(patterns ...string) (*EngineSources, error) {
+	if len(patterns) == 0 {
+		return nil, fmt.Errorf("source: no path provided")
 	}
 
-	// If the directory lacks go.mod, create a minimal one.
-	fi, err := os.Stat(abs)
+	pkg, err := LoadPackage(patterns...)
 	if err != nil {
 		return nil, fmt.Errorf("source: %w", err)
 	}
-	dir := abs
-	if !fi.IsDir() {
-		dir = filepath.Dir(abs)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "go.mod")); os.IsNotExist(err) {
-		// Use a replace directive so the sonolus stub package is found
-		// even when loading from a temp directory.
-		sonolusPath := sonolusPkgPath()
-		mod := fmt.Sprintf("module engine\n\ngo 1.21\n\nrequire %s v0.0.0\nreplace %s => %s\n",
-			sonolusPath, sonolusPath, findModuleRoot())
-		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
-			return nil, fmt.Errorf("source: create go.mod: %w", err)
-		}
-	}
-
-	// Load with Dir set to the project directory so packages.Load finds
-	// the go.mod there, not the current working directory's go.mod.
-	parser := goparse.NewParser()
-	parser.SetFilters(goparse.PackageFilterNotStandard(), packageFilterNotThirdParty(parser))
-	pkg, err := parser.LoadWithConfig(packages.Config{Dir: dir, Mode: goparse.Modes}, ".")
-	if err != nil {
-		return nil, fmt.Errorf("source: %w", err)
-	}
-	sources := readAllSources(pkg, abs)
-	return &EngineSources{Pkg: pkg, sources: sources}, nil
+	return &EngineSources{Pkg: pkg, sources: readAllSources(pkg)}, nil
 }
 
 func (ess *EngineSources) ResolveImports() error {
@@ -201,23 +170,6 @@ func extractPkgName(files map[string]string) string {
 	return ""
 }
 
-// findModuleRoot finds the Go module root directory by walking up from cwd.
-func findModuleRoot() string {
-	dir, _ := os.Getwd()
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	// Fallback.
-	return "."
-}
-
 func (ess *EngineSources) Access() *frontend.EngineSourcesAccess {
 	return &frontend.EngineSourcesAccess{
 		RootDir:   ".",
@@ -226,12 +178,11 @@ func (ess *EngineSources) Access() *frontend.EngineSourcesAccess {
 	}
 }
 
-func readAllSources(main *packages.Package, rootDir string) map[string]map[string]string {
+func readAllSources(main *packages.Package) map[string]map[string]string {
 	out := map[string]map[string]string{"": readSourceFiles(main)}
 	for path, pkg := range main.Imports {
 		out[path] = readSourceFiles(pkg)
 	}
-	_ = rootDir
 	return out
 }
 
@@ -245,24 +196,3 @@ func readSourceFiles(pkg *packages.Package) map[string]string {
 	return files
 }
 
-func overlaySources(overlay map[string][]byte) map[string]map[string]string {
-	out := map[string]map[string]string{"": {}}
-	for path, data := range overlay {
-		base := filepath.Base(path)
-		// Look for "/engine/" in the path to determine import paths.
-		slashPath := strings.ReplaceAll(path, "\\", "/")
-		if idx := strings.LastIndex(slashPath, "/engine/"); idx >= 0 {
-			rest := filepath.ToSlash(slashPath[idx+len("/engine/"):])
-			restDir := filepath.ToSlash(filepath.Dir(rest))
-			if restDir != "." {
-				if out[restDir] == nil {
-					out[restDir] = map[string]string{}
-				}
-				out[restDir][base] = string(data)
-				continue
-			}
-		}
-		out[""][base] = string(data)
-	}
-	return out
-}
