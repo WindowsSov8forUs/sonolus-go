@@ -1,7 +1,6 @@
 package goparse
 
 import (
-	"fmt"
 	"go/token"
 	"testing"
 
@@ -25,18 +24,19 @@ func TestLoad_Packages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
-	fmt.Printf("Load Results: %v\n", pkgs)
+	t.Logf("Load Results: %v\n", pkgs)
 	for _, pkg := range pkgs {
-		fmt.Printf("Load Result: %#v\n", pkg)
+		t.Logf("Load Result: %#v\n", pkg)
+		t.Logf("Module: %#v\n", pkg.Module)
 		for impPath, dep := range pkg.Imports {
-			fmt.Printf("%s -> Module: %v\n", impPath, dep.Module)
+			t.Logf("%s -> Module: %v\n", impPath, dep.Module)
 		}
 		if pkg.Module != nil {
-			fmt.Printf("Main Module: %s\n", pkg.Module.Path)
+			t.Logf("Main Module: %s\n", pkg.Module.Path)
 		} else {
 			for _, dep := range pkg.Imports {
 				if dep.Module != nil && dep.Module.Main {
-					fmt.Printf("Main Module: %s\n", dep.Module.Path)
+					t.Logf("Main Module: %s\n", dep.Module.Path)
 				}
 			}
 		}

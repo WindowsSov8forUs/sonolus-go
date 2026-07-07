@@ -1,8 +1,8 @@
 package main
 
 import (
-	"project_mainfile/subpkg1"
-	"project_mainfile/subpkg2"
+	"mainfile/subpkg1"
+	"mainfile/subpkg2"
 )
 
 func mainFn(args ...any) any { return args }

@@ -1,8 +1,8 @@
 package subpkg1
 
 import (
-	"project_mainfile/subpkg2"
-	"project_mainfile/subpkg3"
+	"mainfile/subpkg2"
+	"mainfile/subpkg3"
 )
 
 var varA = TypeA{}

@@ -1,3 +1,3 @@
-module project_mainfile
+module mainfile
 
 go 1.25.4

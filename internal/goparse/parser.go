@@ -8,23 +8,17 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+const defaultModuleName = "command-line-arguments"
+
 const Modes = packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
 	packages.NeedDeps | packages.NeedImports | packages.NeedModule |
 	packages.NeedEmbedFiles | packages.NeedEmbedPatterns
-
-var PackageErrorKind map[packages.ErrorKind]string = map[packages.ErrorKind]string{
-	packages.UnknownError: "unknown error",
-	packages.ListError:    "list error",
-	packages.ParseError:   "parse error",
-	packages.TypeError:    "type error",
-}
 
 type PackageFilter struct {
 	Func     func(pkg *packages.Package) bool
 	ErrorMsg string
 }
 
-// getModule 获取 module 名称
 func getModule(pkg *packages.Package) string {
 	if pkg.Module != nil {
 		return pkg.Module.Path
@@ -38,6 +32,27 @@ func getModule(pkg *packages.Package) string {
 	return ""
 }
 
+// ensureModule 确保 module 名称
+func ensureModule(pkg *packages.Package) error {
+	if pkg.Name != "main" {
+		return fmt.Errorf("package is not main package")
+	}
+
+	if pkg.PkgPath != defaultModuleName {
+		return nil
+	}
+
+	module := getModule(pkg)
+	if module == "" {
+		return fmt.Errorf("could not get module name")
+	}
+
+	pkg.ID = module
+	pkg.PkgPath = module
+
+	return nil
+}
+
 func getErrors(pkg *packages.Package, visited map[string]bool, errs *[]error) {
 	if isVisited, ok := visited[pkg.PkgPath]; ok {
 		if isVisited {
@@ -47,7 +62,7 @@ func getErrors(pkg *packages.Package, visited map[string]bool, errs *[]error) {
 	visited[pkg.PkgPath] = true
 
 	for _, pkgErr := range pkg.Errors {
-		err := fmt.Errorf("%s (%s): %s", PackageErrorKind[pkgErr.Kind], pkgErr.Pos, pkgErr.Msg)
+		err := fmt.Errorf("%s: %s", pkgErr.Pos, pkgErr.Msg)
 		*errs = append(*errs, err)
 	}
 
@@ -92,8 +107,6 @@ func (p *Parser) validateImports(pkg *packages.Package, visited map[string]bool,
 	for impPath, dep := range pkg.Imports {
 		for _, filter := range p.filters {
 			if !filter.Func(dep) {
-				err := fmt.Errorf(`import error in "%s": failed to import "%q" (%s).`, pkg.PkgPath, impPath, filter.ErrorMsg)
-				*errs = append(*errs, err)
 				invalidPkgs[impPath] = filter.ErrorMsg
 				break
 			}
@@ -110,7 +123,7 @@ func (p *Parser) validateImports(pkg *packages.Package, visited map[string]bool,
 			if errorMsg, ok := invalidPkgs[path]; ok {
 				pos := p.fset().Position(imp.Pos())
 				err := fmt.Errorf(
-					`failed to import %q (%s:%d): %s`, path, pos.Filename, pos.Line, errorMsg,
+					`%s:%d:%d: could not import %q (%s)`, pos.Filename, pos.Line, pos.Column, path, errorMsg,
 				)
 				*errs = append(*errs, err)
 			}
@@ -127,25 +140,28 @@ func (p *Parser) validateImportsAll(pkg *packages.Package) []error {
 	return errs
 }
 
-func (p *Parser) load(patterns ...string) (*packages.Package, []error) {
+func (p *Parser) load(patterns ...string) ([]*packages.Package, []error) {
 	pkgs, err := packages.Load(p.cfg, patterns...)
 	if err != nil {
 		return nil, []error{err}
 	}
 	if len(pkgs) < 1 {
-		return nil, []error{fmt.Errorf("no golang source file found.")}
+		return nil, []error{fmt.Errorf("no golang source file found")}
 	}
-	if len(pkgs) > 1 {
-		return nil, []error{fmt.Errorf("multiple top golang package found.")}
-	}
-	pkg := pkgs[0]
+
 	var errs []error
-	visited := make(map[string]bool)
-	getErrors(pkg, visited, &errs)
+	for _, pkg := range pkgs {
+		visited := make(map[string]bool)
+		getErrors(pkg, visited, &errs)
+	}
 
-	p.module = getModule(pkg)
+	for _, pkg := range pkgs {
+		if err := ensureModule(pkg); err != nil {
+			errs = append(errs, err)
+		}
+	}
 
-	return pkg, errs
+	return pkgs, errs
 }
 
 // SetFilters 自定义 packages.Config
@@ -160,38 +176,29 @@ func (p *Parser) SetFilters(filters ...*PackageFilter) *Parser {
 	return p
 }
 
-// LoadWithConfig loads packages using a caller-supplied packages.Config.
-// This allows callers to inject overlay, custom Dir, etc.
-func (p *Parser) LoadWithConfig(cfg packages.Config, patterns ...string) (*packages.Package, error) {
-	p.cfg = &cfg
-	if p.cfg.Fset == nil {
-		p.cfg.Fset = token.NewFileSet()
-	}
-	if p.cfg.Mode == 0 {
-		p.cfg.Mode = Modes
-	}
-	return p.Load(patterns...)
-}
-
-func (p *Parser) Load(patterns ...string) (*packages.Package, error) {
-	pkg, errs := p.load(patterns...)
+func (p *Parser) Load(patterns ...string) ([]*packages.Package, error) {
+	pkgs, errs := p.load(patterns...)
 	if len(errs) > 0 {
 		var msgs []string
 		for _, e := range errs {
 			msgs = append(msgs, e.Error())
 		}
-		return nil, fmt.Errorf("load: %s", strings.Join(msgs, "; "))
+		return nil, fmt.Errorf("%s", strings.Join(msgs, "\n"))
 	}
 
-	if errs := p.validateImportsAll(pkg); len(errs) > 0 {
-		var msgs []string
-		for _, e := range errs {
-			msgs = append(msgs, e.Error())
+	var msgs []string
+	for _, pkg := range pkgs {
+		if errs := p.validateImportsAll(pkg); len(errs) > 0 {
+			for _, e := range errs {
+				msgs = append(msgs, e.Error())
+			}
 		}
-		return nil, fmt.Errorf("import validation: %s", strings.Join(msgs, "; "))
+	}
+	if len(msgs) > 0 {
+		return nil, fmt.Errorf("%s", strings.Join(msgs, "\n"))
 	}
 
-	return pkg, nil
+	return pkgs, nil
 }
 
 // PackageFilterNotStandard PackageFilter 过滤所有标准库
