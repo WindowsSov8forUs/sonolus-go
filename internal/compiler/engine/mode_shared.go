@@ -393,7 +393,7 @@ func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode
 	}
 
 	// 2. Process main package.
-	mainPES, err := souceToParsed(ess.MainPkg(), true)
+	mainPES, err := packageToSource(ess.MainPkg(), true)
 	if err != nil {
 		return res, err
 	}
@@ -463,7 +463,7 @@ func runNonPlayPipelineSources(ess *EngineSources, cbSet map[string]string, mode
 	}
 
 	// Collect from imported packages.
-	for impPath, pkg := range ess.Packages {
+	for impPath, pkg := range ess.MainPkg().Imports {
 		if impPath == "" {
 			continue
 		}

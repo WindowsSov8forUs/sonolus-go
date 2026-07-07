@@ -12,8 +12,8 @@ func TestCompilePlayFileParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected parse error for invalid syntax")
 	}
-	if !strings.Contains(err.Error(), "parse") {
-		t.Errorf("error should mention 'parse': %v", err)
+	if !strings.Contains(err.Error(), "expected") && !strings.Contains(err.Error(), "parse") {
+		t.Errorf("error should be a syntax error: %v", err)
 	}
 }
 
@@ -23,8 +23,8 @@ func TestCompileWatchFileParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected parse error for invalid syntax")
 	}
-	if !strings.Contains(err.Error(), "parse") {
-		t.Errorf("error should mention 'parse': %v", err)
+	if !strings.Contains(err.Error(), "expected") && !strings.Contains(err.Error(), "parse") {
+		t.Errorf("error should be a syntax error: %v", err)
 	}
 }
 
@@ -34,8 +34,8 @@ func TestCompilePreviewFileParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected parse error for invalid syntax")
 	}
-	if !strings.Contains(err.Error(), "parse") {
-		t.Errorf("error should mention 'parse': %v", err)
+	if !strings.Contains(err.Error(), "expected") && !strings.Contains(err.Error(), "parse") {
+		t.Errorf("error should be a syntax error: %v", err)
 	}
 }
 
@@ -45,8 +45,8 @@ func TestCompileTutorialFileParseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected parse error for invalid syntax")
 	}
-	if !strings.Contains(err.Error(), "parse") {
-		t.Errorf("error should mention 'parse': %v", err)
+	if !strings.Contains(err.Error(), "expected") && !strings.Contains(err.Error(), "parse") {
+		t.Errorf("error should be a syntax error: %v", err)
 	}
 }
 

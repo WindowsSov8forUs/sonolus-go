@@ -143,17 +143,26 @@ func (s *devServer) recompile() error {
 // cacheSourceString builds a deterministic cache-key string from all source
 // files in the engine. File order is sorted for determinism.
 func cacheSourceString(ess *engine.EngineSources) string {
-	mainSrc := ess.MainPkg().Sources
-	names := make([]string, 0, len(mainSrc))
-	for n := range mainSrc {
-		names = append(names, n)
+	goFiles := ess.MainPkg().GoFiles
+	names := make([]string, len(goFiles))
+	for i, f := range goFiles {
+		names[i] = filepath.Base(f)
 	}
 	sort.Strings(names)
+	// Map base name → full path for reading.
+	pathByName := make(map[string]string, len(goFiles))
+	for _, f := range goFiles {
+		pathByName[filepath.Base(f)] = f
+	}
 	var b strings.Builder
 	for _, n := range names {
+		data, err := os.ReadFile(pathByName[n])
+		if err != nil {
+			continue
+		}
 		b.WriteString(n)
 		b.WriteByte(0)
-		b.WriteString(mainSrc[n])
+		b.Write(data)
 		b.WriteByte(0)
 	}
 	return b.String()

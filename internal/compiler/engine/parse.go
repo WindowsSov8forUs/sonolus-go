@@ -116,7 +116,7 @@ func CompilePlaySources(ess *EngineSources, opts *CompileOptions) (*resource.Eng
 	}
 
 	// 2. Process main package.
-	mainPES, err := souceToParsed(ess.MainPkg(), true)
+	mainPES, err := packageToSource(ess.MainPkg(), true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -156,7 +156,7 @@ func CompilePlaySources(ess *EngineSources, opts *CompileOptions) (*resource.Eng
 	}
 
 	// Collect from imported packages.
-	for impPath, pkg := range ess.Packages {
+	for impPath, pkg := range ess.MainPkg().Imports {
 		if impPath == "" {
 			continue
 		}

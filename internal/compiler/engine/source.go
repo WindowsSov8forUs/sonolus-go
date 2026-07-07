@@ -2,137 +2,267 @@ package engine
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/goparse"
+	"golang.org/x/tools/go/packages"
 )
 
-// EngineSources bundles parsed Go packages for engine compilation.
-// The main package is keyed by "" in the Packages map; imported packages
-// are keyed by their import path.
-//
-// For backward compatibility with tests, the legacy fields Main and Imports
-// can also be set. When Packages is nil, ResolveImports populates it from
-// the legacy fields. New code should use Packages directly or construct via
-// NewEngineSources / LoadEngineSources.
+func sonolusPkgPath() string {
+	info, _ := debug.ReadBuildInfo()
+	return info.Path
+}
+
+func packageFilterNotThirdParty(p *goparse.Parser) *goparse.PackageFilter {
+	filterFunc := func(pkg *packages.Package) bool {
+		path := pkg.PkgPath
+		if strings.HasPrefix(path, p.Module()) {
+			return true
+		}
+		if path == sonolusPkgPath() {
+			return true
+		}
+		if !strings.Contains(path, ".") {
+			return true
+		}
+		return false
+	}
+	return &goparse.PackageFilter{
+		Func:     filterFunc,
+		ErrorMsg: "invalid third party lib",
+	}
+}
+
+func LoadPackage(pattern ...string) (*packages.Package, error) {
+	parser := goparse.NewParser()
+	parser.SetFilters(goparse.PackageFilterNotStandard(), packageFilterNotThirdParty(parser))
+	return parser.Load(pattern...)
+}
+
+// EngineSources bundles the parsed engine project for compilation.
 type EngineSources struct {
-	// RootDir is the absolute path to the engine root directory.
+	Pkg     *packages.Package
+	sources map[string]map[string]string
+
+	// Backward-compatible fields for tests.
 	RootDir string
-
-	// Packages holds all parsed packages, keyed by import path.
-	// The main package uses key ""; imported packages use their import
-	// path (e.g. "notes", "stage").
-	Packages map[string]*goparse.Package
-
-	// Main is the legacy way to provide main package source files.
-	// Prefer setting Packages instead.
-	Main map[string]string
-
-	// Imports is the legacy way to provide imported package source files.
-	// Prefer setting Packages instead.
+	Main    map[string]string
 	Imports map[string]map[string]string
 }
 
-// MainPkg returns the main package.
-func (ess *EngineSources) MainPkg() *goparse.Package { return ess.Packages[""] }
-
-// ImportPkg returns an imported package by its import path, or nil.
-func (ess *EngineSources) ImportPkg(path string) *goparse.Package {
-	return ess.Packages[path]
+func (ess *EngineSources) MainPkg() *packages.Package { return ess.Pkg }
+func (ess *EngineSources) ImportPkg(path string) *packages.Package {
+	if ess.Pkg == nil {
+		return nil
+	}
+	return ess.Pkg.Imports[path]
 }
-
-// ImportedFileCount returns the total number of source files across all
-// imported packages.
 func (ess *EngineSources) ImportedFileCount() int {
+	if ess.Pkg == nil {
+		return 0
+	}
 	n := 0
-	for path, pkg := range ess.Packages {
-		if path != "" {
-			n += len(pkg.Files)
-		}
+	for _, pkg := range ess.Pkg.Imports {
+		n += len(pkg.Syntax)
 	}
 	return n
 }
 
-// NewSingleFileSources creates an EngineSources for a single source string.
-// This is used by tests and backward-compatible single-file entry points.
 func NewSingleFileSources(src string) *EngineSources {
-	pkgs, err := goparse.LoadProjectFromFiles(map[string]string{"engine.go": src})
-	if err != nil {
-		// Single-file source should always parse; panic on programmer error.
-		panic(fmt.Sprintf("NewSingleFileSources: %v", err))
+	return &EngineSources{
+		Main:    map[string]string{"engine.go": src},
+		Imports: map[string]map[string]string{},
 	}
-	return &EngineSources{RootDir: ".", Packages: pkgs}
 }
 
-// NewEngineSources creates an EngineSources from in-memory source maps.
-// This is the multi-file entry point for tests and pre-loaded engines.
 func NewEngineSources(main map[string]string, imports map[string]map[string]string) (*EngineSources, error) {
-	pkgs, err := goparse.LoadProjectFromFiles(main)
-	if err != nil {
-		return nil, err
-	}
-	for path, files := range imports {
-		pkg, err := goparse.ParseFiles(files)
-		if err != nil {
-			return nil, fmt.Errorf("import %q: %w", path, err)
-		}
-		pkg.Path = path
-		pkgs[path] = pkg
-	}
-	return &EngineSources{RootDir: ".", Packages: pkgs}, nil
+	return &EngineSources{Main: main, Imports: imports}, nil
 }
 
-// LoadEngineSources detects whether path is a file or directory and loads
-// the engine source accordingly.
 func LoadEngineSources(path string) (*EngineSources, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("source: resolve path %q: %w", path, err)
 	}
 
-	pkgs, err := goparse.LoadProject(path, goparse.FilterStdlib, goparse.FilterNonSonolus)
+	// If the directory lacks go.mod, create a minimal one.
+	fi, err := os.Stat(abs)
 	if err != nil {
 		return nil, fmt.Errorf("source: %w", err)
 	}
-
-	return &EngineSources{RootDir: abs, Packages: pkgs}, nil
-}
-
-// ResolveImports ensures Packages is populated. If Packages is already set
-// (via NewEngineSources / LoadEngineSources), this is a no-op. If legacy
-// Main/Imports fields are set, they are parsed into Packages lazily.
-func (ess *EngineSources) ResolveImports() error {
-	if ess.Packages != nil {
-		return nil
+	dir := abs
+	if !fi.IsDir() {
+		dir = filepath.Dir(abs)
 	}
-	// Legacy path: populate Packages from Main and Imports raw maps.
-	ess2, err := NewEngineSources(ess.Main, ess.Imports)
-	if err != nil {
-		return err
-	}
-	ess.Packages = ess2.Packages
-	if ess.RootDir == "" {
-		ess.RootDir = "."
-	}
-	return nil
-}
-
-// Access returns a frontend.EngineSourcesAccess for type-checking, avoiding a
-// circular import (engine → frontend ← engine).
-func (ess *EngineSources) Access() *frontend.EngineSourcesAccess {
-	mainFiles := ess.Packages[""].Sources
-
-	imports := make(map[string]map[string]string)
-	for path, pkg := range ess.Packages {
-		if path != "" {
-			imports[path] = pkg.Sources
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); os.IsNotExist(err) {
+		// Use a replace directive so the sonolus stub package is found
+		// even when loading from a temp directory.
+		sonolusPath := sonolusPkgPath()
+		mod := fmt.Sprintf("module engine\n\ngo 1.21\n\nrequire %s v0.0.0\nreplace %s => %s\n",
+			sonolusPath, sonolusPath, findModuleRoot())
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
+			return nil, fmt.Errorf("source: create go.mod: %w", err)
 		}
 	}
 
-	return &frontend.EngineSourcesAccess{
-		RootDir:   ess.RootDir,
-		MainFiles: mainFiles,
-		Imports:   imports,
+	// Load with Dir set to the project directory so packages.Load finds
+	// the go.mod there, not the current working directory's go.mod.
+	parser := goparse.NewParser()
+	parser.SetFilters(goparse.PackageFilterNotStandard(), packageFilterNotThirdParty(parser))
+	pkg, err := parser.LoadWithConfig(packages.Config{Dir: dir, Mode: goparse.Modes}, ".")
+	if err != nil {
+		return nil, fmt.Errorf("source: %w", err)
 	}
+	sources := readAllSources(pkg, abs)
+	return &EngineSources{Pkg: pkg, sources: sources}, nil
+}
+
+func (ess *EngineSources) ResolveImports() error {
+	if ess.Pkg != nil {
+		return nil
+	}
+	if ess.Main == nil && ess.Imports == nil {
+		return fmt.Errorf("no source provided")
+	}
+
+	// Legacy path: parse inline source maps directly via go/parser.
+	// This avoids module-resolution complexities with packages.Load.
+	_, mainASTs, err := parseSourceMap(ess.Main)
+	if err != nil {
+		return err
+	}
+
+	importASTs := make(map[string][]*ast.File)
+	for impPath, files := range ess.Imports {
+		_, asts, err := parseSourceMap(files)
+		if err != nil {
+			return fmt.Errorf("import %q: %w", impPath, err)
+		}
+		importASTs[impPath] = asts
+	}
+
+	// Construct a minimal *packages.Package for the main package.
+	mainPkgName := extractPkgName(ess.Main)
+	mainPkg := &packages.Package{
+		Name:    mainPkgName,
+		PkgPath: "main",
+		Syntax:  mainASTs,
+		Imports: make(map[string]*packages.Package),
+	}
+
+	sources := map[string]map[string]string{"": ess.Main}
+
+	for impPath, asts := range importASTs {
+		impPkgName := extractPkgName(ess.Imports[impPath])
+		impPkg := &packages.Package{
+			Name:    impPkgName,
+			PkgPath: impPath,
+			Syntax:  asts,
+		}
+		mainPkg.Imports[impPath] = impPkg
+		sources[impPath] = ess.Imports[impPath]
+	}
+
+	ess.Pkg = mainPkg
+	ess.sources = sources
+	return nil
+}
+
+// parseSourceMap parses a set of source strings into *ast.File nodes.
+func parseSourceMap(files map[string]string) (*token.FileSet, []*ast.File, error) {
+	fset := token.NewFileSet()
+	var asts []*ast.File
+	for name, src := range files {
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			return nil, nil, err
+		}
+		asts = append(asts, f)
+	}
+	return fset, asts, nil
+}
+
+// extractPkgName extracts the package name from a set of source files.
+func extractPkgName(files map[string]string) string {
+	for _, src := range files {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "", src, parser.PackageClauseOnly)
+		if err == nil {
+			return f.Name.Name
+		}
+	}
+	return ""
+}
+
+// findModuleRoot finds the Go module root directory by walking up from cwd.
+func findModuleRoot() string {
+	dir, _ := os.Getwd()
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	// Fallback.
+	return "."
+}
+
+func (ess *EngineSources) Access() *frontend.EngineSourcesAccess {
+	return &frontend.EngineSourcesAccess{
+		RootDir:   ".",
+		MainFiles: ess.sources[""],
+		Imports:   ess.sources,
+	}
+}
+
+func readAllSources(main *packages.Package, rootDir string) map[string]map[string]string {
+	out := map[string]map[string]string{"": readSourceFiles(main)}
+	for path, pkg := range main.Imports {
+		out[path] = readSourceFiles(pkg)
+	}
+	_ = rootDir
+	return out
+}
+
+func readSourceFiles(pkg *packages.Package) map[string]string {
+	files := make(map[string]string, len(pkg.GoFiles))
+	for _, f := range pkg.GoFiles {
+		if data, err := os.ReadFile(f); err == nil {
+			files[filepath.Base(f)] = string(data)
+		}
+	}
+	return files
+}
+
+func overlaySources(overlay map[string][]byte) map[string]map[string]string {
+	out := map[string]map[string]string{"": {}}
+	for path, data := range overlay {
+		base := filepath.Base(path)
+		// Look for "/engine/" in the path to determine import paths.
+		slashPath := strings.ReplaceAll(path, "\\", "/")
+		if idx := strings.LastIndex(slashPath, "/engine/"); idx >= 0 {
+			rest := filepath.ToSlash(slashPath[idx+len("/engine/"):])
+			restDir := filepath.ToSlash(filepath.Dir(rest))
+			if restDir != "." {
+				if out[restDir] == nil {
+					out[restDir] = map[string]string{}
+				}
+				out[restDir][base] = string(data)
+				continue
+			}
+		}
+		out[""][base] = string(data)
+	}
+	return out
 }

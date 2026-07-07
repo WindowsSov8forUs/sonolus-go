@@ -45,3 +45,4 @@ _*.py
 # --- OS ---
 .DS_Store
 Thumbs.db
+.sonolus-engine-*/
