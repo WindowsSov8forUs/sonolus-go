@@ -358,10 +358,10 @@ func Update() {}
 	}
 
 	// Package and write each mode.
-	packageAndWritePlay(engineDir, &c.Configuration, &c.PlayData, rom)
-	packageAndWriteNonPlay(engineDir, &c.Configuration, rom, c.WatchData, func(p *build.PackagedEngine, b []byte) { p.WatchData = b }, "watch")
-	packageAndWriteNonPlay(engineDir, &c.Configuration, rom, c.PreviewData, func(p *build.PackagedEngine, b []byte) { p.PreviewData = b }, "preview")
-	packageAndWriteNonPlay(engineDir, &c.Configuration, rom, c.TutorialData, func(p *build.PackagedEngine, b []byte) { p.TutorialData = b }, "tutorial")
+	writePlay(engineDir, &c.Configuration, &c.PlayData, rom)
+	writeNonPlay(engineDir, &c.Configuration, rom, c.WatchData, func(p *build.PackagedEngine, b []byte) { p.WatchData = b }, "watch")
+	writeNonPlay(engineDir, &c.Configuration, rom, c.PreviewData, func(p *build.PackagedEngine, b []byte) { p.PreviewData = b }, "preview")
+	writeNonPlay(engineDir, &c.Configuration, rom, c.TutorialData, func(p *build.PackagedEngine, b []byte) { p.TutorialData = b }, "tutorial")
 
 	for _, f := range []string{
 		build.FileConfiguration, build.FilePlayData,
