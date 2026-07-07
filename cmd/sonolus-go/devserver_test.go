@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/cmd/sonolus-go/cache"
 )
 
 // TestDevServerEndpoints verifies that the dev server's HTTP endpoints return
@@ -26,7 +26,7 @@ func (n N) Initialize() {}
 		t.Fatal(err)
 	}
 
-	srv := &devServer{src: src, cache: engine.NewCache()}
+	srv := &devServer{src: src, cache: cache.NewCache()}
 	if err := srv.recompile(); err != nil {
 		t.Fatalf("recompile: %v", err)
 	}
@@ -82,7 +82,7 @@ func (n N) Initialize() {
 		t.Fatal(err)
 	}
 
-	srv := &devServer{src: src, cache: engine.NewCache()}
+	srv := &devServer{src: src, cache: cache.NewCache()}
 	if err := srv.recompile(); err != nil {
 		t.Fatalf("first recompile: %v", err)
 	}
@@ -161,9 +161,12 @@ type failingWriter struct {
 	written bool
 }
 
-func (w *failingWriter) Header() http.Header        { return http.Header{} }
-func (w *failingWriter) WriteHeader(int)             {}
-func (w *failingWriter) Write(b []byte) (int, error) { w.written = true; return 0, fmt.Errorf("simulated write error") }
+func (w *failingWriter) Header() http.Header { return http.Header{} }
+func (w *failingWriter) WriteHeader(int)     {}
+func (w *failingWriter) Write(b []byte) (int, error) {
+	w.written = true
+	return 0, fmt.Errorf("simulated write error")
+}
 
 // TestRecompileCacheHit verifies that calling recompile twice on the same source
 // hits the cache on the second call, without re-parsing or re-compiling.
@@ -185,7 +188,7 @@ func Update() {}
 		t.Fatal(err)
 	}
 
-	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv := &devServer{src: srcPath, cache: cache.NewCache()}
 	// First compilation: cache miss.
 	if err := srv.recompile(); err != nil {
 		t.Fatalf("first recompile: %v", err)

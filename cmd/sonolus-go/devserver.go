@@ -16,6 +16,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
+	"github.com/WindowsSov8forUs/sonolus-go/cmd/sonolus-go/cache"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/build"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
 )
@@ -35,10 +36,10 @@ type devServerState struct {
 // devServer holds the in-memory compiled engine state and serves it over HTTP.
 type devServer struct {
 	mu      sync.RWMutex
-	src     string                 // source path (file or directory)
-	romPath string                 // path to custom ROM file (empty = use defaults)
-	cache   *engine.CompileCache
-	ctx     context.Context        // passed to CompileOptions for cancellation support
+	src     string // source path (file or directory)
+	romPath string // path to custom ROM file (empty = use defaults)
+	cache   *cache.CompileCache
+	ctx     context.Context // passed to CompileOptions for cancellation support
 	state   devServerState
 }
 
@@ -61,7 +62,7 @@ func (s *devServer) recompile() error {
 	newState := devServerState{modeErrors: map[string]string{}}
 
 	// ── Play mode ──
-	playKey := engine.NewCacheKey("play", 0, cacheSrc, s.src)
+	playKey := cache.NewCacheKey("play", 0, cacheSrc, s.src)
 	if d, cfg := s.cache.GetPlay(playKey); d != nil {
 		newState.data = d
 		newState.cfg = cfg
@@ -90,11 +91,11 @@ func (s *devServer) recompile() error {
 
 	// ── Watch mode ──
 	compileNonPlay(s, "watch",
-		func(k engine.CacheKey) (*resource.EngineWatchData, bool) {
+		func(k cache.CacheKey) (*resource.EngineWatchData, bool) {
 			d := s.cache.GetWatch(k)
 			return d, d != nil
 		},
-		func(k engine.CacheKey, d *resource.EngineWatchData) { s.cache.PutWatch(k, d) },
+		func(k cache.CacheKey, d *resource.EngineWatchData) { s.cache.PutWatch(k, d) },
 		func(ess *engine.EngineSources, opts *engine.CompileOptions) (*resource.EngineWatchData, error) {
 			return engine.CompileWatchSources(ess, opts)
 		},
@@ -104,11 +105,11 @@ func (s *devServer) recompile() error {
 
 	// ── Preview mode ──
 	compileNonPlay(s, "preview",
-		func(k engine.CacheKey) (*resource.EnginePreviewData, bool) {
+		func(k cache.CacheKey) (*resource.EnginePreviewData, bool) {
 			d := s.cache.GetPreview(k)
 			return d, d != nil
 		},
-		func(k engine.CacheKey, d *resource.EnginePreviewData) { s.cache.PutPreview(k, d) },
+		func(k cache.CacheKey, d *resource.EnginePreviewData) { s.cache.PutPreview(k, d) },
 		func(ess *engine.EngineSources, opts *engine.CompileOptions) (*resource.EnginePreviewData, error) {
 			return engine.CompilePreviewSources(ess, opts)
 		},
@@ -118,11 +119,11 @@ func (s *devServer) recompile() error {
 
 	// ── Tutorial mode ──
 	compileNonPlay(s, "tutorial",
-		func(k engine.CacheKey) (*resource.EngineTutorialData, bool) {
+		func(k cache.CacheKey) (*resource.EngineTutorialData, bool) {
 			d := s.cache.GetTutorial(k)
 			return d, d != nil
 		},
-		func(k engine.CacheKey, d *resource.EngineTutorialData) { s.cache.PutTutorial(k, d) },
+		func(k cache.CacheKey, d *resource.EngineTutorialData) { s.cache.PutTutorial(k, d) },
 		func(ess *engine.EngineSources, opts *engine.CompileOptions) (*resource.EngineTutorialData, error) {
 			return engine.CompileTutorialSources(ess, opts)
 		},
@@ -174,15 +175,15 @@ func cacheSourceString(ess *engine.EngineSources) string {
 func compileNonPlay[T any](
 	s *devServer,
 	mode string,
-	getter func(engine.CacheKey) (T, bool),
-	putter func(engine.CacheKey, T),
+	getter func(cache.CacheKey) (T, bool),
+	putter func(cache.CacheKey, T),
 	compiler func(*engine.EngineSources, *engine.CompileOptions) (T, error),
 	setter func(T),
 	ess *engine.EngineSources,
 	srcStr string,
 	modeErrors map[string]string,
 ) {
-	key := engine.NewCacheKey(mode, 0, srcStr, s.src)
+	key := cache.NewCacheKey(mode, 0, srcStr, s.src)
 	if val, ok := getter(key); ok {
 		setter(val)
 		return
@@ -265,7 +266,7 @@ func runDevServer(srcPath string, addr string, romPath string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := &devServer{src: srcPath, romPath: romPath, cache: engine.NewCache(), ctx: ctx}
+	srv := &devServer{src: srcPath, romPath: romPath, cache: cache.NewCache(), ctx: ctx}
 	if err := srv.recompile(); err != nil {
 		return err
 	}

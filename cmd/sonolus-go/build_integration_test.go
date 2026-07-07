@@ -12,6 +12,8 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
+	"github.com/WindowsSov8forUs/sonolus-go/cmd/sonolus-go/cache"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/build"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize"
@@ -243,7 +245,7 @@ func TestServeCommand(t *testing.T) {
 	}
 
 	// runDevServer blocks, so we start it in a goroutine and probe it.
-	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv := &devServer{src: srcPath, cache: cache.NewCache()}
 	if err := srv.recompile(); err != nil {
 		t.Fatalf("recompile: %v", err)
 	}
@@ -385,7 +387,7 @@ func TestDevServerRecompileError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv := &devServer{src: srcPath, cache: cache.NewCache()}
 	if err := srv.recompile(); err == nil {
 		t.Error("expected recompile error for broken source, got nil")
 	}
@@ -404,7 +406,7 @@ func (n *Note) Initialize() { debugPause() }
 	}
 
 	// Second recompile should succeed (fresh cache on the new server instance).
-	srv2 := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv2 := &devServer{src: srcPath, cache: cache.NewCache()}
 	if err := srv2.recompile(); err != nil {
 		t.Fatalf("recompile after fix: %v", err)
 	}
@@ -437,7 +439,7 @@ func Update() {}
 		t.Fatal(err)
 	}
 
-	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv := &devServer{src: srcPath, cache: cache.NewCache()}
 	if err := srv.recompile(); err != nil {
 		t.Fatalf("initial recompile: %v", err)
 	}
@@ -477,7 +479,7 @@ func (n *Note) Initialize() {
 		t.Fatal(err)
 	}
 
-	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv := &devServer{src: srcPath, cache: cache.NewCache()}
 	if err := srv.recompile(); err != nil {
 		t.Fatalf("first recompile: %v", err)
 	}
@@ -501,7 +503,7 @@ func (n *Note) Initialize() {
 	}
 
 	// Fresh server to read the new source (simulating a watch-triggered recompile).
-	srv2 := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv2 := &devServer{src: srcPath, cache: cache.NewCache()}
 	if err := srv2.recompile(); err != nil {
 		t.Fatalf("second recompile: %v", err)
 	}
@@ -531,7 +533,7 @@ func (n *Note) Initialize() { debugPause() }
 		t.Fatal(err)
 	}
 
-	srv := &devServer{src: srcPath, cache: engine.NewCache()}
+	srv := &devServer{src: srcPath, cache: cache.NewCache()}
 	_ = srv.recompile() // may return nil or error depending on non-Play failures
 
 	mux := http.NewServeMux()
