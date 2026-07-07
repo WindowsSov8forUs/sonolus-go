@@ -74,7 +74,6 @@ func getErrors(pkg *packages.Package, visited map[string]bool, errs *[]error) {
 type Parser struct {
 	cfg     *packages.Config
 	filters []*PackageFilter
-	module  string
 }
 
 func NewParser() *Parser {
@@ -85,10 +84,6 @@ func NewParser() *Parser {
 	return &Parser{
 		cfg: cfg,
 	}
-}
-
-func (p *Parser) Module() string {
-	return p.module
 }
 
 func (p *Parser) fset() *token.FileSet {
