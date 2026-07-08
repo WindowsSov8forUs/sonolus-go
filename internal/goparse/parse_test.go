@@ -29,7 +29,10 @@ func TestLoad_Packages(t *testing.T) {
 		t.Logf("Load Result: %#v\n", pkg)
 		t.Logf("Module: %#v\n", pkg.Module)
 		for impPath, dep := range pkg.Imports {
-			t.Logf("%s -> Module: %v\n", impPath, dep.Module)
+			t.Logf("%s -> Module: %#v\n", impPath, dep.Module)
+			for impPath2, dep2 := range dep.Imports {
+				t.Logf("%s -> Module: %#v\n", impPath2, dep2.Module)
+			}
 		}
 		if pkg.Module != nil {
 			t.Logf("Main Module: %s\n", pkg.Module.Path)
