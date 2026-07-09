@@ -14,7 +14,7 @@ const defaultModuleName = "command-line-arguments"
 const Modes = packages.NeedName | packages.NeedFiles |
 	packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo |
 	packages.NeedDeps | packages.NeedImports | packages.NeedModule |
-	packages.NeedEmbedFiles | packages.NeedEmbedPatterns
+	packages.NeedEmbedFiles | packages.NeedEmbedPatterns | packages.NeedCompiledGoFiles
 
 type PackageFilter struct {
 	Func     func(pkg *packages.Package) bool
