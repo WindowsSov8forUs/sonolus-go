@@ -9,7 +9,6 @@ import (
 	"go/types"
 	"math"
 	"os"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,57 +22,19 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/intrinsic"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/source"
+	compilerTag "github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/tag"
 )
 
-type tagValue struct {
-	flags map[string]bool
-	items map[string]string
-}
+type tagValue = compilerTag.Value
 
-func parseTag(raw string) tagValue {
-	t := tagValue{flags: map[string]bool{}, items: map[string]string{}}
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		key, value, ok := strings.Cut(part, "=")
-		if ok {
-			t.items[strings.TrimSpace(key)] = strings.TrimSpace(value)
-		} else {
-			t.flags[part] = true
-		}
-	}
-	return t
-}
-
-func sonolusTag(tag string) (tagValue, bool) {
-	raw, ok := reflect.StructTag(tag).Lookup("sonolus")
-	if !ok {
-		return tagValue{}, false
-	}
-	return parseTag(raw), true
+func sonolusTag(raw string) (tagValue, bool) {
+	return compilerTag.Parse(raw, "sonolus")
 }
 
 func validateTag(where string, tag tagValue, flags, items []string) []error {
-	allowedFlags := map[string]bool{}
-	allowedItems := map[string]bool{}
-	for _, key := range flags {
-		allowedFlags[key] = true
-	}
-	for _, key := range items {
-		allowedItems[key] = true
-	}
 	var errs []error
-	for key := range tag.flags {
-		if !allowedFlags[key] {
-			errs = append(errs, fmt.Errorf("%s: unknown sonolus tag %q", where, key))
-		}
-	}
-	for key := range tag.items {
-		if !allowedItems[key] {
-			errs = append(errs, fmt.Errorf("%s: unknown sonolus tag %q", where, key))
-		}
+	for _, key := range tag.Unknown(flags, items) {
+		errs = append(errs, fmt.Errorf("%s: unknown %s tag %q", where, tag.Name, key))
 	}
 	return errs
 }
@@ -337,12 +298,12 @@ func parseBool(value string) (bool, error) { return strconv.ParseBool(value) }
 func parseArchetype(pkg *packages.Package, named *types.Named, m mode.Mode, marker tagValue) (*ArchetypeDeclaration, []error) {
 	var errs []error
 	errs = append(errs, validateTag(named.Obj().Name(), marker, nil, []string{"name", "hasInput"})...)
-	name := marker.items["name"]
+	name := marker.Items["name"]
 	if name == "" {
 		name = named.Obj().Name()
 	}
 	hasInput := false
-	if raw, ok := marker.items["hasInput"]; ok {
+	if raw, ok := marker.Items["hasInput"]; ok {
 		value, err := parseBool(raw)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: invalid hasInput %q", named.Obj().Name(), raw))
@@ -361,7 +322,7 @@ func parseArchetype(pkg *packages.Package, named *types.Named, m mode.Mode, mark
 		if field.Embedded() {
 			if id == markerID(m, "CallbackOrders") {
 				tag, _ := sonolusTag(st.Tag(i))
-				for key, raw := range tag.items {
+				for key, raw := range tag.Items {
 					order, err := strconv.Atoi(raw)
 					if err != nil {
 						errs = append(errs, fmt.Errorf("%s.%s: invalid callback order %q", named.Obj().Name(), key, raw))
@@ -380,7 +341,7 @@ func parseArchetype(pkg *packages.Package, named *types.Named, m mode.Mode, mark
 			[]string{"imported", "data", "memory", "shared", "exported"}, []string{"name", "default"})...)
 		storage := ""
 		for _, candidate := range []string{"imported", "data", "memory", "shared", "exported"} {
-			if tag.flags[candidate] {
+			if tag.Flags[candidate] {
 				if storage != "" {
 					errs = append(errs, fmt.Errorf("%s.%s: multiple storage classes", named.Obj().Name(), field.Name()))
 				}
@@ -400,7 +361,7 @@ func parseArchetype(pkg *packages.Package, named *types.Named, m mode.Mode, mark
 			errs = append(errs, fmt.Errorf("%s.%s: %w", named.Obj().Name(), field.Name(), err))
 			continue
 		}
-		externalName := tag.items["name"]
+		externalName := tag.Items["name"]
 		if externalName == "" {
 			externalName = field.Name()
 		}
@@ -410,7 +371,7 @@ func parseArchetype(pkg *packages.Package, named *types.Named, m mode.Mode, mark
 		}
 		external[externalName] = true
 		def := 0.0
-		if raw, ok := tag.items["default"]; ok {
+		if raw, ok := tag.Items["default"]; ok {
 			if storage != "imported" {
 				errs = append(errs, fmt.Errorf("%s.%s: default is only valid for imported fields", named.Obj().Name(), field.Name()))
 			} else if value, err := strconv.ParseFloat(raw, 64); err != nil {
@@ -462,7 +423,7 @@ func parseArchetype(pkg *packages.Package, named *types.Named, m mode.Mode, mark
 }
 
 func staticName(tag tagValue, fallback string) string {
-	if value := tag.items["name"]; value != "" {
+	if value := tag.Items["name"]; value != "" {
 		return value
 	}
 	return fallback
@@ -985,7 +946,7 @@ func addDirectiveResource(out *EngineDeclarations, spec resourceDirectiveSpec) [
 }
 
 func parseOptionBase(field *types.Var, tag tagValue) resource.EngineConfigurationOptionBase {
-	return resource.EngineConfigurationOptionBase{Name: core.Text(staticName(tag, field.Name())), Description: tag.items["description"], Scope: tag.items["scope"], Standard: tag.flags["standard"], Advanced: tag.flags["advanced"]}
+	return resource.EngineConfigurationOptionBase{Name: core.Text(staticName(tag, field.Name())), Description: tag.Items["description"], Scope: tag.Items["scope"], Standard: tag.Flags["standard"], Advanced: tag.Flags["advanced"]}
 }
 
 func parseConfiguration(named *types.Named) (*resource.EngineConfiguration, []error) {
@@ -1006,7 +967,7 @@ func parseConfiguration(named *types.Named) (*resource.EngineConfiguration, []er
 			[]string{"name", "description", "scope", "def", "min", "max", "step", "unit", "values"})...)
 		base := parseOptionBase(field, tag)
 		parseFloat := func(key string) float64 {
-			value, err := strconv.ParseFloat(tag.items[key], 64)
+			value, err := strconv.ParseFloat(tag.Items[key], 64)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("configuration.%s: invalid %s", field.Name(), key))
 				return 0
@@ -1014,21 +975,21 @@ func parseConfiguration(named *types.Named) (*resource.EngineConfiguration, []er
 			return value
 		}
 		switch {
-		case tag.flags["slider"]:
-			cfg.Options = append(cfg.Options, resource.EngineConfigurationSliderOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSlider, Def: parseFloat("def"), Min: parseFloat("min"), Max: parseFloat("max"), Step: parseFloat("step"), Unit: core.Text(tag.items["unit"])})
-		case tag.flags["toggle"]:
-			def, _ := strconv.ParseBool(tag.items["def"])
+		case tag.Flags["slider"]:
+			cfg.Options = append(cfg.Options, resource.EngineConfigurationSliderOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSlider, Def: parseFloat("def"), Min: parseFloat("min"), Max: parseFloat("max"), Step: parseFloat("step"), Unit: core.Text(tag.Items["unit"])})
+		case tag.Flags["toggle"]:
+			def, _ := strconv.ParseBool(tag.Items["def"])
 			n := 0
 			if def {
 				n = 1
 			}
 			cfg.Options = append(cfg.Options, resource.EngineConfigurationToggleOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeToggle, Def: n})
-		case tag.flags["select"]:
-			def, err := strconv.Atoi(tag.items["def"])
+		case tag.Flags["select"]:
+			def, err := strconv.Atoi(tag.Items["def"])
 			if err != nil {
 				errs = append(errs, fmt.Errorf("configuration.%s: invalid def", field.Name()))
 			}
-			raw := tag.items["values"]
+			raw := tag.Items["values"]
 			var values []core.Text
 			if raw != "" {
 				for _, v := range strings.Split(raw, "|") {

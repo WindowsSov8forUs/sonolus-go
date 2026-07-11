@@ -5,13 +5,14 @@ import (
 	"go/token"
 
 	sourcetracer "github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/source/tracer"
+	compilerTag "github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/tag"
 )
 
 type ErrInvalidTagOption struct {
 	Pos token.Position
 	Msg string
 
-	Tag    *StructTag
+	Tag    *compilerTag.Value
 	Option string
 }
 
