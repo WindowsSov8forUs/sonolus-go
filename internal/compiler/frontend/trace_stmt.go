@@ -581,9 +581,9 @@ func (t *tracer) fieldValue(sel *ast.SelectorExpr) (Num, error) {
 		return Num{}, t.errf(sel, "undefined record %q", base.Name)
 	}
 	off, ok := rec.fields[sel.Sel.Name]
-		if !ok {
-			off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
-		}
+	if !ok {
+		off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
+	}
 	if !ok {
 		off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
 	}
@@ -622,9 +622,9 @@ func (t *tracer) fieldPlace(sel *ast.SelectorExpr) (ir.BlockPlace, error) {
 		return ir.BlockPlace{}, t.errf(sel, "undefined record %q", base.Name)
 	}
 	off, ok := rec.fields[sel.Sel.Name]
-		if !ok {
-			off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
-		}
+	if !ok {
+		off, ok = rec.fields[lowerFirst(sel.Sel.Name)]
+	}
 	if !ok {
 		return ir.BlockPlace{}, t.errf(sel, "record %q has no field %q", base.Name, sel.Sel.Name)
 	}
@@ -679,7 +679,6 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 		}
 	}
 
-
 	// Receiver field write (method-authored callback).
 	// Nested composite field write: s.Base.Perfect = 1
 	if inner, ok := sel.X.(*ast.SelectorExpr); ok {
@@ -703,7 +702,7 @@ func (t *tracer) fieldStore(sel *ast.SelectorExpr, rhs ast.Expr) error {
 			return t.errf(sel, "record has no field %q", fieldName)
 		}
 	}
-	
+
 	if b, isRecv, err := t.receiverBinding(sel); err != nil {
 		return err
 	} else if isRecv {

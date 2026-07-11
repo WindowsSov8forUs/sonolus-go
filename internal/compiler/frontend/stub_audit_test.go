@@ -29,7 +29,7 @@ func TestStubDispatchAudit(t *testing.T) {
 	}
 
 	// Collect every function and method name from the stub package.
-	stubFuncs := make(map[string]bool) // lowerFirst name → true
+	stubFuncs := make(map[string]bool)       // lowerFirst name → true
 	stubMethods := make(map[string][]string) // type name → method names
 	ast.Inspect(f, func(n ast.Node) bool {
 		fd, ok := n.(*ast.FuncDecl)

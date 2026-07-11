@@ -384,11 +384,11 @@ func finishTutorial(fset *token.FileSet, funcs map[string]*ast.FuncDecl, resourc
 			env: frontend.Env{
 				Names: accessors, Funcs: funcs,
 				Accessors: accessors, Mode: ir.ModeTutorial,
-					Constants: map[string]float64{
-						"entityStateWaiting":   0,
-						"entityStateActive":    1,
-						"entityStateDespawned": 2,
-					},
+				Constants: map[string]float64{
+					"entityStateWaiting":   0,
+					"entityStateActive":    1,
+					"entityStateDespawned": 2,
+				},
 			},
 		})
 	}

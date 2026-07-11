@@ -151,8 +151,8 @@ func (v InlineVars) collectDefsAndUses(blocks []*ir.BasicBlock) (
 					arg = a
 				}
 				if phi.Target != nil {
-				addDef(phi.Target.(ir.SSAPlace), ir.Get{Place: arg})
-			}
+					addDef(phi.Target.(ir.SSAPlace), ir.Get{Place: arg})
+				}
 			}
 		}
 	}

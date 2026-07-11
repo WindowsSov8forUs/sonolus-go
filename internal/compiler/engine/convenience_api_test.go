@@ -1,5 +1,10 @@
 package engine_test
-import ("testing"; "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"; "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize")
+
+import (
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize"
+	"testing"
+)
 
 func TestSkinTransformAPI(t *testing.T) {
 	src := "package test\nimport \"github.com/WindowsSov8forUs/sonolus-go/sonolus\"\n" +

@@ -13,7 +13,7 @@ type Particle struct {
 type Note struct {
 	Beat float64 `sonolus:"imported"`
 	X    float64 `sonolus:"memory"`
-	Q    Quad   `sonolus:"memory"`
+	Q    Quad    `sonolus:"memory"`
 }
 
 func (n Note) Initialize() {

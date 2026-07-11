@@ -21,12 +21,12 @@ var sentinelPkg = types.NewPackage("__importing__", "__importing__")
 // relative to the engine root directory. It falls back to importer.Default()
 // for standard library imports.
 type engineImporter struct {
-	root      string                          // engine root directory (absolute)
-	fset      *token.FileSet                  // shared file set
-	loaded    map[string]*types.Package       // resolved packages (key: import path)
-	loading   map[string]bool                 // packages currently being loaded (cycle detection)
-	preloaded map[string]map[string]string    // import path → (filename → source) from EngineSources
-	mu        sync.Mutex                      // protects loaded/loading
+	root      string                       // engine root directory (absolute)
+	fset      *token.FileSet               // shared file set
+	loaded    map[string]*types.Package    // resolved packages (key: import path)
+	loading   map[string]bool              // packages currently being loaded (cycle detection)
+	preloaded map[string]map[string]string // import path → (filename → source) from EngineSources
+	mu        sync.Mutex                   // protects loaded/loading
 }
 
 // newEngineImporter creates an importer that resolves local import paths
@@ -81,9 +81,9 @@ func (imp *engineImporter) ImportFrom(path, srcDir string, _ types.ImportMode) (
 
 	// Try stdlib first.
 	if fallback, err := importer.Default().Import(path); err == nil {
-		imp.loaded[path] = fallback
+		_ = fallback
 		imp.mu.Unlock()
-		return fallback, nil
+		return nil, fmt.Errorf("could not import %q (standard lib is not allowed)", path)
 	}
 
 	// Not stdlib — must be a local package. Mark as loading for cycle detection.

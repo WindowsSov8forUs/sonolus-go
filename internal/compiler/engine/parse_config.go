@@ -70,7 +70,9 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, map[string]i
 			if err != nil {
 				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
 			}
-			optionIndices[string(name)] = optIndex; optIndex++; opts = append(opts, resource.EngineConfigurationToggleOption{
+			optionIndices[string(name)] = optIndex
+			optIndex++
+			opts = append(opts, resource.EngineConfigurationToggleOption{
 				EngineConfigurationOptionBase: base,
 				Type:                          resource.EngineConfigurationOptionTypeToggle,
 				Def:                           int(def),
@@ -87,7 +89,9 @@ func buildConfig(st *ast.StructType) (resource.EngineConfiguration, map[string]i
 			if err != nil {
 				return resource.EngineConfiguration{}, nil, fmt.Errorf("field %q def: %w", f.Names[0].Name, err)
 			}
-			optionIndices[string(name)] = optIndex; optIndex++; opts = append(opts, resource.EngineConfigurationSelectOption{
+			optionIndices[string(name)] = optIndex
+			optIndex++
+			opts = append(opts, resource.EngineConfigurationSelectOption{
 				EngineConfigurationOptionBase: base,
 				Type:                          resource.EngineConfigurationOptionTypeSelect,
 				Values:                        vals,

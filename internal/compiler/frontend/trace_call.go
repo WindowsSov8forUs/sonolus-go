@@ -69,11 +69,11 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		return exprNum(ir.GetPlace(place)), nil
 	case *ast.SelectorExpr:
-			if base, ok := n.X.(*ast.Ident); ok && t.env.Receiver != "" && base.Name == t.env.Receiver {
-				if recordNum, _, ok2 := t.resolveRecordField(n); ok2 {
-					return recordNum, nil
-				}
+		if base, ok := n.X.(*ast.Ident); ok && t.env.Receiver != "" && base.Name == t.env.Receiver {
+			if recordNum, _, ok2 := t.resolveRecordField(n); ok2 {
+				return recordNum, nil
 			}
+		}
 		if b, isRecv, err := t.receiverBinding(n); err != nil {
 			return Num{}, err
 		} else if isRecv {
@@ -100,12 +100,12 @@ func (t *tracer) expr(e ast.Expr) (Num, error) {
 		}
 		// Bare composite: evaluate vec2(...).x → extract field from the composite.
 		// Generalised composite extraction: works for CallExpr and SelectorExpr chains.
-			switch n.X.(type) {
-			case *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr:
-			default:
-				goto notComposite
-			}
-			{
+		switch n.X.(type) {
+		case *ast.CallExpr, *ast.SelectorExpr, *ast.IndexExpr:
+		default:
+			goto notComposite
+		}
+		{
 			v, err := t.expr(n.X)
 			if err != nil {
 				return Num{}, err
@@ -657,8 +657,8 @@ func (t *tracer) resolveBuiltinCall(fn *ast.Ident, n *ast.CallExpr) (Num, bool, 
 				"good":    cl(4),
 			}),
 			"archetypes": compNumTyped("archetypeArray", map[string]Num{}),
-			"initial": exprNum(ir.GetPlace(ir.Cell(2005, 6))),
-			"max":     exprNum(ir.GetPlace(ir.Cell(2005, 7))),
+			"initial":    exprNum(ir.GetPlace(ir.Cell(2005, 6))),
+			"max":        exprNum(ir.GetPlace(ir.Cell(2005, 7))),
 		}), true, nil
 	case "archetypeLife":
 		if len(n.Args) != 1 {
@@ -1135,7 +1135,7 @@ func (t *tracer) setTransform2d(n *ast.CallExpr, blockID int) (Num, bool, error)
 	if err != nil {
 		return Num{}, true, err
 	}
-	fields := []string{"a00","a01","a02","a03","a10","a11","a12","a13","a20","a21","a22","a23","a30","a31","a32","a33"}
+	fields := []string{"a00", "a01", "a02", "a03", "a10", "a11", "a12", "a13", "a20", "a21", "a22", "a23", "a30", "a31", "a32", "a33"}
 	for i, f := range fields {
 		t.emit(t.gen.SetPlace(ir.Cell(blockID, i), val.MustField(f).mustNode()))
 	}
@@ -1487,4 +1487,3 @@ func (t *tracer) callClosure(fn *ast.Ident, call *ast.CallExpr, ci *closureInfo)
 	t.records = savedRecords
 	return result, err
 }
-

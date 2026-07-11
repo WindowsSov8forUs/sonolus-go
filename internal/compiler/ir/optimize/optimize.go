@@ -5,8 +5,8 @@ package optimize
 
 import (
 	"context"
-	"sort"
 	"fmt"
+	"sort"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
 )

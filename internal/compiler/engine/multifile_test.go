@@ -320,11 +320,8 @@ func (n *Note) Initialize() {
 	}
 }
 
-// TestSonolusTypeField verifies that sonolus.Vec2 passes field type validation
-// and sonolus. constructors work for local variables.
-func TestSonolusTypeField(t *testing.T) {
+func TestPreludeMath(t *testing.T) {
 	src := `package test
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 type Skin struct { Note float64 }
 type Note struct {
     Beat float64 ` + "`sonolus:\"imported\"`" + `
@@ -332,14 +329,13 @@ type Note struct {
     Y    float64 ` + "`sonolus:\"memory\"`" + `
 }
 func (n *Note) Initialize() {
-    n.X = sonolus.Sin(n.Beat)
-    n.Y = sonolus.Cos(n.Beat)
+		n.X = sin(n.Beat)
+		n.Y = cos(n.Beat)
 }
 func UpdateSpawn() float64 { return 0 }
 `
 	ess := engine.NewSingleFileSources(src)
-	_, _, err := engine.CompilePlaySources(ess, nil)
-	if err != nil {
+	if _, _, err := engine.CompilePlaySources(ess, nil); err != nil {
 		t.Fatalf("CompilePlaySources: %v", err)
 	}
 }
@@ -407,8 +403,8 @@ type Note struct {
     pos  sonolus.Vec2 ` + "`sonolus:\"memory\"`" + `
 }
 func (n *Note) Initialize() {
-    n.pos.X = sonolus.Sin(n.Beat)
-    n.pos.Y = sonolus.Cos(n.Beat)
+    n.pos.X = sin(n.Beat)
+    n.pos.Y = cos(n.Beat)
     sonolus.Draw(1, n.pos.X, n.pos.Y, 1, 1, 0, 1, 0, 0)
 }
 func UpdateSpawn() float64 { return 0 }

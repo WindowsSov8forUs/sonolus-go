@@ -15,13 +15,13 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-func packageFilterNotThirdParty(p *goparse.Parser) *goparse.PackageFilter {
+func packageFilterNotThirdParty() *goparse.PackageFilter {
 	filterFunc := func(pkg *packages.Package) bool {
 		path := pkg.PkgPath
-		if strings.HasPrefix(path, p.Module()) {
+		if pkg.Module != nil && pkg.Module.Main {
 			return true
 		}
-		if path == utils.SonolusPkgPath() {
+		if path == utils.SonolusPkgPath() || strings.HasPrefix(path, utils.SonolusPkgPath()+"/") {
 			return true
 		}
 		if !strings.Contains(path, ".") {
@@ -37,8 +37,16 @@ func packageFilterNotThirdParty(p *goparse.Parser) *goparse.PackageFilter {
 
 func LoadPackage(pattern ...string) (*packages.Package, error) {
 	parser := goparse.NewParser()
-	parser.SetFilters(goparse.PackageFilterNotStandard(), packageFilterNotThirdParty(parser))
-	return parser.Load(pattern...)
+	parser.SetPackageFilters(goparse.PackageFilterNotStandard(), packageFilterNotThirdParty())
+	parser.SetImportFilters(goparse.ImportFilterNoDotImport())
+	pkgs, err := parser.Load(pattern...)
+	if err != nil {
+		return nil, err
+	}
+	if len(pkgs) != 1 {
+		return nil, fmt.Errorf("expected exactly one main package, got %d", len(pkgs))
+	}
+	return pkgs[0], nil
 }
 
 // EngineSources bundles the parsed engine project for compilation.
@@ -84,6 +92,20 @@ func NewEngineSources(main map[string]string, imports map[string]map[string]stri
 func LoadEngineSources(patterns ...string) (*EngineSources, error) {
 	if len(patterns) == 0 {
 		return nil, fmt.Errorf("source: no path provided")
+	}
+	// Keep the legacy single-file CLI path syntax-only. Engine builtins are
+	// supplied by the compiler prelude, so asking go/packages to type-check a
+	// standalone file would incorrectly reject calls such as debugPause.
+	if len(patterns) == 1 && strings.HasSuffix(patterns[0], ".go") {
+		data, err := os.ReadFile(patterns[0])
+		if err != nil {
+			return nil, fmt.Errorf("source: %w", err)
+		}
+		ess := NewSingleFileSources(string(data))
+		if err := ess.ResolveImports(); err != nil {
+			return nil, fmt.Errorf("source: %w", err)
+		}
+		return ess, nil
 	}
 
 	pkg, err := LoadPackage(patterns...)
@@ -195,4 +217,3 @@ func readSourceFiles(pkg *packages.Package) map[string]string {
 	}
 	return files
 }
-

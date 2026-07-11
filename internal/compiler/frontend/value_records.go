@@ -177,19 +177,19 @@ var recordMethods = map[string]map[string]recordMethodEntry{
 		"exists": {fn: skinSpritesExists, minArity: 1},
 	},
 	"transform2d": {
-		"translate":         {fn: transform2dTranslate, minArity: 1, compositeArgAt: []int{0}},
-		"scale":             {fn: transform2dScale, minArity: 1, compositeArgAt: []int{0}},
-		"scaleAbout":        {fn: transform2dScaleAbout, minArity: 2, compositeArgAt: []int{0, 1}},
-		"rotate":            {fn: transform2dRotate, minArity: 1},
-		"rotateAbout":       {fn: transform2dRotateAbout, minArity: 2, compositeArgAt: []int{1}},
-		"compose":           {fn: transform2dCompose, minArity: 1, compositeArgAt: []int{0}},
-		"composeBefore":     {fn: transform2dComposeBefore, minArity: 1, compositeArgAt: []int{0}},
-		"transformVec":      {fn: transform2dTransformVec, minArity: 1, compositeArgAt: []int{0}},
-		"transformQuad":     {fn: transform2dTransformQuad, minArity: 1, compositeArgAt: []int{0}},
+		"translate":          {fn: transform2dTranslate, minArity: 1, compositeArgAt: []int{0}},
+		"scale":              {fn: transform2dScale, minArity: 1, compositeArgAt: []int{0}},
+		"scaleAbout":         {fn: transform2dScaleAbout, minArity: 2, compositeArgAt: []int{0, 1}},
+		"rotate":             {fn: transform2dRotate, minArity: 1},
+		"rotateAbout":        {fn: transform2dRotateAbout, minArity: 2, compositeArgAt: []int{1}},
+		"compose":            {fn: transform2dCompose, minArity: 1, compositeArgAt: []int{0}},
+		"composeBefore":      {fn: transform2dComposeBefore, minArity: 1, compositeArgAt: []int{0}},
+		"transformVec":       {fn: transform2dTransformVec, minArity: 1, compositeArgAt: []int{0}},
+		"transformQuad":      {fn: transform2dTransformQuad, minArity: 1, compositeArgAt: []int{0}},
 		"simplePerspectiveX": {fn: transform2dSimplePerspectiveX, minArity: 1},
 		"simplePerspectiveY": {fn: transform2dSimplePerspectiveY, minArity: 1},
-		"perspectiveX":      {fn: transform2dPerspectiveX, minArity: 2, compositeArgAt: []int{1}},
-		"perspectiveY":      {fn: transform2dPerspectiveY, minArity: 2, compositeArgAt: []int{1}},
+		"perspectiveX":       {fn: transform2dPerspectiveX, minArity: 2, compositeArgAt: []int{1}},
+		"perspectiveY":       {fn: transform2dPerspectiveY, minArity: 2, compositeArgAt: []int{1}},
 	},
 	"canvasObj": {
 		"print": {fn: canvasPrint, minArity: 1, compositeArgAt: []int{0}},
@@ -355,7 +355,8 @@ func spriteExists(t *tracer, s Num, args []Num) (Num, error) {
 // --- Transform2d methods ---
 
 func transform2dTranslate(t *tracer, m Num, args []Num) (Num, error) {
-	v := args[0]; dx, dy := v.MustField("x").mustNode(), v.MustField("y").mustNode()
+	v := args[0]
+	dx, dy := v.MustField("x").mustNode(), v.MustField("y").mustNode()
 	add := func(n ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, n, dx) }
 	addY := func(n ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, n, dy) }
 	return compNumTyped("transform2d", map[string]Num{
@@ -407,7 +408,9 @@ func transform2dCompose(t *tracer, m Num, args []Num) (Num, error) {
 	o := args[0]
 	// compose: each element = sum of products from m row × o column
 	dot4 := func(row []Num, col string) Num {
-		mul := func(a, b Num) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a.mustNode(), b.mustNode()) }
+		mul := func(a, b Num) ir.Node {
+			return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a.mustNode(), b.mustNode())
+		}
 		sum01 := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(row[0], o.MustField(col+"0")), mul(row[1], o.MustField(col+"1")))
 		sum23 := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(row[2], o.MustField(col+"2")), mul(row[3], o.MustField(col+"3")))
 		return exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, sum01, sum23))
@@ -427,7 +430,8 @@ func transform2dCompose(t *tracer, m Num, args []Num) (Num, error) {
 }
 
 func transform2dTransformVec(t *tracer, m Num, args []Num) (Num, error) {
-	v := args[0]; x, y := v.MustField("x").mustNode(), v.MustField("y").mustNode()
+	v := args[0]
+	x, y := v.MustField("x").mustNode(), v.MustField("y").mustNode()
 	// x' = a00*x + a01*y + a02, y' = a10*x + a11*y + a12
 	mul := func(a, b ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a, b) }
 	nx := t.gen.PureInstr(resource.RuntimeFunctionAdd,
@@ -442,11 +446,16 @@ func transform2dTransformVec(t *tracer, m Num, args []Num) (Num, error) {
 // --- Transform2d remaining methods ---
 
 func transform2dScaleAbout(t *tracer, m Num, args []Num) (Num, error) {
-	factor := args[0]; pivot := args[1]
+	factor := args[0]
+	pivot := args[1]
 	fx, fy := factor.MustField("x").mustNode(), factor.MustField("y").mustNode()
 	px, py := pivot.MustField("x").mustNode(), pivot.MustField("y").mustNode()
-	mulX := func(n ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionSubtract, n, px), fx), px) }
-	mulY := func(n ir.Node) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionSubtract, n, py), fy), py) }
+	mulX := func(n ir.Node) ir.Node {
+		return t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionSubtract, n, px), fx), px)
+	}
+	mulY := func(n ir.Node) ir.Node {
+		return t.gen.PureInstr(resource.RuntimeFunctionAdd, t.gen.PureInstr(resource.RuntimeFunctionMultiply, t.gen.PureInstr(resource.RuntimeFunctionSubtract, n, py), fy), py)
+	}
 	return compNumTyped("transform2d", map[string]Num{
 		"a00": exprNum(mulX(m.MustField("a00").mustNode())), "a01": exprNum(mulX(m.MustField("a01").mustNode())),
 		"a02": exprNum(mulX(m.MustField("a02").mustNode())), "a03": m.MustField("a03"),
@@ -458,7 +467,8 @@ func transform2dScaleAbout(t *tracer, m Num, args []Num) (Num, error) {
 }
 
 func transform2dRotateAbout(t *tracer, m Num, args []Num) (Num, error) {
-	angle := args[0]; pivot := args[1]
+	angle := args[0]
+	pivot := args[1]
 	px, py := pivot.MustField("x").mustNode(), pivot.MustField("y").mustNode()
 	c := exprNum(t.gen.PureInstr(resource.RuntimeFunctionCos, angle.mustNode()))
 	s := exprNum(t.gen.PureInstr(resource.RuntimeFunctionSin, angle.mustNode()))
@@ -496,7 +506,9 @@ func transform2dComposeBefore(t *tracer, m Num, args []Num) (Num, error) {
 	// composeBefore(other) = other.Compose(this)
 	o := args[0]
 	dot4 := func(row []Num, col string) Num {
-		mul := func(a, b Num) ir.Node { return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a.mustNode(), b.mustNode()) }
+		mul := func(a, b Num) ir.Node {
+			return t.gen.PureInstr(resource.RuntimeFunctionMultiply, a.mustNode(), b.mustNode())
+		}
 		sum01 := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(row[0], m.MustField("a0"+string(col[1]))), mul(row[1], m.MustField("a1"+string(col[1]))))
 		sum23 := t.gen.PureInstr(resource.RuntimeFunctionAdd, mul(row[2], m.MustField("a2"+string(col[1]))), mul(row[3], m.MustField("a3"+string(col[1]))))
 		return exprNum(t.gen.PureInstr(resource.RuntimeFunctionAdd, sum01, sum23))
@@ -758,7 +770,6 @@ func entityInfoIsActive(t *tracer, info Num, args []Num) (Num, error) {
 	}
 	return eq, nil
 }
-
 
 // lifeInfoAddScheduled implements LifeInfo.AddScheduled(value, time).
 func lifeInfoAddScheduled(t *tracer, info Num, args []Num) (Num, error) {

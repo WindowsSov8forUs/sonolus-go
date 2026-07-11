@@ -393,6 +393,7 @@ func filterHardErrors(err error) error {
 			return nil
 		}
 		if strings.Contains(msg, "undeclared name") ||
+			strings.Contains(msg, "standard lib is not allowed") ||
 			strings.Contains(msg, "not enough arguments") ||
 			strings.Contains(msg, "too many arguments") ||
 			strings.Contains(msg, "undefined: ") {
@@ -406,6 +407,7 @@ func filterHardErrors(err error) error {
 		return nil
 	}
 	if strings.Contains(msg, "undefined: ") ||
+		strings.Contains(msg, "standard lib is not allowed") ||
 		strings.Contains(msg, "not enough arguments") ||
 		strings.Contains(msg, "too many arguments") {
 		return err

@@ -22,22 +22,22 @@ var methodCallbacks = map[string]play.Callback{
 }
 
 type parsedArchetype struct {
-	name       string
-	imported   []ImportedField
-	memory     []string
-	exported   []string
-	data       []string
-	shared     []string
-	input      []string
-	despawn    []string
-	info       []string
+	name         string
+	imported     []ImportedField
+	memory       []string
+	exported     []string
+	data         []string
+	shared       []string
+	input        []string
+	despawn      []string
+	info         []string
 	scored       bool
 	lifed        bool
 	scoredFields []string
 	lifedFields  []string
 	methods      []parsedMethod
-	helpers    map[string]*ast.FuncDecl
-	containers []ContainerFieldMeta
+	helpers      map[string]*ast.FuncDecl
+	containers   []ContainerFieldMeta
 }
 
 type parsedMethod struct {
@@ -274,7 +274,7 @@ func compileParsed(
 	for _, clip := range r.effect.Clips {
 		effectIndex[string(clip.Name)] = float64(clip.ID)
 	}
-spriteIndex := buildSpriteIndex(r.skin, r.skinST)
+	spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 
 	results := make([]*modecompile.Result, 0, len(order)*3)
 	for i, name := range order {
@@ -294,8 +294,8 @@ spriteIndex := buildSpriteIndex(r.skin, r.skinST)
 			return frontend.Env{
 				Names: names, Receiver: receiver, Funcs: funcs, Methods: a.helpers,
 				Accessors: frontend.ModeAccessorsReadOnly(ir.ModePlay),
-				Mode: ir.ModePlay, SpriteIndex: spriteIndex, EffectIndex: effectIndex, ParticleIndex: particleIndex,
-			ContainerFields: frontendContainerFieldMeta(a.containers),
+				Mode:      ir.ModePlay, SpriteIndex: spriteIndex, EffectIndex: effectIndex, ParticleIndex: particleIndex,
+				ContainerFields: frontendContainerFieldMeta(a.containers),
 				Constants: map[string]float64{
 					"entityStateWaiting":   0,
 					"entityStateActive":    1,

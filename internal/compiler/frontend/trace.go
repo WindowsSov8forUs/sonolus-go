@@ -31,21 +31,21 @@ type Binding struct {
 // functions callable from the body (inlined when called); Accessors is the base
 // binding set those inlined functions see (no archetype fields).
 type Env struct {
-	Names       map[string]Binding
-	Receiver    string
-	Funcs       map[string]*ast.FuncDecl // free helper functions
-	Methods     map[string]*ast.FuncDecl // non-callback methods of the current archetype
-	Accessors   map[string]Binding
-	Mode        ir.Mode
-	Records     map[string][]string // user-defined record: name → field names
-	Info        *types.Info         // go/types type-check result (D1 diagnostic layer)
-	Constants        map[string]float64        // named compile-time constants (e.g. archetype indices)
-	SpriteIndex      map[string]float64        // sprite name → index (from Skin struct fields)
-	EffectIndex      map[string]float64        // effect clip name → ID (from Effect struct fields)
-	ParticleIndex    map[string]float64        // particle effect name → ID (from Particle struct fields)
-	ContainerFields  []ContainerFieldMeta      // container-typed struct field metadata
-	MaxUnroll        int                       // general loop unroll limit (0 = default 256)
-	MaxUnrollCont    int                       // container unroll limit (0 = default 64)
+	Names           map[string]Binding
+	Receiver        string
+	Funcs           map[string]*ast.FuncDecl // free helper functions
+	Methods         map[string]*ast.FuncDecl // non-callback methods of the current archetype
+	Accessors       map[string]Binding
+	Mode            ir.Mode
+	Records         map[string][]string  // user-defined record: name → field names
+	Info            *types.Info          // go/types type-check result (D1 diagnostic layer)
+	Constants       map[string]float64   // named compile-time constants (e.g. archetype indices)
+	SpriteIndex     map[string]float64   // sprite name → index (from Skin struct fields)
+	EffectIndex     map[string]float64   // effect clip name → ID (from Effect struct fields)
+	ParticleIndex   map[string]float64   // particle effect name → ID (from Particle struct fields)
+	ContainerFields []ContainerFieldMeta // container-typed struct field metadata
+	MaxUnroll       int                  // general loop unroll limit (0 = default 256)
+	MaxUnrollCont   int                  // container unroll limit (0 = default 64)
 }
 
 // ContainerFieldMeta mirrors engine.ContainerFieldMeta in the frontend package
@@ -128,9 +128,9 @@ type deferCtx struct {
 // closureInfo holds a capturing closure that has been lifted to a synthetic helper.
 // The capture frame stores the captured variable values at closure creation time.
 type closureInfo struct {
-	fn       *ast.FuncLit    // the closure body
-	captures []string        // captured variable names in order
-	frame    *ir.TempBlock   // capture frame (one slot per capture)
+	fn       *ast.FuncLit  // the closure body
+	captures []string      // captured variable names in order
+	frame    *ir.TempBlock // capture frame (one slot per capture)
 }
 
 // arrayInfo is a fixed-size array local, backed by a multi-slot temp.
@@ -326,15 +326,15 @@ func CompileBlock(fset *token.FileSet, gen *ir.IDGen, body *ast.BlockStmt, env E
 		return nil, fmt.Errorf("frontend: nil function body")
 	}
 	t := &tracer{
-		fset:         fset,
-		gen:          gen,
-		env:          env,
-		vars:         map[string]*ir.TempBlock{},
-		arrays:       map[string]*arrayInfo{},
-		records:      map[string]*recordInfo{},
-		containers:   map[string]*containerInfo{},
-		inlining:     map[string]bool{},
-		maxUnroll:    env.MaxUnroll,
+		fset:          fset,
+		gen:           gen,
+		env:           env,
+		vars:          map[string]*ir.TempBlock{},
+		arrays:        map[string]*arrayInfo{},
+		records:       map[string]*recordInfo{},
+		containers:    map[string]*containerInfo{},
+		inlining:      map[string]bool{},
+		maxUnroll:     env.MaxUnroll,
 		maxUnrollCont: env.MaxUnrollCont,
 	}
 	if t.maxUnroll == 0 {

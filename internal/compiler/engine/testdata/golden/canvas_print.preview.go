@@ -10,6 +10,6 @@ func (n Note) Render() {
 		Format:  0,
 		AnchorX: 0.5, AnchorY: 0.5,
 		SizeX: 16, SizeY: 16,
-		Color:  -1, Alpha: 1,
+		Color: -1, Alpha: 1,
 	})
 }

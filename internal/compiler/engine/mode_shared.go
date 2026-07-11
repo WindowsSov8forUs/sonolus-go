@@ -37,16 +37,16 @@ func modeName(m ir.Mode) string {
 // both parseFields (Play mode, which also handles exported/scored/lifed) and
 // parseModeFile (Watch/Preview/Tutorial modes).
 type tagCollector struct {
-	imported    []ImportedField
-	memory      []string
-	data        []string
-	shared      []string
-	input       []string
-	despawn     []string
-	info        []string
+	imported     []ImportedField
+	memory       []string
+	data         []string
+	shared       []string
+	input        []string
+	despawn      []string
+	info         []string
 	scoredFields []string
 	lifedFields  []string
-	containers  []ContainerFieldMeta
+	containers   []ContainerFieldMeta
 }
 
 // collectSonolusTags reads sonolus struct tags from a field and appends field
