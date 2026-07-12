@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/watch"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/watch"
 )
 
 type Note struct {

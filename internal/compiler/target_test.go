@@ -14,7 +14,7 @@ func TestDiscoverTargets(t *testing.T) {
 		t.Fatalf("targets are not sorted: %#v", targets)
 	}
 	for _, target := range targets {
-		if target.ModulePath != "github.com/WindowsSov8forUs/sonolus-go" {
+		if target.ModulePath != "github.com/WindowsSov8forUs/sonolus-go/v2" {
 			t.Fatalf("module path = %q", target.ModulePath)
 		}
 	}

@@ -1,6 +1,6 @@
 package main
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 
 func sum(values ...float64) float64 {
 	result := 0.0

@@ -8,8 +8,8 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/catalog"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 func configurationUI(value source.StaticValue, typ *types.Struct) (resource.EngineConfigurationUI, error) {

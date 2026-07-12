@@ -5,7 +5,7 @@ import (
 	"go/constant"
 	"go/types"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 func dereferenceStatic(value source.StaticValue) source.StaticValue {

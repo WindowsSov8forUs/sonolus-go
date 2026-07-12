@@ -5,9 +5,9 @@ import (
 	"go/types"
 	"strings"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
-	compilerTag "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/tag"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
+	compilerTag "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/tag"
 )
 
 type tagValue = compilerTag.Value

@@ -8,9 +8,9 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/intrinsic"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/goparse"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/intrinsic"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/goparse"
 )
 
 var (

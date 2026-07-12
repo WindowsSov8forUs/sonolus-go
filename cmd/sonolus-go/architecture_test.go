@@ -14,7 +14,7 @@ func TestCLICompilerImportsStayAtPublicBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	allowed := map[string]bool{
-		"github.com/WindowsSov8forUs/sonolus-go/internal/compiler": true,
+		"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler": true,
 	}
 	for _, filename := range files {
 		file, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.ImportsOnly)
@@ -26,7 +26,7 @@ func TestCLICompilerImportsStayAtPublicBoundary(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unquote import in %s: %v", filename, err)
 			}
-			const compilerPrefix = "github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+			const compilerPrefix = "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 			if len(path) >= len(compilerPrefix) && path[:len(compilerPrefix)] == compilerPrefix && !allowed[path] {
 				t.Errorf("%s imports compiler implementation package %q", filename, path)
 			}

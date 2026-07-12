@@ -3,7 +3,7 @@ package backend
 import (
 	"fmt"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 )
 
 const (

@@ -1,6 +1,6 @@
 package frontend
 
-import "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/catalog"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
 
 func operationSet(values ...string) map[string]struct{} {
 	result := make(map[string]struct{}, len(values))

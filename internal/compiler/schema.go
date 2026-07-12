@@ -6,9 +6,9 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
-	compilerschema "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/schema"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	compilerschema "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/schema"
 )
 
 type ProjectSchema = compilerschema.Project

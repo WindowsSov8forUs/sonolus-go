@@ -12,7 +12,7 @@
 mkdir example-engine
 cd example-engine
 go mod init example-engine
-go get github.com/WindowsSov8forUs/sonolus-go
+go get github.com/WindowsSov8forUs/sonolus-go/v2
 ```
 
 推荐用 build tags 隔离四种模式。同名资源和 archetype 可以分别出现在 `play.go`、`watch.go`、`preview.go`、`tutorial.go` 中。
@@ -24,7 +24,7 @@ go get github.com/WindowsSov8forUs/sonolus-go
 ```go
 package main
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
 type GameConfiguration struct {
 	sonolus.Configuration
@@ -51,8 +51,8 @@ Configuration 和 ROM 是引擎级共享产物。四种模式分别加载后，c
 package main
 
 import (
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
 
 type SkinData struct {
@@ -104,7 +104,7 @@ Tutorial 没有 archetype，使用全局 callback marker：
 
 package main
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus/tutorial"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/tutorial"
 
 type Globals struct{ tutorial.GlobalCallbacks }
 var Global Globals

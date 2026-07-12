@@ -3,7 +3,7 @@ package backend
 import (
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 )
 
 func TestOmitConstantCallback(t *testing.T) {

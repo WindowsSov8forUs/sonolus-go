@@ -9,7 +9,7 @@
 也可以从源码安装。项目需要 Go 1.25.12 或更高版本：
 
 ```bash
-go install github.com/WindowsSov8forUs/sonolus-go/cmd/sonolus-go@latest
+go install github.com/WindowsSov8forUs/sonolus-go/v2/cmd/sonolus-go@latest
 ```
 
 开发当前仓库时可直接编译：

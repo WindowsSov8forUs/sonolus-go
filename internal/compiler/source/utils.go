@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	sourcetracer "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source/tracer"
+	sourcetracer "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source/tracer"
 )
 
 type NodeChecker func(node *TypeSpecNode) bool

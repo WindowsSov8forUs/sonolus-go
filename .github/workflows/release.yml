@@ -4,8 +4,8 @@ name: Release
 # packages them into archives, and uploads to a GitHub Release.
 #
 # To cut a release:
-#   git tag -a v1.1.0-rc.1 -m "v1.1.0-rc.1"
-#   git push origin v1.1.0-rc.1
+#   git tag -a v2.0.0-rc.1 -m "v2.0.0-rc.1"
+#   git push origin v2.0.0-rc.1
 
 on:
   push:

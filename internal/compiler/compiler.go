@@ -12,11 +12,11 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/backend"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/optimize"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/backend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 type Options struct {

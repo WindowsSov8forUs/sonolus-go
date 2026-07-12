@@ -1,6 +1,6 @@
 package main
 
-import dep "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source/testdata/staticdep"
+import dep "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source/testdata/staticdep"
 
 type CrossType struct {
 	dep.Pair

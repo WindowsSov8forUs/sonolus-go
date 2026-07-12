@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 )
 
 type executableMode struct {

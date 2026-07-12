@@ -1,6 +1,6 @@
 package helper
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 
 type Callbacks struct{}
 

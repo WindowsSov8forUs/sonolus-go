@@ -4,11 +4,11 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/preview"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/tutorial"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/watch"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/preview"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/tutorial"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/watch"
 )
 
 type GameConfiguration struct {
