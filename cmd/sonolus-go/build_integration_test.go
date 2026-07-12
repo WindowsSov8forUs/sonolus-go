@@ -40,6 +40,9 @@ func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 			t.Errorf("missing %s: %v", name, err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(dir, "LevelData")); !os.IsNotExist(err) {
+		t.Fatalf("build unexpectedly wrote LevelData: %v", err)
+	}
 	play, err := codec.Decompress[resource.EnginePlayData](mustRead(t, filepath.Join(dir, build.FilePlayData)))
 	if err != nil || len(play.Skin.Sprites) == 0 {
 		t.Fatalf("play round trip: sprites=%d err=%v", len(play.Skin.Sprites), err)
@@ -54,25 +57,6 @@ func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 	}
 	if len(rom) != 24 {
 		t.Fatalf("raw ROM length = %d", len(rom))
-	}
-}
-
-func TestPackCompilesPublicConformanceExample(t *testing.T) {
-	out := t.TempDir()
-	previousRoot := engineOutputRoot
-	engineOutputRoot = out
-	t.Cleanup(func() { engineOutputRoot = previousRoot })
-	if err := runCLI([]string{
-		"pack", "-o", "conformance", "-author", "sonolus-go", "-O", "2", publicConformancePattern(),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := os.ReadDir(filepath.Join(out, "conformance"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("pack output is empty")
 	}
 }
 
@@ -127,6 +111,7 @@ func TestDevServerRecompileIsAtomic(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
 	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Play }))
+	mux.HandleFunc("/", srv.serveSonolus)
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	response, err := http.Get(server.URL + "/sonolus/engines/info")
@@ -140,6 +125,22 @@ func TestDevServerRecompileIsAtomic(t *testing.T) {
 	}
 	if info["engine"] != "conformance" {
 		t.Fatalf("info = %#v", info)
+	}
+	response, err = http.Get(server.URL + "/sonolus/info")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("Sonolus info status = %d", response.StatusCode)
+	}
+	response, err = http.Get(server.URL + "/sonolus/levels/list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("Sonolus level list status = %d", response.StatusCode)
 	}
 }
 

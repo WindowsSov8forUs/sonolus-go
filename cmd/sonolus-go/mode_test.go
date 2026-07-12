@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -112,10 +111,15 @@ func TestRunCLIParsesSubcommandFlags(t *testing.T) {
 	}
 }
 
-func TestRunCLILevelRequiresChart(t *testing.T) {
-	err := runCLI([]string{"level", "-o", t.TempDir()})
-	if err == nil || !strings.Contains(err.Error(), "exactly one chart path") {
-		t.Fatalf("unexpected error: %v", err)
+func TestRunCLIDevCommand(t *testing.T) {
+	err := runCLI([]string{"dev", "-unknown"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -unknown") {
+		t.Fatalf("dev command was not parsed: %v", err)
+	}
+
+	err = runCLI([]string{"serve"})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "serve"`) {
+		t.Fatalf("legacy serve command remains available: %v", err)
 	}
 }
 
@@ -133,21 +137,6 @@ func TestCompilerMode(t *testing.T) {
 	for _, tt := range tests {
 		if got := tt.mode.CompilerMode(); got != tt.want {
 			t.Errorf("CompilerMode() = %v, want %v", got, tt.want)
-		}
-	}
-}
-
-func TestEngineNameFromPath(t *testing.T) {
-	tests := []struct{ path, want string }{
-		{"engines/my-engine.go", "my-engine"},
-		{"engine.go", "engine"},
-		{filepath.Join("a", "b", "c.go"), "c"},
-		{"no-ext", "no-ext"},
-		{"/absolute/path/to/test.go", "test"},
-	}
-	for _, tt := range tests {
-		if got := engineNameFromPath(tt.path); got != tt.want {
-			t.Errorf("engineNameFromPath(%q) = %q, want %q", tt.path, got, tt.want)
 		}
 	}
 }

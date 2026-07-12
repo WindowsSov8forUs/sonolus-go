@@ -31,14 +31,16 @@ sonolus-go build [-o <name>] [-m <mode>]
 
 输出固定位于 `dist/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
 
-## serve
+## dev
 
 ```text
-sonolus-go serve [-o <name>] [-addr <:8080>]
+sonolus-go dev [-o <name>] [-addr <:8080>]
                  [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
 ```
 
-`serve` 总是编译四种模式且要求 patterns 恰好匹配一个引擎；`-o` 可覆盖开发服务器显示的引擎名称。它提供开发期端点：
+`dev` 总是编译四种模式且要求 patterns 恰好匹配一个引擎；`-o` 可覆盖开发服务器显示的引擎名称。它启动完整 Sonolus 开发服务器，提供一个 engine item、一个 `Dev Level` 和内置的有效开发资源。Sonolus 客户端可直接连接 `-addr` 对应的地址。
+
+除标准 `/sonolus/*` info、list、details 和 repository 路由外，它保留以下编译诊断端点：
 
 - `/sonolus/engines/info`
 - `/sonolus/engine/configuration`
@@ -48,36 +50,7 @@ sonolus-go serve [-o <name>] [-addr <:8080>]
 - `/sonolus/engine/tutorial-data`
 - `/sonolus/engine/rom`
 
-它监听成功快照中的 Go 和 embed 文件。文件变化后创建新的 Compiler 并重新编译；失败时记录错误并继续服务上一次成功快照。
-
-## pack
-
-```text
-sonolus-go pack [-o <name>] [-author <name>]
-                [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
-```
-
-`pack` 编译全部四种模式，生成临时 `sonolus-pack-go` source tree，并输出到：
-
-```text
-dist/<name>
-```
-
-未指定 `-o` 时可一次生成多个引擎 pack；author 默认为 `sonolus-go`。当前 adapter 使用默认 skin、background、effect 和 particle item 引用，并生成满足 pack schema 的基础 item。
-
-## level
-
-```text
-sonolus-go level [-o <dir>] <chart.json>
-```
-
-读取 JSON level definition，转换为 `resource.LevelData` 并 gzip 写为：
-
-```text
-<out>/<chart-name>/LevelData
-```
-
-`level` 是纯数据打包，不经过 engine compiler。
+它监听成功快照中的 Go 和 embed 文件，包括 `//sonolus:level` 绑定的 LevelData JSON。文件变化后创建新的 Compiler 并重新编译；失败时记录错误并继续服务上一次成功快照。开发 LevelData 不属于 `build` 输出。
 
 ## version
 

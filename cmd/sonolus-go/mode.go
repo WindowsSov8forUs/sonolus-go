@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
@@ -77,23 +76,7 @@ func (m Mode) CompilerMode() compiler.Mode {
 	}
 }
 
-// engineNameFromPath extracts the engine name from an engine source file path
-// or directory path. For files, it strips the extension; for directories, it
-// uses the directory base name.
-// e.g. "engines/my-engine.go" → "my-engine", "engines/my-engine/" → "my-engine"
-func engineNameFromPath(srcPath string) string {
-	if absolute, err := filepath.Abs(srcPath); err == nil {
-		srcPath = absolute
-	}
-	base := filepath.Base(srcPath)
-	ext := filepath.Ext(base)
-	if ext == ".go" {
-		return base[:len(base)-len(ext)]
-	}
-	// Directory or other: use the base name directly.
-	return base
-}
-
+// engineNameFromModule derives the engine name from the module path.
 func engineNameFromModule(modulePath string) (string, error) {
 	name := path.Base(strings.TrimSuffix(modulePath, "/"))
 	if name == "" || name == "." || name == "/" {

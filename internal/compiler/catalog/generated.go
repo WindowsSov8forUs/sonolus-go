@@ -549,6 +549,7 @@ var Symbols = []Symbol{
 	{Package: "sonolus", Name: "Judge", Receiver: "JudgmentWindows", Kind: KindMethod, Signature: "func(actual, target float64) Judgment", Effect: EffectRead, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "Lerp", Receiver: "", Kind: KindFunction, Signature: "func(a, b, t float64) float64", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "LerpClamped", Receiver: "", Kind: KindFunction, Signature: "func(a, b, t float64) float64", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
+	{Package: "sonolus", Name: "LevelFile", Receiver: "", Kind: KindType, Signature: "[]byte", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "LoopedEffectHandle", Receiver: "", Kind: KindType, Signature: "struct{ ID float64 }", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "Stop", Receiver: "LoopedEffectHandle", Kind: KindMethod, Signature: "func()", Effect: EffectWrite, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "NewArrayMap", Receiver: "", Kind: KindFunction, Signature: "func[K comparable, V any](capacity int) ArrayMap[K, V]", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},

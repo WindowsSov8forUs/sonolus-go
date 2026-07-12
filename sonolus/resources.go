@@ -4,6 +4,7 @@ package sonolus
 type Configuration struct{}
 type ROMValues []float32
 type ROMFile []byte
+type LevelFile []byte
 
 // Resource handles deliberately have no exported representation. Engine
 // source can obtain them only through the declaration constructors below; the

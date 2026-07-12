@@ -89,5 +89,4 @@ release:
     ```bash
     sonolus-go build -o my-engine -m all ./engine
     sonolus-go serve -o my-engine ./engine
-    sonolus-go pack -o my-engine ./engine
     ```

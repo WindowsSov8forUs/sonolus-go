@@ -46,38 +46,17 @@ func runCLI(args []string) error {
 			return err
 		}
 		return cmdBuild(flags.Args(), *out, *mode, *optimization, *rom, *stats)
-	case "serve":
+	case "dev":
 		flags := commandFlags(command)
-		out := flags.String("o", "", "served engine name")
-		addr := flags.String("addr", ":8080", "server listen address")
+		out := flags.String("o", "", "development engine name")
+		addr := flags.String("addr", ":8080", "development server listen address")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
 		stats := flags.Bool("stats", false, "print compilation timing")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdServe(flags.Args(), *out, *addr, *optimization, *rom, *stats)
-	case "pack":
-		flags := commandFlags(command)
-		author := flags.String("author", "sonolus-go", "engine author")
-		out := flags.String("o", "", "output engine name (requires exactly one engine)")
-		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
-		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
-		stats := flags.Bool("stats", false, "print compilation timing")
-		if err := flags.Parse(args); err != nil {
-			return err
-		}
-		return cmdPack(flags.Args(), *out, *author, *optimization, *rom, *stats)
-	case "level":
-		flags := commandFlags(command)
-		out := flags.String("o", "dist", "output directory")
-		if err := flags.Parse(args); err != nil {
-			return err
-		}
-		if flags.NArg() != 1 {
-			return fmt.Errorf("level requires exactly one chart path")
-		}
-		return cmdLevel(flags.Arg(0), *out)
+		return cmdDev(flags.Args(), *out, *addr, *optimization, *rom, *stats)
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", command)
@@ -92,9 +71,7 @@ func commandFlags(command string) *flag.FlagSet {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] <package-pattern>...")
-	fmt.Fprintln(os.Stderr, "       sonolus-go serve [-o <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
-	fmt.Fprintln(os.Stderr, "       sonolus-go level [-o <out-dir>] <chart.json>")
-	fmt.Fprintln(os.Stderr, "       sonolus-go pack  [-o <name>] [-author <name>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "       sonolus-go dev [-o <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "  build modes: play, watch, preview, tutorial, all (default)")
 	fmt.Fprintln(os.Stderr, "  opt levels:  0=minimal, 1=fast, 2=standard (default)")
 }

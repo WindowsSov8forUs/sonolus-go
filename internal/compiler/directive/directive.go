@@ -20,6 +20,7 @@ const (
 	CmdCallback  DirectiveCmd = "callback"
 	CmdArchetype DirectiveCmd = "archetype"
 	CmdRom       DirectiveCmd = "rom"
+	CmdLevel     DirectiveCmd = "level"
 	CmdEmbed     DirectiveCmd = "embed"
 	CmdBucket    DirectiveCmd = "bucket"
 )
