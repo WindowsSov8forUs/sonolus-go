@@ -45,13 +45,13 @@ sonolus-go build -o my-engine -m play ./engine
 检查引擎能否完整编译但不生成产物：
 
 ```bash
-sonolus-go check ./engine
+sonolus-go vet ./engine
 ```
 
 输出供关卡工具使用的 archetype 字段 schema：
 
 ```bash
-sonolus-go schema ./engine
+sonolus-go list ./engine
 ```
 
 启动带源码监听和自动重编译的开发服务器：

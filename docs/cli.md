@@ -31,22 +31,22 @@ sonolus-go build [-o <name>] [-m <mode>]
 
 输出固定位于 `dist/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
 
-## check
+## vet
 
 ```text
-sonolus-go check [-m <mode>] [-O 0|1|2]
+sonolus-go vet [-m <mode>] [-O 0|1|2]
                  [-rom <file>] [-stats] <pattern>...
 ```
 
-`check` 对匹配到的所有引擎执行完整 Compiler 链路，但不序列化、不写入 `dist/`，也不读取 `//sonolus:level` 开发关卡。`-m`、`-O`、`-rom` 和 `-stats` 与 `build` 含义相同；默认检查全部四种模式。它适合在 CI 或提交前验证源码，首个失败引擎会终止检查并报告其 package path。
+`vet` 对匹配到的所有引擎执行完整 Compiler 链路，但不序列化、不写入 `dist/`，也不读取 `//sonolus:level` 开发关卡。`-m`、`-O`、`-rom` 和 `-stats` 与 `build` 含义相同；默认检查全部四种模式。它适合在 CI 或提交前验证源码，首个失败引擎会终止检查并报告其 package path。
 
-## schema
+## list
 
 ```text
-sonolus-go schema <pattern>...
+sonolus-go list <pattern>...
 ```
 
-`schema` 要求 patterns 恰好匹配一个引擎，并将关卡工具可消费的 archetype 字段目录输出到 stdout。它只解析 Play、Watch、Preview 声明，不编译 callback、不执行优化或 backend，也不读取 Development Level。
+`list` 要求 patterns 恰好匹配一个引擎，并将关卡工具可消费的 archetype 字段 schema 输出到 stdout。它只解析 Play、Watch、Preview 声明，不编译 callback、不执行优化或 backend，也不读取 Development Level；行为对应 `go list` 的结构化项目查询用途。
 
 字段按 Play exports、Play imports、Watch imports、Preview imports 的顺序合并去重；Watch 的 `#ACCURACY` 和 `#JUDGMENT` 被排除。输出格式与 `sonolus.py schema` 兼容。该并集是工具字段目录，不会放宽 `dev` 对三模式共同 imported 字段的校验。
 

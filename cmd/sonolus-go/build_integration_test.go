@@ -72,7 +72,7 @@ func TestBuildRejectsInvalidOptimization(t *testing.T) {
 	}
 }
 
-func TestCheckCompilesWithoutWritingArtifacts(t *testing.T) {
+func TestVetCompilesWithoutWritingArtifacts(t *testing.T) {
 	root := t.TempDir()
 	previousRoot := engineOutputRoot
 	engineOutputRoot = filepath.Join(root, "dist")
@@ -85,7 +85,7 @@ func TestCheckCompilesWithoutWritingArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := cmdCheck([]string{publicConformancePattern()}, "all", 0, "", true); err != nil {
+	if err := cmdVet([]string{publicConformancePattern()}, "all", 0, "", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := string(mustRead(t, sentinel)); got != "unchanged" {
@@ -96,84 +96,84 @@ func TestCheckCompilesWithoutWritingArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(entries) != 1 || entries[0].Name() != "sentinel" {
-		t.Fatalf("check modified output directory: %v", entries)
+		t.Fatalf("vet modified output directory: %v", entries)
 	}
 }
 
-func TestCheckSupportsMultipleEnginesAndSingleMode(t *testing.T) {
+func TestVetSupportsMultipleEnginesAndSingleMode(t *testing.T) {
 	pattern := filepath.Join("..", "..", "examples", "...")
-	if err := cmdCheck([]string{pattern}, "play", 1, "", false); err != nil {
+	if err := cmdVet([]string{pattern}, "play", 1, "", false); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestCheckSupportsStandardOptimization(t *testing.T) {
-	if err := cmdCheck([]string{publicConformancePattern()}, "play", 2, "", false); err != nil {
+func TestVetSupportsStandardOptimization(t *testing.T) {
+	if err := cmdVet([]string{publicConformancePattern()}, "play", 2, "", false); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestCheckReportsTargetCompilationFailure(t *testing.T) {
-	err := cmdCheck([]string{compilerFixturePattern("invalid")}, "play", 0, "", false)
+func TestVetReportsTargetCompilationFailure(t *testing.T) {
+	err := cmdVet([]string{compilerFixturePattern("invalid")}, "play", 0, "", false)
 	if err == nil {
-		t.Fatal("invalid engine passed check")
+		t.Fatal("invalid engine passed vet")
 	}
 	if !strings.Contains(err.Error(), "internal/compiler/testdata/invalid") {
 		t.Fatalf("error lacks target package: %v", err)
 	}
 }
 
-func TestCheckValidatesFallbackROM(t *testing.T) {
+func TestVetValidatesFallbackROM(t *testing.T) {
 	rom := filepath.Join(t.TempDir(), "rom")
 	if err := os.WriteFile(rom, []byte{1, 2, 3}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := cmdCheck([]string{publicConformancePattern()}, "play", 0, rom, false)
+	err := cmdVet([]string{publicConformancePattern()}, "play", 0, rom, false)
 	if err == nil || !strings.Contains(err.Error(), "length 3 is not divisible by 4") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
-func TestCheckDoesNotParseDevelopmentLevel(t *testing.T) {
+func TestVetDoesNotParseDevelopmentLevel(t *testing.T) {
 	pattern := "." + string(os.PathSeparator) + filepath.Join("testdata", "checklevel")
-	if err := cmdCheck([]string{pattern}, "all", 0, "", false); err != nil {
-		t.Fatalf("check parsed invalid development LevelData: %v", err)
+	if err := cmdVet([]string{pattern}, "all", 0, "", false); err != nil {
+		t.Fatalf("vet parsed invalid development LevelData: %v", err)
 	}
 }
 
-func TestSchemaWritesStableJSONWithoutArtifacts(t *testing.T) {
+func TestListWritesStableSchemaJSONWithoutArtifacts(t *testing.T) {
 	root := t.TempDir()
 	previousRoot := engineOutputRoot
 	engineOutputRoot = filepath.Join(root, "dist")
 	t.Cleanup(func() { engineOutputRoot = previousRoot })
 	var first, second bytes.Buffer
-	if err := cmdSchema([]string{publicConformancePattern()}, &first); err != nil {
+	if err := cmdList([]string{publicConformancePattern()}, &first); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmdSchema([]string{publicConformancePattern()}, &second); err != nil {
+	if err := cmdList([]string{publicConformancePattern()}, &second); err != nil {
 		t.Fatal(err)
 	}
 	if first.String() != second.String() {
-		t.Fatalf("schema output is not deterministic:\n%s\n%s", first.String(), second.String())
+		t.Fatalf("list output is not deterministic:\n%s\n%s", first.String(), second.String())
 	}
 	want := "{\n  \"archetypes\": [\n    {\n      \"name\": \"ConformanceNote\",\n      \"fields\": [\n        \"result\",\n        \"#BEAT\"\n      ]\n    }\n  ]\n}\n"
 	if first.String() != want {
-		t.Fatalf("schema output:\n%s\nwant:\n%s", first.String(), want)
+		t.Fatalf("list output:\n%s\nwant:\n%s", first.String(), want)
 	}
 	if _, err := os.Stat(engineOutputRoot); !os.IsNotExist(err) {
-		t.Fatalf("schema unexpectedly created output directory: %v", err)
+		t.Fatalf("list unexpectedly created output directory: %v", err)
 	}
 }
 
-func TestSchemaRequiresExactlyOneEngine(t *testing.T) {
+func TestListRequiresExactlyOneEngine(t *testing.T) {
 	var out bytes.Buffer
 	pattern := filepath.Join("..", "..", "examples", "...")
-	err := cmdSchema([]string{pattern}, &out)
-	if err == nil || !strings.Contains(err.Error(), "schema requires exactly one engine") {
+	err := cmdList([]string{pattern}, &out)
+	if err == nil || !strings.Contains(err.Error(), "list requires exactly one engine") {
 		t.Fatalf("error = %v", err)
 	}
 	if out.Len() != 0 {
-		t.Fatalf("schema wrote partial output: %q", out.String())
+		t.Fatalf("list wrote partial output: %q", out.String())
 	}
 }
 

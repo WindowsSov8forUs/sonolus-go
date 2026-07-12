@@ -123,22 +123,31 @@ func TestRunCLIDevCommand(t *testing.T) {
 	}
 }
 
-func TestRunCLICheckCommand(t *testing.T) {
-	err := runCLI([]string{"check", "-m", "invalid"})
+func TestRunCLIVetCommand(t *testing.T) {
+	err := runCLI([]string{"vet", "-m", "invalid"})
 	if err == nil || !strings.Contains(err.Error(), "unknown mode: invalid") {
-		t.Fatalf("check command was not parsed: %v", err)
+		t.Fatalf("vet command was not parsed: %v", err)
 	}
 
-	err = runCLI([]string{"check", "-unknown"})
+	err = runCLI([]string{"vet", "-unknown"})
 	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -unknown") {
-		t.Fatalf("check flags were not parsed: %v", err)
+		t.Fatalf("vet flags were not parsed: %v", err)
 	}
 }
 
-func TestRunCLISchemaCommandRejectsFlags(t *testing.T) {
-	err := runCLI([]string{"schema", "-m", "play"})
+func TestRunCLIListCommandRejectsFlags(t *testing.T) {
+	err := runCLI([]string{"list", "-m", "play"})
 	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -m") {
-		t.Fatalf("schema unexpectedly accepted flags: %v", err)
+		t.Fatalf("list unexpectedly accepted flags: %v", err)
+	}
+}
+
+func TestRunCLIRejectsLegacyCheckAndSchemaCommands(t *testing.T) {
+	for _, command := range []string{"check", "schema"} {
+		err := runCLI([]string{command})
+		if err == nil || !strings.Contains(err.Error(), `unknown command "`+command+`"`) {
+			t.Errorf("legacy command %q remains available: %v", command, err)
+		}
 	}
 }
 

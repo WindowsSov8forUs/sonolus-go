@@ -100,7 +100,7 @@ func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFl
 	return nil
 }
 
-func cmdCheck(patterns []string, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
+func cmdVet(patterns []string, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
 	request, err := prepareCompilation(patterns, modeFlag, optFlag, romFlag)
 	if err != nil {
 		return err
@@ -123,28 +123,28 @@ func cmdCheck(patterns []string, modeFlag string, optFlag int, romFlag string, s
 	if len(request.targets) == 1 {
 		noun = "engine"
 	}
-	fmt.Printf("checked %d %s for %s\n", len(request.targets), noun, modeName)
+	fmt.Printf("vetted %d %s for %s\n", len(request.targets), noun, modeName)
 	return nil
 }
 
-func cmdSchema(patterns []string, out io.Writer) error {
+func cmdList(patterns []string, out io.Writer) error {
 	targets, err := compiler.DiscoverTargets(compiler.ModePlay, patterns...)
 	if err != nil {
 		return err
 	}
 	if len(targets) != 1 {
-		return fmt.Errorf("schema requires exactly one engine, but package patterns matched %d", len(targets))
+		return fmt.Errorf("list requires exactly one engine, but package patterns matched %d", len(targets))
 	}
 	target := targets[0]
 	engineCompiler := compiler.NewCompiler(compiler.Options{}, target.PackagePath)
 	projectSchema, err := engineCompiler.Schema()
 	if err != nil {
-		return fmt.Errorf("generating schema for engine %q: %w", target.PackagePath, err)
+		return fmt.Errorf("listing schema for engine %q: %w", target.PackagePath, err)
 	}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(projectSchema); err != nil {
-		return fmt.Errorf("encoding schema for engine %q: %w", target.PackagePath, err)
+		return fmt.Errorf("encoding listed schema for engine %q: %w", target.PackagePath, err)
 	}
 	return nil
 }
