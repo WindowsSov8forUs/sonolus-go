@@ -29,7 +29,7 @@ func runCLI(args []string) error {
 		return fmt.Errorf("command is required")
 	}
 	if args[0] == "-version" || args[0] == "--version" || args[0] == "version" {
-		fmt.Printf("sonolus-go %s (commit %s, built %s)\n", version, commit, date)
+		fmt.Println(currentBuildMetadata())
 		return nil
 	}
 
