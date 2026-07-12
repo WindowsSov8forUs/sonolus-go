@@ -69,7 +69,7 @@ func TestCompilerSchemaMatchesDeclarationFields(t *testing.T) {
 
 func TestCompilerSchemaRejectsInvalidArchetypeDeclarations(t *testing.T) {
 	compiler := NewCompiler(Options{}, "./testdata/invalid")
-	if _, err := compiler.Schema(); err == nil || !strings.Contains(err.Error(), "unknown sonolus tag") {
+	if _, err := compiler.Schema(); err == nil || !strings.Contains(err.Error(), "unknown archetype tag") {
 		t.Fatalf("error = %v", err)
 	}
 }

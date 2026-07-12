@@ -3,9 +3,9 @@ package main
 import "github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
-	Data           float64 `sonolus:"data"`
-	Shared         float64 `sonolus:"shared"`
+	play.Archetype `archetype:"name=Note"`
+	Data           float64 `archetype:"data"`
+	Shared         float64 `archetype:"shared"`
 }
 
 func (n *Note) UpdateParallel() {

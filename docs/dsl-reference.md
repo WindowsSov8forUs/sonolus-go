@@ -135,14 +135,14 @@ Go 要求包含 `//go:embed` directive 的源文件导入 `embed`。这里没有
 
 ```go
 type TapNote struct {
-	play.Archetype      `sonolus:"name=TapNote,hasInput=true"`
-	play.CallbackOrders `sonolus:"preprocess=-10,updateSequential=5"`
+	play.Archetype      `archetype:"name=TapNote,hasInput=true"`
+	play.CallbackOrders `archetype:"preprocess=-10,updateSequential=5"`
 
-	Beat     float64          `sonolus:"imported,name=#BEAT,default=0"`
-	Data     float64          `sonolus:"data"`
-	Position sonolus.Vec2     `sonolus:"memory"`
-	Shared   float64          `sonolus:"shared"`
-	HitTime  float64          `sonolus:"exported,name=hitTime"`
+	Beat     float64          `archetype:"imported,name=#BEAT,default=0"`
+	Data     float64          `archetype:"data"`
+	Position sonolus.Vec2     `archetype:"memory"`
+	Shared   float64          `archetype:"shared"`
+	HitTime  float64          `archetype:"exported,name=hitTime"`
 }
 ```
 

@@ -3,12 +3,12 @@ package main
 import "github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
-	A              float64 `sonolus:"memory"`
-	B              float64 `sonolus:"memory"`
-	Imported       float64 `sonolus:"imported"`
-	Data           float64 `sonolus:"data"`
-	Shared         float64 `sonolus:"shared"`
+	play.Archetype `archetype:"name=Note"`
+	A              float64 `archetype:"memory"`
+	B              float64 `archetype:"memory"`
+	Imported       float64 `archetype:"imported"`
+	Data           float64 `archetype:"data"`
+	Shared         float64 `archetype:"shared"`
 }
 
 type counter struct{ Value float64 }

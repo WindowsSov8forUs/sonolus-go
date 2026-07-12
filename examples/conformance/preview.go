@@ -17,8 +17,8 @@ var Skin = &SkinData{
 	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeLightweight}, Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN")}
 
 type Note struct {
-	preview.Archetype `sonolus:"name=ConformanceNote"`
-	Beat              float64 `sonolus:"imported,name=#BEAT,default=0"`
+	preview.Archetype `archetype:"name=ConformanceNote"`
+	Beat              float64 `archetype:"imported,name=#BEAT,default=0"`
 }
 
 func (n *Note) Render() {

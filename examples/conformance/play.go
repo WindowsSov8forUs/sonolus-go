@@ -52,12 +52,12 @@ var Buckets = &BucketData{
 }
 
 type Note struct {
-	play.Archetype      `sonolus:"name=ConformanceNote,hasInput=true"`
-	play.CallbackOrders `sonolus:"preprocess=-10"`
+	play.Archetype      `archetype:"name=ConformanceNote,hasInput=true"`
+	play.CallbackOrders `archetype:"preprocess=-10"`
 
-	Beat   float64 `sonolus:"imported,name=#BEAT,default=0"`
-	Value  float64 `sonolus:"memory"`
-	Result float64 `sonolus:"exported,name=result"`
+	Beat   float64 `archetype:"imported,name=#BEAT,default=0"`
+	Value  float64 `archetype:"memory"`
+	Result float64 `archetype:"exported,name=result"`
 }
 
 func (n *Note) Preprocess() {

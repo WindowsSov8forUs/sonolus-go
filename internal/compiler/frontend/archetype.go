@@ -81,9 +81,19 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 	for i := 0; i < st.NumFields(); i++ {
 		field := st.Field(i)
 		id := typeID(field.Type())
+		if _, ok := sonolusTag(st.Tag(i)); ok {
+			replacement := `archetype:"memory"`
+			switch id {
+			case markerID(m, "Archetype"):
+				replacement = `archetype:"name=Note,hasInput=true"`
+			case markerID(m, "CallbackOrders"):
+				replacement = `archetype:"preprocess=-10"`
+			}
+			errs = append(errs, fmt.Errorf("%s: %s.%s: sonolus struct tags are no longer supported for archetypes; use %s", pkg.Fset.Position(field.Pos()), named.Obj().Name(), field.Name(), replacement))
+		}
 		if field.Embedded() {
 			if id == markerID(m, "CallbackOrders") {
-				tag, _ := sonolusTag(st.Tag(i))
+				tag, _ := archetypeTag(st.Tag(i))
 				for key, raw := range tag.Items {
 					order, err := strconv.Atoi(raw)
 					if err != nil {
@@ -95,7 +105,7 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 			}
 			continue
 		}
-		tag, ok := sonolusTag(st.Tag(i))
+		tag, ok := archetypeTag(st.Tag(i))
 		if !ok {
 			continue
 		}

@@ -19,12 +19,12 @@ var Skin = &SkinData{
 }
 
 type TapNote struct {
-	play.Archetype      `sonolus:"name=TapNote,hasInput=true"`
-	play.CallbackOrders `sonolus:"preprocess=-10"`
+	play.Archetype      `archetype:"name=TapNote,hasInput=true"`
+	play.CallbackOrders `archetype:"preprocess=-10"`
 
-	Beat float64 `sonolus:"imported,name=#BEAT,default=0"`
-	X    float64 `sonolus:"memory"`
-	Hit  float64 `sonolus:"exported,name=hitTime"`
+	Beat float64 `archetype:"imported,name=#BEAT,default=0"`
+	X    float64 `archetype:"memory"`
+	Hit  float64 `archetype:"exported,name=hitTime"`
 }
 
 func (n *TapNote) Preprocess() {

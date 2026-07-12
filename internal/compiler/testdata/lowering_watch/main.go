@@ -6,7 +6,7 @@ import (
 )
 
 type Note struct {
-	watch.Archetype `sonolus:"name=Note"`
+	watch.Archetype `archetype:"name=Note"`
 }
 
 type EffectsData struct {

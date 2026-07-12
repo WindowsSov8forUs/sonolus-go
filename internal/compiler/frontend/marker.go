@@ -16,6 +16,10 @@ func sonolusTag(tag string) (tagValue, bool) {
 	return compilerTag.Parse(tag, "sonolus")
 }
 
+func archetypeTag(tag string) (tagValue, bool) {
+	return compilerTag.Parse(tag, "archetype")
+}
+
 func configurationTag(tag string) (tagValue, bool) {
 	return compilerTag.Parse(tag, "configuration")
 }
@@ -80,7 +84,7 @@ func structMarkers(named *types.Named) []markerField {
 		if id == "" {
 			continue
 		}
-		tag, _ := sonolusTag(st.Tag(i))
+		tag, _ := archetypeTag(st.Tag(i))
 		result = append(result, markerField{id: id, tag: tag, field: field})
 	}
 	return result
@@ -122,6 +126,21 @@ func primaryDeclarationMarker(named *types.Named) (markerField, bool, []error) {
 	}
 	if len(primary) == 0 {
 		return markerField{}, false, errs
+	}
+	isArchetype := false
+	for _, candidateMode := range orderedModes {
+		if primary[0].id == markerID(candidateMode, "Archetype") {
+			isArchetype = true
+			break
+		}
+	}
+	if !isArchetype {
+		st := named.Underlying().(*types.Struct)
+		for i := 0; i < st.NumFields(); i++ {
+			if _, ok := archetypeTag(st.Tag(i)); ok {
+				errs = append(errs, fmt.Errorf("%s.%s: archetype struct tags are only valid on archetype declarations", named.Obj().Name(), st.Field(i).Name()))
+			}
+		}
 	}
 	return primary[0], true, errs
 }

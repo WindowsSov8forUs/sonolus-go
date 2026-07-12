@@ -7,7 +7,7 @@ import (
 )
 
 type NativeCoverage struct {
-	play.Archetype `sonolus:"name=NativeCoverage"`
+	play.Archetype `archetype:"name=NativeCoverage"`
 }
 
 func (*NativeCoverage) Preprocess() {

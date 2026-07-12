@@ -19,8 +19,8 @@ var Skin = &SkinData{
 }
 
 type TapNote struct {
-	preview.Archetype `sonolus:"name=TapNote"`
-	Beat              float64 `sonolus:"imported,name=#BEAT,default=0"`
+	preview.Archetype `archetype:"name=TapNote"`
+	Beat              float64 `archetype:"imported,name=#BEAT,default=0"`
 }
 
 func (*TapNote) Render() {}

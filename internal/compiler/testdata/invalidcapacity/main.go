@@ -6,9 +6,9 @@ import (
 )
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
-	Data           sonolus.VarArray[float64] `sonolus:"data,cap=32"`
-	Memory         sonolus.VarArray[float64] `sonolus:"memory,cap=64"`
+	play.Archetype `archetype:"name=Note"`
+	Data           sonolus.VarArray[float64] `archetype:"data,cap=32"`
+	Memory         sonolus.VarArray[float64] `archetype:"memory,cap=64"`
 }
 
 func main() {}

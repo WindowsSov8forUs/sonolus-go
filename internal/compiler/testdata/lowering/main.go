@@ -9,20 +9,20 @@ import (
 )
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
-	Ref            sonolus.EntityRef[Spawned]     `sonolus:"imported"`
-	Samples        [2]float64                     `sonolus:"memory"`
-	History        sonolus.VarArray[float64]      `sonolus:"memory,cap=4"`
-	Points         sonolus.VarArray[sonolus.Vec2] `sonolus:"memory,cap=2"`
+	play.Archetype `archetype:"name=Note"`
+	Ref            sonolus.EntityRef[Spawned]     `archetype:"imported"`
+	Samples        [2]float64                     `archetype:"memory"`
+	History        sonolus.VarArray[float64]      `archetype:"memory,cap=4"`
+	Points         sonolus.VarArray[sonolus.Vec2] `archetype:"memory,cap=2"`
 }
 
 type Spawned struct {
-	play.Archetype `sonolus:"name=Spawned"`
-	Imported       float64 `sonolus:"imported"`
-	Data           float64 `sonolus:"data"`
-	Value          float64 `sonolus:"memory"`
-	Shared         float64 `sonolus:"shared"`
-	Exported       float64 `sonolus:"exported"`
+	play.Archetype `archetype:"name=Spawned"`
+	Imported       float64 `archetype:"imported"`
+	Data           float64 `archetype:"data"`
+	Value          float64 `archetype:"memory"`
+	Shared         float64 `archetype:"shared"`
+	Exported       float64 `archetype:"exported"`
 }
 
 type Skin struct {

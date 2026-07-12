@@ -11,8 +11,8 @@ func sum(values ...float64) float64 {
 }
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
-	Value          float64 `sonolus:"memory"`
+	play.Archetype `archetype:"name=Note"`
+	Value          float64 `archetype:"memory"`
 }
 
 func (n *Note) Preprocess() {

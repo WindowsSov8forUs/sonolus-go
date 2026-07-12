@@ -34,12 +34,12 @@ var PlayAssets = &PlaySkin{
 	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard}, Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN")}
 
 type TapNote struct {
-	play.Archetype      `sonolus:"name=TapNote,hasInput=true"`
-	play.CallbackOrders `sonolus:"preprocess=-10,updateSequential=5"`
-	Beat                float64      `sonolus:"imported,name=#BEAT,default=1"`
-	Position            sonolus.Vec2 `sonolus:"memory"`
-	Shared              float64      `sonolus:"shared"`
-	HitTime             float64      `sonolus:"exported,name=hitTime"`
+	play.Archetype      `archetype:"name=TapNote,hasInput=true"`
+	play.CallbackOrders `archetype:"preprocess=-10,updateSequential=5"`
+	Beat                float64      `archetype:"imported,name=#BEAT,default=1"`
+	Position            sonolus.Vec2 `archetype:"memory"`
+	Shared              float64      `archetype:"shared"`
+	HitTime             float64      `archetype:"exported,name=hitTime"`
 }
 
 func (*TapNote) Preprocess() {
@@ -57,15 +57,15 @@ var WatchGlobals WatchCallbacks
 func UpdateSpawn() float64 { return 0 }
 
 type WatchNote struct {
-	watch.Archetype `sonolus:"name=TapNote,hasInput=true"`
-	Beat            float64 `sonolus:"imported,name=#BEAT"`
+	watch.Archetype `archetype:"name=TapNote,hasInput=true"`
+	Beat            float64 `archetype:"imported,name=#BEAT"`
 }
 
 func (*WatchNote) SpawnTime() float64 { return 0 }
 
 type PreviewNote struct {
-	preview.Archetype `sonolus:"name=TapNote"`
-	Beat              float64 `sonolus:"imported,name=#BEAT"`
+	preview.Archetype `archetype:"name=TapNote"`
+	Beat              float64 `archetype:"imported,name=#BEAT"`
 }
 
 func (*PreviewNote) Render() {}

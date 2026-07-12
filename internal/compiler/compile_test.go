@@ -852,6 +852,20 @@ func TestParseDeclarationsRejectsLegacyConfigurationTag(t *testing.T) {
 	}
 }
 
+func TestParseDeclarationsRejectsLegacyArchetypeTags(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/legacyarchetypetag")
+	if err == nil || !strings.Contains(err.Error(), "sonolus struct tags are no longer supported for archetypes") || !strings.Contains(err.Error(), `archetype:"memory"`) || !strings.Contains(err.Error(), "main.go:") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsArchetypeTagOutsideArchetype(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidarchetypetagnonarchetype")
+	if err == nil || !strings.Contains(err.Error(), "archetype struct tags are only valid on archetype declarations") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseDeclarationsRejectsSymbolicCallInConfiguration(t *testing.T) {
 	_, err := parseMode(mode.ModePlay, "./testdata/configurationcall")
 	if err == nil || !strings.Contains(err.Error(), "configuration UI must be a pure static value") || !strings.Contains(err.Error(), "main.go:") {

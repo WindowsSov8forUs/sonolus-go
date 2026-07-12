@@ -42,8 +42,8 @@ var Global Globals
 func UpdateSpawn() float64 { return 3 }
 
 type Note struct {
-	watch.Archetype `sonolus:"name=Note"`
-	Beat            float64 `sonolus:"imported,name=#BEAT"`
+	watch.Archetype `archetype:"name=Note"`
+	Beat            float64 `archetype:"imported,name=#BEAT"`
 }
 
 func (*Note) SpawnTime() float64 { return 1 }

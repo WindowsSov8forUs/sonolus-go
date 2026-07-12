@@ -6,7 +6,7 @@ import (
 )
 
 type Note struct {
-	preview.Archetype `sonolus:"name=Note"`
+	preview.Archetype `archetype:"name=Note"`
 }
 
 type SkinData struct {

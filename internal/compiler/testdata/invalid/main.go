@@ -6,8 +6,8 @@ import (
 )
 
 type Bad struct {
-	play.Archetype `sonolus:"name=Bad,typo=true"`
-	Value          float64 `sonolus:"memory,unknown=true"`
+	play.Archetype `archetype:"name=Bad,typo=true"`
+	Value          float64 `archetype:"memory,unknown=true"`
 }
 
 type Config struct {

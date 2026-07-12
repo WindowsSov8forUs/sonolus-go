@@ -67,12 +67,12 @@ var Skin = &SkinData{
 }
 
 type TapNote struct {
-	play.Archetype      `sonolus:"name=TapNote,hasInput=true"`
-	play.CallbackOrders `sonolus:"preprocess=-10"`
+	play.Archetype      `archetype:"name=TapNote,hasInput=true"`
+	play.CallbackOrders `archetype:"preprocess=-10"`
 
-	Beat float64 `sonolus:"imported,name=#BEAT,default=0"`
-	X    float64 `sonolus:"memory"`
-	Hit  float64 `sonolus:"exported,name=hitTime"`
+	Beat float64 `archetype:"imported,name=#BEAT,default=0"`
+	X    float64 `archetype:"memory"`
+	Hit  float64 `archetype:"exported,name=hitTime"`
 }
 
 func (n *TapNote) Preprocess() {
@@ -88,13 +88,13 @@ func (*TapNote) ShouldSpawn() bool { return true }
 
 ```go
 // Play
-type Note struct { play.Archetype `sonolus:"name=Note"` }
+type Note struct { play.Archetype `archetype:"name=Note"` }
 
 // Watch
-type Note struct { watch.Archetype `sonolus:"name=Note"` }
+type Note struct { watch.Archetype `archetype:"name=Note"` }
 
 // Preview
-type Note struct { preview.Archetype `sonolus:"name=Note"` }
+type Note struct { preview.Archetype `archetype:"name=Note"` }
 ```
 
 Tutorial 没有 archetype，使用全局 callback marker：

@@ -28,8 +28,8 @@ func UpdateSpawn() float64 {
 }
 
 type TapNote struct {
-	watch.Archetype `sonolus:"name=TapNote"`
-	Beat            float64 `sonolus:"imported,name=#BEAT,default=0"`
+	watch.Archetype `archetype:"name=TapNote"`
+	Beat            float64 `archetype:"imported,name=#BEAT,default=0"`
 }
 
 func (n *TapNote) SpawnTime() float64 {

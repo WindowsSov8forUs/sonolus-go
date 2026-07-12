@@ -37,11 +37,11 @@ type BucketData struct {
 var Buckets = &BucketData{Tap: sonolus.JudgmentBucket("#MILLISECONDS", sonolus.JudgmentBucketSprite(Skin.Note, 0, 0, 1, 1, 0))}
 
 type Note struct {
-	play.Archetype      `sonolus:"name=Note,hasInput=true"`
-	play.CallbackOrders `sonolus:"preprocess=-2"`
-	Beat                float64 `sonolus:"imported,name=#BEAT,default=1"`
-	Value               float64 `sonolus:"memory"`
-	Hit                 float64 `sonolus:"exported,name=hit"`
+	play.Archetype      `archetype:"name=Note,hasInput=true"`
+	play.CallbackOrders `archetype:"preprocess=-2"`
+	Beat                float64 `archetype:"imported,name=#BEAT,default=1"`
+	Value               float64 `archetype:"memory"`
+	Hit                 float64 `archetype:"exported,name=hit"`
 }
 
 func (n *Note) Preprocess() {
