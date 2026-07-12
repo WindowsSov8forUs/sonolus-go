@@ -220,6 +220,19 @@ func (e *staticEvaluator) finalizeValueGraph(
 		if value.Dynamic != nil {
 			return e.finalizeValueGraph(pkg, *value.Dynamic, visited)
 		}
+	case StaticFunctionCall:
+		if value.Call != nil {
+			if value.Call.Receiver != nil {
+				if err := e.finalizeValueGraph(pkg, *value.Call.Receiver, visited); err != nil {
+					return err
+				}
+			}
+			for _, arg := range value.Call.Args {
+				if err := e.finalizeValueGraph(pkg, arg, visited); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -241,6 +254,21 @@ func (t *ASTTracer) EvalPackageValue(name string) (StaticBinding, error) {
 		return StaticBinding{}, err
 	}
 	return binding, nil
+}
+
+// EvalObject evaluates a package-scope constant or variable from any package
+// registered in this tracer's user package graph.
+func (t *ASTTracer) EvalObject(object types.Object) (StaticBinding, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if object == nil || object.Pkg() == nil {
+		return StaticBinding{}, ErrNotStatic
+	}
+	pkg, ok := t.packageForObject(object)
+	if !ok || !hasStaticTypeInfo(pkg) {
+		return StaticBinding{}, t.evaluator.errorAt(pkg, nil, object, ErrMissingTypeInfo)
+	}
+	return t.evaluator.evalObject(object)
 }
 
 // EvalValueSpec evaluates all names in declaration order and fails atomically.

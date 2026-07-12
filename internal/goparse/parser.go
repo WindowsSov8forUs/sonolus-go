@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -74,8 +75,13 @@ func getErrors(pkg *packages.Package, visited map[string]bool, errs *[]error) {
 		*errs = append(*errs, err)
 	}
 
-	for _, dep := range pkg.Imports {
-		getErrors(dep, visited, errs)
+	paths := make([]string, 0, len(pkg.Imports))
+	for path := range pkg.Imports {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		getErrors(pkg.Imports[path], visited, errs)
 	}
 }
 
@@ -110,7 +116,13 @@ func (p *Parser) validateImports(pkg *packages.Package, visited map[string]bool,
 	visited[pkg.PkgPath] = true
 	invalidPkgs := make(map[string]string)
 
-	for impPath, dep := range pkg.Imports {
+	paths := make([]string, 0, len(pkg.Imports))
+	for impPath := range pkg.Imports {
+		paths = append(paths, impPath)
+	}
+	sort.Strings(paths)
+	for _, impPath := range paths {
+		dep := pkg.Imports[impPath]
 		for _, filter := range p.pkgFilters {
 			if !filter.Func(dep) {
 				invalidPkgs[impPath] = filter.ErrorMsg

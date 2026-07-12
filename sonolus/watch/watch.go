@@ -60,16 +60,23 @@ type entityAPI struct{}
 func (entityAPI) Info() EntityInfo            { return EntityInfo{} }
 func (entityAPI) InfoAt(index int) EntityInfo { return EntityInfo{} }
 func (entityAPI) Result() InputResult         { return InputResult{} }
+func (entityAPI) SetResult(value InputResult) {}
 
 var Entity entityAPI
 
 type replayAPI struct{}
 
-func (replayAPI) IsReplay() bool                      { return false }
-func (replayAPI) Judgment(index int) sonolus.Judgment { return sonolus.JudgmentMiss }
-func (replayAPI) Accuracy(index int) float64          { return 0 }
+func (replayAPI) IsReplay() bool { return false }
 
 var Replay replayAPI
+
+type environmentAPI struct{}
+
+func (environmentAPI) Debug() bool          { return false }
+func (environmentAPI) Replay() bool         { return false }
+func (environmentAPI) AspectRatio() float64 { return 0 }
+
+var Environment environmentAPI
 
 type scoreAPI struct{}
 
@@ -98,7 +105,44 @@ var Life lifeAPI
 
 type uiAPI struct{}
 
-func (uiAPI) Configure(config sonolus.UIConfig) {}
+func (uiAPI) Menu() sonolus.RuntimeUILayout                         { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetMenu(value sonolus.RuntimeUILayout)                 {}
+func (uiAPI) Judgment() sonolus.RuntimeUILayout                     { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetJudgment(value sonolus.RuntimeUILayout)             {}
+func (uiAPI) ComboValue() sonolus.RuntimeUILayout                   { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetComboValue(value sonolus.RuntimeUILayout)           {}
+func (uiAPI) ComboText() sonolus.RuntimeUILayout                    { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetComboText(value sonolus.RuntimeUILayout)            {}
+func (uiAPI) PrimaryMetricBar() sonolus.RuntimeUILayout             { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetPrimaryMetricBar(value sonolus.RuntimeUILayout)     {}
+func (uiAPI) PrimaryMetricValue() sonolus.RuntimeUILayout           { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetPrimaryMetricValue(value sonolus.RuntimeUILayout)   {}
+func (uiAPI) SecondaryMetricBar() sonolus.RuntimeUILayout           { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetSecondaryMetricBar(value sonolus.RuntimeUILayout)   {}
+func (uiAPI) SecondaryMetricValue() sonolus.RuntimeUILayout         { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetSecondaryMetricValue(value sonolus.RuntimeUILayout) {}
+func (uiAPI) Progress() sonolus.RuntimeUILayout                     { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetProgress(value sonolus.RuntimeUILayout)             {}
+func (uiAPI) ProgressGraph() sonolus.RuntimeUILayout                { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetProgressGraph(value sonolus.RuntimeUILayout)        {}
+func (uiAPI) MenuConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) JudgmentConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) ComboConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) PrimaryMetricConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) SecondaryMetricConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) ProgressConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
 
 var UI uiAPI
 

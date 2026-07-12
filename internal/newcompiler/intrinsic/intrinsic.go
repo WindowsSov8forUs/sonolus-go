@@ -62,8 +62,8 @@ func init() {
 	} {
 		addRuntime("math", entry.name, entry.fn, entry.arity)
 	}
-	addRuntime("math/rand", "Float64", resource.RuntimeFunctionRandom, 0, 1)
-	addRuntime("math/rand", "Intn", resource.RuntimeFunctionRandomInteger, 1)
+	addRuntime("math/rand", "Float64", resource.RuntimeFunctionRandom, 0, 0, 1)
+	addRuntime("math/rand", "Intn", resource.RuntimeFunctionRandomInteger, 1, 0)
 	for name, value := range map[string]float64{
 		"E": math.E, "Pi": math.Pi, "Phi": math.Phi, "Sqrt2": math.Sqrt2,
 		"SqrtE": math.SqrtE, "SqrtPi": math.SqrtPi, "SqrtPhi": math.SqrtPhi,

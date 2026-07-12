@@ -47,6 +47,13 @@ func (screenAPI) Rect() sonolus.Rect { return sonolus.Rect{} }
 var Screen screenAPI
 var SafeArea screenAPI
 
+type environmentAPI struct{}
+
+func (environmentAPI) Debug() bool          { return false }
+func (environmentAPI) AspectRatio() float64 { return 0 }
+
+var Environment environmentAPI
+
 type entityAPI struct{}
 
 func (entityAPI) Info() EntityInfo            { return EntityInfo{} }
@@ -56,7 +63,16 @@ var Entity entityAPI
 
 type uiAPI struct{}
 
-func (uiAPI) Configure(config sonolus.UIConfig) {}
+func (uiAPI) Menu() sonolus.RuntimeUIBasicLayout             { return sonolus.RuntimeUIBasicLayout{} }
+func (uiAPI) SetMenu(value sonolus.RuntimeUIBasicLayout)     {}
+func (uiAPI) Progress() sonolus.RuntimeUIBasicLayout         { return sonolus.RuntimeUIBasicLayout{} }
+func (uiAPI) SetProgress(value sonolus.RuntimeUIBasicLayout) {}
+func (uiAPI) MenuConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) ProgressConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
 
 var UI uiAPI
 

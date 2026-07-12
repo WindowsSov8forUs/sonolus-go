@@ -2,21 +2,36 @@ package frontend
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/catalog"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/intrinsic"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
 )
 
-type EngineDeclarations struct {
-	Mode          mode.Mode
+type Project struct {
 	Configuration *resource.EngineConfiguration
+	ROM           []byte
+	Modes         map[mode.Mode]*ModeDeclarations
+}
+
+type ModeDeclarations struct {
+	Mode          mode.Mode
+	Configuration *ConfigurationDeclaration
 	Resources     ModeResources
 	Archetypes    []*ArchetypeDeclaration
 	Globals       []*CallbackDeclaration
 	ROM           *ROMDeclaration
+}
+
+type ConfigurationDeclaration struct {
+	Mode        mode.Mode
+	PackagePath string
+	TypeName    string
+	Variable    string
+	Pos         token.Position
+	Value       *resource.EngineConfiguration
 }
 
 type ModeResources struct {
@@ -34,45 +49,48 @@ type ModeResources struct {
 }
 
 type ArchetypeDeclaration struct {
-	PackagePath string
-	TypeName    string
-	Name        string
-	HasInput    bool
-	Fields      []*FieldDeclaration
-	Imports     []resource.EngineDataArchetypeImport
-	Exports     []resource.EngineArchetypeDataName
-	Callbacks   []*CallbackDeclaration
-	Named       *types.Named
+	PackagePath    string
+	TypeName       string
+	Name           string
+	HasInput       bool
+	Fields         []*FieldDeclaration
+	Imports        []resource.EngineDataArchetypeImport
+	Exports        []resource.EngineArchetypeDataName
+	Callbacks      []*CallbackDeclaration
+	CallbackOrders map[string]int
+	Named          *types.Named
 }
 
 type FieldDeclaration struct {
-	GoName       string
-	ExternalName string
-	Storage      string
-	Offset       int
-	Size         int
-	Default      float64
-	Type         types.Type
+	GoName         string
+	ExternalName   string
+	Storage        string
+	Offset         int
+	Size           int
+	Default        float64
+	Type           types.Type
+	Object         *types.Var
+	ReceiverOffset int
+	ContainerKind  string
+	Capacity       int
+	KeySize        int
+	ElementSize    int
 }
 
 type CallbackDeclaration struct {
-	Name       string
-	Order      int
-	Function   *types.Func
-	Decl       *ast.FuncDecl
-	Intrinsics []IntrinsicReference
-}
-
-type IntrinsicReference struct {
-	Symbol intrinsic.Symbol
-	API    *catalog.Symbol
-	Object types.Object
+	Name     string
+	Order    int
+	Function *types.Func
+	Decl     *ast.FuncDecl
+	IR       *ir.Function
 }
 
 type ROMDeclaration struct {
+	Mode        mode.Mode
 	PackagePath string
 	Variable    string
 	File        string
+	Pos         token.Position
 	Values      []float32
 	Bytes       []byte
 }

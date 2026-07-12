@@ -19,6 +19,13 @@ func (screenAPI) Rect() sonolus.Rect { return sonolus.Rect{} }
 var Screen screenAPI
 var SafeArea screenAPI
 
+type environmentAPI struct{}
+
+func (environmentAPI) Debug() bool          { return false }
+func (environmentAPI) AspectRatio() float64 { return 0 }
+
+var Environment environmentAPI
+
 type audioAPI struct{}
 
 func (audioAPI) Play(clip sonolus.Clip, distance float64)              {}
@@ -50,23 +57,41 @@ type instructionAPI struct{}
 
 func (instructionAPI) Show(instruction sonolus.Text) {}
 func (instructionAPI) Clear()                        {}
-func (instructionAPI) Paint(icon sonolus.Icon, position sonolus.Vec2, size, rotation, alpha float64) {
+func (instructionAPI) Paint(icon sonolus.Icon, position sonolus.Vec2, size, rotation, z, alpha float64) {
 }
 
 var Instruction instructionAPI
 
 type uiAPI struct{}
 
-func (uiAPI) Configure(config sonolus.UIConfig) {}
+func (uiAPI) Menu() sonolus.RuntimeUIBasicLayout                { return sonolus.RuntimeUIBasicLayout{} }
+func (uiAPI) SetMenu(value sonolus.RuntimeUIBasicLayout)        {}
+func (uiAPI) Previous() sonolus.RuntimeUIBasicLayout            { return sonolus.RuntimeUIBasicLayout{} }
+func (uiAPI) SetPrevious(value sonolus.RuntimeUIBasicLayout)    {}
+func (uiAPI) Next() sonolus.RuntimeUIBasicLayout                { return sonolus.RuntimeUIBasicLayout{} }
+func (uiAPI) SetNext(value sonolus.RuntimeUIBasicLayout)        {}
+func (uiAPI) Instruction() sonolus.RuntimeUIBasicLayout         { return sonolus.RuntimeUIBasicLayout{} }
+func (uiAPI) SetInstruction(value sonolus.RuntimeUIBasicLayout) {}
+func (uiAPI) MenuConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) NavigationConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) InstructionConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
 
 var UI uiAPI
 
 type memoryAPI struct{}
+type dataAPI struct{}
 
 func (memoryAPI) Get(index int) float64        { return 0 }
 func (memoryAPI) Set(index int, value float64) {}
+func (dataAPI) Get(index int) float64          { return 0 }
 
-var TutorialData memoryAPI
+var TutorialData dataAPI
 var TutorialMemory memoryAPI
 
 type debugAPI struct{}

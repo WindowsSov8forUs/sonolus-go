@@ -1,6 +1,8 @@
 package sonolus
 
-type VarArray[T any] struct{}
+type VarArray[T any] []T
+
+func NewVarArray[T any](capacity int) VarArray[T] { return nil }
 
 func (a VarArray[T]) Len() int                  { return 0 }
 func (a VarArray[T]) Capacity() int             { return 0 }
@@ -13,7 +15,9 @@ func (a VarArray[T]) Insert(index int, value T) {}
 func (a VarArray[T]) Clear()                    {}
 func (a VarArray[T]) Contains(value T) bool     { return false }
 
-type ArrayMap[K comparable, V any] struct{}
+type ArrayMap[K comparable, V any] []Pair[K, V]
+
+func NewArrayMap[K comparable, V any](capacity int) ArrayMap[K, V] { return nil }
 
 func (m ArrayMap[K, V]) Len() int            { return 0 }
 func (m ArrayMap[K, V]) Capacity() int       { return 0 }
@@ -23,7 +27,9 @@ func (m ArrayMap[K, V]) Set(key K, value V)  {}
 func (m ArrayMap[K, V]) Delete(key K) bool   { return false }
 func (m ArrayMap[K, V]) Contains(key K) bool { return false }
 
-type ArraySet[T comparable] struct{}
+type ArraySet[T comparable] []T
+
+func NewArraySet[T comparable](capacity int) ArraySet[T] { return nil }
 
 func (s ArraySet[T]) Len() int              { return 0 }
 func (s ArraySet[T]) Capacity() int         { return 0 }

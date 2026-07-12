@@ -1,7 +1,9 @@
 package tracer
 
 import (
+	"go/ast"
 	"go/constant"
+	"go/token"
 	"go/types"
 )
 
@@ -18,6 +20,7 @@ const (
 	StaticMapValue
 	StaticPointer
 	StaticInterface
+	StaticFunctionCall
 )
 
 type StaticPathKind uint8
@@ -69,6 +72,17 @@ type StaticField struct {
 	Value StaticValue
 }
 
+// StaticCall preserves a statically resolvable function call without executing
+// it or assigning domain-specific meaning to it.
+type StaticCall struct {
+	Object    *types.Func
+	Receiver  *StaticValue
+	Args      []StaticValue
+	Expr      *ast.CallExpr
+	Pos       token.Position
+	Signature *types.Signature
+}
+
 // StaticValue is a typed value in the supported compile-time subset.
 type StaticValue struct {
 	Type     types.Type
@@ -80,6 +94,7 @@ type StaticValue struct {
 	Map      *StaticMap
 	Pointer  *StaticAddress
 	Dynamic  *StaticValue
+	Call     *StaticCall
 }
 
 // StaticObject is an identity-bearing storage allocation within one tracer.
@@ -148,6 +163,17 @@ func cloneStaticValue(value StaticValue) StaticValue {
 		if value.Dynamic != nil {
 			dynamic := cloneStaticValue(*value.Dynamic)
 			result.Dynamic = &dynamic
+		}
+	case StaticFunctionCall:
+		if value.Call != nil {
+			result.Call = &StaticCall{Object: value.Call.Object, Expr: value.Call.Expr, Pos: value.Call.Pos, Signature: value.Call.Signature, Args: make([]StaticValue, len(value.Call.Args))}
+			if value.Call.Receiver != nil {
+				receiver := cloneStaticValue(*value.Call.Receiver)
+				result.Call.Receiver = &receiver
+			}
+			for i, arg := range value.Call.Args {
+				result.Call.Args[i] = cloneStaticValue(arg)
+			}
 		}
 	}
 	return result

@@ -25,7 +25,56 @@ func (e *staticEvaluator) evalCall(pkg *packages.Package, expr *ast.CallExpr) (S
 
 	builtin := builtinObject(pkg, expr.Fun)
 	if builtin == nil {
-		return StaticValue{}, ErrNotStatic
+		object := calledFunctionObject(pkg, expr.Fun)
+		fn, ok := object.(*types.Func)
+		if !ok {
+			return StaticValue{}, ErrNotStatic
+		}
+		signature, ok := pkg.TypesInfo.TypeOf(expr.Fun).(*types.Signature)
+		if !ok {
+			return StaticValue{}, ErrNotStatic
+		}
+		call := &StaticCall{Object: fn, Expr: expr, Pos: pkg.Fset.Position(expr.Pos()), Signature: signature}
+		args := expr.Args
+		if selector, selected := unwrappedSelector(expr.Fun); selected {
+			selection := pkg.TypesInfo.Selections[selector]
+			if selection != nil {
+				receiverType := selection.Recv()
+				if pointer, ok := underlyingType(receiverType).(*types.Pointer); ok {
+					receiverType = pointer.Elem()
+				}
+				if _, dynamic := underlyingType(receiverType).(*types.Interface); dynamic {
+					return StaticValue{}, ErrNotStatic
+				}
+				var receiverExpr ast.Expr
+				switch selection.Kind() {
+				case types.MethodVal:
+					receiverExpr = selector.X
+				case types.MethodExpr:
+					if len(args) == 0 {
+						return StaticValue{}, ErrNotStatic
+					}
+					receiverExpr = args[0]
+					args = args[1:]
+				default:
+					return StaticValue{}, ErrNotStatic
+				}
+				receiver, err := e.evalExpr(pkg, receiverExpr)
+				if err != nil {
+					return StaticValue{}, err
+				}
+				call.Receiver = &receiver
+			}
+		}
+		call.Args = make([]StaticValue, len(args))
+		for i, arg := range args {
+			value, err := e.evalExpr(pkg, arg)
+			if err != nil {
+				return StaticValue{}, err
+			}
+			call.Args[i] = value
+		}
+		return StaticValue{Type: pkg.TypesInfo.TypeOf(expr), Kind: StaticFunctionCall, Call: call}, nil
 	}
 	switch builtin.Name() {
 	case "len":
@@ -48,6 +97,38 @@ func (e *staticEvaluator) evalCall(pkg *packages.Package, expr *ast.CallExpr) (S
 		return e.evalMake(pkg, expr)
 	default:
 		return StaticValue{}, ErrNotStatic
+	}
+}
+
+func unwrappedSelector(expr ast.Expr) (*ast.SelectorExpr, bool) {
+	switch expr := expr.(type) {
+	case *ast.ParenExpr:
+		return unwrappedSelector(expr.X)
+	case *ast.IndexExpr:
+		return unwrappedSelector(expr.X)
+	case *ast.IndexListExpr:
+		return unwrappedSelector(expr.X)
+	case *ast.SelectorExpr:
+		return expr, true
+	default:
+		return nil, false
+	}
+}
+
+func calledFunctionObject(pkg *packages.Package, expr ast.Expr) types.Object {
+	switch expr := expr.(type) {
+	case *ast.ParenExpr:
+		return calledFunctionObject(pkg, expr.X)
+	case *ast.IndexExpr:
+		return calledFunctionObject(pkg, expr.X)
+	case *ast.IndexListExpr:
+		return calledFunctionObject(pkg, expr.X)
+	case *ast.Ident:
+		return pkg.TypesInfo.ObjectOf(expr)
+	case *ast.SelectorExpr:
+		return pkg.TypesInfo.ObjectOf(expr.Sel)
+	default:
+		return nil
 	}
 }
 

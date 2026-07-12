@@ -17,31 +17,20 @@ import (
 type entry struct {
 	pkg, name, receiver, kind, signature, modes, phases, effect, runtime, source string
 	internal                                                                     bool
+	minArgs, maxArgs, resultSlots                                                int
+	hasRuntimeSignature                                                          bool
 }
+
+const (
+	allNativeModes  = "play|watch|preview|tutorial"
+	allNativePhases = "preprocess|spawnOrder|shouldSpawn|initialize|updateSequential|touch|updateParallel|terminate|spawnTime|despawnTime|render|updateSpawn|navigate|update"
+)
 
 func semantic(item entry) entry {
 	if item.kind != "KindFunction" && item.kind != "KindMethod" && item.kind != "KindNative" {
 		return item
 	}
 	if item.kind == "KindNative" {
-		// Native calls expose raw runtime operations. Their exact callback legality is
-		// represented by the high-level APIs which use them; direct native calls are
-		// intentionally left unrestricted for the future lowerer.
-		readPrefixes := []string{"Get", "Has", "StreamGet", "StreamHas", "StackGet"}
-		for _, prefix := range readPrefixes {
-			if strings.HasPrefix(item.name, prefix) {
-				item.effect = "EffectRead"
-				return item
-			}
-		}
-		writePrefixes := []string{"Set", "Increment", "Decrement", "Draw", "Play", "Stop", "Spawn", "Move", "Destroy", "Paint", "Print", "Export", "StreamSet", "Stack"}
-		for _, prefix := range writePrefixes {
-			if strings.HasPrefix(item.name, prefix) {
-				item.effect = "EffectWrite"
-				return item
-			}
-		}
-		item.effect = "EffectPure"
 		return item
 	}
 	name := item.name
@@ -50,12 +39,16 @@ func semantic(item entry) entry {
 		item.effect = "EffectPure"
 		return item
 	}
-	readPrefixes := []string{"Get", "Has", "Len", "Capacity", "Contains", "Exists", "Count", "Now", "Delta", "Scaled", "Previous", "Offset", "BeatTo", "TimeTo", "Rect", "Info", "Result", "Is", "Aspect", "Judge", "Archetype", "Base", "Consecutive", "Initial", "Max", "Value", "Next", "Skip", "Accuracy", "Judgment", "Direction"}
+	readPrefixes := []string{"Get", "Has", "Len", "Capacity", "Contains", "Exists", "Count", "Now", "Delta", "Scaled", "Previous", "Offset", "BeatTo", "TimeTo", "Rect", "Info", "Result", "Is", "Aspect", "Judge", "Archetype", "Base", "Consecutive", "Initial", "Max", "Value", "Next", "Skip", "Accuracy", "Judgment", "Direction", "Debug", "Replay", "Multiplayer"}
 	for _, prefix := range readPrefixes {
 		if strings.HasPrefix(name, prefix) {
 			item.effect = "EffectRead"
 			return item
 		}
+	}
+	if item.receiver == "uiAPI" && !strings.HasPrefix(name, "Set") {
+		item.effect = "EffectRead"
+		return item
 	}
 	if item.pkg == "sonolus" {
 		writeReceivers := map[string]bool{
@@ -78,7 +71,7 @@ func semantic(item entry) entry {
 	}
 	item.phases = all[item.modes]
 	// These facades are backed by preprocess-only pointers in sonolus.js.
-	if item.receiver == "screenAPI" || item.receiver == "debugAPI" || item.receiver == "uiAPI" || item.receiver == "scoreAPI" || item.receiver == "lifeAPI" {
+	if item.receiver == "uiAPI" || item.receiver == "scoreAPI" || item.receiver == "lifeAPI" {
 		item.phases = "preprocess"
 	}
 	// Preview canvas configuration is preprocess-only; drawing happens in render.
@@ -88,6 +81,15 @@ func semantic(item entry) entry {
 		} else {
 			item.phases = "preprocess"
 		}
+	}
+	if item.pkg == "sonolus/play" && (item.receiver == "backgroundAPI" || item.receiver == "transformAPI") && strings.HasPrefix(item.name, "Set") {
+		item.phases = "preprocess|updateSequential|touch"
+	}
+	if item.pkg == "sonolus/watch" && item.receiver == "backgroundAPI" && strings.HasPrefix(item.name, "Set") {
+		item.phases = "preprocess|updateSequential"
+	}
+	if item.pkg == "sonolus/watch" && item.receiver == "entityAPI" && item.name == "SetResult" {
+		item.phases = "preprocess"
 	}
 	return item
 }
@@ -190,12 +192,19 @@ func nativeEntries(root string) []entry {
 	must(err)
 	core, err := os.ReadFile(filepath.Join(root, "..", "sonolus-core-go", "core", "resource", "runtimes.go"))
 	must(err)
+	funcs, err := os.ReadFile(filepath.Join(root, "..", "sonolus.js-compiler", "src", "utils", "funcs.ts"))
+	must(err)
+	sideEffectFree := map[string]bool{}
+	for _, match := range regexp.MustCompile(`'([A-Za-z0-9_]+)'`).FindAllStringSubmatch(string(funcs), -1) {
+		sideEffectFree[match[1]] = true
+	}
 	fnRE := regexp.MustCompile(`(?ms)^\s{4}([A-Za-z0-9_]+)\((.*?)\):\s*(number|boolean|void)\s*$`)
 	argRE := regexp.MustCompile(`^\.\.\.([A-Za-z0-9_]+):\s*number\[\]$|^([A-Za-z0-9_]+):\s*(.+)$`)
 	known := map[string]entry{}
 	for _, match := range fnRE.FindAllStringSubmatch(string(js), -1) {
 		name, rawArgs, rawResult := match[1], strings.TrimSpace(match[2]), match[3]
 		var args []string
+		minArgs, maxArgs := 0, 0
 		if rawArgs != "" {
 			for _, raw := range strings.Split(rawArgs, ",") {
 				raw = strings.TrimSpace(raw)
@@ -208,7 +217,12 @@ func nativeEntries(root string) []entry {
 				}
 				if m[1] != "" {
 					args = append(args, m[1]+" ...float64")
+					maxArgs = -1
 					continue
+				}
+				minArgs++
+				if maxArgs >= 0 {
+					maxArgs++
 				}
 				typ := "float64"
 				if strings.TrimSpace(m[3]) == "boolean" {
@@ -225,7 +239,15 @@ func nativeEntries(root string) []entry {
 			result = " bool"
 		}
 		signature := "func(" + strings.Join(args, ", ") + ")" + result
-		known[name] = entry{pkg: "sonolus/native", name: name, kind: "KindNative", signature: signature, effect: "EffectWrite", runtime: name, source: "sonolus.js native|sonolus-core-go"}
+		resultSlots := 0
+		if rawResult != "void" {
+			resultSlots = 1
+		}
+		effect := "EffectWrite"
+		if sideEffectFree[name] {
+			effect = "EffectPure"
+		}
+		known[name] = entry{pkg: "sonolus/native", name: name, kind: "KindNative", signature: signature, modes: allNativeModes, phases: allNativePhases, effect: effect, runtime: name, source: "sonolus.js mode indexes|sonolus.js native|sonolus-core-go", minArgs: minArgs, maxArgs: maxArgs, resultSlots: resultSlots, hasRuntimeSignature: true}
 	}
 	constRE := regexp.MustCompile(`RuntimeFunction([A-Za-z0-9_]+)\s+RuntimeFunction\s*=\s*"([A-Za-z0-9_]+)"`)
 	var result []entry
@@ -266,6 +288,57 @@ func standardNameEntries(root string) ([]entry, string) {
 	return entries, declarations.String()
 }
 
+func nativeCoverageSource(entries []entry) string {
+	var out strings.Builder
+	out.WriteString("// Code generated by gencatalog; DO NOT EDIT.\npackage main\n\n")
+	out.WriteString("import (\n\t\"github.com/WindowsSov8forUs/sonolus-go/sonolus/native\"\n\t\"github.com/WindowsSov8forUs/sonolus-go/sonolus/play\"\n)\n\n")
+	out.WriteString("type NativeCoverage struct { play.Archetype `sonolus:\"name=NativeCoverage\"` }\n\n")
+	out.WriteString("func (*NativeCoverage) Preprocess() {\n")
+	resultIndex := 0
+	for _, item := range entries {
+		if item.kind != "KindNative" {
+			continue
+		}
+		expression, err := parser.ParseExpr(item.signature)
+		must(err)
+		function := expression.(*ast.FuncType)
+		var args []string
+		if function.Params != nil {
+			for _, field := range function.Params.List {
+				count := len(field.Names)
+				if count == 0 {
+					count = 1
+				}
+				typeExpr := field.Type
+				if ellipsis, ok := typeExpr.(*ast.Ellipsis); ok {
+					typeExpr = ellipsis.Elt
+				}
+				value := "0"
+				if identifier, ok := typeExpr.(*ast.Ident); ok && identifier.Name == "bool" {
+					value = "false"
+				}
+				for range count {
+					args = append(args, value)
+				}
+			}
+		}
+		if function.Results != nil && len(function.Results.List) != 0 {
+			fmt.Fprintf(&out, "\tresult%d := ", resultIndex)
+		} else {
+			out.WriteString("\t")
+		}
+		fmt.Fprintf(&out, "native.%s(%s)\n", item.name, strings.Join(args, ", "))
+		if function.Results != nil && len(function.Results.List) != 0 {
+			fmt.Fprintf(&out, "\t_ = result%d\n", resultIndex)
+			resultIndex++
+		}
+	}
+	out.WriteString("}\n\nfunc main() {}\n")
+	formatted, err := format.Source([]byte(out.String()))
+	must(err)
+	return string(formatted)
+}
+
 func main() {
 	wd, err := os.Getwd()
 	must(err)
@@ -293,7 +366,7 @@ func main() {
 	for _, item := range entries {
 		fmt.Fprintf(&out, "{Package:%q, Name:%q, Receiver:%q, Kind:%s, Signature:%q, ", item.pkg, item.name, item.receiver, item.kind, item.signature)
 		if item.modes != "" {
-			fmt.Fprintf(&out, "Modes:[]string{%q}, ", item.modes)
+			fmt.Fprintf(&out, "Modes:[]string{%s}, ", strings.Join(quoteList(strings.Split(item.modes, "|")), ","))
 		}
 		if item.phases != "" {
 			fmt.Fprintf(&out, "Phases:[]string{%s}, ", strings.Join(quoteList(strings.Split(item.phases, "|")), ","))
@@ -303,6 +376,14 @@ func main() {
 			fmt.Fprintf(&out, ", Runtime:resource.RuntimeFunction(%q)", item.runtime)
 		}
 		out.WriteString("},\n")
+	}
+	out.WriteString("}\n")
+	out.WriteString("\nvar RuntimeSignatures = map[resource.RuntimeFunction]RuntimeSignature{\n")
+	for _, item := range entries {
+		if !item.hasRuntimeSignature {
+			continue
+		}
+		fmt.Fprintf(&out, "resource.RuntimeFunction(%q): {MinArgs:%d, MaxArgs:%d, ResultSlots:%d},\n", item.runtime, item.minArgs, item.maxArgs, item.resultSlots)
 	}
 	out.WriteString("}\n")
 	formatted, err := format.Source([]byte(out.String()))
@@ -327,6 +408,9 @@ func main() {
 	nativeFormatted, err := format.Source([]byte(native.String()))
 	must(err)
 	must(os.WriteFile(filepath.Join(root, "sonolus", "native", "generated.go"), nativeFormatted, 0o644))
+	coverageDir := filepath.Join(root, "internal", "newcompiler", "testdata", "nativecoverage")
+	must(os.MkdirAll(coverageDir, 0o755))
+	must(os.WriteFile(filepath.Join(coverageDir, "main.go"), []byte(nativeCoverageSource(entries)), 0o644))
 	standardFormatted, err := format.Source([]byte(standardSource))
 	must(err)
 	must(os.WriteFile(filepath.Join(root, "sonolus", "standard_names_generated.go"), standardFormatted, 0o644))

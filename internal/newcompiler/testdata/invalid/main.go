@@ -12,7 +12,7 @@ type Bad struct {
 
 type Config struct {
 	sonolus.Configuration
-	Bad float64 `sonolus:"slider,def=0,min=0,max=1,step=1,mystery=true"`
+	Bad float64 `configuration:"slider,def=0,min=0,max=1,step=1,mystery=true"`
 }
 
 var Configuration Config

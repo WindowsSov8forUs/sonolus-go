@@ -1,6 +1,7 @@
 package source
 
 import (
+	"fmt"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/goparse"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/intrinsic"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
 )
 
 var (
@@ -62,10 +64,14 @@ func packageFilterNotThirdParty() *goparse.PackageFilter {
 	}
 }
 
-func Load(pattern ...string) ([]*packages.Package, error) {
+func newParser() *goparse.Parser {
 	parser := goparse.NewParser()
 	parser.SetImportFilters(goparse.ImportFilterNoDotImport())
 	parser.SetPackageFilters(packageFilterAllowedStandard(), packageFilterNotThirdParty())
+	return parser
+}
+
+func load(parser *goparse.Parser, pattern ...string) ([]*packages.Package, error) {
 	pkgs, err := parser.Load(pattern...)
 	if err != nil {
 		return nil, err
@@ -74,4 +80,16 @@ func Load(pattern ...string) ([]*packages.Package, error) {
 		return nil, err
 	}
 	return pkgs, nil
+}
+
+func Load(pattern ...string) ([]*packages.Package, error) {
+	return load(newParser(), pattern...)
+}
+
+func LoadMode(m mode.Mode, pattern ...string) ([]*packages.Package, error) {
+	if !m.Valid() {
+		return nil, fmt.Errorf("invalid Sonolus mode %q; expected play, watch, preview, or tutorial", m)
+	}
+	parser := newParser().SetConfig(&packages.Config{BuildFlags: []string{"-tags=" + string(m)}})
+	return load(parser, pattern...)
 }

@@ -1,7 +1,6 @@
 package source
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -35,8 +34,9 @@ func TestLoadAndCrossPackageStaticValues(t *testing.T) {
 	}
 
 	for _, name := range []string{"CrossBad", "LocalBad"} {
-		if _, err := tracer.EvalPackageValue(name); !errors.Is(err, ErrNotStatic) {
-			t.Fatalf("%s error = %v, want ErrNotStatic", name, err)
+		value := mustEvalBinding(t, tracer, name).Value
+		if value.Kind != StaticFunctionCall || value.Call == nil || value.Call.Object.Name() != "dynamic" {
+			t.Fatalf("%s = %#v, want symbolic dynamic call", name, value)
 		}
 	}
 }

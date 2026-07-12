@@ -360,6 +360,10 @@ func (e *staticEvaluator) assignValue(pkg *packages.Package, value StaticValue, 
 
 	targetUnderlying := underlyingType(target)
 	switch value.Kind {
+	case StaticFunctionCall:
+		result := cloneStaticValue(value)
+		result.Type = target
+		return result, nil
 	case StaticArray:
 		arrayType, ok := targetUnderlying.(*types.Array)
 		if !ok || int64(len(value.Elements)) != arrayType.Len() {

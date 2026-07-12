@@ -61,6 +61,9 @@ type Range struct{ Min, Max float64 }
 type JudgmentWindow struct{ Perfect, Great, Good Range }
 type JudgmentWindows struct{ Perfect, Great, Good Range }
 
+func (w JudgmentWindow) Judge(actual, target float64) Judgment  { return JudgmentMiss }
+func (w JudgmentWindows) Judge(actual, target float64) Judgment { return JudgmentMiss }
+
 type EntityRef[T any] struct{ Index float64 }
 type Pair[A, B any] struct {
 	First  A
@@ -71,9 +74,9 @@ type Judgment int
 
 const (
 	JudgmentMiss Judgment = iota
-	JudgmentGood
-	JudgmentGreat
 	JudgmentPerfect
+	JudgmentGreat
+	JudgmentGood
 )
 
 type EntityState int

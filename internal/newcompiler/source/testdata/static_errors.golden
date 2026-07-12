@@ -1,4 +1,3 @@
-Call|not-static|5:12|dynamic()
 Func|not-static|6:12|dynamic
 Append|not-static|7:14|append([]int{}, 1)
 Channel|not-static|8:15|make(chan int)

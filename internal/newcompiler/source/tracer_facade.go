@@ -18,20 +18,22 @@ type StaticSlice = sourcetracer.StaticSlice
 type StaticMapEntry = sourcetracer.StaticMapEntry
 type StaticMap = sourcetracer.StaticMap
 type StaticField = sourcetracer.StaticField
+type StaticCall = sourcetracer.StaticCall
 type StaticValue = sourcetracer.StaticValue
 type StaticObject = sourcetracer.StaticObject
 type StaticBinding = sourcetracer.StaticBinding
 
 const (
-	StaticInvalid    = sourcetracer.StaticInvalid
-	StaticConstant   = sourcetracer.StaticConstant
-	StaticNil        = sourcetracer.StaticNil
-	StaticArray      = sourcetracer.StaticArray
-	StaticStruct     = sourcetracer.StaticStruct
-	StaticSliceValue = sourcetracer.StaticSliceValue
-	StaticMapValue   = sourcetracer.StaticMapValue
-	StaticPointer    = sourcetracer.StaticPointer
-	StaticInterface  = sourcetracer.StaticInterface
+	StaticInvalid      = sourcetracer.StaticInvalid
+	StaticConstant     = sourcetracer.StaticConstant
+	StaticNil          = sourcetracer.StaticNil
+	StaticArray        = sourcetracer.StaticArray
+	StaticStruct       = sourcetracer.StaticStruct
+	StaticSliceValue   = sourcetracer.StaticSliceValue
+	StaticMapValue     = sourcetracer.StaticMapValue
+	StaticPointer      = sourcetracer.StaticPointer
+	StaticInterface    = sourcetracer.StaticInterface
+	StaticFunctionCall = sourcetracer.StaticFunctionCall
 
 	StaticPathField   = sourcetracer.StaticPathField
 	StaticPathElement = sourcetracer.StaticPathElement

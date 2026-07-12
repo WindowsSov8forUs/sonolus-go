@@ -44,6 +44,24 @@ type Symbol struct {
 	Internal  bool
 }
 
+type RuntimeSignature struct {
+	MinArgs, MaxArgs int
+	ResultSlots      int
+}
+
+func LookupRuntimeSignature(runtime resource.RuntimeFunction) (RuntimeSignature, bool) {
+	signature, ok := RuntimeSignatures[runtime]
+	if !ok {
+		signature, ok = internalRuntimeSignatures[runtime]
+	}
+	return signature, ok
+}
+
+var internalRuntimeSignatures = map[resource.RuntimeFunction]RuntimeSignature{
+	resource.RuntimeFunctionAnd:      {MinArgs: 0, MaxArgs: -1, ResultSlots: 1},
+	resource.RuntimeFunctionSubtract: {MinArgs: 2, MaxArgs: 2, ResultSlots: 1},
+}
+
 func (s Symbol) Key() string {
 	if s.Receiver != "" {
 		return s.Package + "." + s.Receiver + "." + s.Name

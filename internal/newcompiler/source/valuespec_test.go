@@ -122,11 +122,8 @@ const (
 	}
 
 	bindings, err = tracer.EvalValueSpec(findValueSpec(t, pkg, "Good"))
-	if !errors.Is(err, ErrNotStatic) {
-		t.Fatalf("Good/Bad error = %v, want ErrNotStatic", err)
-	}
-	if bindings != nil {
-		t.Fatalf("partially returned bindings: %#v", bindings)
+	if err != nil || len(bindings) != 2 || bindings[1].Value.Kind != StaticFunctionCall {
+		t.Fatalf("Good/Bad bindings = %#v, error = %v", bindings, err)
 	}
 
 	tests := []struct {

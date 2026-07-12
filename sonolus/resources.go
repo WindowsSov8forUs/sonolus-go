@@ -12,9 +12,14 @@ type Sprite struct{}
 
 func SkinSprite(name string) Sprite { return Sprite{} }
 
-func (s Sprite) Draw(q Quad, z, opacity float64)       {}
-func (s Sprite) DrawCurved(q Quad, z, opacity float64) {}
-func (s Sprite) Exists() bool                          { return false }
+func (s Sprite) Draw(q Quad, z, opacity float64)                                            {}
+func (s Sprite) DrawCurvedB(q Quad, control Vec2, segments, z, opacity float64)             {}
+func (s Sprite) DrawCurvedT(q Quad, control Vec2, segments, z, opacity float64)             {}
+func (s Sprite) DrawCurvedL(q Quad, control Vec2, segments, z, opacity float64)             {}
+func (s Sprite) DrawCurvedR(q Quad, control Vec2, segments, z, opacity float64)             {}
+func (s Sprite) DrawCurvedBT(q Quad, controlB, controlT Vec2, segments, z, opacity float64) {}
+func (s Sprite) DrawCurvedLR(q Quad, controlL, controlR Vec2, segments, z, opacity float64) {}
+func (s Sprite) Exists() bool                                                               { return false }
 
 type Clip struct{}
 
@@ -38,9 +43,9 @@ func ParticleEffect(name string) Effect { return Effect{} }
 
 type ParticleHandle struct{ ID float64 }
 
-func (p Effect) Spawn(q Quad, duration, loop bool) ParticleHandle { return ParticleHandle{} }
-func (h ParticleHandle) Move(q Quad)                              {}
-func (h ParticleHandle) Destroy()                                 {}
+func (p Effect) Spawn(q Quad, duration float64, loop bool) ParticleHandle { return ParticleHandle{} }
+func (h ParticleHandle) Move(q Quad)                                      {}
+func (h ParticleHandle) Destroy()                                         {}
 
 type Bucket struct{}
 type BucketSprite struct {
@@ -57,8 +62,6 @@ func JudgmentBucketSpriteWithFallback(sprite, fallback Sprite, x, y, w, h, rotat
 	return BucketSprite{}
 }
 
-func (b Bucket) Judge(actual, target float64, windows JudgmentWindows) Judgment { return JudgmentMiss }
-
 type Text struct{}
 type Icon struct{}
 
@@ -66,6 +69,7 @@ func InstructionText(name string) Text { return Text{} }
 func InstructionIcon(name string) Icon { return Icon{} }
 
 type UIConfig struct {
+	Scope                                               string
 	PrimaryMetric, SecondaryMetric                      UIMetric
 	MenuVisibility, JudgmentVisibility, ComboVisibility UIVisibility
 	PrimaryMetricVisibility, SecondaryMetricVisibility  UIVisibility
@@ -76,6 +80,24 @@ type UIConfig struct {
 	JudgmentErrorPlacement                              UIJudgmentErrorPlacement
 	JudgmentErrorMin                                    float64
 }
+
+// RuntimeUILayout is the mutable layout of a Play or Watch UI element.
+type RuntimeUILayout struct {
+	Anchor, Pivot, Size Vec2
+	Rotation, Alpha     float64
+	HorizontalAlign     HorizontalAlign
+	Background          bool
+}
+
+// RuntimeUIBasicLayout is the mutable layout used by Preview and Tutorial.
+type RuntimeUIBasicLayout struct {
+	Anchor, Pivot, Size Vec2
+	Rotation, Alpha     float64
+	Background          bool
+}
+
+// RuntimeUIConfiguration contains the user's read-only UI scale and opacity.
+type RuntimeUIConfiguration struct{ Scale, Alpha float64 }
 type UIMetric string
 type UIJudgmentErrorStyle string
 type UIJudgmentErrorPlacement string

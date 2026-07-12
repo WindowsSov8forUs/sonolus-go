@@ -23,7 +23,11 @@ var Bounds = []int{1}[2]
 	})
 	tracer := NewASTTracer(pkg)
 	var actual strings.Builder
-	for _, name := range []string{"Call", "Func", "Append", "Channel", "Bounds"} {
+	call := mustEvalBinding(t, tracer, "Call").Value
+	if call.Kind != StaticFunctionCall || call.Call == nil || call.Call.Object.Name() != "dynamic" {
+		t.Fatalf("Call = %#v, want symbolic dynamic call", call)
+	}
+	for _, name := range []string{"Func", "Append", "Channel", "Bounds"} {
 		_, err := tracer.EvalPackageValue(name)
 		category := "unexpected"
 		switch {
@@ -105,9 +109,12 @@ var Good = 42
 `,
 	})
 	tracer := NewASTTracer(pkg)
+	call := mustEvalBinding(t, tracer, "UnsupportedCall").Value
+	if call.Kind != StaticFunctionCall || call.Call == nil || call.Call.Object.Name() != "dynamic" {
+		t.Fatalf("UnsupportedCall = %#v", call)
+	}
 
 	for _, name := range []string{
-		"UnsupportedCall",
 		"UnsupportedFunc",
 		"UnsupportedAppend",
 		"UnsupportedCopy",
@@ -164,7 +171,8 @@ func TestStaticErrorPositionAndCaching(t *testing.T) {
 
 func dynamic() int { return 1 }
 
-var Failure = dynamic()
+var fn = dynamic
+var Failure = fn()
 `,
 	})
 	tracer := NewASTTracer(pkg)
@@ -178,18 +186,18 @@ var Failure = dynamic()
 	if !errors.As(first, &evalErr) {
 		t.Fatalf("error type = %T, want *StaticEvalError", first)
 	}
-	if evalErr.Pos.Line != 5 || evalErr.Pos.Column != 15 {
-		t.Fatalf("position = %s, want position.go:5:15", evalErr.Pos)
+	if evalErr.Pos.Line != 6 || evalErr.Pos.Column != 15 {
+		t.Fatalf("position = %s, want position.go:6:15", evalErr.Pos)
 	}
 	if evalErr.Object == nil || evalErr.Object.Name() != "Failure" {
 		t.Fatalf("associated object = %v, want Failure", evalErr.Object)
 	}
-	if !strings.Contains(first.Error(), `expression "dynamic()"`) {
+	if !strings.Contains(first.Error(), `expression "fn()"`) {
 		t.Fatalf("error text = %q", first.Error())
 	}
 }
 
-func TestReachableDynamicStorageFailsButUnrelatedInitializerDoesNot(t *testing.T) {
+func TestReachableSymbolicStorageIsPreserved(t *testing.T) {
 	pkg := mustStaticPackage(t, map[string]string{
 		"main.go": `package main
 
@@ -205,8 +213,9 @@ var Independent = 7
 	if got := staticInt64(t, mustEvalBinding(t, tracer, "Independent").Value); got != 7 {
 		t.Fatalf("Independent = %d", got)
 	}
-	if _, err := tracer.EvalPackageValue("PointerToDynamic"); !errors.Is(err, ErrNotStatic) {
-		t.Fatalf("PointerToDynamic error = %v, want ErrNotStatic", err)
+	pointer := mustEvalBinding(t, tracer, "PointerToDynamic").Value
+	if pointer.Kind != StaticPointer || pointer.Pointer == nil || pointer.Pointer.Object == nil || pointer.Pointer.Object.Value.Kind != StaticFunctionCall {
+		t.Fatalf("PointerToDynamic = %#v, want pointer to symbolic call", pointer)
 	}
 }
 

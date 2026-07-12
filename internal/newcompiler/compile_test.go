@@ -1,15 +1,45 @@
 package newcompiler
 
 import (
+	"fmt"
+	"go/ast"
+	"go/types"
 	"math"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/catalog"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/source"
 )
 
+func parseMode(m mode.Mode, pattern string) (*frontend.ModeDeclarations, error) {
+	pkgs, err := source.LoadMode(m, pattern)
+	if err != nil {
+		return nil, err
+	}
+	if len(pkgs) != 1 {
+		return nil, fmt.Errorf("expected exactly one main package, got %d", len(pkgs))
+	}
+	parser := frontend.NewParser()
+	if err := parser.Parse(m, pkgs[0]); err != nil {
+		return nil, err
+	}
+	project, err := parser.GetProject()
+	if err != nil {
+		return nil, err
+	}
+	return project.Modes[m], nil
+}
+
 func TestParseDeclarationsPlay(t *testing.T) {
-	decl, err := ParseDeclarations(mode.ModePlay, "./testdata/declarations")
+	decl, err := parseMode(mode.ModePlay, "./testdata/declarations")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,22 +53,589 @@ func TestParseDeclarationsPlay(t *testing.T) {
 	if len(a.Callbacks) != 3 {
 		t.Fatalf("unexpected callbacks: %#v", a.Callbacks)
 	}
-	if len(a.Callbacks[0].Intrinsics) != 4 {
-		t.Fatalf("unexpected preprocess intrinsics: %#v", a.Callbacks[0].Intrinsics)
+	if a.Callbacks[0].IR == nil || len(a.Callbacks[0].IR.Blocks) == 0 {
+		t.Fatalf("preprocess callback was not lowered: %#v", a.Callbacks[0].IR)
 	}
 	if decl.Resources.Skin == nil || len(decl.Resources.Skin.Sprites) != 1 {
 		t.Fatalf("unexpected skin: %#v", decl.Resources.Skin)
 	}
-	if len(decl.Configuration.Options) != 3 {
-		t.Fatalf("unexpected options: %#v", decl.Configuration.Options)
+	if len(decl.Configuration.Value.Options) != 3 {
+		t.Fatalf("unexpected options: %#v", decl.Configuration.Value.Options)
 	}
 	if decl.ROM == nil || len(decl.ROM.Values) != 3 {
 		t.Fatalf("unexpected ROM: %#v", decl.ROM)
 	}
 }
 
+func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/lowering")
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback := decl.Archetypes[0].Callbacks[0]
+	foundEntityRef := false
+	for _, field := range decl.Archetypes[0].Fields {
+		foundEntityRef = foundEntityRef || field.GoName == "Ref" && field.Storage == "imported" && field.Size == 1
+	}
+	if !foundEntityRef {
+		t.Fatalf("EntityRef storage did not retain its one-slot imported layout: %#v", decl.Archetypes[0].Fields)
+	}
+	if callback.IR == nil || len(callback.IR.Blocks) < 5 {
+		t.Fatalf("callback was not lowered to a loop CFG: %#v", callback.IR)
+	}
+	foundDraw := false
+	foundCurvedDraw := false
+	foundContainerMemory := false
+	foundContainerStride := false
+	unreachableBlocks := 0
+	foundTime := false
+	foundSafeArea := false
+	foundScreenAspect := false
+	foundSpawn := false
+	uiStoreOffsets := map[int]int{}
+	foundUIConfiguration := false
+	foundTouchStride := false
+	foundNestedArrayPlace := false
+	foundMemoryArrayRange := false
+	partialResultZeroes := map[int]bool{}
+	containerSizeZeroed := false
+	rangeLengthSnapshotted := false
+	transformOffsets := map[int]bool{}
+	effectfulReturns := map[resource.RuntimeFunction]int{}
+	runtimeCalls := map[resource.RuntimeFunction][]ir.RuntimeCall{}
+	visitExpr := func(expr ir.Expr) {}
+	visitExpr = func(expr ir.Expr) {
+		switch value := expr.(type) {
+		case ir.Load:
+			if place, ok := value.Place.(ir.IndexedLocalPlace); ok {
+				foundNestedArrayPlace = foundNestedArrayPlace || place.Base == 1 && place.Length == 2 && place.Stride == 1
+			}
+			if place, ok := value.Place.(ir.MemoryPlace); ok {
+				_, dynamicMemoryIndex := place.Index.(ir.Load)
+				foundMemoryArrayRange = foundMemoryArrayRange || place.Storage == "memory" && place.Stride == 1 && dynamicMemoryIndex
+				foundTime = foundTime || place.Storage == "RuntimeUpdate" && place.Offset == 0
+				foundSafeArea = foundSafeArea || place.Storage == "RuntimeEnvironment" && (place.Offset == 5 || place.Offset == 6)
+				foundScreenAspect = foundScreenAspect || place.Storage == "RuntimeEnvironment" && place.Offset == 1
+				foundUIConfiguration = foundUIConfiguration || place.Storage == "RuntimeUIConfiguration" && place.Offset == 0
+				foundTouchStride = foundTouchStride || place.Storage == "RuntimeTouch" && place.Stride == 15
+			}
+		case ir.RuntimeCall:
+			effectfulReturns[value.Function]++
+			runtimeCalls[value.Function] = append(runtimeCalls[value.Function], value)
+			for _, arg := range value.Args {
+				visitExpr(arg)
+			}
+		}
+	}
+	for _, block := range callback.IR.Blocks {
+		if _, ok := block.Terminator.(ir.Unreachable); ok {
+			unreachableBlocks++
+		}
+		for _, instruction := range block.Instructions {
+			if store, ok := instruction.(ir.Store); ok {
+				visitExpr(store.Value)
+				if place, ok := store.Place.(ir.LocalPlace); ok {
+					rangeLengthSnapshotted = rangeLengthSnapshotted || place.Name == "range.length"
+					if constant, ok := store.Value.(ir.Const); ok && constant.Value == 0 {
+						if place.Name == "partialPair.result" {
+							partialResultZeroes[place.Offset] = true
+						}
+						containerSizeZeroed = containerSizeZeroed || place.Name == "container.size"
+					}
+				}
+				if place, ok := store.Place.(ir.MemoryPlace); ok && place.Storage == "RuntimeUI" {
+					uiStoreOffsets[place.Offset]++
+				}
+				if place, ok := store.Place.(ir.MemoryPlace); ok && place.Storage == "memory" {
+					foundContainerMemory = true
+					foundContainerStride = foundContainerStride || place.Stride == 2
+				}
+				if place, ok := store.Place.(ir.MemoryPlace); ok && place.Storage == "SkinTransform" {
+					transformOffsets[place.Offset] = true
+				}
+			}
+			if eval, ok := instruction.(ir.Eval); ok {
+				visitExpr(eval.Value)
+				if call, ok := eval.Value.(ir.RuntimeCall); ok && call.Function == resource.RuntimeFunctionDraw {
+					foundDraw = true
+				}
+				if call, ok := eval.Value.(ir.RuntimeCall); ok && call.Function == resource.RuntimeFunctionDrawCurvedB && len(call.Args) == 17 {
+					foundCurvedDraw = true
+				}
+				if call, ok := eval.Value.(ir.RuntimeCall); ok && call.Function == resource.RuntimeFunctionSpawn {
+					if len(call.Args) != 2 {
+						t.Fatalf("Spawn arguments = %#v; expected archetype ID and one memory slot", call.Args)
+					}
+					id, ok := call.Args[0].(ir.Const)
+					if !ok || id.Value != 1 {
+						t.Fatalf("Spawn archetype ID = %#v; expected stable sorted ID 1", call.Args[0])
+					}
+					foundSpawn = true
+				}
+			}
+		}
+	}
+	if !foundDraw || !foundCurvedDraw {
+		t.Fatalf("resource field draw lowering mismatch: draw=%v curved=%v", foundDraw, foundCurvedDraw)
+	}
+	if !foundContainerMemory {
+		t.Fatal("archetype container was not lowered to semantic memory")
+	}
+	if !foundContainerStride || unreachableBlocks == 0 {
+		t.Fatalf("container bounds/stride lowering mismatch: stride=%v unreachable=%d", foundContainerStride, unreachableBlocks)
+	}
+	if !foundTime || !foundSafeArea || !foundScreenAspect {
+		t.Fatalf("facade memory was not lowered: time=%v safeArea=%v screen=%v", foundTime, foundSafeArea, foundScreenAspect)
+	}
+	if !foundSpawn {
+		t.Fatal("archetype Spawn was not lowered")
+	}
+	for offset := range 80 {
+		if uiStoreOffsets[offset] != 1 {
+			t.Fatalf("runtime UI store offsets = %#v; offset %d count = %d, want 1", uiStoreOffsets, offset, uiStoreOffsets[offset])
+		}
+	}
+	if len(uiStoreOffsets) != 80 || !foundUIConfiguration {
+		t.Fatalf("runtime UI lowering mismatch: offsets=%#v configuration=%v", uiStoreOffsets, foundUIConfiguration)
+	}
+	if !foundTouchStride {
+		t.Fatal("touch lookup was not lowered with RuntimeTouch stride 15")
+	}
+	if !foundNestedArrayPlace {
+		t.Fatal("dynamic nested array index did not preserve base, length, and stride")
+	}
+	if !foundMemoryArrayRange {
+		t.Fatal("archetype memory array range did not retain dynamic index, stride, and base offset")
+	}
+	if !partialResultZeroes[0] || !partialResultZeroes[1] || !containerSizeZeroed {
+		t.Fatalf("Go zero initialization is missing: partial=%v containerSize=%v", partialResultZeroes, containerSizeZeroed)
+	}
+	if !rangeLengthSnapshotted {
+		t.Fatal("container range length was not snapshotted before the loop")
+	}
+	for _, offset := range []int{0, 1, 3, 4, 5, 7} {
+		if !transformOffsets[offset] {
+			t.Fatalf("SkinTransform store offsets = %#v; missing %d", transformOffsets, offset)
+		}
+	}
+	if len(transformOffsets) != 6 {
+		t.Fatalf("SkinTransform store offsets = %#v; expected six affine 4x4 offsets", transformOffsets)
+	}
+	if effectfulReturns[resource.RuntimeFunctionPlayLooped] != 2 || effectfulReturns[resource.RuntimeFunctionPlayLoopedScheduled] != 1 || effectfulReturns[resource.RuntimeFunctionSpawnParticleEffect] != 1 {
+		t.Fatalf("each effectful return call must execute once: %#v", effectfulReturns)
+	}
+	if effectfulReturns[resource.RuntimeFunctionRandom] != 1 || effectfulReturns[resource.RuntimeFunctionRandomInteger] != 1 {
+		t.Fatalf("short-circuit and switch operands must execute once: %#v", effectfulReturns)
+	}
+	for _, runtime := range []resource.RuntimeFunction{resource.RuntimeFunctionRandom, resource.RuntimeFunctionRandomInteger} {
+		call := runtimeCalls[runtime][0]
+		if len(call.Args) != 2 {
+			t.Fatalf("%s arguments = %#v", runtime, call.Args)
+		}
+		minimum, ok := call.Args[0].(ir.Const)
+		if !ok || minimum.Value != 0 {
+			t.Fatalf("%s minimum = %#v, want 0", runtime, call.Args[0])
+		}
+	}
+	for _, runtime := range []resource.RuntimeFunction{
+		resource.RuntimeFunctionAbs, resource.RuntimeFunctionFloor, resource.RuntimeFunctionCeil,
+		resource.RuntimeFunctionRound, resource.RuntimeFunctionTrunc, resource.RuntimeFunctionLog,
+		resource.RuntimeFunctionSin, resource.RuntimeFunctionCos, resource.RuntimeFunctionTan,
+		resource.RuntimeFunctionArcsin, resource.RuntimeFunctionArccos, resource.RuntimeFunctionArctan,
+		resource.RuntimeFunctionArctan2, resource.RuntimeFunctionMin, resource.RuntimeFunctionMax,
+		resource.RuntimeFunctionPower, resource.RuntimeFunctionMod,
+	} {
+		if len(runtimeCalls[runtime]) == 0 {
+			t.Fatalf("math intrinsic %s was not lowered", runtime)
+		}
+	}
+}
+
+func TestDebugRuntimeCallsAreAvailableOutsidePreprocess(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/lowering")
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := inspectFunction(callbackByName(t, decl.Archetypes[0].Callbacks, "updateParallel"))
+	if len(facts.calls[resource.RuntimeFunctionDebugLog]) != 1 || len(facts.calls[resource.RuntimeFunctionDebugPause]) != 1 {
+		t.Fatalf("debug runtime calls were not lowered outside preprocess: %#v", facts.calls)
+	}
+}
+
+func TestEveryPublicNativeLowersThroughPackageToIR(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/nativecoverage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := inspectFunction(callbackByName(t, decl.Archetypes[0].Callbacks, "preprocess"))
+	for i := range catalog.Symbols {
+		symbol := &catalog.Symbols[i]
+		if symbol.Kind != catalog.KindNative {
+			continue
+		}
+		if count := len(facts.calls[symbol.Runtime]); count != 1 {
+			t.Errorf("native %s (%s) lowered %d times, want 1", symbol.Key(), symbol.Runtime, count)
+		}
+	}
+}
+
+func TestEveryCallbackRecipeHasSuccessfulPackageToIRFixture(t *testing.T) {
+	fixtures := map[mode.Mode]string{
+		mode.ModePlay:     "./testdata/lowering",
+		mode.ModeWatch:    "./testdata/lowering_watch",
+		mode.ModePreview:  "./testdata/lowering_preview",
+		mode.ModeTutorial: "./testdata/lowering_tutorial",
+	}
+	seen := map[string]bool{}
+	var calledObject func(*types.Info, ast.Expr) types.Object
+	calledObject = func(info *types.Info, expression ast.Expr) types.Object {
+		switch expression := expression.(type) {
+		case *ast.ParenExpr:
+			return calledObject(info, expression.X)
+		case *ast.IndexExpr:
+			return calledObject(info, expression.X)
+		case *ast.IndexListExpr:
+			return calledObject(info, expression.X)
+		case *ast.Ident:
+			return info.ObjectOf(expression)
+		case *ast.SelectorExpr:
+			return info.ObjectOf(expression.Sel)
+		default:
+			return nil
+		}
+	}
+	for currentMode, pattern := range fixtures {
+		if _, err := parseMode(currentMode, pattern); err != nil {
+			t.Fatalf("lower %s fixture: %v", currentMode, err)
+		}
+		packages, err := source.LoadMode(currentMode, pattern)
+		if err != nil || len(packages) != 1 {
+			t.Fatalf("load %s fixture: packages=%d error=%v", currentMode, len(packages), err)
+		}
+		pkg := packages[0]
+		for _, file := range pkg.Syntax {
+			ast.Inspect(file, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				object := calledObject(pkg.TypesInfo, call.Fun)
+				if symbol, ok := catalog.LookupObject(object); ok {
+					seen[symbol.Key()] = true
+				}
+				return true
+			})
+		}
+	}
+	var missing []string
+	for i := range catalog.Symbols {
+		symbol := &catalog.Symbols[i]
+		if symbol.Internal || symbol.Kind == catalog.KindNative || (symbol.Kind != catalog.KindFunction && symbol.Kind != catalog.KindMethod) {
+			continue
+		}
+		recipe := catalog.LookupRecipe(symbol)
+		switch recipe.Kind {
+		case catalog.RecipeRuntime, catalog.RecipeAggregate, catalog.RecipeMemory, catalog.RecipeResource, catalog.RecipeContainer:
+			if !seen[symbol.Key()] {
+				missing = append(missing, symbol.Key())
+			}
+		}
+	}
+	if len(missing) != 0 {
+		sort.Strings(missing)
+		t.Fatalf("callback recipes without a successful Package -> IR fixture call:\n%s", strings.Join(missing, "\n"))
+	}
+}
+
+func TestPromotedCallbackLowersBodyFromDefiningPackage(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/promotedcallback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := callbackByName(t, decl.Archetypes[0].Callbacks, "preprocess")
+	facts := inspectFunction(fn)
+	calls := facts.calls[resource.RuntimeFunctionDebugLog]
+	if len(calls) != 1 || len(calls[0].Args) != 1 {
+		t.Fatalf("promoted callback body was not lowered from helper package: %#v", calls)
+	}
+	value, ok := calls[0].Args[0].(ir.Const)
+	if !ok || value.Value != 7 {
+		t.Fatalf("promoted callback argument = %#v, want 7", calls[0].Args[0])
+	}
+}
+
+func TestCrossPackageGenericHelperUsesInstantiatedSignature(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/crossgeneric")
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := inspectFunction(callbackByName(t, decl.Archetypes[0].Callbacks, "preprocess"))
+	if len(facts.calls[resource.RuntimeFunctionDebugLog]) != 1 {
+		t.Fatalf("cross-package generic helper did not lower: %#v", facts.calls)
+	}
+}
+
+func TestContainerReturnedFromHelperRetainsBackingStorage(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/containerreturn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := callbackByName(t, decl.Archetypes[0].Callbacks, "preprocess")
+	facts := inspectFunction(fn)
+	if len(facts.calls[resource.RuntimeFunctionDebugLog]) == 0 {
+		t.Fatal("container returned from helper was not available to the caller")
+	}
+}
+
+func TestContainerHelperRejectsRuntimeBackingSelection(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidcontainerreturn")
+	if err == nil || !strings.Contains(err.Error(), "cannot select between different backing stores at runtime") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestContainerLocalRejectsRuntimeBackingSelection(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidcontainerbranch")
+	if err == nil || !strings.Contains(err.Error(), "cannot select a different backing store in runtime control flow") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResourceHandlesCannotBeFabricatedInCallbacks(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidresourcehandle")
+	if err == nil || !strings.Contains(err.Error(), "resource handle aggregates cannot be declared without a resource value") || !strings.Contains(err.Error(), "resource handle aggregates can only come from declared resource fields") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+type irFacts struct {
+	calls  map[resource.RuntimeFunction][]ir.RuntimeCall
+	loads  []ir.MemoryPlace
+	stores []ir.MemoryPlace
+}
+
+func inspectFunction(fn *ir.Function) irFacts {
+	facts := irFacts{calls: map[resource.RuntimeFunction][]ir.RuntimeCall{}}
+	var expression func(ir.Expr)
+	expression = func(expr ir.Expr) {
+		switch value := expr.(type) {
+		case ir.Load:
+			if place, ok := value.Place.(ir.MemoryPlace); ok {
+				facts.loads = append(facts.loads, place)
+			}
+		case ir.RuntimeCall:
+			facts.calls[value.Function] = append(facts.calls[value.Function], value)
+			for _, arg := range value.Args {
+				expression(arg)
+			}
+		}
+	}
+	for _, block := range fn.Blocks {
+		for _, instruction := range block.Instructions {
+			switch value := instruction.(type) {
+			case ir.Store:
+				expression(value.Value)
+				if place, ok := value.Place.(ir.MemoryPlace); ok {
+					facts.stores = append(facts.stores, place)
+				}
+			case ir.Eval:
+				expression(value.Value)
+			}
+		}
+		switch term := block.Terminator.(type) {
+		case ir.Branch:
+			expression(term.Condition)
+		case ir.Switch:
+			expression(term.Value)
+		case ir.Return:
+			for _, slot := range term.Value.Slots {
+				expression(slot)
+			}
+		}
+	}
+	return facts
+}
+
+func countMemory(places []ir.MemoryPlace, storage string) int {
+	count := 0
+	for _, place := range places {
+		if place.Storage == storage {
+			count++
+		}
+	}
+	return count
+}
+
+func callbackByName(t *testing.T, callbacks []*frontend.CallbackDeclaration, name string) *ir.Function {
+	t.Helper()
+	for _, callback := range callbacks {
+		if callback.Name == name {
+			if callback.IR == nil {
+				t.Fatalf("callback %s has no IR", name)
+			}
+			return callback.IR
+		}
+	}
+	t.Fatalf("callback %s was not declared", name)
+	return nil
+}
+
+func TestWatchFacadeLowering(t *testing.T) {
+	decl, err := parseMode(mode.ModeWatch, "./testdata/lowering_watch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := inspectFunction(callbackByName(t, decl.Archetypes[0].Callbacks, "preprocess"))
+	if countMemory(facts.stores, "CurrentInputResult") != 3 || countMemory(facts.stores, "RuntimeUI") != 100 || countMemory(facts.stores, "RuntimeBackground") != 8 {
+		t.Fatalf("watch stores: %#v", facts.stores)
+	}
+	if calls := facts.calls[resource.RuntimeFunctionPlay]; len(calls) != 2 || len(calls[0].Args) != 2 || len(calls[1].Args) != 2 {
+		t.Fatalf("watch Play calls: %#v", calls)
+	}
+	for _, offset := range []int{0, 1, 4} {
+		found := false
+		for _, place := range facts.loads {
+			found = found || place.Storage == "RuntimeEnvironment" && place.Offset == offset
+		}
+		if !found {
+			t.Fatalf("watch environment offset %d was not read: %#v", offset, facts.loads)
+		}
+	}
+}
+
+func TestPreviewFacadeLowering(t *testing.T) {
+	decl, err := parseMode(mode.ModePreview, "./testdata/lowering_preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	callbacks := decl.Archetypes[0].Callbacks
+	preprocess := inspectFunction(callbackByName(t, callbacks, "preprocess"))
+	if countMemory(preprocess.stores, "RuntimeCanvas") != 2 || countMemory(preprocess.stores, "RuntimeUI") != 18 {
+		t.Fatalf("preview preprocess stores: %#v", preprocess.stores)
+	}
+	render := inspectFunction(callbackByName(t, callbacks, "render"))
+	if calls := render.calls[resource.RuntimeFunctionPrint]; len(calls) != 1 || len(calls[0].Args) != 14 {
+		t.Fatalf("preview Print calls: %#v", calls)
+	}
+	if calls := render.calls[resource.RuntimeFunctionDraw]; len(calls) != 1 || len(calls[0].Args) != 14 {
+		t.Fatalf("preview Draw calls: %#v", calls)
+	}
+}
+
+func TestTutorialFacadeLowering(t *testing.T) {
+	decl, err := parseMode(mode.ModeTutorial, "./testdata/lowering_tutorial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preprocess := inspectFunction(callbackByName(t, decl.Globals, "preprocess"))
+	if countMemory(preprocess.loads, "TutorialData") == 0 || countMemory(preprocess.stores, "TutorialMemory") != 1 || countMemory(preprocess.stores, "RuntimeUI") != 36 || countMemory(preprocess.stores, "RuntimeBackground") != 8 {
+		t.Fatalf("tutorial preprocess memory: loads=%#v stores=%#v", preprocess.loads, preprocess.stores)
+	}
+	navigate := inspectFunction(callbackByName(t, decl.Globals, "navigate"))
+	if countMemory(navigate.stores, "TutorialInstruction") != 2 {
+		t.Fatalf("tutorial instruction stores: %#v", navigate.stores)
+	}
+	update := inspectFunction(callbackByName(t, decl.Globals, "update"))
+	if calls := update.calls[resource.RuntimeFunctionPaint]; len(calls) != 1 || len(calls[0].Args) != 7 {
+		t.Fatalf("tutorial Paint calls: %#v", calls)
+	}
+}
+
+func TestHelperPreservesArchetypeReferenceAndAssignmentOrder(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/evaluation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := callbackByName(t, decl.Archetypes[0].Callbacks, "preprocess")
+	var memoryStores []ir.Store
+	pointerReceiverUpdatedOriginal := false
+	valueReceiverUpdatedCopy := false
+	for _, block := range fn.Blocks {
+		for _, instruction := range block.Instructions {
+			store, ok := instruction.(ir.Store)
+			if !ok {
+				continue
+			}
+			if place, ok := store.Place.(ir.LocalPlace); ok {
+				if place.Name == "c" {
+					_, pointerReceiverUpdatedOriginal = store.Value.(ir.RuntimeCall)
+				}
+				if constant, ok := store.Value.(ir.Const); ok && place.Name == "call.receiver" && constant.Value == 99 {
+					valueReceiverUpdatedCopy = true
+				}
+			}
+			if place, ok := store.Place.(ir.MemoryPlace); ok && place.Storage == "memory" {
+				memoryStores = append(memoryStores, store)
+			}
+		}
+	}
+	if !pointerReceiverUpdatedOriginal || !valueReceiverUpdatedCopy {
+		t.Fatalf("method receiver semantics mismatch: pointerOriginal=%v valueCopy=%v", pointerReceiverUpdatedOriginal, valueReceiverUpdatedCopy)
+	}
+	if len(memoryStores) != 6 {
+		t.Fatalf("archetype memory stores = %#v; expected LHS/RHS helper writes followed by assignment writes", memoryStores)
+	}
+	var offsets []int
+	for _, store := range memoryStores {
+		offsets = append(offsets, store.Place.(ir.MemoryPlace).Offset)
+	}
+	want := []int{0, 1, 0, 0, 0, 1}
+	if !reflect.DeepEqual(offsets, want) {
+		t.Fatalf("archetype memory store order = %v, want %v", offsets, want)
+	}
+	facts := inspectFunction(fn)
+	if countMemory(facts.stores, "data") != 2 || countMemory(facts.stores, "shared") != 1 {
+		t.Fatalf("archetype data/shared stores = %#v", facts.stores)
+	}
+	if decl.Archetypes[0].Fields[2].Offset != 0 || decl.Archetypes[0].Fields[3].Offset != 1 {
+		t.Fatalf("imported/data offsets do not share Entity Data: %#v", decl.Archetypes[0].Fields)
+	}
+}
+
+func TestArchetypeStorageRejectsInvalidCallbackWrites(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidstorage")
+	if err == nil || !strings.Contains(err.Error(), "data storage is read-only") || !strings.Contains(err.Error(), "shared storage is read-only") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRandIntnRejectsNonPositiveConstantBound(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidrand")
+	if err == nil || !strings.Contains(err.Error(), "rand.Intn constant bound must be positive") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGlobalCallbacksRejectUnknownExportedName(t *testing.T) {
+	_, err := parseMode(mode.ModeTutorial, "./testdata/invalidglobal")
+	if err == nil || !strings.Contains(err.Error(), "Updtae: unknown tutorial global callback") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestArchetypeStorageCapacityIncludesDataAndContainers(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidcapacity")
+	if err == nil || !strings.Contains(err.Error(), "data storage exceeds capacity 32") || !strings.Contains(err.Error(), "memory storage exceeds capacity 64") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestContainerFieldRequiresCapacity(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidcontainer")
+	if err == nil || !strings.Contains(err.Error(), "container field requires cap") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSpawnRejectsUndeclaredArchetype(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidspawn")
+	if err == nil || !strings.Contains(err.Error(), "is not an archetype declared in play mode") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseDeclarationsNamedResourceValues(t *testing.T) {
-	decl, err := ParseDeclarations(mode.ModePlay, "./testdata/namedresource")
+	decl, err := parseMode(mode.ModePlay, "./testdata/namedresource")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,8 +659,18 @@ func TestParseDeclarationsNamedResourceValues(t *testing.T) {
 	}
 }
 
+func TestParseDeclarationsTracesResourceAlias(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/resourcealias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decl.Resources.Skin == nil || len(decl.Resources.Skin.Sprites) != 1 || decl.Resources.Skin.Sprites[0].Name != "custom.alias" {
+		t.Fatalf("unexpected skin: %#v", decl.Resources.Skin)
+	}
+}
+
 func TestParseDeclarationsSeparateInstructionNamespaces(t *testing.T) {
-	decl, err := ParseDeclarations(mode.ModeTutorial, "./testdata/instructionresource")
+	decl, err := parseMode(mode.ModeTutorial, "./testdata/instructionresource")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +683,7 @@ func TestParseDeclarationsSeparateInstructionNamespaces(t *testing.T) {
 }
 
 func TestParseDeclarationsBuckets(t *testing.T) {
-	decl, err := ParseDeclarations(mode.ModePlay, "./testdata/bucketresource")
+	decl, err := parseMode(mode.ModePlay, "./testdata/bucketresource")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,28 +697,125 @@ func TestParseDeclarationsBuckets(t *testing.T) {
 }
 
 func TestParseDeclarationsRejectsUnsupportedStandardSymbol(t *testing.T) {
-	_, err := ParseDeclarations(mode.ModePlay, "./testdata/invalidstdlib")
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidstdlib")
 	if err == nil || !strings.Contains(err.Error(), "math/rand.Seed is not a Sonolus intrinsic") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestParseDeclarationsRejectsWrongModeAPI(t *testing.T) {
-	_, err := ParseDeclarations(mode.ModePlay, "./testdata/invalidmode")
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidmode")
 	if err == nil || !strings.Contains(err.Error(), "not available in play mode") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestParseDeclarationsRejectsWrongCallbackPhase(t *testing.T) {
-	_, err := ParseDeclarations(mode.ModePlay, "./testdata/invalidphase")
-	if err == nil || !strings.Contains(err.Error(), "sonolus/play.uiAPI.Configure cannot write during updateParallel callback") {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidphase")
+	if err == nil || !strings.Contains(err.Error(), "sonolus/play.uiAPI.SetMenu cannot write during updateParallel callback") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsWrongCallbackPhaseThroughHelper(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidhelper")
+	if err == nil || !strings.Contains(err.Error(), "cannot write during updateParallel callback") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsWrongCallbackPhaseThroughCrossPackageHelper(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/crosshelper")
+	if err == nil || !strings.Contains(err.Error(), "cannot write during updateParallel callback") || !strings.Contains(err.Error(), "inlined from") || !strings.Contains(err.Error(), "crosshelper") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsDynamicCallbackCall(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/dynamiccallback")
+	if err == nil || !strings.Contains(err.Error(), "callback call target must be a statically declared function") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsRecursiveHelpers(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidrecursion")
+	if err == nil || !strings.Contains(err.Error(), "recursive helper call") || strings.Count(err.Error(), "inlined from") < 2 {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsVariadicUserHelper(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidvariadic")
+	if err == nil || !strings.Contains(err.Error(), "variadic user helper") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsDefer(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invaliddefer")
+	if err == nil || !strings.Contains(err.Error(), "unsupported callback statement *ast.DeferStmt") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsUnregisteredBuiltin(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidbuiltin")
+	if err == nil || !strings.Contains(err.Error(), "Go builtin max is not supported") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsConfigurationStaticFields(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decl.Configuration.Value.Options) != 3 || decl.Configuration.Value.UI.Scope != "game" {
+		t.Fatalf("unexpected configuration: %#v", decl.Configuration)
+	}
+	if got := decl.Configuration.Value.ReplayFallbackOptionNames; len(got) != 2 || got[0] != "Speed" || got[1] != "Lane" {
+		t.Fatalf("unexpected replay fallback: %#v", got)
+	}
+}
+
+func TestParseDeclarationsRejectsLegacyConfigurationTag(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/legacyconfiguration")
+	if err == nil || !strings.Contains(err.Error(), "use the configuration struct tag instead of sonolus") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsSymbolicCallInConfiguration(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/configurationcall")
+	if err == nil || !strings.Contains(err.Error(), "configuration UI must be a pure static value") || !strings.Contains(err.Error(), "main.go:") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsSymbolicCallInROM(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/romcall")
+	if err == nil || !strings.Contains(err.Error(), "ROMValues must be a pure static value") || !strings.Contains(err.Error(), "main.go:") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsFakeResourceConstructor(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/fakeresourceconstructor")
+	if err == nil || !strings.Contains(err.Error(), "use sonolus.SkinSprite") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsInvalidMode(t *testing.T) {
+	_, err := parseMode(mode.Mode("invalid"), "./testdata/declarations")
+	if err == nil || !strings.Contains(err.Error(), "invalid Sonolus mode") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestParseDeclarationsROMFile(t *testing.T) {
-	decl, err := ParseDeclarations(mode.ModePlay, "./testdata/romfile")
+	decl, err := parseMode(mode.ModePlay, "./testdata/romfile")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +829,7 @@ func TestParseDeclarationsROMFile(t *testing.T) {
 }
 
 func TestParseDeclarationsRejectsUnknownTags(t *testing.T) {
-	_, err := ParseDeclarations(mode.ModePlay, "./testdata/invalid")
+	_, err := parseMode(mode.ModePlay, "./testdata/invalid")
 	if err == nil {
 		t.Fatal("expected invalid tags to be rejected")
 	}
@@ -148,7 +852,7 @@ func TestParseDeclarationsOtherModes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.mode), func(t *testing.T) {
-			decl, err := ParseDeclarations(tt.mode, "./testdata/declarations")
+			decl, err := parseMode(tt.mode, "./testdata/declarations")
 			if err != nil {
 				t.Fatal(err)
 			}

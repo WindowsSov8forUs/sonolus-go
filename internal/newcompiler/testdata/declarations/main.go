@@ -13,9 +13,9 @@ import (
 
 type GameConfiguration struct {
 	sonolus.Configuration
-	Speed  float64 `sonolus:"slider,name=speed,def=1,min=0.5,max=2,step=0.1"`
-	Mirror bool    `sonolus:"toggle,name=mirror,def=false"`
-	Lane   int     `sonolus:"select,name=lane,def=0,values=normal|wide"`
+	Speed  float64 `configuration:"slider,name=speed,def=1,min=0.5,max=2,step=0.1"`
+	Mirror bool    `configuration:"toggle,name=mirror,def=false"`
+	Lane   int     `configuration:"select,name=lane,def=0,values=normal|wide"`
 }
 
 var Config GameConfiguration

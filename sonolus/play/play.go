@@ -70,12 +70,13 @@ var ParticleTransform transformAPI
 
 type entityAPI struct{}
 
-func (entityAPI) Info() EntityInfo             { return EntityInfo{} }
-func (entityAPI) InfoAt(index int) EntityInfo  { return EntityInfo{} }
-func (entityAPI) Despawn() bool                { return false }
-func (entityAPI) SetDespawn(value bool)        {}
-func (entityAPI) Result() InputResult          { return InputResult{} }
-func Spawn[T any](data T) sonolus.EntityRef[T] { return sonolus.EntityRef[T]{} }
+func (entityAPI) Info() EntityInfo            { return EntityInfo{} }
+func (entityAPI) InfoAt(index int) EntityInfo { return EntityInfo{} }
+func (entityAPI) Despawn() bool               { return false }
+func (entityAPI) SetDespawn(value bool)       {}
+func (entityAPI) Result() InputResult         { return InputResult{} }
+func (entityAPI) SetResult(value InputResult) {}
+func Spawn[T any](data T)                     {}
 
 var Entity entityAPI
 
@@ -106,13 +107,12 @@ var Life lifeAPI
 
 type touchesAPI struct{}
 type Touch struct {
-	Index, ID               float64
+	ID                      float64
 	Started, Ended          bool
 	Time, StartTime         float64
 	Position, StartPosition Vec2
-	LastPosition, Delta     Vec2
-	Velocity                Vec2
-	VR, VW                  float64
+	Delta, Velocity         Vec2
+	Speed, Angle            float64
 }
 type Vec2 = sonolus.Vec2
 
@@ -138,14 +138,43 @@ var Multiplayer multiplayerAPI
 
 type uiAPI struct{}
 
-func (uiAPI) Configure(config sonolus.UIConfig) {}
+func (uiAPI) Menu() sonolus.RuntimeUILayout                         { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetMenu(value sonolus.RuntimeUILayout)                 {}
+func (uiAPI) Judgment() sonolus.RuntimeUILayout                     { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetJudgment(value sonolus.RuntimeUILayout)             {}
+func (uiAPI) ComboValue() sonolus.RuntimeUILayout                   { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetComboValue(value sonolus.RuntimeUILayout)           {}
+func (uiAPI) ComboText() sonolus.RuntimeUILayout                    { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetComboText(value sonolus.RuntimeUILayout)            {}
+func (uiAPI) PrimaryMetricBar() sonolus.RuntimeUILayout             { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetPrimaryMetricBar(value sonolus.RuntimeUILayout)     {}
+func (uiAPI) PrimaryMetricValue() sonolus.RuntimeUILayout           { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetPrimaryMetricValue(value sonolus.RuntimeUILayout)   {}
+func (uiAPI) SecondaryMetricBar() sonolus.RuntimeUILayout           { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetSecondaryMetricBar(value sonolus.RuntimeUILayout)   {}
+func (uiAPI) SecondaryMetricValue() sonolus.RuntimeUILayout         { return sonolus.RuntimeUILayout{} }
+func (uiAPI) SetSecondaryMetricValue(value sonolus.RuntimeUILayout) {}
+func (uiAPI) MenuConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) JudgmentConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) ComboConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) PrimaryMetricConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
+func (uiAPI) SecondaryMetricConfiguration() sonolus.RuntimeUIConfiguration {
+	return sonolus.RuntimeUIConfiguration{}
+}
 
 var UI uiAPI
 
 type environmentAPI struct{}
 
 func (environmentAPI) Debug() bool          { return false }
-func (environmentAPI) Replay() bool         { return false }
 func (environmentAPI) Multiplayer() bool    { return false }
 func (environmentAPI) AspectRatio() float64 { return 0 }
 

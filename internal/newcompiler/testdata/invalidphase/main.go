@@ -10,7 +10,7 @@ type Note struct {
 }
 
 func (*Note) UpdateParallel() {
-	play.UI.Configure(sonolus.UIConfig{})
+	play.UI.SetMenu(sonolus.RuntimeUILayout{})
 }
 
 func main() {}
