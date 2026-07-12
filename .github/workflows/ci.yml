@@ -22,4 +22,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: go test -fuzz=FuzzStaticValueEval -fuzztime=30s ./internal/compiler/source/
+      - run: go test -run '^$' -fuzz=FuzzStaticValueEval -fuzztime=30s ./internal/compiler/source/
+      - run: go test -run '^$' -fuzz=FuzzCompiledCallbackOptimizationSemantics -fuzztime=30s ./internal/compiler/
