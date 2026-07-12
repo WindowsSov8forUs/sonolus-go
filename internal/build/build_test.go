@@ -13,28 +13,28 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/modecompile"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/play"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/snode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 func tinyPlayData(t *testing.T) *resource.EnginePlayData {
 	t.Helper()
-	data := play.BuildPlayData(
-		resource.EngineSkinData{},
-		resource.EngineEffectData{},
-		resource.EngineParticleData{},
-		nil,
-		[]play.ArchetypeDef{{Name: "A"}},
-	)
-	get := snode.Call(resource.RuntimeFunctionGet, snode.Val(1000), snode.Val(0))
-	if err := play.Assemble(data, []*modecompile.Result{
-		{ArchetypeIndex: 0, Callback: string(play.CallbackUpdateParallel), Node: get},
-	}); err != nil {
-		t.Fatal(err)
+	return &resource.EnginePlayData{
+		Skin:     resource.EngineSkinData{},
+		Effect:   resource.EngineEffectData{},
+		Particle: resource.EngineParticleData{},
+		Buckets:  []resource.EngineDataBucket{},
+		Archetypes: []resource.EnginePlayDataArchetype{{
+			Name:           "A",
+			Imports:        []resource.EngineDataArchetypeImport{},
+			Exports:        []resource.EngineArchetypeDataName{},
+			UpdateParallel: &resource.EnginePlayDataArchetypeCallback{Index: 2},
+		}},
+		Nodes: []resource.EngineDataNode{
+			resource.EngineDataValueNode{Value: 1000},
+			resource.EngineDataValueNode{Value: 0},
+			resource.EngineDataFunctionNode{Func: resource.RuntimeFunctionGet, Args: []int{0, 1}},
+		},
 	}
-	return data
 }
 
 func TestNodeSerializationByteExact(t *testing.T) {
@@ -182,7 +182,7 @@ func TestPackageNonPlay_Write(t *testing.T) {
 
 func TestPackageArtifactsRawROMAndSelectedModes(t *testing.T) {
 	rawROM := []byte{0, 0, 0xc0, 0x7f, 0, 0, 0x80, 0x7f}
-	packaged, err := PackageArtifacts(&newcompiler.Artifacts{
+	packaged, err := PackageArtifacts(&compiler.Artifacts{
 		Configuration: &resource.EngineConfiguration{},
 		ROM:           rawROM,
 		Play:          &resource.EnginePlayData{},

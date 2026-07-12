@@ -5,8 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 func TestParseMode(t *testing.T) {
@@ -86,12 +85,12 @@ func TestMode_String(t *testing.T) {
 func TestParseOptLevel(t *testing.T) {
 	tests := []struct {
 		input   int
-		want    optimize.Level
+		want    compiler.OptimizationLevel
 		wantErr bool
 	}{
-		{0, optimize.LevelMinimal, false},
-		{1, 0, true},
-		{2, 0, true},
+		{0, compiler.OptimizationMinimal, false},
+		{1, compiler.OptimizationFast, false},
+		{2, compiler.OptimizationStandard, false},
 		{-1, 0, true},
 		{3, 0, true},
 	}
@@ -107,8 +106,8 @@ func TestParseOptLevel(t *testing.T) {
 }
 
 func TestRunCLIParsesSubcommandFlags(t *testing.T) {
-	err := runCLI([]string{"build", "-name", "fixture", "-O", "2", "./testdata/multimode"})
-	if err == nil || !strings.Contains(err.Error(), "optimization level 2 is not implemented") {
+	err := runCLI([]string{"build", "-name", "fixture", "-O", "3", "./testdata/multimode"})
+	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -123,13 +122,13 @@ func TestRunCLILevelRequiresChart(t *testing.T) {
 func TestCompilerMode(t *testing.T) {
 	tests := []struct {
 		mode Mode
-		want mode.Mode
+		want compiler.Mode
 	}{
-		{ModePlay, mode.ModePlay},
-		{ModeWatch, mode.ModeWatch},
-		{ModePreview, mode.ModePreview},
-		{ModeTutorial, mode.ModeTutorial},
-		{Mode("unknown"), mode.ModePlay},
+		{ModePlay, compiler.ModePlay},
+		{ModeWatch, compiler.ModeWatch},
+		{ModePreview, compiler.ModePreview},
+		{ModeTutorial, compiler.ModeTutorial},
+		{Mode("unknown"), compiler.ModePlay},
 	}
 	for _, tt := range tests {
 		if got := tt.mode.CompilerMode(); got != tt.want {

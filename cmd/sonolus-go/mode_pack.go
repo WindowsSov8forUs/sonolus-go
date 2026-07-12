@@ -8,21 +8,20 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-pack-go/packer"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/pack"
 )
 
-func compileAllModes(patterns []string, fallback []byte, stats bool) (*newcompiler.Artifacts, *newcompiler.Compiler, error) {
-	compiler := newcompiler.NewCompiler(newcompiler.Options{Optimization: optimize.LevelMinimal, FallbackROM: fallback}, patterns...)
-	artifacts, err := compiler.CompileAll()
+func compileAllModes(patterns []string, fallback []byte, level compiler.OptimizationLevel, stats bool) (*compiler.Artifacts, *compiler.Compiler, error) {
+	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: level, FallbackROM: fallback}, patterns...)
+	artifacts, err := engineCompiler.CompileAll()
 	if stats {
-		printCompileStats(compiler.Stats())
+		printCompileStats(engineCompiler.Stats())
 	}
-	return artifacts, compiler, err
+	return artifacts, engineCompiler, err
 }
 
-func runPack(patterns []string, explicitName, author, romPath string, stats bool) error {
+func runPack(patterns []string, explicitName, author string, optimization int, romPath string, stats bool) error {
 	engineName, err := resolveEngineName(patterns, explicitName)
 	if err != nil {
 		return err
@@ -31,8 +30,12 @@ func runPack(patterns []string, explicitName, author, romPath string, stats bool
 	if err != nil {
 		return err
 	}
+	level, err := parseOptLevel(optimization)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("compiling %s...\n", engineName)
-	artifacts, _, err := compileAllModes(patterns, fallback, stats)
+	artifacts, _, err := compileAllModes(patterns, fallback, level, stats)
 	if err != nil {
 		return err
 	}

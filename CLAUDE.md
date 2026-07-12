@@ -40,7 +40,7 @@ Go源文件 → frontend → ir/optimize → ir/finalize → snode → mode/{pla
 
 ```bash
 go test ./...                                          # 全量
-go test ./internal/compiler/ir/optimize/ -v -count=1   # 优化器
-go test ./internal/compiler/engine/ -run TestGolden -update  # 更新 golden
-go test -fuzz=FuzzCompilePlay -fuzztime=30s ./internal/compiler/engine/  # Fuzz
+go test ./internal/compiler/optimize/ -v -count=1   # 优化器
+go test ./internal/compiler/ -run TestReferenceEngineDataGolden -update-reference  # 更新 golden
+go test -fuzz=FuzzStaticValueEval -fuzztime=30s ./internal/compiler/source/  # Fuzz
 ```

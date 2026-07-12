@@ -1,0 +1,16 @@
+{
+    "schemaVersion":  1,
+    "pythonCommit":  "1040bc0dcc116efdbca05f144edec302e839bcd3",
+    "ssaCases":  {
+                     "diamond":  "B0{?G(M(0,0))}B1{x.1=#1}B2{x.2=#2}B3{x.3=phi(P1:x.1,P2:x.2);M(0,1)=G(x.3)}",
+                     "loop":  "B0{i.1=#0}B1{i.2=phi(P0:i.1,P2:i.3);?G(M(0,0))}B2{i.3=Add[G(i.2),#1]}B3{M(0,1)=G(i.2)}"
+                 },
+    "sccpCases":  {
+                      "const_fold":  "B0{x.1=#5;y.1=Add[#5,#3];M(0,0)=#8}",
+                      "phi_const":  "B0{?G(M(0,0))}B1{x.1=#7}B2{x.2=#7}B3{x.3=phi(P1:x.1,P2:x.2);M(0,1)=#7}"
+                  },
+    "fromSSACases":  {
+                         "diamond":  "B0{?G(M(0,0))}(0:B4,-\u003eB1)B1{}(-\u003eB2)B2{T(x.1)=1}(-\u003eB3)B3{T(x.3)=G(T(x.1))}(-\u003eB7)B4{}(-\u003eB5)B5{T(x.2)=2}(-\u003eB6)B6{T(x.3)=G(T(x.2))}(-\u003eB7)B7{M(0,1)=G(T(x.3))}()",
+                         "loop":  "B0{T(i.1)=0}(-\u003eB1)B1{T(i.2)=G(T(i.1))}(-\u003eB2)B2{?G(M(0,0))}(0:B6,-\u003eB3)B3{}(-\u003eB4)B4{T(i.3)=Add[G(T(i.2)),1]}(-\u003eB5)B5{T(i.2)=G(T(i.3))}(-\u003eB2)B6{}(-\u003eB7)B7{M(0,1)=G(T(i.2))}()"
+                     }
+}

@@ -31,21 +31,21 @@ go vet ./...      # 静态分析
 ```
 Go package patterns
   │
-  ▼ newcompiler/source    ← 每模式 build tag + packages.Load
+  ▼ compiler/source    ← 每模式 build tag + packages.Load
   │
-  ▼ newcompiler/frontend  ← 声明解析 + Go DSL lowering
+  ▼ compiler/frontend  ← 声明解析 + Go DSL lowering
   │
-  ▼ newcompiler/ir        ← 强类型 CFG IR
+  ▼ compiler/ir        ← 强类型 CFG IR
   │
-  ▼ newcompiler/optimize  ← Minimal CFG 规范化
+  ▼ compiler/optimize  ← Minimal / Fast / Standard IR 优化与 local 分配
   │
-  ▼ newcompiler/backend   ← local 分配 + SNode + 四模式 EngineData
+  ▼ compiler/backend   ← SNode peephole + 四模式 EngineData
   │
   ▼ internal/build        ← gzip EngineData / ROM
   │
   ▼ internal/pack         ← sonolus-pack 源树输出
   │
-  ▼ cmd/sonolus-go        ← CLI: build / serve / host / pack / level
+  ▼ cmd/sonolus-go        ← CLI: build / serve / pack / level
 ```
 
 ## 命令行
@@ -60,13 +60,13 @@ sonolus-go build -name my-engine -m all ./engine
 # 本地开发服务器 (带热编译，自动编译四种模式)
 sonolus-go serve -name my-engine ./engine
 
-# 生产模式打包 + 服务
-sonolus-go host -name my-engine -author "YourName" ./engine
+# 生成可交给独立 Sonolus Server 的 pack
+sonolus-go pack -name my-engine -author "YourName" ./engine
 ```
 
 输入直接传给 `packages.Load`。单个明确目录可以省略 `-name` 并从目录名推导；多个
-pattern、import pattern 或 wildcard 必须显式提供 `-name`。当前 `-O` 仅支持
-`0`（Minimal），Fast/Standard 尚未实现。
+pattern、import pattern 或 wildcard 必须显式提供 `-name`。`-O` 支持
+`0`（Minimal）、`1`（Fast）和 `2`（Standard，默认）。
 
 ## 参照项目
 

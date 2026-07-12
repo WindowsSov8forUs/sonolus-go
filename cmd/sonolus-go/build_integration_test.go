@@ -15,11 +15,11 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 func fixturePattern() string {
-	return filepath.Join("..", "..", "internal", "newcompiler", "testdata", "multimode")
+	return filepath.Join("..", "..", "internal", "compiler", "testdata", "multimode")
 }
 
 func TestBuildUsesNewCompilerPackagePatterns(t *testing.T) {
@@ -50,9 +50,9 @@ func TestBuildUsesNewCompilerPackagePatterns(t *testing.T) {
 	}
 }
 
-func TestBuildRejectsUnavailableOptimization(t *testing.T) {
-	err := cmdBuild([]string{fixturePattern()}, "fixture", t.TempDir(), "play", 2, "", false)
-	if err == nil || !strings.Contains(err.Error(), "only 0=minimal") {
+func TestBuildRejectsInvalidOptimization(t *testing.T) {
+	err := cmdBuild([]string{fixturePattern()}, "fixture", t.TempDir(), "play", 3, "", false)
+	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("error = %v", err)
 	}
 }
@@ -85,7 +85,7 @@ func TestDevServerRecompileIsAtomic(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
-	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Play }))
+	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Play }))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	response, err := http.Get(server.URL + "/sonolus/engines/info")

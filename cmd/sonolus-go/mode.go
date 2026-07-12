@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 // errUnknownMode is returned when the user supplies an unrecognized mode string.
@@ -63,18 +62,18 @@ func (m Mode) String() string { return string(m) }
 
 // IRMode converts a main.Mode to the compiler's ir.Mode representation.
 // ModeAll and unknown modes default to ir.ModePlay.
-func (m Mode) CompilerMode() mode.Mode {
+func (m Mode) CompilerMode() compiler.Mode {
 	switch m {
 	case ModePlay:
-		return mode.ModePlay
+		return compiler.ModePlay
 	case ModeWatch:
-		return mode.ModeWatch
+		return compiler.ModeWatch
 	case ModePreview:
-		return mode.ModePreview
+		return compiler.ModePreview
 	case ModeTutorial:
-		return mode.ModeTutorial
+		return compiler.ModeTutorial
 	default:
-		return mode.ModePlay
+		return compiler.ModePlay
 	}
 }
 
@@ -115,13 +114,15 @@ func resolveEngineName(patterns []string, explicit string) (string, error) {
 
 // parseOptLevel converts a CLI -O flag value to an optimizer level.
 // Valid values: 0=minimal, 1=fast, 2=standard (default).
-func parseOptLevel(n int) (optimize.Level, error) {
+func parseOptLevel(n int) (compiler.OptimizationLevel, error) {
 	switch n {
 	case 0:
-		return optimize.LevelMinimal, nil
-	case 1, 2:
-		return 0, fmt.Errorf("optimization level %d is not implemented by newcompiler; only 0=minimal is currently available", n)
+		return compiler.OptimizationMinimal, nil
+	case 1:
+		return compiler.OptimizationFast, nil
+	case 2:
+		return compiler.OptimizationStandard, nil
 	default:
-		return 0, fmt.Errorf("invalid optimization level %d (valid: 0=minimal)", n)
+		return 0, fmt.Errorf("invalid optimization level %d (valid: 0=minimal, 1=fast, 2=standard)", n)
 	}
 }

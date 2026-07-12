@@ -5,8 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 func readFallbackROM(path string) ([]byte, error) {
@@ -23,9 +22,9 @@ func readFallbackROM(path string) ([]byte, error) {
 	return data, nil
 }
 
-func printCompileStats(stats newcompiler.CompileStats) {
+func printCompileStats(stats compiler.CompileStats) {
 	fmt.Fprintln(os.Stderr, "Compilation stats:")
-	for _, m := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
+	for _, m := range []compiler.Mode{compiler.ModePlay, compiler.ModeWatch, compiler.ModePreview, compiler.ModeTutorial} {
 		value, ok := stats.Modes[m]
 		if !ok {
 			continue

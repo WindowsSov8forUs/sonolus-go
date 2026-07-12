@@ -17,7 +17,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-core-go/database"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 // EngineItemMeta carries the metadata that goes into item.json for an engine.
@@ -41,7 +41,7 @@ type CompiledEngine struct {
 	ROM           []byte // optional ROM data, nil to omit
 }
 
-func EmitArtifactsSource(dir, name string, artifacts *newcompiler.Artifacts, meta EngineItemMeta) error {
+func EmitArtifactsSource(dir, name string, artifacts *compiler.Artifacts, meta EngineItemMeta) error {
 	if artifacts == nil || artifacts.Configuration == nil || artifacts.Play == nil || artifacts.Watch == nil || artifacts.Preview == nil || artifacts.Tutorial == nil {
 		return fmt.Errorf("pack: complete four-mode artifacts are required")
 	}

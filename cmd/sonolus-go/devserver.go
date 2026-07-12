@@ -11,12 +11,11 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 type devServerState struct {
-	artifacts *newcompiler.Artifacts
+	artifacts *compiler.Artifacts
 	rom       []byte
 }
 
@@ -26,16 +25,17 @@ type devServer struct {
 	name     string
 	fallback []byte
 	stats    bool
+	level    compiler.OptimizationLevel
 	watcher  *fsnotify.Watcher
 	watched  map[string]bool
 	state    devServerState
 }
 
 func (s *devServer) recompile() error {
-	compiler := newcompiler.NewCompiler(newcompiler.Options{Optimization: optimize.LevelMinimal, FallbackROM: s.fallback}, s.patterns...)
-	artifacts, err := compiler.CompileAll()
+	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: s.level, FallbackROM: s.fallback}, s.patterns...)
+	artifacts, err := engineCompiler.CompileAll()
 	if s.stats {
-		printCompileStats(compiler.Stats())
+		printCompileStats(engineCompiler.Stats())
 	}
 	if err != nil {
 		return fmt.Errorf("compile all modes: %w", err)
@@ -44,7 +44,7 @@ func (s *devServer) recompile() error {
 	if err != nil {
 		return err
 	}
-	if err := s.watchFiles(compiler.SourceFiles()); err != nil {
+	if err := s.watchFiles(engineCompiler.SourceFiles()); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -71,7 +71,7 @@ func (s *devServer) watchFiles(files []string) error {
 	return nil
 }
 
-func (s *devServer) servePayload(getter func(*newcompiler.Artifacts) any) http.HandlerFunc {
+func (s *devServer) servePayload(getter func(*compiler.Artifacts) any) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		s.mu.RLock()
 		defer s.mu.RUnlock()
@@ -127,7 +127,7 @@ func serveGzip(w http.ResponseWriter, data any) {
 	}
 }
 
-func runDevServer(patterns []string, explicitName, addr, romPath string, stats bool) error {
+func runDevServer(patterns []string, explicitName, addr string, optimization int, romPath string, stats bool) error {
 	name, err := resolveEngineName(patterns, explicitName)
 	if err != nil {
 		return err
@@ -136,23 +136,27 @@ func runDevServer(patterns []string, explicitName, addr, romPath string, stats b
 	if err != nil {
 		return err
 	}
+	level, err := parseOptLevel(optimization)
+	if err != nil {
+		return err
+	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("fsnotify: %w", err)
 	}
 	defer watcher.Close()
-	srv := &devServer{patterns: append([]string(nil), patterns...), name: name, fallback: fallback, stats: stats, watcher: watcher, watched: map[string]bool{}}
+	srv := &devServer{patterns: append([]string(nil), patterns...), name: name, fallback: fallback, stats: stats, level: level, watcher: watcher, watched: map[string]bool{}}
 	if err := srv.recompile(); err != nil {
 		return err
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
-	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Configuration }))
-	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Play }))
-	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Watch }))
-	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Preview }))
-	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Tutorial }))
+	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func(a *compiler.Artifacts) any { return a.Configuration }))
+	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Play }))
+	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Watch }))
+	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Preview }))
+	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Tutorial }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveROM)
 
 	go func() {

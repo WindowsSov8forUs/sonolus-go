@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 func TestDevServerEndpoints(t *testing.T) {
@@ -16,11 +16,11 @@ func TestDevServerEndpoints(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
-	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Configuration }))
-	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Play }))
-	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Watch }))
-	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Preview }))
-	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Tutorial }))
+	mux.HandleFunc("/sonolus/engine/configuration", srv.servePayload(func(a *compiler.Artifacts) any { return a.Configuration }))
+	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Play }))
+	mux.HandleFunc("/sonolus/engine/watch-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Watch }))
+	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Preview }))
+	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Tutorial }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveROM)
 	for _, path := range []string{"/sonolus/engines/info", "/sonolus/engine/configuration", "/sonolus/engine/play-data", "/sonolus/engine/watch-data", "/sonolus/engine/preview-data", "/sonolus/engine/tutorial-data", "/sonolus/engine/rom"} {
 		recorder := httptest.NewRecorder()
@@ -34,7 +34,7 @@ func TestDevServerEndpoints(t *testing.T) {
 func TestServePayloadWithoutSnapshot(t *testing.T) {
 	srv := &devServer{}
 	recorder := httptest.NewRecorder()
-	srv.servePayload(func(a *newcompiler.Artifacts) any { return a.Play })(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	srv.servePayload(func(a *compiler.Artifacts) any { return a.Play })(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d", recorder.Code)
 	}

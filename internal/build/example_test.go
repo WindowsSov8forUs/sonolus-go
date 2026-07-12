@@ -7,59 +7,24 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/modecompile"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/play"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/snode"
 )
 
-// TestEndToEndPlay drives the whole play-mode emitter: hand-authored SNode
-// callbacks -> compile (optimize + no-op rules) -> assemble -> package -> write.
+// TestEndToEndPlay verifies that a compiled play artifact can be packaged,
+// written, and decoded without changing its schema.
 func TestEndToEndPlay(t *testing.T) {
-	data := play.BuildPlayData(
-		resource.EngineSkinData{},
-		resource.EngineEffectData{},
-		resource.EngineParticleData{},
-		nil,
-		[]play.ArchetypeDef{
-			{Name: "Note", HasInput: true},
-			{Name: "Stage"},
-		},
-	)
-
-	val := snode.Val
-	call := snode.Call
-	// EntityMemory block (0) used here only as an opaque addressable target.
-	const mem = 0
-
-	results := []*modecompile.Result{
-		// Note.spawnOrder = constant 0 -> omitted entirely.
-		modecompile.CompileCallbackForMode(0, string(play.CallbackSpawnOrder), val(0), "play"),
-		// Note.initialize: Set(mem, 1, 2 + 3) -> constant folds to Set(mem,1,5).
-		modecompile.CompileCallbackForMode(0, string(play.CallbackInitialize),
-			call(resource.RuntimeFunctionSet, val(mem), val(1), call(resource.RuntimeFunctionAdd, val(2), val(3))), "play"),
-		// Note.updateParallel: Execute(Set(mem,1,Get(mem,1)+1), 0) -> SetAdd + drop return.
-		modecompile.CompileCallbackForMode(0, string(play.CallbackUpdateParallel),
-			call(resource.RuntimeFunctionExecute,
-				call(resource.RuntimeFunctionSet, val(mem), val(1),
-					call(resource.RuntimeFunctionAdd, call(resource.RuntimeFunctionGet, val(mem), val(1)), val(1))),
-				val(0)), "play"),
-		// Stage.updateParallel shares the Get(mem,1) subexpression with Note.
-		modecompile.CompileCallbackForMode(1, string(play.CallbackUpdateParallel),
-			call(resource.RuntimeFunctionGet, val(mem), val(1)), "play"),
-	}
-
-	if err := play.Assemble(data, results); err != nil {
-		t.Fatalf("assemble: %v", err)
-	}
-
-	// Note.spawnOrder must be absent; initialize folded; updateParallel present.
-	note := data.Archetypes[0]
-	if note.SpawnOrder != nil {
-		t.Errorf("spawnOrder should be omitted, got %+v", note.SpawnOrder)
-	}
-	if note.Initialize == nil || note.UpdateParallel == nil {
-		t.Fatalf("missing callbacks on Note: %+v", note)
+	data := &resource.EnginePlayData{
+		Skin:     resource.EngineSkinData{},
+		Effect:   resource.EngineEffectData{},
+		Particle: resource.EngineParticleData{},
+		Buckets:  []resource.EngineDataBucket{},
+		Archetypes: []resource.EnginePlayDataArchetype{{
+			Name:       "Note",
+			HasInput:   true,
+			Imports:    []resource.EngineDataArchetypeImport{},
+			Exports:    []resource.EngineArchetypeDataName{},
+			Initialize: &resource.EnginePlayDataArchetypeCallback{Index: 0},
+		}},
+		Nodes: []resource.EngineDataNode{resource.EngineDataValueNode{Value: 1}},
 	}
 
 	// Package and write, then round-trip back.
@@ -80,8 +45,8 @@ func TestEndToEndPlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decompress written file: %v", err)
 	}
-	if len(got.Archetypes) != 2 {
-		t.Errorf("archetypes = %d, want 2", len(got.Archetypes))
+	if len(got.Archetypes) != 1 {
+		t.Errorf("archetypes = %d, want 1", len(got.Archetypes))
 	}
 	if len(got.Nodes) == 0 {
 		t.Errorf("expected non-empty nodes")

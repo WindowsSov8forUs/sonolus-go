@@ -10,7 +10,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 // Canonical engine file names (no extension), matching PackagedEngine.write.
@@ -33,9 +33,9 @@ type PackagedEngine struct {
 	TutorialData  []byte
 }
 
-// PackageArtifacts serializes a complete newcompiler snapshot. ROM contains
+// PackageArtifacts serializes a complete compiler snapshot. ROM contains
 // final raw float32 bytes and is gzip-compressed without JSON encoding.
-func PackageArtifacts(artifacts *newcompiler.Artifacts) (*PackagedEngine, error) {
+func PackageArtifacts(artifacts *compiler.Artifacts) (*PackagedEngine, error) {
 	if artifacts == nil {
 		return nil, fmt.Errorf("package artifacts: artifacts are nil")
 	}

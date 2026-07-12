@@ -5,20 +5,16 @@ import (
 	"go/token"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 )
 
-func TestCLIDoesNotImportLegacyCompilerPipeline(t *testing.T) {
+func TestCLICompilerImportsStayAtPublicBoundary(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	forbidden := []string{
-		"/internal/compiler/engine",
-		"/internal/compiler/ir",
-		"/internal/compiler/build",
-		"/internal/compiler/pack",
+	allowed := map[string]bool{
+		"github.com/WindowsSov8forUs/sonolus-go/internal/compiler": true,
 	}
 	for _, filename := range files {
 		file, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.ImportsOnly)
@@ -30,10 +26,9 @@ func TestCLIDoesNotImportLegacyCompilerPipeline(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unquote import in %s: %v", filename, err)
 			}
-			for _, suffix := range forbidden {
-				if strings.Contains(path, suffix) {
-					t.Errorf("%s imports legacy compiler pipeline package %q", filename, path)
-				}
+			const compilerPrefix = "github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+			if len(path) >= len(compilerPrefix) && path[:len(compilerPrefix)] == compilerPrefix && !allowed[path] {
+				t.Errorf("%s imports compiler implementation package %q", filename, path)
 			}
 		}
 	}

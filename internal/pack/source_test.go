@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 // TestEmitPackSource verifies basic file output for a compiled engine.
@@ -109,7 +109,7 @@ func TestEmitPackSourceWithROM(t *testing.T) {
 func TestEmitArtifactsSource(t *testing.T) {
 	dir := t.TempDir()
 	rom := []byte{0, 0, 0xc0, 0x7f}
-	artifacts := &newcompiler.Artifacts{
+	artifacts := &compiler.Artifacts{
 		Configuration: &resource.EngineConfiguration{},
 		ROM:           rom,
 		Play:          &resource.EnginePlayData{},
@@ -127,7 +127,7 @@ func TestEmitArtifactsSource(t *testing.T) {
 	if string(got) != string(rom) {
 		t.Fatalf("ROM = %v, want %v", got, rom)
 	}
-	if err := EmitArtifactsSource(t.TempDir(), "partial", &newcompiler.Artifacts{Play: &resource.EnginePlayData{}}, EngineItemMeta{}); err == nil {
+	if err := EmitArtifactsSource(t.TempDir(), "partial", &compiler.Artifacts{Play: &resource.EnginePlayData{}}, EngineItemMeta{}); err == nil {
 		t.Fatal("partial artifacts unexpectedly accepted")
 	}
 }

@@ -1,117 +1,169 @@
-// Package ir is the compiler's mid-level intermediate representation: a
-// statement-level CFG of BasicBlocks holding IR nodes. It is a Go port of
-// sonolus.py's sonolus/backend (ir.py, place.py, optimize/flow.py, finalize.py).
-//
-// The IR is CFG-shaped and mutable (suited to SSA + optimization passes). It is
-// distinct from snode.SNode, which is the final immutable node tree. finalize.go
-// bridges the two: CFGToSNode lowers an optimized CFG into an snode.SNode.
+// Package ir defines the source-independent, typed control-flow IR emitted by
+// the compiler frontend.
 package ir
 
-import (
-	"math"
+import "github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
-	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-)
+type SourcePos struct {
+	File         string
+	Line, Column int
+}
 
-// Runtime memory block IDs used by the Sonolus engine across all modes.
-const (
-	BlockRuntimeEnvironment = 1000
-	BlockRuntimeUpdate      = 1001 // RuntimeCanvas in Preview mode
-	BlockRuntimeTouch       = 1002
-	BlockEngineRom          = 3000
-	TouchFieldStride        = 9
-)
+type Type struct {
+	Name   string
+	Slots  int
+	Fields []Field
+}
 
-// Op is an IR/runtime operation. It shares the runtime function vocabulary with
-// the final node list.
-type Op = resource.RuntimeFunction
+type Field struct {
+	Name   string
+	Offset int
+	Type   Type
+}
 
-// Node is any IR node that can be lowered to an snode.SNode.
-type Node interface{ irNode() }
+type Value struct {
+	Type  Type
+	Slots []Expr
+}
 
-// Const is a numeric literal (sonolus.py IRConst). Non-finite values lower to
-// ROM reads during finalization.
-type Const float64
+type Expr interface{ expr() }
 
-func (Const) irNode() {}
+type Const struct{ Value float64 }
 
-// Instr is an operation applied to argument nodes. Pure marks side-effect-free
-// operations (sonolus.py distinguishes IRPureInstr from IRInstr); the flag is
-// for optimization passes and does not affect lowering. ID is a monotonic
-// identifier used by liveness analysis.
-type Instr struct {
+func (Const) expr() {}
+
+type Load struct{ Place Place }
+
+func (Load) expr() {}
+
+type RuntimeCall struct {
+	Function resource.RuntimeFunction
+	Args     []Expr
+	Result   Type
+	Pure     bool
+	Pos      SourcePos
+}
+
+func (RuntimeCall) expr() {}
+
+type Place interface{ place() }
+
+type LocalPlace struct {
+	ID     int
+	Name   string
+	Offset int
+}
+
+func (LocalPlace) place() {}
+
+// SSAPlace is a transient scalar place used only inside optimizer SSA regions.
+// It must be eliminated before IR reaches the backend.
+type SSAPlace struct {
 	ID   int
-	Op   Op
-	Args []Node
-	Pure bool
+	Name string
 }
 
-func (Instr) irNode() {}
+func (SSAPlace) place() {}
 
-// IDGen generates monotonic node identifiers for a single compilation. Each
-// compilation entry point creates one IDGen and threads it through the frontend
-// tracer, optimizer pipeline, and finalizer. This eliminates shared mutable state,
-// making concurrent compilations safe.
-type IDGen struct {
-	n int // next ID to assign; monotonically incremented by Next()
+// IndexedLocalPlace addresses a slot in a local aggregate. Index is evaluated
+// at runtime and multiplied by Stride before Offset is applied.
+type IndexedLocalPlace struct {
+	ID     int
+	Name   string
+	Index  Expr
+	Base   int
+	Length int
+	Stride int
+	Offset int
 }
 
-// NewIDGen returns a fresh ID generator starting at 1.
-func NewIDGen() *IDGen { return &IDGen{} }
+func (IndexedLocalPlace) place() {}
 
-// Next returns the next monotonic ID from this generator.
-func (g *IDGen) Next() int { g.n++; return g.n }
-
-// --- constructors ---
-
-// PureInstr builds a side-effect-free operation node.
-func (g *IDGen) PureInstr(op Op, args ...Node) Instr {
-	return Instr{ID: g.Next(), Op: op, Args: args, Pure: true}
+// MemoryPlace retains the semantic storage name until the finalize stage maps
+// it to a mode-specific runtime block.
+type MemoryPlace struct {
+	Storage string
+	Index   Expr
+	Stride  int
+	Offset  int
+	Read    bool
+	Write   bool
 }
 
-// ImpureInstr builds an operation node that may have side effects.
-func (g *IDGen) ImpureInstr(op Op, args ...Node) Instr {
-	return Instr{ID: g.Next(), Op: op, Args: args, Pure: false}
-}
+func (MemoryPlace) place() {}
 
-// Get reads a memory place (sonolus.py IRGet).
-type Get struct {
+type Instruction interface{ instruction() }
+
+type Store struct {
 	Place Place
+	Value Expr
+	Pos   SourcePos
 }
 
-func (Get) irNode() {}
+func (Store) instruction() {}
 
-// Set writes value to a memory place (sonolus.py IRSet). ID is a monotonic
-// identifier used by liveness analysis.
-type Set struct {
-	ID    int
-	Place Place
-	Value Node
+type Eval struct{ Value Expr }
+
+func (Eval) instruction() {}
+
+type Terminator interface{ terminator() }
+
+type Jump struct{ Target int }
+
+func (Jump) terminator() {}
+
+type Branch struct {
+	Condition   Expr
+	True, False int
 }
 
-func (Set) irNode() {}
+func (Branch) terminator() {}
 
-// SetPlace writes a value to a memory place.
-func (g *IDGen) SetPlace(p Place, value Node) Set {
-	return Set{ID: g.Next(), Place: p, Value: value}
+type SwitchCase struct {
+	Value  float64
+	Target int
+}
+type Switch struct {
+	Value   Expr
+	Cases   []SwitchCase
+	Default int
 }
 
-// GetPlace reads a memory place.
-func GetPlace(p Place) Get { return Get{Place: p} }
+func (Switch) terminator() {}
 
-// FloorMod computes a floored modulo (result has the sign of the divisor),
-// matching Python's % and the runtime RuntimeFunctionMod semantics.
-// Used by frontend constant folding (value.go) and SCCP (sccp.go).
-func FloorMod(a, b float64) float64 {
-	r := math.Mod(a, b)
-	if r != 0 && (r < 0) != (b < 0) {
-		r += b
-	}
-	return r
+type Return struct{ Value Value }
+
+func (Return) terminator() {}
+
+type Unreachable struct{}
+
+func (Unreachable) terminator() {}
+
+type Block struct {
+	ID           int
+	Phis         []Phi
+	Instructions []Instruction
+	Terminator   Terminator
 }
 
-// IEEERem computes IEEE 754 remainder, matching the runtime RuntimeFunctionRem semantics.
-// Used by frontend constant folding and SCCP for compile-time evaluation.
-func IEEERem(a, b float64) float64 {
-	return math.Remainder(a, b)
+type PhiArg struct {
+	Predecessor int
+	Value       SSAPlace
+}
+
+type Phi struct {
+	Target SSAPlace
+	Local  LocalPlace
+	Args   []PhiArg
+}
+
+type Function struct {
+	Name   string
+	Result Type
+	Entry  int
+	Blocks []*Block
+	Locals []Type
+	// Allocated is set after locals have been rewritten to one physical
+	// Temporary Memory layout. Frontend IR intentionally leaves it false.
+	Allocated bool
 }
