@@ -135,6 +135,13 @@ func TestRunCLICheckCommand(t *testing.T) {
 	}
 }
 
+func TestRunCLISchemaCommandRejectsFlags(t *testing.T) {
+	err := runCLI([]string{"schema", "-m", "play"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -m") {
+		t.Fatalf("schema unexpectedly accepted flags: %v", err)
+	}
+}
+
 func TestCompilerMode(t *testing.T) {
 	tests := []struct {
 		mode Mode

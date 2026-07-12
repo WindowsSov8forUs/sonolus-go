@@ -25,6 +25,8 @@ CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排
 
 开发 LevelData 是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析共享 embed 声明并对三种普通关卡模式校验；`internal/devserver` 将成功的引擎与关卡快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
 
+`schema` 使用独立的 declaration-only frontend 路径读取 Play、Watch、Preview archetype 字段，不 lower callback。字段来源 Contract 同时供 Py 兼容 schema 投影和 Development Level 的逐模式 imports 校验使用。
+
 ## Compiler 快照
 
 `Compiler` 在创建时固定 package patterns、优化等级和 fallback ROM。它是单一源码快照：

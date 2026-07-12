@@ -23,6 +23,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/directive"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
+	compilerschema "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/schema"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
 )
 
@@ -332,9 +333,7 @@ func Validate(level *resource.LevelData, artifacts *compiler.Artifacts) error {
 	if level == nil || artifacts == nil || artifacts.Play == nil || artifacts.Watch == nil || artifacts.Preview == nil {
 		return errors.New("development level: complete play, watch, and preview artifacts are required")
 	}
-	imports := []map[string]map[string]bool{
-		playImports(artifacts.Play), watchImports(artifacts.Watch), previewImports(artifacts.Preview),
-	}
+	contract := compilerschema.Build(playSchema(artifacts.Play), watchSchema(artifacts.Watch), previewSchema(artifacts.Preview))
 	namedEntities := make(map[string]bool)
 	for index, entity := range level.Entities {
 		if entity.Name == "" {
@@ -350,9 +349,9 @@ func Validate(level *resource.LevelData, artifacts *compiler.Artifacts) error {
 		if archetype == "" {
 			return fmt.Errorf("development level: entity %d has an empty archetype", index)
 		}
-		for modeIndex, modeName := range []string{"play", "watch", "preview"} {
-			if imports[modeIndex][archetype] == nil {
-				return fmt.Errorf("development level: entity %d archetype %q is not declared in %s mode", index, archetype, modeName)
+		for _, currentMode := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview} {
+			if !contract.HasArchetype(currentMode, archetype) {
+				return fmt.Errorf("development level: entity %d archetype %q is not declared in %s mode", index, archetype, currentMode)
 			}
 		}
 		seenData := make(map[string]bool)
@@ -365,9 +364,9 @@ func Validate(level *resource.LevelData, artifacts *compiler.Artifacts) error {
 				return fmt.Errorf("development level: entity %d has duplicate data name %q", index, name)
 			}
 			seenData[name] = true
-			for modeIndex, modeName := range []string{"play", "watch", "preview"} {
-				if !imports[modeIndex][archetype][name] {
-					return fmt.Errorf("development level: entity %d data %q is not imported by archetype %q in %s mode", index, name, archetype, modeName)
+			for _, currentMode := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview} {
+				if !contract.IsImported(currentMode, archetype, name) {
+					return fmt.Errorf("development level: entity %d data %q is not imported by archetype %q in %s mode", index, name, archetype, currentMode)
 				}
 			}
 			if isRef && ref == "" {
@@ -392,34 +391,42 @@ func entryIdentity(value resource.LevelDataEntityData) (string, string, bool) {
 	}
 }
 
-func playImports(data *resource.EnginePlayData) map[string]map[string]bool {
-	result := make(map[string]map[string]bool, len(data.Archetypes))
-	for _, archetype := range data.Archetypes {
-		result[string(archetype.Name)] = importNames(archetype.Imports)
+func playSchema(data *resource.EnginePlayData) []compilerschema.ModeArchetype {
+	result := make([]compilerschema.ModeArchetype, len(data.Archetypes))
+	for i, archetype := range data.Archetypes {
+		result[i] = compilerschema.ModeArchetype{Name: string(archetype.Name), Imports: importNames(archetype.Imports), Exports: exportNames(archetype.Exports)}
 	}
 	return result
 }
 
-func watchImports(data *resource.EngineWatchData) map[string]map[string]bool {
-	result := make(map[string]map[string]bool, len(data.Archetypes))
-	for _, archetype := range data.Archetypes {
-		result[string(archetype.Name)] = importNames(archetype.Imports)
+func watchSchema(data *resource.EngineWatchData) []compilerschema.ModeArchetype {
+	result := make([]compilerschema.ModeArchetype, len(data.Archetypes))
+	for i, archetype := range data.Archetypes {
+		result[i] = compilerschema.ModeArchetype{Name: string(archetype.Name), Imports: importNames(archetype.Imports)}
 	}
 	return result
 }
 
-func previewImports(data *resource.EnginePreviewData) map[string]map[string]bool {
-	result := make(map[string]map[string]bool, len(data.Archetypes))
-	for _, archetype := range data.Archetypes {
-		result[string(archetype.Name)] = importNames(archetype.Imports)
+func previewSchema(data *resource.EnginePreviewData) []compilerschema.ModeArchetype {
+	result := make([]compilerschema.ModeArchetype, len(data.Archetypes))
+	for i, archetype := range data.Archetypes {
+		result[i] = compilerschema.ModeArchetype{Name: string(archetype.Name), Imports: importNames(archetype.Imports)}
 	}
 	return result
 }
 
-func importNames(imports []resource.EngineDataArchetypeImport) map[string]bool {
-	result := make(map[string]bool, len(imports))
-	for _, item := range imports {
-		result[string(item.Name)] = true
+func importNames(imports []resource.EngineDataArchetypeImport) []string {
+	result := make([]string, len(imports))
+	for i, item := range imports {
+		result[i] = string(item.Name)
+	}
+	return result
+}
+
+func exportNames(exports []resource.EngineArchetypeDataName) []string {
+	result := make([]string, len(exports))
+	for i, item := range exports {
+		result[i] = string(item)
 	}
 	return result
 }

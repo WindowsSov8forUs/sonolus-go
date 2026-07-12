@@ -48,6 +48,12 @@ sonolus-go build -o my-engine -m play ./engine
 sonolus-go check ./engine
 ```
 
+输出供关卡工具使用的 archetype 字段 schema：
+
+```bash
+sonolus-go schema ./engine
+```
+
 启动带源码监听和自动重编译的开发服务器：
 
 ```bash

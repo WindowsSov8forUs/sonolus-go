@@ -87,47 +87,17 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 		}
 		hasGlobals := false
 		for _, named := range packageNamedTypes(p) {
-			markers := structMarkers(named)
-			var primary []markerField
-			for _, candidate := range markers {
-				isPrimary := candidate.id == rootID("Configuration")
-				for _, candidateMode := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
-					if candidate.id == markerID(candidateMode, "Archetype") || candidate.id == markerID(candidateMode, "GlobalCallbacks") {
-						isPrimary = true
-					}
-				}
-				if isPrimary {
-					primary = append(primary, candidate)
-					continue
-				}
-				separator := strings.LastIndex(candidate.id, ".")
-				candidatePackage := ""
-				if separator >= 0 {
-					candidatePackage = candidate.id[:separator]
-				}
-				isCallbackOrders := false
-				for _, candidateMode := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
-					if candidate.id == markerID(candidateMode, "CallbackOrders") {
-						isCallbackOrders = true
-					}
-				}
-				if source.IsSonolusPkgPath(candidatePackage) && (len(candidate.tag.Flags) != 0 || len(candidate.tag.Items) != 0) && !isCallbackOrders {
-					errs = append(errs, fmt.Errorf("%s.%s: unknown Sonolus declaration marker %s", named.Obj().Name(), candidate.field.Name(), candidate.id))
-				}
-			}
-			if len(primary) == 0 {
+			primary, ok, markerErrs := primaryDeclarationMarker(named)
+			errs = append(errs, markerErrs...)
+			if !ok {
 				continue
 			}
-			if len(primary) > 1 {
-				errs = append(errs, fmt.Errorf("%s: multiple declaration markers are not allowed", named.Obj().Name()))
-				continue
-			}
-			id, marker := primary[0].id, primary[0].tag
+			id, marker := primary.id, primary.tag
 			if id != rootID("Configuration") && id != markerID(m, "Archetype") && id != markerID(m, "GlobalCallbacks") {
 				continue
 			}
 			if id == markerID(m, "Archetype") {
-				a, parseErrs := parseArchetype(packagesByTypes, p, named, &out.Resources, m, marker)
+				a, parseErrs := parseArchetype(packagesByTypes, p, named, m, marker)
 				errs = append(errs, parseErrs...)
 				if names[a.Name] {
 					errs = append(errs, fmt.Errorf("duplicate archetype %q", a.Name))

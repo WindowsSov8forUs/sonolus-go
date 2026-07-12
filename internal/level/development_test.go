@@ -42,6 +42,24 @@ func TestValidateDevelopment(t *testing.T) {
 	}
 }
 
+func TestValidateDevelopmentDoesNotTreatSchemaUnionAsSharedImports(t *testing.T) {
+	artifacts := &compiler.Artifacts{
+		Play: &resource.EnginePlayData{Archetypes: []resource.EnginePlayDataArchetype{{
+			Name: "Note", Exports: []resource.EngineArchetypeDataName{"result"},
+		}}},
+		Watch:   &resource.EngineWatchData{Archetypes: []resource.EngineWatchDataArchetype{{Name: "Note", Imports: []resource.EngineDataArchetypeImport{{Name: "watchOnly"}}}}},
+		Preview: &resource.EnginePreviewData{Archetypes: []resource.EnginePreviewDataArchetype{{Name: "Note", Imports: []resource.EngineDataArchetypeImport{{Name: "previewOnly"}}}}},
+	}
+	for _, field := range []string{"result", "watchOnly", "previewOnly"} {
+		data := &resource.LevelData{Entities: []resource.LevelDataEntity{{Archetype: "Note", Data: []resource.LevelDataEntityData{
+			resource.LevelDataEntityValueData{Name: resource.EngineArchetypeDataName(field), Value: 1},
+		}}}}
+		if err := Validate(data, artifacts); err == nil || !strings.Contains(err.Error(), "is not imported") {
+			t.Errorf("field %q error = %v", field, err)
+		}
+	}
+}
+
 func TestCompileLevelStrictSchema(t *testing.T) {
 	for _, source := range []string{
 		`{"bgmOffset":0}`,

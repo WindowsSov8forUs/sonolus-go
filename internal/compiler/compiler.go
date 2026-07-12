@@ -38,22 +38,25 @@ type CompileStats struct {
 type Artifacts = backend.Artifacts
 
 type Compiler struct {
-	mu          sync.Mutex
-	optimizer   *optimize.Optimizer
-	fallbackROM []byte
-	patterns    []string
-	packages    map[mode.Mode]*packages.Package
-	result      *Artifacts
-	stats       CompileStats
-	files       []string
+	mu             sync.Mutex
+	optimizer      *optimize.Optimizer
+	fallbackROM    []byte
+	patterns       []string
+	packages       map[mode.Mode]*packages.Package
+	schemaPackages map[mode.Mode]*packages.Package
+	schemaResult   *ProjectSchema
+	result         *Artifacts
+	stats          CompileStats
+	files          []string
 }
 
 func NewCompiler(options Options, patterns ...string) *Compiler {
 	return &Compiler{
-		optimizer:   optimize.NewOptimizer(options.Optimization),
-		fallbackROM: append([]byte(nil), options.FallbackROM...),
-		patterns:    append([]string(nil), patterns...),
-		packages:    make(map[mode.Mode]*packages.Package, len(orderedModes)),
+		optimizer:      optimize.NewOptimizer(options.Optimization),
+		fallbackROM:    append([]byte(nil), options.FallbackROM...),
+		patterns:       append([]string(nil), patterns...),
+		packages:       make(map[mode.Mode]*packages.Package, len(orderedModes)),
+		schemaPackages: make(map[mode.Mode]*packages.Package, 3),
 	}
 }
 
@@ -74,12 +77,19 @@ func (c *Compiler) Compile(requested ...mode.Mode) (*Artifacts, error) {
 	candidate := make(map[mode.Mode]*packages.Package, len(c.packages)+len(modes))
 	maps.Copy(candidate, c.packages)
 	var pending []mode.Mode
+	needsCompilation := false
 	for _, m := range modes {
+		if c.packages[m] == nil {
+			needsCompilation = true
+		}
+		if candidate[m] == nil && c.schemaPackages[m] != nil {
+			candidate[m] = c.schemaPackages[m]
+		}
 		if candidate[m] == nil {
 			pending = append(pending, m)
 		}
 	}
-	if len(pending) == 0 && c.result != nil {
+	if !needsCompilation && c.result != nil {
 		stats.Cached = true
 		return cloneArtifacts(c.result), nil
 	}

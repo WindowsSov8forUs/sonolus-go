@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
@@ -137,6 +138,42 @@ func TestCheckDoesNotParseDevelopmentLevel(t *testing.T) {
 	pattern := "." + string(os.PathSeparator) + filepath.Join("testdata", "checklevel")
 	if err := cmdCheck([]string{pattern}, "all", 0, "", false); err != nil {
 		t.Fatalf("check parsed invalid development LevelData: %v", err)
+	}
+}
+
+func TestSchemaWritesStableJSONWithoutArtifacts(t *testing.T) {
+	root := t.TempDir()
+	previousRoot := engineOutputRoot
+	engineOutputRoot = filepath.Join(root, "dist")
+	t.Cleanup(func() { engineOutputRoot = previousRoot })
+	var first, second bytes.Buffer
+	if err := cmdSchema([]string{publicConformancePattern()}, &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdSchema([]string{publicConformancePattern()}, &second); err != nil {
+		t.Fatal(err)
+	}
+	if first.String() != second.String() {
+		t.Fatalf("schema output is not deterministic:\n%s\n%s", first.String(), second.String())
+	}
+	want := "{\n  \"archetypes\": [\n    {\n      \"name\": \"ConformanceNote\",\n      \"fields\": [\n        \"result\",\n        \"#BEAT\"\n      ]\n    }\n  ]\n}\n"
+	if first.String() != want {
+		t.Fatalf("schema output:\n%s\nwant:\n%s", first.String(), want)
+	}
+	if _, err := os.Stat(engineOutputRoot); !os.IsNotExist(err) {
+		t.Fatalf("schema unexpectedly created output directory: %v", err)
+	}
+}
+
+func TestSchemaRequiresExactlyOneEngine(t *testing.T) {
+	var out bytes.Buffer
+	pattern := filepath.Join("..", "..", "examples", "...")
+	err := cmdSchema([]string{pattern}, &out)
+	if err == nil || !strings.Contains(err.Error(), "schema requires exactly one engine") {
+		t.Fatalf("error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("schema wrote partial output: %q", out.String())
 	}
 }
 

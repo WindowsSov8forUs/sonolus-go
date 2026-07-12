@@ -57,7 +57,7 @@ func layoutSize(t types.Type) (int, error) {
 
 func parseBool(value string) (bool, error) { return strconv.ParseBool(value) }
 
-func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, named *types.Named, resources *ModeResources, m mode.Mode, marker tagValue) (*ArchetypeDeclaration, []error) {
+func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, named *types.Named, m mode.Mode, marker tagValue) (*ArchetypeDeclaration, []error) {
 	var errs []error
 	errs = append(errs, validateTag(named.Obj().Name(), marker, nil, []string{"name", "hasInput"})...)
 	name := marker.Items["name"]
