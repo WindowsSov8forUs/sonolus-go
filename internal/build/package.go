@@ -10,6 +10,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
 )
 
 // Canonical engine file names (no extension), matching PackagedEngine.write.
@@ -30,6 +31,45 @@ type PackagedEngine struct {
 	WatchData     []byte
 	PreviewData   []byte
 	TutorialData  []byte
+}
+
+// PackageArtifacts serializes a complete newcompiler snapshot. ROM contains
+// final raw float32 bytes and is gzip-compressed without JSON encoding.
+func PackageArtifacts(artifacts *newcompiler.Artifacts) (*PackagedEngine, error) {
+	if artifacts == nil {
+		return nil, fmt.Errorf("package artifacts: artifacts are nil")
+	}
+	configuration, err := codec.Compress(artifacts.Configuration)
+	if err != nil {
+		return nil, fmt.Errorf("package configuration: %w", err)
+	}
+	rom, err := compressBytes(artifacts.ROM)
+	if err != nil {
+		return nil, fmt.Errorf("package ROM: %w", err)
+	}
+	result := &PackagedEngine{Configuration: configuration, ROM: rom}
+	values := []struct {
+		name    string
+		value   any
+		set     func([]byte)
+		present bool
+	}{
+		{"play data", artifacts.Play, func(value []byte) { result.PlayData = value }, artifacts.Play != nil},
+		{"watch data", artifacts.Watch, func(value []byte) { result.WatchData = value }, artifacts.Watch != nil},
+		{"preview data", artifacts.Preview, func(value []byte) { result.PreviewData = value }, artifacts.Preview != nil},
+		{"tutorial data", artifacts.Tutorial, func(value []byte) { result.TutorialData = value }, artifacts.Tutorial != nil},
+	}
+	for _, item := range values {
+		if !item.present {
+			continue
+		}
+		blob, err := codec.Compress(item.value)
+		if err != nil {
+			return nil, fmt.Errorf("package %s: %w", item.name, err)
+		}
+		item.set(blob)
+	}
+	return result, nil
 }
 
 // PackageAny gzip-compresses any JSON-serializable value.
@@ -88,5 +128,43 @@ func (p *PackagedEngine) Write(dir string) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// WriteAtomic writes a complete package through a sibling staging directory
+// and swaps it into place only after every file has been written.
+func (p *PackagedEngine) WriteAtomic(dir string) error {
+	parent, base := filepath.Dir(dir), filepath.Base(dir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(parent, "."+base+"-stage-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	if err := p.Write(stage); err != nil {
+		return err
+	}
+	backup, err := os.MkdirTemp(parent, "."+base+"-backup-")
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(backup); err != nil {
+		return err
+	}
+	defer os.RemoveAll(backup)
+	if _, err := os.Stat(dir); err == nil {
+		if err := os.Rename(dir, backup); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(stage, dir); err != nil {
+		_ = os.Rename(backup, dir)
+		return err
+	}
+	_ = os.RemoveAll(backup)
 	return nil
 }

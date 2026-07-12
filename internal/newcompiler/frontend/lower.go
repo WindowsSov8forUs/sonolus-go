@@ -1128,7 +1128,7 @@ func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerV
 			return result
 		}
 	}
-	l.errorAt(n, "container operation %s is not implemented for this layout", operation)
+	l.errorAt(n, "internal catalog inconsistency: container recipe %s has no lowering for receiver %s with %d arguments", operation, c.kind, len(args)-1)
 	return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 }
 
@@ -2172,19 +2172,19 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			typ := l.pkg.TypesInfo.TypeOf(lhs)
 			size := irTypeOf(typ).Slots
 			if offset+size > len(combined.slots) {
-				l.errorAt(n, "tuple assignment layout mismatch")
+				l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: result has %d slots, target %d requires slots [%d:%d]", len(combined.slots), i+1, offset, offset+size)
 				return
 			}
 			values[i] = lowerValue{type_: typ, slots: combined.slots[offset : offset+size]}
 			offset += size
 		}
 		if offset != len(combined.slots) {
-			l.errorAt(n, "tuple assignment layout mismatch")
+			l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: consumed %d of %d result slots", offset, len(combined.slots))
 			return
 		}
 	}
 	if len(values) != len(n.Lhs) {
-		l.errorAt(n, "tuple assignment is not supported")
+		l.errorAt(n, "multiple assignment requires one value per target or one statically typed multi-value result")
 		return
 	}
 	for i, object := range newObjects {

@@ -8,7 +8,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/build"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
 )
 
 // nodeContains reports whether the node list has a function node with the op.

@@ -7,7 +7,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/build"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
 )
 
 // TestExportedField verifies that `sonolus:\"exported\"` fields generate an exports

@@ -6,15 +6,18 @@
 package pack
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-core-go/database"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
 )
 
 // EngineItemMeta carries the metadata that goes into item.json for an engine.
@@ -36,6 +39,20 @@ type CompiledEngine struct {
 	PreviewData   resource.EnginePreviewData
 	TutorialData  resource.EngineTutorialData
 	ROM           []byte // optional ROM data, nil to omit
+}
+
+func EmitArtifactsSource(dir, name string, artifacts *newcompiler.Artifacts, meta EngineItemMeta) error {
+	if artifacts == nil || artifacts.Configuration == nil || artifacts.Play == nil || artifacts.Watch == nil || artifacts.Preview == nil || artifacts.Tutorial == nil {
+		return fmt.Errorf("pack: complete four-mode artifacts are required")
+	}
+	return EmitPackSource(dir, name, CompiledEngine{
+		Configuration: *artifacts.Configuration,
+		PlayData:      *artifacts.Play,
+		WatchData:     *artifacts.Watch,
+		PreviewData:   *artifacts.Preview,
+		TutorialData:  *artifacts.Tutorial,
+		ROM:           append([]byte(nil), artifacts.ROM...),
+	}, meta)
 }
 
 // EmitPackSource writes a pack-go-compatible source/engines/<name>/ directory
@@ -82,11 +99,18 @@ func EmitPackSource(dir string, name string, c CompiledEngine, meta EngineItemMe
 	if len(c.ROM) > 0 {
 		romData := c.ROM
 		if len(romData) >= 2 && romData[0] == 0x1f && romData[1] == 0x8b {
-			rawROM, err := codec.Decompress[[]byte](romData)
+			reader, err := gzip.NewReader(bytes.NewReader(romData))
 			if err != nil {
 				return fmt.Errorf("pack: decompress ROM: %w", err)
 			}
-			romData = rawROM
+			romData, err = io.ReadAll(reader)
+			closeErr := reader.Close()
+			if err != nil {
+				return fmt.Errorf("pack: decompress ROM: %w", err)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("pack: close ROM gzip: %w", closeErr)
+			}
 		}
 		if err := os.WriteFile(filepath.Join(engineDir, "rom"), romData, 0644); err != nil {
 			return err

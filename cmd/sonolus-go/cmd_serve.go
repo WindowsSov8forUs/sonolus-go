@@ -1,5 +1,5 @@
 package main
 
-func cmdServe(srcPath, addr, romPath string) error {
-	return runDevServer(srcPath, addr, romPath)
+func cmdServe(patterns []string, name, addr, romPath string, stats bool) error {
+	return runDevServer(patterns, name, addr, romPath, stats)
 }

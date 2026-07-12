@@ -1,7 +1,10 @@
 package build
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/modecompile"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/play"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/snode"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler"
 )
 
 func tinyPlayData(t *testing.T) *resource.EnginePlayData {
@@ -173,6 +177,63 @@ func TestPackageNonPlay_Write(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("missing %s in non-play package: %v", name, err)
 		}
+	}
+}
+
+func TestPackageArtifactsRawROMAndSelectedModes(t *testing.T) {
+	rawROM := []byte{0, 0, 0xc0, 0x7f, 0, 0, 0x80, 0x7f}
+	packaged, err := PackageArtifacts(&newcompiler.Artifacts{
+		Configuration: &resource.EngineConfiguration{},
+		ROM:           rawROM,
+		Play:          &resource.EnginePlayData{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(packaged.ROM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decoded, rawROM) {
+		t.Fatalf("ROM round-trip = %v, want %v", decoded, rawROM)
+	}
+	if packaged.PlayData == nil || packaged.WatchData != nil || packaged.PreviewData != nil || packaged.TutorialData != nil {
+		t.Fatalf("unexpected packaged modes: play=%t watch=%t preview=%t tutorial=%t", packaged.PlayData != nil, packaged.WatchData != nil, packaged.PreviewData != nil, packaged.TutorialData != nil)
+	}
+}
+
+func TestWriteAtomicReplacesCompleteSnapshot(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "engine")
+	first := &PackagedEngine{Configuration: []byte("old-config"), ROM: []byte("old-rom"), PlayData: []byte("old-play")}
+	if err := first.WriteAtomic(dir); err != nil {
+		t.Fatal(err)
+	}
+	second := &PackagedEngine{Configuration: []byte("new-config"), ROM: []byte("new-rom"), WatchData: []byte("new-watch")}
+	if err := second.WriteAtomic(dir); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		FileConfiguration: "new-config",
+		FileROM:           "new-rom",
+		FileWatchData:     "new-watch",
+	} {
+		got, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if string(got) != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, FilePlayData)); !os.IsNotExist(err) {
+		t.Fatalf("stale play data survived atomic replacement: %v", err)
 	}
 }
 

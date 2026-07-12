@@ -279,7 +279,7 @@ func TestEveryPublicNativeLowersThroughPackageToIR(t *testing.T) {
 	}
 }
 
-func TestEveryCallbackRecipeHasSuccessfulPackageToIRFixture(t *testing.T) {
+func TestEveryCallbackRecipeHasSuccessfulPackageToBackendFixture(t *testing.T) {
 	fixtures := map[mode.Mode]string{
 		mode.ModePlay:     "./testdata/lowering",
 		mode.ModeWatch:    "./testdata/lowering_watch",
@@ -307,6 +307,9 @@ func TestEveryCallbackRecipeHasSuccessfulPackageToIRFixture(t *testing.T) {
 	for currentMode, pattern := range fixtures {
 		if _, err := parseMode(currentMode, pattern); err != nil {
 			t.Fatalf("lower %s fixture: %v", currentMode, err)
+		}
+		if _, err := NewCompiler(Options{}, pattern).Compile(currentMode); err != nil {
+			t.Fatalf("compile %s fixture through backend: %v", currentMode, err)
 		}
 		packages, err := source.LoadMode(currentMode, pattern)
 		if err != nil || len(packages) != 1 {
@@ -343,7 +346,7 @@ func TestEveryCallbackRecipeHasSuccessfulPackageToIRFixture(t *testing.T) {
 	}
 	if len(missing) != 0 {
 		sort.Strings(missing)
-		t.Fatalf("callback recipes without a successful Package -> IR fixture call:\n%s", strings.Join(missing, "\n"))
+		t.Fatalf("callback recipes without a successful Package -> IR -> backend fixture call:\n%s", strings.Join(missing, "\n"))
 	}
 }
 

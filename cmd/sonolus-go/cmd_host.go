@@ -1,5 +1,5 @@
 package main
 
-func cmdHost(srcPath, addr, author string) error {
-	return runPackServe(srcPath, addr, author)
+func cmdHost(patterns []string, name, addr, author, romPath string, stats bool) error {
+	return runPackServe(patterns, name, addr, author, romPath, stats)
 }

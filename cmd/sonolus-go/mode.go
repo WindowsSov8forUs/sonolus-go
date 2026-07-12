@@ -3,11 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/newcompiler/optimize"
 )
 
 // errUnknownMode is returned when the user supplies an unrecognized mode string.
@@ -62,18 +63,18 @@ func (m Mode) String() string { return string(m) }
 
 // IRMode converts a main.Mode to the compiler's ir.Mode representation.
 // ModeAll and unknown modes default to ir.ModePlay.
-func (m Mode) IRMode() ir.Mode {
+func (m Mode) CompilerMode() mode.Mode {
 	switch m {
 	case ModePlay:
-		return ir.ModePlay
+		return mode.ModePlay
 	case ModeWatch:
-		return ir.ModeWatch
+		return mode.ModeWatch
 	case ModePreview:
-		return ir.ModePreview
+		return mode.ModePreview
 	case ModeTutorial:
-		return ir.ModeTutorial
+		return mode.ModeTutorial
 	default:
-		return ir.ModePlay
+		return mode.ModePlay
 	}
 }
 
@@ -82,6 +83,9 @@ func (m Mode) IRMode() ir.Mode {
 // uses the directory base name.
 // e.g. "engines/my-engine.go" → "my-engine", "engines/my-engine/" → "my-engine"
 func engineNameFromPath(srcPath string) string {
+	if absolute, err := filepath.Abs(srcPath); err == nil {
+		srcPath = absolute
+	}
 	base := filepath.Base(srcPath)
 	ext := filepath.Ext(base)
 	if ext == ".go" {
@@ -91,14 +95,22 @@ func engineNameFromPath(srcPath string) string {
 	return base
 }
 
-// resolveSourceArg loads engine sources from one or more file/directory paths.
-func resolveSourceArg(patterns ...string) (ess *engine.EngineSources, engineName string, err error) {
-	ess, err = engine.LoadEngineSources(patterns...)
-	if err != nil {
-		return nil, "", err
+func resolveEngineName(patterns []string, explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
 	}
-	name := engineNameFromPath(patterns[0])
-	return ess, name, nil
+	if len(patterns) != 1 {
+		return "", fmt.Errorf("-name is required when compiling multiple package patterns")
+	}
+	pattern := patterns[0]
+	if strings.ContainsAny(pattern, "*?[") || strings.HasSuffix(pattern, "...") {
+		return "", fmt.Errorf("-name is required for wildcard package pattern %q", pattern)
+	}
+	info, err := os.Stat(pattern)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("-name is required when %q is not an unambiguous directory pattern", pattern)
+	}
+	return engineNameFromPath(pattern), nil
 }
 
 // parseOptLevel converts a CLI -O flag value to an optimizer level.
@@ -107,19 +119,9 @@ func parseOptLevel(n int) (optimize.Level, error) {
 	switch n {
 	case 0:
 		return optimize.LevelMinimal, nil
-	case 1:
-		return optimize.LevelFast, nil
-	case 2:
-		return optimize.LevelStandard, nil
+	case 1, 2:
+		return 0, fmt.Errorf("optimization level %d is not implemented by newcompiler; only 0=minimal is currently available", n)
 	default:
-		return 0, fmt.Errorf("invalid optimization level %d (valid: 0=minimal, 1=fast, 2=standard)", n)
+		return 0, fmt.Errorf("invalid optimization level %d (valid: 0=minimal)", n)
 	}
-}
-
-// buildOpts constructs CompileOptions from CLI flags.
-func buildOpts(comp *engine.CompileStats, optLevel optimize.Level) *engine.CompileOptions {
-	if comp == nil {
-		return &engine.CompileOptions{Opt: optLevel}
-	}
-	return &engine.CompileOptions{Opt: optLevel, Stats: comp}
 }

@@ -1,13 +1,13 @@
 package build
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
 	"os"
-
-	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 )
 
 var (
@@ -24,7 +24,23 @@ func BuildROM(values []float32) ([]byte, error) {
 	for i, v := range values {
 		binary.LittleEndian.PutUint32(raw[4*i:], math.Float32bits(v))
 	}
-	return codec.Compress(raw)
+	return compressBytes(raw)
+}
+
+func compressBytes(data []byte) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer, err := gzip.NewWriterLevel(&buffer, gzip.BestCompression)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := writer.Write(data); err != nil {
+		_ = writer.Close()
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
 
 // BuildROMFromFile reads a binary file of raw float32 values and builds a ROM.

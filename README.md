@@ -29,22 +29,21 @@ go vet ./...      # 静态分析
 ## 架构
 
 ```
-Go源文件 (.go)
+Go package patterns
   │
-  ▼ compiler/frontend     ← go/parser + go/types 类型检查 + AST 追踪 → IR
+  ▼ newcompiler/source    ← 每模式 build tag + packages.Load
   │
-  ▼ compiler/ir/optimize  ← CFG/SSA 优化器 (~40 个 pass: SCCP/LICM/CSE/...)
+  ▼ newcompiler/frontend  ← 声明解析 + Go DSL lowering
   │
-  ▼ compiler/ir/finalize  ← 寄存器分配 + 指令扁平化
+  ▼ newcompiler/ir        ← 强类型 CFG IR
   │
-  ▼ compiler/snode        ← 运行时节点树 (SNode) + 去重 + 序列化
+  ▼ newcompiler/optimize  ← Minimal CFG 规范化
   │
-  ▼ compiler/{play,watch,preview,tutorial} + compiler/modecompile
-  │                       ← 四模式装配 + 回调 body 合成
+  ▼ newcompiler/backend   ← local 分配 + SNode + 四模式 EngineData
   │
-  ▼ compiler/build        ← EngineData 包装 + ROM
+  ▼ internal/build        ← gzip EngineData / ROM
   │
-  ▼ compiler/pack         ← sonolus-pack 源树输出
+  ▼ internal/pack         ← sonolus-pack 源树输出
   │
   ▼ cmd/sonolus-go        ← CLI: build / serve / host / pack / level
 ```
@@ -53,19 +52,21 @@ Go源文件 (.go)
 
 ```bash
 # 编译单一模式
-sonolus-go build -m play ./engine/
+sonolus-go build -name my-engine -m play ./engine
 
 # 编译全部四种模式
-sonolus-go build -m all ./engine/
+sonolus-go build -name my-engine -m all ./engine
 
 # 本地开发服务器 (带热编译，自动编译四种模式)
-sonolus-go serve ./engine/
+sonolus-go serve -name my-engine ./engine
 
 # 生产模式打包 + 服务
-sonolus-go host ./engine/ -author "YourName"
+sonolus-go host -name my-engine -author "YourName" ./engine
 ```
 
-详见 [快速入门](docs/getting-started.md) 和 [CLI 参考](docs/cli.md)。
+输入直接传给 `packages.Load`。单个明确目录可以省略 `-name` 并从目录名推导；多个
+pattern、import pattern 或 wildcard 必须显式提供 `-name`。当前 `-O` 仅支持
+`0`（Minimal），Fast/Standard 尚未实现。
 
 ## 参照项目
 

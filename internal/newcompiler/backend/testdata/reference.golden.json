@@ -1,0 +1,723 @@
+{
+  "pythonCommit": "1040bc0dcc116efdbca05f144edec302e839bcd3",
+  "jsCommit": "37b0eee5aa16d1e01973d33d625d86f5ef72d268",
+  "configuration": {
+    "options": [
+      {
+        "name": "Speed",
+        "type": "slider",
+        "def": 1,
+        "min": 0.5,
+        "max": 2,
+        "step": 0.1
+      }
+    ],
+    "ui": {
+      "primaryMetric": "",
+      "secondaryMetric": "",
+      "menuVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "judgmentVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "comboVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "primaryMetricVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "secondaryMetricVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "progressVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "tutorialNavigationVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "tutorialInstructionVisibility": {
+        "scale": 0,
+        "alpha": 0
+      },
+      "judgmentAnimation": {
+        "scale": {
+          "from": 0,
+          "to": 0,
+          "duration": 0,
+          "ease": ""
+        },
+        "alpha": {
+          "from": 0,
+          "to": 0,
+          "duration": 0,
+          "ease": ""
+        }
+      },
+      "comboAnimation": {
+        "scale": {
+          "from": 0,
+          "to": 0,
+          "duration": 0,
+          "ease": ""
+        },
+        "alpha": {
+          "from": 0,
+          "to": 0,
+          "duration": 0,
+          "ease": ""
+        }
+      },
+      "judgmentErrorStyle": "",
+      "judgmentErrorPlacement": "",
+      "judgmentErrorMin": 0
+    }
+  },
+  "romFloat32Bits": [
+    2143289344,
+    2139095040,
+    4286578688,
+    1065353216,
+    1073741824
+  ],
+  "modes": {
+    "play": {
+      "archetypes": [
+        {
+          "exports": [
+            "hit"
+          ],
+          "hasInput": true,
+          "imports": [
+            {
+              "def": 1,
+              "index": 0,
+              "name": "#BEAT"
+            }
+          ],
+          "name": "Note",
+          "preprocess": {
+            "order": -2,
+            "tree": {
+              "args": [
+                {
+                  "args": [
+                    {
+                      "args": [
+                        {
+                          "args": [
+                            {
+                              "args": [
+                                {
+                                  "args": [
+                                    {
+                                      "value": 4001
+                                    },
+                                    {
+                                      "value": 0
+                                    }
+                                  ],
+                                  "func": "Get"
+                                },
+                                {
+                                  "value": 0
+                                }
+                              ],
+                              "func": "Greater"
+                            },
+                            {
+                              "value": 2
+                            },
+                            {
+                              "value": 1
+                            }
+                          ],
+                          "func": "If"
+                        }
+                      ],
+                      "func": "Execute"
+                    },
+                    {
+                      "args": [
+                        {
+                          "args": [
+                            {
+                              "value": 4000
+                            },
+                            {
+                              "value": 0
+                            },
+                            {
+                              "value": 0
+                            }
+                          ],
+                          "func": "Set"
+                        },
+                        {
+                          "value": 3
+                        }
+                      ],
+                      "func": "Execute"
+                    },
+                    {
+                      "args": [
+                        {
+                          "args": [
+                            {
+                              "value": 4000
+                            },
+                            {
+                              "value": 0
+                            },
+                            {
+                              "args": [
+                                {
+                                  "args": [
+                                    {
+                                      "value": 4001
+                                    },
+                                    {
+                                      "value": 0
+                                    }
+                                  ],
+                                  "func": "Get"
+                                },
+                                {
+                                  "value": 1
+                                }
+                              ],
+                              "func": "Add"
+                            }
+                          ],
+                          "func": "Set"
+                        },
+                        {
+                          "value": 3
+                        }
+                      ],
+                      "func": "Execute"
+                    },
+                    {
+                      "args": [
+                        {
+                          "args": [
+                            {
+                              "value": 1
+                            },
+                            {
+                              "value": 0
+                            }
+                          ],
+                          "func": "Break"
+                        }
+                      ],
+                      "func": "Execute"
+                    },
+                    {
+                      "value": 0
+                    }
+                  ],
+                  "func": "JumpLoop"
+                }
+              ],
+              "func": "Block"
+            }
+          },
+          "shouldSpawn": {
+            "tree": {
+              "args": [
+                {
+                  "args": [
+                    {
+                      "args": [
+                        {
+                          "args": [
+                            {
+                              "value": 10000
+                            },
+                            {
+                              "value": 3
+                            },
+                            {
+                              "value": 0
+                            }
+                          ],
+                          "func": "Set"
+                        },
+                        {
+                          "args": [
+                            {
+                              "value": 10000
+                            },
+                            {
+                              "value": 3
+                            },
+                            {
+                              "value": 1
+                            }
+                          ],
+                          "func": "Set"
+                        },
+                        {
+                          "args": [
+                            {
+                              "value": 1
+                            },
+                            {
+                              "args": [
+                                {
+                                  "value": 10000
+                                },
+                                {
+                                  "value": 3
+                                }
+                              ],
+                              "func": "Get"
+                            }
+                          ],
+                          "func": "Break"
+                        }
+                      ],
+                      "func": "Execute"
+                    },
+                    {
+                      "value": 0
+                    }
+                  ],
+                  "func": "JumpLoop"
+                }
+              ],
+              "func": "Block"
+            }
+          }
+        }
+      ],
+      "buckets": [
+        {
+          "sprites": [
+            {
+              "h": 1,
+              "id": 0,
+              "rotation": 0,
+              "w": 1,
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "unit": "#MILLISECONDS"
+        }
+      ],
+      "effect": {
+        "clips": [
+          {
+            "id": 0,
+            "name": "hit"
+          }
+        ]
+      },
+      "particle": {
+        "effects": [
+          {
+            "id": 0,
+            "name": "hit"
+          }
+        ]
+      },
+      "skin": {
+        "renderMode": "standard",
+        "sprites": [
+          {
+            "id": 0,
+            "name": "note"
+          },
+          {
+            "id": 1,
+            "name": "fallback"
+          }
+        ]
+      }
+    },
+    "preview": {
+      "archetypes": [
+        {
+          "imports": [
+            {
+              "index": 0,
+              "name": "#BEAT"
+            }
+          ],
+          "name": "Note"
+        }
+      ],
+      "skin": {
+        "renderMode": "lightweight",
+        "sprites": [
+          {
+            "id": 0,
+            "name": "note"
+          }
+        ]
+      }
+    },
+    "tutorial": {
+      "effect": {
+        "clips": [
+          {
+            "id": 0,
+            "name": "hit"
+          }
+        ]
+      },
+      "instruction": {
+        "icons": [
+          {
+            "id": 0,
+            "name": "#HAND"
+          }
+        ],
+        "texts": [
+          {
+            "id": 0,
+            "name": "Tap"
+          }
+        ]
+      },
+      "navigate": {
+        "args": [
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "args": [
+                      {
+                        "value": 2002
+                      },
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 0
+                      }
+                    ],
+                    "func": "Set"
+                  },
+                  {
+                    "args": [
+                      {
+                        "value": 1
+                      },
+                      {
+                        "value": 0
+                      }
+                    ],
+                    "func": "Break"
+                  }
+                ],
+                "func": "Execute"
+              },
+              {
+                "value": 0
+              }
+            ],
+            "func": "JumpLoop"
+          }
+        ],
+        "func": "Block"
+      },
+      "particle": {
+        "effects": [
+          {
+            "id": 0,
+            "name": "hit"
+          }
+        ]
+      },
+      "preprocess": {
+        "args": [
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "args": [
+                      {
+                        "value": 1
+                      }
+                    ],
+                    "func": "DebugLog"
+                  },
+                  {
+                    "args": [
+                      {
+                        "value": 1
+                      },
+                      {
+                        "value": 0
+                      }
+                    ],
+                    "func": "Break"
+                  }
+                ],
+                "func": "Execute"
+              },
+              {
+                "value": 0
+              }
+            ],
+            "func": "JumpLoop"
+          }
+        ],
+        "func": "Block"
+      },
+      "skin": {
+        "renderMode": "default",
+        "sprites": [
+          {
+            "id": 0,
+            "name": "note"
+          }
+        ]
+      },
+      "update": {
+        "args": [
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "args": [
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 1
+                      },
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 1
+                      }
+                    ],
+                    "func": "Paint"
+                  },
+                  {
+                    "args": [
+                      {
+                        "value": 1
+                      },
+                      {
+                        "value": 0
+                      }
+                    ],
+                    "func": "Break"
+                  }
+                ],
+                "func": "Execute"
+              },
+              {
+                "value": 0
+              }
+            ],
+            "func": "JumpLoop"
+          }
+        ],
+        "func": "Block"
+      }
+    },
+    "watch": {
+      "archetypes": [
+        {
+          "hasInput": false,
+          "imports": [
+            {
+              "index": 0,
+              "name": "#BEAT"
+            }
+          ],
+          "name": "Note",
+          "spawnTime": {
+            "tree": {
+              "args": [
+                {
+                  "args": [
+                    {
+                      "args": [
+                        {
+                          "args": [
+                            {
+                              "value": 10000
+                            },
+                            {
+                              "value": 1
+                            },
+                            {
+                              "value": 0
+                            }
+                          ],
+                          "func": "Set"
+                        },
+                        {
+                          "args": [
+                            {
+                              "value": 10000
+                            },
+                            {
+                              "value": 1
+                            },
+                            {
+                              "value": 1
+                            }
+                          ],
+                          "func": "Set"
+                        },
+                        {
+                          "args": [
+                            {
+                              "value": 1
+                            },
+                            {
+                              "args": [
+                                {
+                                  "value": 10000
+                                },
+                                {
+                                  "value": 1
+                                }
+                              ],
+                              "func": "Get"
+                            }
+                          ],
+                          "func": "Break"
+                        }
+                      ],
+                      "func": "Execute"
+                    },
+                    {
+                      "value": 0
+                    }
+                  ],
+                  "func": "JumpLoop"
+                }
+              ],
+              "func": "Block"
+            }
+          }
+        }
+      ],
+      "buckets": [
+        {
+          "sprites": null,
+          "unit": "#MILLISECONDS"
+        }
+      ],
+      "effect": {
+        "clips": [
+          {
+            "id": 0,
+            "name": "hit"
+          }
+        ]
+      },
+      "particle": {
+        "effects": [
+          {
+            "id": 0,
+            "name": "hit"
+          }
+        ]
+      },
+      "skin": {
+        "renderMode": "default",
+        "sprites": [
+          {
+            "id": 0,
+            "name": "note"
+          }
+        ]
+      },
+      "updateSpawn": {
+        "args": [
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "args": [
+                      {
+                        "value": 10000
+                      },
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 0
+                      }
+                    ],
+                    "func": "Set"
+                  },
+                  {
+                    "args": [
+                      {
+                        "value": 10000
+                      },
+                      {
+                        "value": 0
+                      },
+                      {
+                        "value": 3
+                      }
+                    ],
+                    "func": "Set"
+                  },
+                  {
+                    "args": [
+                      {
+                        "value": 1
+                      },
+                      {
+                        "args": [
+                          {
+                            "value": 10000
+                          },
+                          {
+                            "value": 0
+                          }
+                        ],
+                        "func": "Get"
+                      }
+                    ],
+                    "func": "Break"
+                  }
+                ],
+                "func": "Execute"
+              },
+              {
+                "value": 0
+              }
+            ],
+            "func": "JumpLoop"
+          }
+        ],
+        "func": "Block"
+      }
+    }
+  }
+}

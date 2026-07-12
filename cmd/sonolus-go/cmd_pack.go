@@ -1,5 +1,5 @@
 package main
 
-func cmdPack(srcPath, author string) error {
-	return runPack(srcPath, author)
+func cmdPack(patterns []string, name, author, romPath string, stats bool) error {
+	return runPack(patterns, name, author, romPath, stats)
 }

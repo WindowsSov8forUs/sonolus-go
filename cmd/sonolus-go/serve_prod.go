@@ -12,12 +12,14 @@ import (
 
 // runPackServe compiles the engine, packs it, then serves it via a real
 // Sonolus server on the given address.
-func runPackServe(srcPath string, addr string, author string) error {
-	if err := runPack(srcPath, author); err != nil {
+func runPackServe(patterns []string, explicitName, addr, author, romPath string, stats bool) error {
+	engineName, err := resolveEngineName(patterns, explicitName)
+	if err != nil {
+		return err
+	}
+	if err := runPack(patterns, engineName, author, romPath, stats); err != nil {
 		return fmt.Errorf("pack: %w", err)
 	}
-
-	engineName := engineNameFromPath(srcPath)
 	packDir := filepath.Join("dist", engineName+"-pack")
 
 	s := sonolus.New(sonolus.Options{
