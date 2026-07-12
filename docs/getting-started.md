@@ -144,6 +144,8 @@ sonolus-go serve -name example .
 
 ## 下一步
 
+- 仓库中的 [`examples/minimal`](../examples/minimal) 是可直接编译的四模式最小示例，并由端到端测试持续验证。
+- [`examples/conformance`](../examples/conformance) 集中覆盖泛型 helper、闭包、控制流和更多静态资源，可用于核对 DSL 边界。
 - 在 [DSL 参考](dsl-reference.md) 中查看资源、字段 storage 和 callback 表。
 - 在 [命令行](cli.md) 中查看 package pattern、ROM fallback 和优化等级。
 - 在 [优化器](optimization.md) 中选择 `-O` 等级。
