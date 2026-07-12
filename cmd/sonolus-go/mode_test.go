@@ -106,7 +106,7 @@ func TestParseOptLevel(t *testing.T) {
 }
 
 func TestRunCLIParsesSubcommandFlags(t *testing.T) {
-	err := runCLI([]string{"build", "-name", "fixture", "-O", "3", "./testdata/multimode"})
+	err := runCLI([]string{"build", "-o", "fixture", "-O", "3", "./testdata/multimode"})
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("unexpected error: %v", err)
 	}

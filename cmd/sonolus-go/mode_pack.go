@@ -21,8 +21,12 @@ func compileAllModes(patterns []string, fallback []byte, level compiler.Optimiza
 	return artifacts, engineCompiler, err
 }
 
-func runPack(patterns []string, explicitName, author, outDir string, optimization int, romPath string, stats bool) error {
-	engineName, err := resolveEngineName(patterns, explicitName)
+func runPack(patterns []string, outputName, author string, optimization int, romPath string, stats bool) error {
+	targets, err := compiler.DiscoverTargets(compiler.ModePlay, patterns...)
+	if err != nil {
+		return err
+	}
+	named, err := nameTargets(targets, outputName)
 	if err != nil {
 		return err
 	}
@@ -34,12 +38,20 @@ func runPack(patterns []string, explicitName, author, outDir string, optimizatio
 	if err != nil {
 		return err
 	}
-	fmt.Printf("compiling %s...\n", engineName)
-	artifacts, _, err := compileAllModes(patterns, fallback, level, stats)
-	if err != nil {
-		return err
+	for _, target := range named {
+		fmt.Printf("compiling %s...\n", target.name)
+		artifacts, _, err := compileAllModes([]string{target.target.PackagePath}, fallback, level, stats)
+		if err != nil {
+			return fmt.Errorf("compiling engine %q: %w", target.target.PackagePath, err)
+		}
+		if err := packTarget(target.name, author, artifacts); err != nil {
+			return err
+		}
 	}
+	return nil
+}
 
+func packTarget(engineName, author string, artifacts *compiler.Artifacts) error {
 	tempRoot := filepath.Join(os.TempDir(), "sonolus-pack-source")
 	if err := os.MkdirAll(tempRoot, 0o755); err != nil {
 		return fmt.Errorf("creating pack temporary root: %w", err)
@@ -59,8 +71,7 @@ func runPack(patterns []string, explicitName, author, outDir string, optimizatio
 	if err := pack.EmitDefaultItems(sourceDir, engineName, meta); err != nil {
 		return fmt.Errorf("emitting default items: %w", err)
 	}
-
-	packDir := filepath.Join(outDir, engineName+"-pack")
+	packDir := filepath.Join(engineOutputRoot, engineName)
 	fmt.Printf("packing to %s...\n", packDir)
 	if err := packer.Pack(context.Background(), packer.Options{Input: sourceDir, Output: packDir}); err != nil {
 		return fmt.Errorf("pack: %w", err)

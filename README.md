@@ -33,25 +33,25 @@ sonolus-go version
 编译全部四种模式：
 
 ```bash
-sonolus-go build -name my-engine -m all ./engine
+sonolus-go build -m all ./engine
 ```
 
 只编译 Play：
 
 ```bash
-sonolus-go build -name my-engine -m play ./engine
+sonolus-go build -o my-engine -m play ./engine
 ```
 
 启动带源码监听和自动重编译的开发服务器：
 
 ```bash
-sonolus-go serve -name my-engine ./engine
+sonolus-go serve ./engine
 ```
 
 生成 pack：
 
 ```bash
-sonolus-go pack -name my-engine -author "YourName" ./engine
+sonolus-go pack -author "YourName" ./engine
 ```
 
 打包 level JSON：
@@ -60,7 +60,7 @@ sonolus-go pack -name my-engine -author "YourName" ./engine
 sonolus-go level ./level.json
 ```
 
-命令输入直接使用 Go package patterns。单个明确目录可以省略 `-name`；多个 pattern、import pattern 或 wildcard 需要显式指定。完整参数见[命令行参考](docs/cli.md)。
+命令输入直接使用 Go package patterns。未指定 `-o` 时可一次编译多个引擎，各引擎名称取其 module path 的最后一段；指定 `-o` 时只允许匹配一个引擎。产物固定写入 `dist/<name>`。完整参数见[命令行参考](docs/cli.md)。
 
 ## 文档
 

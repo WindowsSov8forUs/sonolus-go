@@ -118,7 +118,7 @@ Watch 的可选全局 callback 使用 `watch.GlobalCallbacks`，并可定义 `fu
 在 `sonolus-go` 仓库外使用已安装的可执行文件：
 
 ```bash
-sonolus-go build -name example -m all .
+sonolus-go build -m all .
 ```
 
 输出目录默认为 `dist/example`，包含：
@@ -137,7 +137,7 @@ EngineTutorialData
 ## 开发服务器
 
 ```bash
-sonolus-go serve -name example .
+sonolus-go serve .
 ```
 
 开发服务器直接在内存中保存 compiler artifacts，监听 Go 源文件和 embed 文件并自动重编译。重编译失败时继续提供上一次成功快照。

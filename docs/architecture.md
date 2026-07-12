@@ -16,6 +16,8 @@ package patterns
 
 根调度器是 `internal/compiler.Compiler`。CLI 只依赖该根包门面，不直接调用 frontend、IR 或 backend。
 
+CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
+
 ## Compiler 快照
 
 `Compiler` 在创建时固定 package patterns、优化等级和 fallback ROM。它是单一源码快照：

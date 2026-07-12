@@ -28,7 +28,10 @@ func publicConformancePattern() string {
 
 func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 	out := t.TempDir()
-	if err := cmdBuild([]string{publicConformancePattern()}, "conformance", out, "all", 0, "", true); err != nil {
+	previousRoot := engineOutputRoot
+	engineOutputRoot = out
+	t.Cleanup(func() { engineOutputRoot = previousRoot })
+	if err := cmdBuild([]string{publicConformancePattern()}, "conformance", "all", 0, "", true); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(out, "conformance")
@@ -56,13 +59,15 @@ func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 
 func TestPackCompilesPublicConformanceExample(t *testing.T) {
 	out := t.TempDir()
+	previousRoot := engineOutputRoot
+	engineOutputRoot = out
+	t.Cleanup(func() { engineOutputRoot = previousRoot })
 	if err := runCLI([]string{
-		"pack", "-name", "conformance", "-author", "sonolus-go", "-o", out, "-O", "2",
-		publicConformancePattern(),
+		"pack", "-o", "conformance", "-author", "sonolus-go", "-O", "2", publicConformancePattern(),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Join(out, "conformance-pack"))
+	entries, err := os.ReadDir(filepath.Join(out, "conformance"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,21 +77,36 @@ func TestPackCompilesPublicConformanceExample(t *testing.T) {
 }
 
 func TestBuildRejectsInvalidOptimization(t *testing.T) {
-	err := cmdBuild([]string{fixturePattern()}, "fixture", t.TempDir(), "play", 3, "", false)
+	err := cmdBuild([]string{fixturePattern()}, "fixture", "play", 3, "", false)
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
-func TestResolveEngineName(t *testing.T) {
-	if _, err := resolveEngineName([]string{"./..."}, ""); err == nil {
-		t.Fatal("wildcard pattern did not require -name")
+func TestNameTargets(t *testing.T) {
+	targets := []compiler.Target{
+		{PackagePath: "example.com/first/cmd/engine", ModulePath: "example.com/first"},
+		{PackagePath: "example.com/second/cmd/engine", ModulePath: "example.com/second"},
 	}
-	if got, err := resolveEngineName([]string{fixturePattern()}, ""); err != nil || got != "multimode" {
-		t.Fatalf("name=%q err=%v", got, err)
+	named, err := nameTargets(targets, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got, err := resolveEngineName([]string{"a", "b"}, "explicit"); err != nil || got != "explicit" {
-		t.Fatalf("explicit name=%q err=%v", got, err)
+	if named[0].name != "first" || named[1].name != "second" {
+		t.Fatalf("names = %q, %q", named[0].name, named[1].name)
+	}
+	if _, err := nameTargets(targets, "combined"); err == nil || !strings.Contains(err.Error(), "-o requires exactly one engine") {
+		t.Fatalf("multi-engine -o error = %v", err)
+	}
+	if got, err := nameTargets(targets[:1], "custom"); err != nil || got[0].name != "custom" {
+		t.Fatalf("custom name = %#v, err = %v", got, err)
+	}
+	duplicate := []compiler.Target{
+		{PackagePath: "example.com/shared/a", ModulePath: "example.com/shared"},
+		{PackagePath: "example.com/shared/b", ModulePath: "example.com/shared"},
+	}
+	if _, err := nameTargets(duplicate, ""); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("duplicate module name error = %v", err)
 	}
 }
 

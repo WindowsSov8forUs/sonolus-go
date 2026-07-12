@@ -127,8 +127,15 @@ func serveGzip(w http.ResponseWriter, data any) {
 	}
 }
 
-func runDevServer(patterns []string, explicitName, addr string, optimization int, romPath string, stats bool) error {
-	name, err := resolveEngineName(patterns, explicitName)
+func runDevServer(patterns []string, outputName, addr string, optimization int, romPath string, stats bool) error {
+	targets, err := compiler.DiscoverTargets(compiler.ModePlay, patterns...)
+	if err != nil {
+		return err
+	}
+	if len(targets) != 1 {
+		return fmt.Errorf("serve requires exactly one engine, but package patterns matched %d", len(targets))
+	}
+	named, err := nameTargets(targets, outputName)
 	if err != nil {
 		return err
 	}
@@ -145,7 +152,7 @@ func runDevServer(patterns []string, explicitName, addr string, optimization int
 		return fmt.Errorf("fsnotify: %w", err)
 	}
 	defer watcher.Close()
-	srv := &devServer{patterns: append([]string(nil), patterns...), name: name, fallback: fallback, stats: stats, level: level, watcher: watcher, watched: map[string]bool{}}
+	srv := &devServer{patterns: []string{named[0].target.PackagePath}, name: named[0].name, fallback: fallback, stats: stats, level: level, watcher: watcher, watched: map[string]bool{}}
 	if err := srv.recompile(); err != nil {
 		return err
 	}

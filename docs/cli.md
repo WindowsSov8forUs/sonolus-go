@@ -6,23 +6,22 @@
 
 ```bash
 sonolus-go build ./engine
-sonolus-go build -name game ./engine ./shared
-sonolus-go build -name game ./engines/...
+sonolus-go build ./engines/...
+sonolus-go build -o game ./engine
 ```
 
-只有单个明确目录 pattern 可以自动推导 engine name。多个 pattern、import pattern 或 wildcard 必须显式传 `-name`。不支持旧式单 `.go` 文件 prelude 输入。
+未指定 `-o` 时，所有匹配到的 `main` package 都会作为独立引擎编译，名称取各自主 module path 的最后一段。多个 module 导出相同名称时报错。指定 `-o` 时，该值覆盖引擎名称，且 patterns 必须恰好匹配一个引擎，这与 `go build -o` 对多 package 的限制一致。不支持旧式单 `.go` 文件 prelude 输入。
 
 ## build
 
 ```text
-sonolus-go build [-name <name>] [-o <dir>] [-m <mode>]
+sonolus-go build [-o <name>] [-m <mode>]
                  [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
 ```
 
 参数：
 
-- `-name`：引擎名称。
-- `-o`：输出根目录，默认 `dist`。
+- `-o`：覆盖引擎名称；指定时只允许匹配一个引擎。
 - `-m`：`play`、`watch`、`preview`、`tutorial` 或 `all`，默认 `all`。
 - `-O`：`0=minimal`、`1=fast`、`2=standard`，默认 `2`。
 - `-rom`：原始 little-endian float32 ROM fallback。
@@ -30,16 +29,16 @@ sonolus-go build [-name <name>] [-o <dir>] [-m <mode>]
 
 源码声明 ROM 优先。源码 ROM 缺失或显式为空时使用 `-rom` fallback。fallback 长度必须是 4 的倍数。
 
-输出位于 `<out>/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
+输出固定位于 `dist/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
 
 ## serve
 
 ```text
-sonolus-go serve [-name <name>] [-addr <:8080>]
+sonolus-go serve [-o <name>] [-addr <:8080>]
                  [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
 ```
 
-`serve` 总是编译四种模式，提供开发期端点：
+`serve` 总是编译四种模式且要求 patterns 恰好匹配一个引擎；`-o` 可覆盖开发服务器显示的引擎名称。它提供开发期端点：
 
 - `/sonolus/engines/info`
 - `/sonolus/engine/configuration`
@@ -54,17 +53,17 @@ sonolus-go serve [-name <name>] [-addr <:8080>]
 ## pack
 
 ```text
-sonolus-go pack [-name <name>] [-author <name>] [-o <dir>]
+sonolus-go pack [-o <name>] [-author <name>]
                 [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
 ```
 
 `pack` 编译全部四种模式，生成临时 `sonolus-pack-go` source tree，并输出到：
 
 ```text
-<dir>/<name>-pack
+dist/<name>
 ```
 
-输出目录默认为 `dist`，author 默认为 `sonolus-go`。当前 adapter 使用默认 skin、background、effect 和 particle item 引用，并生成满足 pack schema 的基础 item。
+未指定 `-o` 时可一次生成多个引擎 pack；author 默认为 `sonolus-go`。当前 adapter 使用默认 skin、background、effect 和 particle item 引用，并生成满足 pack schema 的基础 item。
 
 ## level
 
