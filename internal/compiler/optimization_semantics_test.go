@@ -242,7 +242,17 @@ func (e *runtimeExecutor) eval(index int) (float64, *breakSignal, error) {
 		if value, ok := e.memory[key]; ok {
 			return value, nil, nil
 		}
-		return e.seed, nil, nil
+		return e.initialMemory(args[0]), nil, nil
+	case "GetShifted":
+		args, signal, err := evalAll()
+		if err != nil || signal != nil {
+			return 0, signal, err
+		}
+		key := memoryKey(args[0], args[1]+args[2]*args[3])
+		if value, ok := e.memory[key]; ok {
+			return value, nil, nil
+		}
+		return e.initialMemory(args[0]), nil, nil
 	case "Set", "SetAdd", "SetSubtract", "SetMultiply", "SetDivide", "SetMod", "SetRem", "SetPower":
 		args, signal, err := evalAll()
 		if err != nil || signal != nil {
@@ -253,7 +263,7 @@ func (e *runtimeExecutor) eval(index int) (float64, *breakSignal, error) {
 		if function != "Set" {
 			current, ok := e.memory[key]
 			if !ok {
-				current = e.seed
+				current = e.initialMemory(args[0])
 			}
 			switch function {
 			case "SetAdd":
@@ -274,6 +284,37 @@ func (e *runtimeExecutor) eval(index int) (float64, *breakSignal, error) {
 		}
 		e.memory[key] = value
 		return value, nil, nil
+	case "SetShifted", "SetAddShifted", "SetSubtractShifted", "SetMultiplyShifted", "SetDivideShifted", "SetModShifted", "SetRemShifted", "SetPowerShifted":
+		args, signal, err := evalAll()
+		if err != nil || signal != nil {
+			return 0, signal, err
+		}
+		key := memoryKey(args[0], args[1]+args[2]*args[3])
+		value := args[4]
+		if function != "SetShifted" {
+			current, ok := e.memory[key]
+			if !ok {
+				current = e.initialMemory(args[0])
+			}
+			switch function {
+			case "SetAddShifted":
+				value = current + value
+			case "SetSubtractShifted":
+				value = current - value
+			case "SetMultiplyShifted":
+				value = current * value
+			case "SetDivideShifted":
+				value = current / value
+			case "SetModShifted":
+				value = current - math.Floor(current/value)*value
+			case "SetRemShifted":
+				value = math.Mod(current, value)
+			case "SetPowerShifted":
+				value = math.Pow(current, value)
+			}
+		}
+		e.memory[key] = value
+		return value, nil, nil
 	case "DebugLog", "Paint":
 		args, signal, err := evalAll()
 		if err != nil || signal != nil {
@@ -281,17 +322,28 @@ func (e *runtimeExecutor) eval(index int) (float64, *breakSignal, error) {
 		}
 		e.effects = append(e.effects, fmt.Sprintf("%s:%v", function, floatBits(args)))
 		return 0, nil, nil
-	case "Add", "Greater":
+	case "Negate":
+		value, signal, err := evalArg(0)
+		return -value, signal, err
+	case "Add", "Subtract", "Less", "Greater":
 		args, signal, err := evalAll()
 		if err != nil || signal != nil {
 			return 0, signal, err
 		}
-		if function == "Add" {
+		switch function {
+		case "Add":
 			result := 0.0
 			for _, value := range args {
 				result += value
 			}
 			return result, nil, nil
+		case "Subtract":
+			return args[0] - args[1], nil, nil
+		case "Less":
+			if args[0] < args[1] {
+				return 1, nil, nil
+			}
+			return 0, nil, nil
 		}
 		if args[0] > args[1] {
 			return 1, nil, nil
@@ -304,6 +356,13 @@ func (e *runtimeExecutor) eval(index int) (float64, *breakSignal, error) {
 
 func memoryKey(block, index float64) string {
 	return fmt.Sprintf("%x:%x", math.Float64bits(block), math.Float64bits(index))
+}
+
+func (e *runtimeExecutor) initialMemory(block float64) float64 {
+	if block == 10000 {
+		return 0
+	}
+	return e.seed
 }
 
 func floatBits(values []float64) []uint64 {

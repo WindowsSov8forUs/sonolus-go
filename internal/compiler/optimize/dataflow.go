@@ -11,6 +11,7 @@ type DeadCodeElimination struct{}
 
 func (DeadCodeElimination) Name() string { return "DeadCodeElimination" }
 func (DeadCodeElimination) Run(_ Context, function *ir.Function) error {
+	indexed := indexedLocalIDs(function)
 	for changed := true; changed; {
 		changed = false
 		uses := map[string]int{}
@@ -41,7 +42,11 @@ func (DeadCodeElimination) Run(_ Context, function *ir.Function) error {
 			out := b.Instructions[:0]
 			for _, in := range b.Instructions {
 				store, ok := in.(ir.Store)
-				if ok && isTemporaryPlace(store.Place) && uses[placeKey(store.Place)] == 0 && !expressionHasEffects(store.Value) {
+				addressTaken := false
+				if place, local := store.Place.(ir.LocalPlace); local {
+					addressTaken = indexed[place.ID]
+				}
+				if ok && isTemporaryPlace(store.Place) && !addressTaken && uses[placeKey(store.Place)] == 0 && !expressionHasEffects(store.Value) {
 					changed = true
 					continue
 				}
@@ -57,6 +62,7 @@ type AdvancedDeadCodeElimination struct{}
 
 func (AdvancedDeadCodeElimination) Name() string { return "AdvancedDeadCodeElimination" }
 func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
+	indexed := indexedLocalIDs(f)
 	use := make([]map[string]bool, len(f.Blocks))
 	def := make([]map[string]bool, len(f.Blocks))
 	for i := range f.Blocks {
@@ -118,7 +124,11 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 			instruction := block.Instructions[i]
 			if store, ok := instruction.(ir.Store); ok {
 				key := placeKey(store.Place)
-				if key != "" && !live[key] && !expressionHasEffects(store.Value) {
+				addressTaken := false
+				if place, local := store.Place.(ir.LocalPlace); local {
+					addressTaken = indexed[place.ID]
+				}
+				if key != "" && !addressTaken && !live[key] && !expressionHasEffects(store.Value) {
 					continue
 				}
 				if key != "" {
@@ -137,6 +147,34 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 		block.Instructions = kept
 	}
 	return nil
+}
+
+func indexedLocalIDs(function *ir.Function) map[int]bool {
+	result := map[int]bool{}
+	visit := func(expr ir.Expr) {
+		walkExpr(expr, func(value ir.Expr) {
+			if load, ok := value.(ir.Load); ok {
+				if place, indexed := load.Place.(ir.IndexedLocalPlace); indexed {
+					result[place.ID] = true
+				}
+			}
+		})
+	}
+	for _, block := range function.Blocks {
+		for _, instruction := range block.Instructions {
+			switch value := instruction.(type) {
+			case ir.Store:
+				if place, indexed := value.Place.(ir.IndexedLocalPlace); indexed {
+					result[place.ID] = true
+				}
+				visit(value.Value)
+			case ir.Eval:
+				visit(value.Value)
+			}
+		}
+		visitTerminator(block.Terminator, visit)
+	}
+	return result
 }
 
 func addPlaceExpressions(place ir.Place, fn func(ir.Expr)) {

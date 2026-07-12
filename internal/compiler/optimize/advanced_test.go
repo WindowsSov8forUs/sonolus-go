@@ -38,6 +38,41 @@ func TestSCCPTracksExecutablePhiEdges(t *testing.T) {
 	}
 }
 
+func TestDeadCodeEliminationPreservesIndexedLocalInitialization(t *testing.T) {
+	makeFunction := func() *ir.Function {
+		return &ir.Function{
+			Name:   "indexed-initialization",
+			Entry:  0,
+			Locals: []ir.Type{{Name: "values", Slots: 2}, {Name: "index", Slots: 1}},
+			Blocks: []*ir.Block{{
+				ID: 0,
+				Instructions: []ir.Instruction{
+					ir.Store{Place: ir.LocalPlace{ID: 0, Offset: 0}, Value: ir.Const{Value: 3}},
+					ir.Store{Place: ir.LocalPlace{ID: 0, Offset: 1}, Value: ir.Const{Value: 5}},
+					ir.Eval{Value: ir.RuntimeCall{
+						Function: resource.RuntimeFunctionDebugLog,
+						Args: []ir.Expr{ir.Load{Place: ir.IndexedLocalPlace{
+							ID: 0, Length: 2, Stride: 1, Index: ir.Load{Place: ir.LocalPlace{ID: 1}},
+						}}},
+						Result: ir.Type{},
+						Pure:   false,
+					}},
+				},
+				Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}},
+			}},
+		}
+	}
+	for _, pass := range []Pass{DeadCodeElimination{}, AdvancedDeadCodeElimination{}} {
+		function := makeFunction()
+		if err := pass.Run(Context{}, function); err != nil {
+			t.Fatalf("%s: %v", pass.Name(), err)
+		}
+		if got := len(function.Blocks[0].Instructions); got != 3 {
+			t.Fatalf("%s retained %d instructions, want 3", pass.Name(), got)
+		}
+	}
+}
+
 func TestSCCPDoesNotFoldNonFiniteSensitiveRuntimeCalls(t *testing.T) {
 	number := ir.Type{Name: "number", Slots: 1}
 	call := ir.RuntimeCall{Function: resource.RuntimeFunctionDivide, Args: []ir.Expr{ir.Const{}, ir.Const{}}, Result: number, Pure: true}
