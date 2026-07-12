@@ -9,22 +9,25 @@ type Callbacks struct{ tutorial.GlobalCallbacks }
 
 var Globals Callbacks
 
-//sonolus:resource instruction
-type TextData struct{ Tap sonolus.Text }
+type TextData struct {
+	sonolus.InstructionResource
+	Tap sonolus.Text
+}
 
-//sonolus:resource instruction
 var Texts = &TextData{Tap: sonolus.InstructionText("Tap")}
 
-//sonolus:resource instructionIcon
-type IconData struct{ Tap sonolus.Icon }
+type IconData struct {
+	sonolus.InstructionIconResource
+	Tap sonolus.Icon
+}
 
-//sonolus:resource instructionIcon
 var Icons = &IconData{Tap: sonolus.InstructionIcon("#HAND")}
 
-//sonolus:resource effect
-type EffectsData struct{ Hit sonolus.Clip }
+type EffectsData struct {
+	sonolus.EffectResource
+	Hit sonolus.Clip
+}
 
-//sonolus:resource effect
 var Effects = &EffectsData{Hit: sonolus.EffectClip("hit")}
 
 func Preprocess() {

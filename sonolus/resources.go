@@ -2,6 +2,44 @@ package sonolus
 
 // Marker types are embedded in user declarations and recognized by go/types.
 type Configuration struct{}
+
+type SkinResource struct {
+	RenderMode RenderMode
+}
+
+type EffectResource struct{}
+type ParticleResource struct{}
+type BucketsResource struct{}
+type InstructionResource struct{}
+type InstructionIconResource struct{}
+
+type SliderOptionConfig struct {
+	Name, Title, Description string
+	Standard, Advanced       bool
+	Scope                    string
+	Default, Min, Max, Step  float64
+	Unit                     string
+}
+
+type ToggleOptionConfig struct {
+	Name, Title, Description string
+	Standard, Advanced       bool
+	Scope                    string
+	Default                  bool
+}
+
+type SelectOptionConfig struct {
+	Name, Title, Description string
+	Standard, Advanced       bool
+	Scope                    string
+	Default                  int
+	Values                   []string
+}
+
+func SliderOption(config SliderOptionConfig) float64 { return config.Default }
+func ToggleOption(config ToggleOptionConfig) bool    { return config.Default }
+func SelectOption(config SelectOptionConfig) int     { return config.Default }
+
 type ROMValues []float32
 type ROMFile []byte
 type LevelFile []byte

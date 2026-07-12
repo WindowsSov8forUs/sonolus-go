@@ -28,10 +28,12 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 
 type GameConfiguration struct {
 	sonolus.Configuration
-	Speed float64 `configuration:"slider,name=Speed,def=1,min=0.5,max=2,step=0.1"`
+	Speed float64
 }
 
-var Configuration GameConfiguration
+var Configuration = GameConfiguration{Speed: sonolus.SliderOption(sonolus.SliderOptionConfig{
+	Name: "Speed", Default: 1, Min: 0.5, Max: 2, Step: 0.1,
+})}
 var ROM = sonolus.ROMValues{}
 
 func main() {}
@@ -53,13 +55,14 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
 )
 
-//sonolus:resource skin standard
 type SkinData struct {
+	sonolus.SkinResource
+
 	Note sonolus.Sprite
 }
 
-//sonolus:resource skin standard
 var Skin = &SkinData{
+	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard},
 	Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN"),
 }
 

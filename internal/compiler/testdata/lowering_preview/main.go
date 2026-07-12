@@ -9,10 +9,11 @@ type Note struct {
 	preview.Archetype `sonolus:"name=Note"`
 }
 
-//sonolus:resource skin
-type SkinData struct{ Note sonolus.Sprite }
+type SkinData struct {
+	sonolus.SkinResource
+	Note sonolus.Sprite
+}
 
-//sonolus:resource skin
 var Skin = &SkinData{Note: sonolus.SkinSprite("note")}
 
 func (*Note) Preprocess() {

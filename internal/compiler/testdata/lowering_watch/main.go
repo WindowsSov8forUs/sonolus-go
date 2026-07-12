@@ -9,10 +9,11 @@ type Note struct {
 	watch.Archetype `sonolus:"name=Note"`
 }
 
-//sonolus:resource effect
-type EffectsData struct{ Hit sonolus.Clip }
+type EffectsData struct {
+	sonolus.EffectResource
+	Hit sonolus.Clip
+}
 
-//sonolus:resource effect
 var Effects = &EffectsData{Hit: sonolus.EffectClip("hit")}
 
 func (*Note) Preprocess() {

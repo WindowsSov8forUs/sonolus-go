@@ -7,12 +7,12 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/watch"
 )
 
-//sonolus:resource skin
 type SkinData struct {
+	sonolus.SkinResource
+
 	Note sonolus.Sprite
 }
 
-//sonolus:resource skin
 var Skin = &SkinData{
 	Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN"),
 }

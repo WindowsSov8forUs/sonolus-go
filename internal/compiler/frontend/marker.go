@@ -50,6 +50,15 @@ func markerID(m mode.Mode, name string) string {
 
 func rootID(name string) string { return source.SonolusPkgPath() + "." + name }
 
+var resourceMarkerKinds = map[string]string{
+	rootID("SkinResource"):            "Skin",
+	rootID("EffectResource"):          "Effect",
+	rootID("ParticleResource"):        "Particle",
+	rootID("BucketsResource"):         "Buckets",
+	rootID("InstructionResource"):     "Instruction",
+	rootID("InstructionIconResource"): "InstructionIcon",
+}
+
 type markerField struct {
 	id    string
 	tag   tagValue
@@ -82,6 +91,9 @@ func primaryDeclarationMarker(named *types.Named) (markerField, bool, []error) {
 	var errs []error
 	for _, candidate := range structMarkers(named) {
 		isPrimary := candidate.id == rootID("Configuration")
+		if _, ok := resourceMarkerKinds[candidate.id]; ok {
+			isPrimary = true
+		}
 		isCallbackOrders := false
 		for _, candidateMode := range orderedModes {
 			if candidate.id == markerID(candidateMode, "Archetype") || candidate.id == markerID(candidateMode, "GlobalCallbacks") {

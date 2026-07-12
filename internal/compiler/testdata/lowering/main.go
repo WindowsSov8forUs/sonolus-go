@@ -25,22 +25,25 @@ type Spawned struct {
 	Exported       float64 `sonolus:"exported"`
 }
 
-//sonolus:resource skin
-type Skin struct{ Note sonolus.Sprite }
+type Skin struct {
+	sonolus.SkinResource
+	Note sonolus.Sprite
+}
 
-//sonolus:resource skin
 var Assets = &Skin{Note: sonolus.SkinSprite("note")}
 
-//sonolus:resource effect
-type EffectsData struct{ Hit sonolus.Clip }
+type EffectsData struct {
+	sonolus.EffectResource
+	Hit sonolus.Clip
+}
 
-//sonolus:resource effect
 var Effects = &EffectsData{Hit: sonolus.EffectClip("hit")}
 
-//sonolus:resource particle
-type ParticlesData struct{ Hit sonolus.Effect }
+type ParticlesData struct {
+	sonolus.ParticleResource
+	Hit sonolus.Effect
+}
 
-//sonolus:resource particle
 var Particles = &ParticlesData{Hit: sonolus.ParticleEffect("hit")}
 
 func pair(value float64) (left, right float64) {

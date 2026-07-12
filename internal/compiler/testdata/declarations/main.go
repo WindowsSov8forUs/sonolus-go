@@ -13,20 +13,25 @@ import (
 
 type GameConfiguration struct {
 	sonolus.Configuration
-	Speed  float64 `configuration:"slider,name=speed,def=1,min=0.5,max=2,step=0.1"`
-	Mirror bool    `configuration:"toggle,name=mirror,def=false"`
-	Lane   int     `configuration:"select,name=lane,def=0,values=normal|wide"`
+	Speed  float64
+	Mirror bool
+	Lane   int
 }
 
-var Config GameConfiguration
+var Config = GameConfiguration{
+	Speed:  sonolus.SliderOption(sonolus.SliderOptionConfig{Name: "speed", Default: 1, Min: 0.5, Max: 2, Step: 0.1}),
+	Mirror: sonolus.ToggleOption(sonolus.ToggleOptionConfig{Name: "mirror"}),
+	Lane:   sonolus.SelectOption(sonolus.SelectOptionConfig{Name: "lane", Values: []string{"normal", "wide"}}),
+}
 
-//sonolus:resource skin standard
 type PlaySkin struct {
+	sonolus.SkinResource
+
 	Note sonolus.Sprite
 }
 
-//sonolus:resource skin standard
-var PlayAssets = &PlaySkin{Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN")}
+var PlayAssets = &PlaySkin{
+	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard}, Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN")}
 
 type TapNote struct {
 	play.Archetype      `sonolus:"name=TapNote,hasInput=true"`

@@ -29,9 +29,9 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 	for _, p := range userPackages {
 		packagesByTypes[p.Types] = p
 	}
-	var allResources []resourceDirectiveSpec
+	var allResources []resourceDeclarationSpec
 	for _, p := range userPackages {
-		specs, resourceErrs := resourceDirectives(p)
+		specs, resourceErrs := resourceDeclarations(p)
 		errs = append(errs, resourceErrs...)
 		allResources = append(allResources, specs...)
 	}
@@ -58,9 +58,10 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 		resources[spec.kind] = true
 		switch spec.kind {
 		case "Skin":
-			renderMode := spec.renderMode
-			if renderMode == "" {
-				renderMode = resource.EngineRenderModeDefault
+			renderMode, renderErr := skinRenderMode(spec, tracer)
+			if renderErr != nil {
+				errs = append(errs, renderErr)
+				continue
 			}
 			out.Resources.Skin = &resource.EngineSkinData{RenderMode: renderMode}
 		case "Effect":
@@ -72,7 +73,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 				out.Resources.Instruction = &resource.EngineInstructionData{}
 			}
 		}
-		errs = append(errs, addDirectiveResource(out, spec, tracer)...)
+		errs = append(errs, addResource(out, spec, tracer)...)
 	}
 	for _, p := range userPackages {
 		rom, romErrs := packageROM(p, tracer)

@@ -36,6 +36,31 @@ func TestEveryPublicCallableHasExplicitRecipe(t *testing.T) {
 	}
 }
 
+func TestConfigurationConstructorsAreCompileTimeOnly(t *testing.T) {
+	for _, name := range []string{"SliderOption", "ToggleOption", "SelectOption"} {
+		symbol := byKey["sonolus."+name]
+		if symbol == nil {
+			t.Fatalf("missing catalog symbol sonolus.%s", name)
+		}
+		recipe := LookupRecipe(symbol)
+		if recipe.Kind != RecipeCompileTime || recipe.Reason != "configuration constructor" {
+			t.Fatalf("sonolus.%s recipe = %#v", name, recipe)
+		}
+	}
+}
+
+func TestResourceMarkersAreCompileTimeOnly(t *testing.T) {
+	for _, name := range []string{"SkinResource", "EffectResource", "ParticleResource", "BucketsResource", "InstructionResource", "InstructionIconResource"} {
+		symbol := byKey["sonolus."+name]
+		if symbol == nil {
+			t.Fatalf("missing catalog symbol sonolus.%s", name)
+		}
+		if recipe := LookupRecipe(symbol); recipe.Kind != RecipeCompileTime {
+			t.Fatalf("sonolus.%s recipe = %#v", name, recipe)
+		}
+	}
+}
+
 func TestEveryPublicNativeHasRuntimeSignature(t *testing.T) {
 	for i := range Symbols {
 		symbol := &Symbols[i]

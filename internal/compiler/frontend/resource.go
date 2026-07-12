@@ -17,154 +17,137 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
 )
 
-type resourceDirectiveSpec struct {
+type resourceDeclarationSpec struct {
 	kind        string
-	renderMode  resource.EngineRenderMode
 	pkg         *packages.Package
 	named       *types.Named
 	value       *types.Var
+	marker      *types.Var
 	initializer ast.Expr
 	pos         string
 }
 
-func resourceKind(raw string) (string, bool) {
-	switch raw {
-	case "skin":
-		return "Skin", true
-	case "effect":
-		return "Effect", true
-	case "particle":
-		return "Particle", true
-	case "instruction":
-		return "Instruction", true
-	case "instructionIcon":
-		return "InstructionIcon", true
-	case "buckets":
-		return "Buckets", true
-	default:
-		return "", false
-	}
-}
-
-func resourceDirectives(pkg *packages.Package) ([]resourceDirectiveSpec, []error) {
-	typesByKind := map[string]resourceDirectiveSpec{}
-	valuesByKind := map[string]resourceDirectiveSpec{}
+func rejectResourceDirectives(pkg *packages.Package) []error {
 	var errs []error
-	read := func(doc *ast.CommentGroup, pos ast.Node) (string, resource.EngineRenderMode, bool) {
-		var found string
-		var renderMode resource.EngineRenderMode
-		for _, dir := range directive.ParseDirectives(doc, directive.PrefixSonolus) {
-			if dir.Cmd != directive.CmdResource {
-				continue
-			}
-			where := pkg.Fset.Position(pos.Pos()).String()
-			if found != "" {
-				errs = append(errs, fmt.Errorf("%s: duplicate sonolus:resource directive", where))
-				continue
-			}
-			if len(dir.Args) < 1 || len(dir.Args) > 2 {
-				errs = append(errs, fmt.Errorf("%s: sonolus:resource requires a resource kind and optional skin render mode", where))
-				continue
-			}
-			kind, ok := resourceKind(dir.Args[0])
-			if !ok {
-				errs = append(errs, fmt.Errorf("%s: unknown resource kind %q", where, dir.Args[0]))
-				continue
-			}
-			if len(dir.Args) == 2 {
-				if kind != "Skin" {
-					errs = append(errs, fmt.Errorf("%s: render mode is only valid for skin resources", where))
-					continue
-				}
-				renderMode = resource.EngineRenderMode(dir.Args[1])
-				if renderMode != resource.EngineRenderModeDefault && renderMode != resource.EngineRenderModeStandard && renderMode != resource.EngineRenderModeLightweight {
-					errs = append(errs, fmt.Errorf("%s: invalid skin render mode %q; allowed modes are default, standard, lightweight", where, dir.Args[1]))
-					continue
-				}
-			}
-			found = kind
-		}
-		return found, renderMode, found != ""
-	}
 	for _, file := range pkg.Syntax {
 		for _, decl := range file.Decls {
 			gen, ok := decl.(*ast.GenDecl)
-			if !ok || (gen.Tok != token.TYPE && gen.Tok != token.VAR) {
+			if !ok {
 				continue
 			}
-			for _, rawSpec := range gen.Specs {
-				specDoc := gen.Doc
-				switch spec := rawSpec.(type) {
+			groups := []*ast.CommentGroup{gen.Doc}
+			for _, spec := range gen.Specs {
+				switch spec := spec.(type) {
 				case *ast.TypeSpec:
-					if spec.Doc != nil {
-						specDoc = spec.Doc
-					}
-					kind, renderMode, ok := read(specDoc, spec)
-					if !ok {
-						continue
-					}
-					obj, _ := pkg.TypesInfo.Defs[spec.Name].(*types.TypeName)
-					if obj == nil {
-						continue
-					}
-					named, namedOK := namedType(obj.Type())
-					if !namedOK {
-						continue
-					}
-					if _, structOK := named.Underlying().(*types.Struct); !structOK {
-						errs = append(errs, fmt.Errorf("%s: %s resource type must be a struct", pkg.Fset.Position(spec.Pos()), strings.ToLower(kind)))
-						continue
-					}
-					entry := resourceDirectiveSpec{kind: kind, renderMode: renderMode, pkg: pkg, named: named, pos: pkg.Fset.Position(spec.Pos()).String()}
-					if previous, exists := typesByKind[kind]; exists {
-						errs = append(errs, fmt.Errorf("%s: duplicate %s resource type (previously declared at %s)", entry.pos, strings.ToLower(kind), previous.pos))
-					} else {
-						typesByKind[kind] = entry
-					}
+					groups = append(groups, spec.Doc, spec.Comment)
 				case *ast.ValueSpec:
-					if spec.Doc != nil {
-						specDoc = spec.Doc
-					}
-					kind, renderMode, ok := read(specDoc, spec)
-					if !ok {
-						continue
-					}
-					if len(spec.Names) != 1 || len(spec.Values) != 1 {
-						errs = append(errs, fmt.Errorf("%s: %s resource variable must declare exactly one initialized value", pkg.Fset.Position(spec.Pos()), strings.ToLower(kind)))
-						continue
-					}
-					value, _ := pkg.TypesInfo.Defs[spec.Names[0]].(*types.Var)
-					entry := resourceDirectiveSpec{kind: kind, renderMode: renderMode, pkg: pkg, value: value, initializer: spec.Values[0], pos: pkg.Fset.Position(spec.Pos()).String()}
-					if previous, exists := valuesByKind[kind]; exists {
-						errs = append(errs, fmt.Errorf("%s: duplicate %s resource value (previously declared at %s)", entry.pos, strings.ToLower(kind), previous.pos))
-					} else {
-						valuesByKind[kind] = entry
+					groups = append(groups, spec.Doc, spec.Comment)
+				}
+			}
+			for _, group := range groups {
+				for _, dir := range directive.ParseDirectives(group, directive.PrefixSonolus) {
+					if dir.Cmd == directive.CmdResource {
+						errs = append(errs, fmt.Errorf("%s: //sonolus:resource is no longer supported; embed the matching sonolus.*Resource marker in the resource struct", pkg.Fset.Position(gen.Pos())))
 					}
 				}
 			}
 		}
 	}
-	var result []resourceDirectiveSpec
-	for _, kind := range []string{"Skin", "Effect", "Particle", "Instruction", "InstructionIcon", "Buckets"} {
-		t, hasType := typesByKind[kind]
-		v, hasValue := valuesByKind[kind]
-		if hasType != hasValue {
-			at := t.pos
-			if at == "" {
-				at = v.pos
-			}
-			errs = append(errs, fmt.Errorf("%s: %s resource requires both a type and a value declaration", at, strings.ToLower(kind)))
-			continue
-		}
-		if hasType {
-			if t.renderMode != v.renderMode {
-				errs = append(errs, fmt.Errorf("%s: %s resource type and value directives must use the same options", v.pos, strings.ToLower(kind)))
+	return errs
+}
+
+func variableInitializer(pkg *packages.Package, target *types.Var) (ast.Expr, bool) {
+	for _, file := range pkg.Syntax {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
 				continue
 			}
-			t.value = v.value
-			t.initializer = v.initializer
-			result = append(result, t)
+			for _, raw := range gen.Specs {
+				spec, ok := raw.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, name := range spec.Names {
+					if pkg.TypesInfo.Defs[name] == target && len(spec.Values) == len(spec.Names) {
+						return spec.Values[i], true
+					}
+				}
+			}
 		}
+	}
+	return nil, false
+}
+
+func promotedResourceMarker(named *types.Named, seen map[*types.Named]bool) bool {
+	if named == nil || seen[named] {
+		return false
+	}
+	seen[named] = true
+	st, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	for i := 0; i < st.NumFields(); i++ {
+		field := st.Field(i)
+		if !field.Embedded() {
+			continue
+		}
+		if _, ok := resourceMarkerKinds[typeID(field.Type())]; ok {
+			return true
+		}
+		embedded, ok := namedType(field.Type())
+		if ok && promotedResourceMarker(embedded, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+func resourceDeclarations(pkg *packages.Package) ([]resourceDeclarationSpec, []error) {
+	var result []resourceDeclarationSpec
+	errs := rejectResourceDirectives(pkg)
+	for _, named := range packageNamedTypes(pkg) {
+		var markers []markerField
+		allMarkers := structMarkers(named)
+		for _, marker := range allMarkers {
+			if _, ok := resourceMarkerKinds[marker.id]; ok {
+				markers = append(markers, marker)
+				continue
+			}
+			if strings.HasSuffix(marker.id, ".SkinResource") || strings.HasSuffix(marker.id, ".EffectResource") || strings.HasSuffix(marker.id, ".ParticleResource") || strings.HasSuffix(marker.id, ".BucketsResource") || strings.HasSuffix(marker.id, ".InstructionResource") || strings.HasSuffix(marker.id, ".InstructionIconResource") {
+				errs = append(errs, fmt.Errorf("%s.%s: resource marker must be the exact sonolus.%s type", named.Obj().Name(), marker.field.Name(), marker.field.Name()))
+			}
+		}
+		if len(markers) == 0 {
+			if promotedResourceMarker(named, map[*types.Named]bool{}) {
+				errs = append(errs, fmt.Errorf("%s: resource marker must be embedded directly", named.Obj().Name()))
+			}
+			continue
+		}
+		if len(markers) != 1 {
+			errs = append(errs, fmt.Errorf("%s: exactly one resource marker is required", named.Obj().Name()))
+			continue
+		}
+		marker := markers[0]
+		if len(marker.tag.Flags) != 0 || len(marker.tag.Items) != 0 {
+			errs = append(errs, fmt.Errorf("%s.%s: resource marker does not accept a sonolus tag", named.Obj().Name(), marker.field.Name()))
+			continue
+		}
+		vars := markerVariables(pkg, named)
+		if len(vars) != 1 {
+			errs = append(errs, fmt.Errorf("%s: resource marker requires exactly one singleton variable", named.Obj().Name()))
+			continue
+		}
+		initializer, ok := variableInitializer(pkg, vars[0])
+		if !ok {
+			errs = append(errs, fmt.Errorf("%s: resource singleton must have one explicit initializer", vars[0].Name()))
+			continue
+		}
+		result = append(result, resourceDeclarationSpec{
+			kind: resourceMarkerKinds[marker.id], pkg: pkg, named: named, value: vars[0], marker: marker.field,
+			initializer: initializer, pos: pkg.Fset.Position(vars[0].Pos()).String(),
+		})
 	}
 	return result, errs
 }
@@ -284,7 +267,7 @@ func resourceValueNames(pkg *packages.Package, kind string, fieldType types.Type
 	return []string{name}, true
 }
 
-func resourceInitializerNames(spec resourceDirectiveSpec) (map[*types.Var][]string, []error) {
+func resourceInitializerNames(spec resourceDeclarationSpec) (map[*types.Var][]string, []error) {
 	literal, ok := unwrapResourceLiteral(spec.initializer)
 	if !ok {
 		return nil, []error{fmt.Errorf("%s: %s resource value must be a struct literal or pointer to one", spec.pos, strings.ToLower(spec.kind))}
@@ -315,6 +298,9 @@ func resourceInitializerNames(spec resourceDirectiveSpec) (map[*types.Var][]stri
 		}
 		if field == nil {
 			errs = append(errs, fmt.Errorf("%s: unknown or excess resource initializer field", spec.pkg.Fset.Position(element.Pos())))
+			continue
+		}
+		if field == spec.marker {
 			continue
 		}
 		names, valid := resourceValueNames(spec.pkg, spec.kind, field.Type(), value)
@@ -358,7 +344,7 @@ func staticResourceNames(value source.StaticValue, kind string) ([]string, bool)
 	return []string{name}, true
 }
 
-func tracedResourceInitializerNames(spec resourceDirectiveSpec, tracer *source.ASTTracer) (map[*types.Var][]string, bool) {
+func tracedResourceInitializerNames(spec resourceDeclarationSpec, tracer *source.ASTTracer) (map[*types.Var][]string, bool) {
 	binding, err := tracer.EvalObject(spec.value)
 	if err != nil {
 		return nil, false
@@ -369,6 +355,9 @@ func tracedResourceInitializerNames(spec resourceDirectiveSpec, tracer *source.A
 	}
 	result := map[*types.Var][]string{}
 	for _, field := range value.Fields {
+		if field.Field == spec.marker {
+			continue
+		}
 		names, ok := staticResourceNames(field.Value, spec.kind)
 		if !ok {
 			return nil, false
@@ -378,7 +367,35 @@ func tracedResourceInitializerNames(spec resourceDirectiveSpec, tracer *source.A
 	return result, true
 }
 
-func addDirectiveResource(out *ModeDeclarations, spec resourceDirectiveSpec, tracer *source.ASTTracer) []error {
+func skinRenderMode(spec resourceDeclarationSpec, tracer *source.ASTTracer) (resource.EngineRenderMode, error) {
+	binding, err := tracer.EvalObject(spec.value)
+	if err != nil {
+		return "", fmt.Errorf("%s: skin resource singleton must be statically evaluable: %w", spec.pos, err)
+	}
+	marker, ok := staticField(binding.Value, spec.marker)
+	if !ok {
+		return "", fmt.Errorf("%s: skin resource marker value is not static", spec.pos)
+	}
+	markerType := types.Unalias(spec.marker.Type()).Underlying().(*types.Struct)
+	value, ok := staticField(marker, markerType.Field(0))
+	if !ok {
+		return "", fmt.Errorf("%s: skin render mode is not static", spec.pos)
+	}
+	text, ok := staticString(value)
+	if !ok {
+		return "", fmt.Errorf("%s: skin render mode must be a static sonolus.RenderMode", spec.pos)
+	}
+	if text == "" {
+		text = string(resource.EngineRenderModeDefault)
+	}
+	result := resource.EngineRenderMode(text)
+	if result != resource.EngineRenderModeDefault && result != resource.EngineRenderModeStandard && result != resource.EngineRenderModeLightweight {
+		return "", fmt.Errorf("%s: invalid skin render mode %q; expected default, standard, or lightweight", spec.pos, text)
+	}
+	return result, nil
+}
+
+func addResource(out *ModeDeclarations, spec resourceDeclarationSpec, tracer *source.ASTTracer) []error {
 	if spec.value == nil {
 		return []error{fmt.Errorf("%s: invalid %s resource variable", spec.pos, strings.ToLower(spec.kind))}
 	}
@@ -399,6 +416,9 @@ func addDirectiveResource(out *ModeDeclarations, spec resourceDirectiveSpec, tra
 	for i := 0; i < st.NumFields(); i++ {
 		field := st.Field(i)
 		if field.Embedded() {
+			if field == spec.marker {
+				continue
+			}
 			errs = append(errs, fmt.Errorf("%s.%s: embedded fields are not allowed in resource data", spec.named.Obj().Name(), field.Name()))
 			continue
 		}

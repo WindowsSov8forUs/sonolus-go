@@ -7,14 +7,15 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
 )
 
-//sonolus:resource skin standard
 type SkinData struct {
+	sonolus.SkinResource
+
 	Note sonolus.Sprite
 }
 
-//sonolus:resource skin standard
 var Skin = &SkinData{
-	Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN"),
+	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard},
+	Note:         sonolus.SkinSprite("#NOTE_HEAD_CYAN"),
 }
 
 type TapNote struct {

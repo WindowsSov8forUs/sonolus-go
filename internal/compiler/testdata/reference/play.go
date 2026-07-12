@@ -7,28 +7,33 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
 )
 
-//sonolus:resource skin standard
-type SkinData struct{ Note, Fallback sonolus.Sprite }
+type SkinData struct {
+	sonolus.SkinResource
+	Note, Fallback sonolus.Sprite
+}
 
-//sonolus:resource skin standard
-var Skin = &SkinData{Note: sonolus.SkinSprite("note"), Fallback: sonolus.SkinSprite("fallback")}
+var Skin = &SkinData{
+	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard}, Note: sonolus.SkinSprite("note"), Fallback: sonolus.SkinSprite("fallback")}
 
-//sonolus:resource effect
-type EffectData struct{ Hit sonolus.Clip }
+type EffectData struct {
+	sonolus.EffectResource
+	Hit sonolus.Clip
+}
 
-//sonolus:resource effect
 var Effects = &EffectData{Hit: sonolus.EffectClip("hit")}
 
-//sonolus:resource particle
-type ParticleData struct{ Hit sonolus.Effect }
+type ParticleData struct {
+	sonolus.ParticleResource
+	Hit sonolus.Effect
+}
 
-//sonolus:resource particle
 var Particles = &ParticleData{Hit: sonolus.ParticleEffect("hit")}
 
-//sonolus:resource buckets
-type BucketData struct{ Tap sonolus.Bucket }
+type BucketData struct {
+	sonolus.BucketsResource
+	Tap sonolus.Bucket
+}
 
-//sonolus:resource buckets
 var Buckets = &BucketData{Tap: sonolus.JudgmentBucket("#MILLISECONDS", sonolus.JudgmentBucketSprite(Skin.Note, 0, 0, 1, 1, 0))}
 
 type Note struct {

@@ -7,12 +7,12 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/tutorial"
 )
 
-//sonolus:resource instruction
 type InstructionData struct {
+	sonolus.InstructionResource
+
 	Tap sonolus.Text
 }
 
-//sonolus:resource instruction
 var Instructions = &InstructionData{
 	Tap: sonolus.InstructionText("#TAP"),
 }

@@ -7,45 +7,46 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
 )
 
-//sonolus:resource skin standard
 type SkinData struct {
+	sonolus.SkinResource
+
 	Notes [2]sonolus.Sprite
 }
 
-//sonolus:resource skin standard
 var Skin = &SkinData{
+	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard},
 	Notes: [2]sonolus.Sprite{
 		sonolus.SkinSprite("#NOTE_HEAD_CYAN"),
 		sonolus.SkinSprite("conformance.note"),
 	},
 }
 
-//sonolus:resource effect
 type EffectData struct {
+	sonolus.EffectResource
+
 	Hit sonolus.Clip
 }
 
-//sonolus:resource effect
 var Effects = &EffectData{
 	Hit: sonolus.EffectClip("#PERFECT"),
 }
 
-//sonolus:resource particle
 type ParticleData struct {
+	sonolus.ParticleResource
+
 	Hit sonolus.Effect
 }
 
-//sonolus:resource particle
 var Particles = &ParticleData{
 	Hit: sonolus.ParticleEffect("#NOTE_CIRCULAR_TAP_CYAN"),
 }
 
-//sonolus:resource buckets
 type BucketData struct {
+	sonolus.BucketsResource
+
 	Tap sonolus.Bucket
 }
 
-//sonolus:resource buckets
 var Buckets = &BucketData{
 	Tap: sonolus.JudgmentBucket("#MILLISECONDS", sonolus.JudgmentBucketSprite(Skin.Notes[0], 0, 0, 1, 1, 0)),
 }

@@ -1,5 +1,5 @@
-github.com/WindowsSov8forUs/sonolus-core-go v0.2.1 h1:zSAFXijWIlLlro63BBd822/ZJYdZQ9hu8SXOvFnWu5I=
-github.com/WindowsSov8forUs/sonolus-core-go v0.2.1/go.mod h1:mM8pETbdOMYo24VDn4/eL3RCRXfOQj5N4Jt69H7b0y4=
+github.com/WindowsSov8forUs/sonolus-core-go v0.2.2 h1:i0/iVVE9ZJKm7EH/twbyiEFKjccVnzv1PqM7b6bI3mo=
+github.com/WindowsSov8forUs/sonolus-core-go v0.2.2/go.mod h1:mM8pETbdOMYo24VDn4/eL3RCRXfOQj5N4Jt69H7b0y4=
 github.com/WindowsSov8forUs/sonolus-server-go v0.1.0 h1:pPbFRTX2/ptYzpR2dwj4lPTh7o5mI9c/Oij/8QCXm5s=
 github.com/WindowsSov8forUs/sonolus-server-go v0.1.0/go.mod h1:Ox9AOT8CtrKGCFZJaOzKjw3Cf7E1PbyKc+3E2K6XV0A=
 github.com/bytedance/gopkg v0.1.3 h1:TPBSwH8RsouGCBcMBktLt1AymVo2TVsBVCY4b6TnZ/M=
