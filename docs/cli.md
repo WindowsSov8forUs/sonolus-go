@@ -54,17 +54,17 @@ sonolus-go serve [-name <name>] [-addr <:8080>]
 ## pack
 
 ```text
-sonolus-go pack [-name <name>] [-author <name>]
+sonolus-go pack [-name <name>] [-author <name>] [-o <dir>]
                 [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
 ```
 
 `pack` 编译全部四种模式，生成临时 `sonolus-pack-go` source tree，并输出到：
 
 ```text
-dist/<name>-pack
+<dir>/<name>-pack
 ```
 
-默认 author 为 `sonolus-go`。当前 adapter 使用默认 skin、background、effect 和 particle item 引用，并生成满足 pack schema 的基础 item。
+输出目录默认为 `dist`，author 默认为 `sonolus-go`。当前 adapter 使用默认 skin、background、effect 和 particle item 引用，并生成满足 pack schema 的基础 item。
 
 ## level
 

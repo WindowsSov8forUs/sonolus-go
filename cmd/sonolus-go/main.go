@@ -62,13 +62,14 @@ func runCLI(args []string) error {
 		flags := commandFlags(command)
 		name := flags.String("name", "", "engine name (required for ambiguous package patterns)")
 		author := flags.String("author", "sonolus-go", "engine author")
+		out := flags.String("o", "dist", "output directory")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
 		stats := flags.Bool("stats", false, "print compilation timing")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdPack(flags.Args(), *name, *author, *optimization, *rom, *stats)
+		return cmdPack(flags.Args(), *name, *author, *out, *optimization, *rom, *stats)
 	case "level":
 		flags := commandFlags(command)
 		out := flags.String("o", "dist", "output directory")

@@ -22,12 +22,16 @@ func fixturePattern() string {
 	return filepath.Join("..", "..", "internal", "compiler", "testdata", "multimode")
 }
 
-func TestBuildUsesNewCompilerPackagePatterns(t *testing.T) {
+func publicConformancePattern() string {
+	return filepath.Join("..", "..", "examples", "conformance")
+}
+
+func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 	out := t.TempDir()
-	if err := cmdBuild([]string{fixturePattern()}, "fixture", out, "all", 0, "", true); err != nil {
+	if err := cmdBuild([]string{publicConformancePattern()}, "conformance", out, "all", 0, "", true); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(out, "fixture")
+	dir := filepath.Join(out, "conformance")
 	for _, name := range []string{build.FileConfiguration, build.FileROM, build.FilePlayData, build.FileWatchData, build.FilePreviewData, build.FileTutorialData} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("missing %s: %v", name, err)
@@ -45,8 +49,25 @@ func TestBuildUsesNewCompilerPackagePatterns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rom) != 20 {
+	if len(rom) != 24 {
 		t.Fatalf("raw ROM length = %d", len(rom))
+	}
+}
+
+func TestPackCompilesPublicConformanceExample(t *testing.T) {
+	out := t.TempDir()
+	if err := runCLI([]string{
+		"pack", "-name", "conformance", "-author", "sonolus-go", "-o", out, "-O", "2",
+		publicConformancePattern(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(out, "conformance-pack"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("pack output is empty")
 	}
 }
 
@@ -70,7 +91,7 @@ func TestResolveEngineName(t *testing.T) {
 }
 
 func TestDevServerRecompileIsAtomic(t *testing.T) {
-	srv := &devServer{patterns: []string{fixturePattern()}, name: "fixture", watched: map[string]bool{}}
+	srv := &devServer{patterns: []string{publicConformancePattern()}, name: "conformance", watched: map[string]bool{}}
 	if err := srv.recompile(); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +118,7 @@ func TestDevServerRecompileIsAtomic(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&info); err != nil {
 		t.Fatal(err)
 	}
-	if info["engine"] != "fixture" {
+	if info["engine"] != "conformance" {
 		t.Fatalf("info = %#v", info)
 	}
 }

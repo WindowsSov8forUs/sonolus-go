@@ -21,7 +21,7 @@ func compileAllModes(patterns []string, fallback []byte, level compiler.Optimiza
 	return artifacts, engineCompiler, err
 }
 
-func runPack(patterns []string, explicitName, author string, optimization int, romPath string, stats bool) error {
+func runPack(patterns []string, explicitName, author, outDir string, optimization int, romPath string, stats bool) error {
 	engineName, err := resolveEngineName(patterns, explicitName)
 	if err != nil {
 		return err
@@ -60,7 +60,7 @@ func runPack(patterns []string, explicitName, author string, optimization int, r
 		return fmt.Errorf("emitting default items: %w", err)
 	}
 
-	packDir := filepath.Join("dist", engineName+"-pack")
+	packDir := filepath.Join(outDir, engineName+"-pack")
 	fmt.Printf("packing to %s...\n", packDir)
 	if err := packer.Pack(context.Background(), packer.Options{Input: sourceDir, Output: packDir}); err != nil {
 		return fmt.Errorf("pack: %w", err)

@@ -61,8 +61,8 @@ func cmdServe(patterns []string, name, addr string, optimization int, romPath st
 	return runDevServer(patterns, name, addr, optimization, romPath, stats)
 }
 
-func cmdPack(patterns []string, name, author string, optimization int, romPath string, stats bool) error {
-	return runPack(patterns, name, author, optimization, romPath, stats)
+func cmdPack(patterns []string, name, author, outDir string, optimization int, romPath string, stats bool) error {
+	return runPack(patterns, name, author, outDir, optimization, romPath, stats)
 }
 
 func cmdLevel(levelPath, outDir string) error {
