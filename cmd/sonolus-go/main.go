@@ -46,6 +46,16 @@ func runCLI(args []string) error {
 			return err
 		}
 		return cmdBuild(flags.Args(), *out, *mode, *optimization, *rom, *stats)
+	case "check":
+		flags := commandFlags(command)
+		mode := flags.String("m", "all", "engine mode: play, watch, preview, tutorial, all")
+		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
+		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
+		stats := flags.Bool("stats", false, "print compilation timing")
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		return cmdCheck(flags.Args(), *mode, *optimization, *rom, *stats)
 	case "dev":
 		flags := commandFlags(command)
 		out := flags.String("o", "", "development engine name")
@@ -71,6 +81,7 @@ func commandFlags(command string) *flag.FlagSet {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "       sonolus-go check [-m <mode>] [-O 0|1|2] [-rom <file>] [-stats] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go dev [-o <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "  build modes: play, watch, preview, tutorial, all (default)")
 	fmt.Fprintln(os.Stderr, "  opt levels:  0=minimal, 1=fast, 2=standard (default)")

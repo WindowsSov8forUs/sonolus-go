@@ -11,24 +11,56 @@ import (
 
 var engineOutputRoot = "dist"
 
-func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
+type compilationRequest struct {
+	mode         Mode
+	optimization compiler.OptimizationLevel
+	fallbackROM  []byte
+	targets      []compiler.Target
+}
+
+func prepareCompilation(patterns []string, modeFlag string, optFlag int, romFlag string) (*compilationRequest, error) {
 	selected, err := ParseMode(modeFlag)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	optimization, err := parseOptLevel(optFlag)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fallback, err := readFallbackROM(romFlag)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	targets, err := compiler.DiscoverTargets(selected.CompilerMode(), patterns...)
 	if err != nil {
+		return nil, err
+	}
+	return &compilationRequest{mode: selected, optimization: optimization, fallbackROM: fallback, targets: targets}, nil
+}
+
+func compileTarget(request *compilationRequest, target compiler.Target) (*compiler.Compiler, *compiler.Artifacts, error) {
+	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: request.optimization, FallbackROM: request.fallbackROM}, target.PackagePath)
+	var (
+		artifacts *compiler.Artifacts
+		err       error
+	)
+	if request.mode == ModeAll {
+		artifacts, err = engineCompiler.CompileAll()
+	} else {
+		artifacts, err = engineCompiler.Compile(request.mode.CompilerMode())
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("compiling engine %q: %w", target.PackagePath, err)
+	}
+	return engineCompiler, artifacts, nil
+}
+
+func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
+	request, err := prepareCompilation(patterns, modeFlag, optFlag, romFlag)
+	if err != nil {
 		return err
 	}
-	named, err := nameTargets(targets, outputName)
+	named, err := nameTargets(request.targets, outputName)
 	if err != nil {
 		return err
 	}
@@ -38,15 +70,9 @@ func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFl
 	}
 	results := make([]result, 0, len(named))
 	for _, target := range named {
-		engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: optimization, FallbackROM: fallback}, target.target.PackagePath)
-		var artifacts *compiler.Artifacts
-		if selected == ModeAll {
-			artifacts, err = engineCompiler.CompileAll()
-		} else {
-			artifacts, err = engineCompiler.Compile(selected.CompilerMode())
-		}
+		engineCompiler, artifacts, err := compileTarget(request, target.target)
 		if err != nil {
-			return fmt.Errorf("compiling engine %q: %w", target.target.PackagePath, err)
+			return err
 		}
 		if statsFlag {
 			fmt.Printf("engine %s:\n", target.name)
@@ -63,12 +89,39 @@ func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFl
 		if err := result.packaged.WriteAtomic(dir); err != nil {
 			return fmt.Errorf("writing engine package: %w", err)
 		}
-		if selected == ModeAll {
+		if request.mode == ModeAll {
 			fmt.Printf("wrote all (%s) engine to %s/\n", strings.Join(allModeNames(), ", "), dir)
 		} else {
-			fmt.Printf("wrote %s engine to %s/\n", selected, dir)
+			fmt.Printf("wrote %s engine to %s/\n", request.mode, dir)
 		}
 	}
+	return nil
+}
+
+func cmdCheck(patterns []string, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
+	request, err := prepareCompilation(patterns, modeFlag, optFlag, romFlag)
+	if err != nil {
+		return err
+	}
+	for _, target := range request.targets {
+		engineCompiler, _, err := compileTarget(request, target)
+		if err != nil {
+			return err
+		}
+		if statsFlag {
+			fmt.Printf("engine %s:\n", target.PackagePath)
+			printCompileStats(engineCompiler.Stats())
+		}
+	}
+	modeName := request.mode.String()
+	if request.mode == ModeAll {
+		modeName = fmt.Sprintf("all (%s)", strings.Join(allModeNames(), ", "))
+	}
+	noun := "engines"
+	if len(request.targets) == 1 {
+		noun = "engine"
+	}
+	fmt.Printf("checked %d %s for %s\n", len(request.targets), noun, modeName)
 	return nil
 }
 

@@ -31,6 +31,15 @@ sonolus-go build [-o <name>] [-m <mode>]
 
 输出固定位于 `dist/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
 
+## check
+
+```text
+sonolus-go check [-m <mode>] [-O 0|1|2]
+                 [-rom <file>] [-stats] <pattern>...
+```
+
+`check` 对匹配到的所有引擎执行完整 Compiler 链路，但不序列化、不写入 `dist/`，也不读取 `//sonolus:level` 开发关卡。`-m`、`-O`、`-rom` 和 `-stats` 与 `build` 含义相同；默认检查全部四种模式。它适合在 CI 或提交前验证源码，首个失败引擎会终止检查并报告其 package path。
+
 ## dev
 
 ```text

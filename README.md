@@ -42,6 +42,12 @@ sonolus-go build -m all ./engine
 sonolus-go build -o my-engine -m play ./engine
 ```
 
+检查引擎能否完整编译但不生成产物：
+
+```bash
+sonolus-go check ./engine
+```
+
 启动带源码监听和自动重编译的开发服务器：
 
 ```bash

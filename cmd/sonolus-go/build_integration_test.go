@@ -26,6 +26,10 @@ func publicConformancePattern() string {
 	return filepath.Join("..", "..", "examples", "conformance")
 }
 
+func compilerFixturePattern(name string) string {
+	return filepath.Join("..", "..", "internal", "compiler", "testdata", name)
+}
+
 func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 	out := t.TempDir()
 	previousRoot := engineOutputRoot
@@ -64,6 +68,75 @@ func TestBuildRejectsInvalidOptimization(t *testing.T) {
 	err := cmdBuild([]string{fixturePattern()}, "fixture", "play", 3, "", false)
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCheckCompilesWithoutWritingArtifacts(t *testing.T) {
+	root := t.TempDir()
+	previousRoot := engineOutputRoot
+	engineOutputRoot = filepath.Join(root, "dist")
+	t.Cleanup(func() { engineOutputRoot = previousRoot })
+	sentinel := filepath.Join(engineOutputRoot, "sentinel")
+	if err := os.MkdirAll(engineOutputRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("unchanged"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmdCheck([]string{publicConformancePattern()}, "all", 0, "", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, sentinel)); got != "unchanged" {
+		t.Fatalf("sentinel = %q", got)
+	}
+	entries, err := os.ReadDir(engineOutputRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "sentinel" {
+		t.Fatalf("check modified output directory: %v", entries)
+	}
+}
+
+func TestCheckSupportsMultipleEnginesAndSingleMode(t *testing.T) {
+	pattern := filepath.Join("..", "..", "examples", "...")
+	if err := cmdCheck([]string{pattern}, "play", 1, "", false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckSupportsStandardOptimization(t *testing.T) {
+	if err := cmdCheck([]string{publicConformancePattern()}, "play", 2, "", false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckReportsTargetCompilationFailure(t *testing.T) {
+	err := cmdCheck([]string{compilerFixturePattern("invalid")}, "play", 0, "", false)
+	if err == nil {
+		t.Fatal("invalid engine passed check")
+	}
+	if !strings.Contains(err.Error(), "internal/compiler/testdata/invalid") {
+		t.Fatalf("error lacks target package: %v", err)
+	}
+}
+
+func TestCheckValidatesFallbackROM(t *testing.T) {
+	rom := filepath.Join(t.TempDir(), "rom")
+	if err := os.WriteFile(rom, []byte{1, 2, 3}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := cmdCheck([]string{publicConformancePattern()}, "play", 0, rom, false)
+	if err == nil || !strings.Contains(err.Error(), "length 3 is not divisible by 4") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCheckDoesNotParseDevelopmentLevel(t *testing.T) {
+	pattern := "." + string(os.PathSeparator) + filepath.Join("testdata", "checklevel")
+	if err := cmdCheck([]string{pattern}, "all", 0, "", false); err != nil {
+		t.Fatalf("check parsed invalid development LevelData: %v", err)
 	}
 }
 

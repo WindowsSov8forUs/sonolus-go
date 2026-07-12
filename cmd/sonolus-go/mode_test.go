@@ -123,6 +123,18 @@ func TestRunCLIDevCommand(t *testing.T) {
 	}
 }
 
+func TestRunCLICheckCommand(t *testing.T) {
+	err := runCLI([]string{"check", "-m", "invalid"})
+	if err == nil || !strings.Contains(err.Error(), "unknown mode: invalid") {
+		t.Fatalf("check command was not parsed: %v", err)
+	}
+
+	err = runCLI([]string{"check", "-unknown"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -unknown") {
+		t.Fatalf("check flags were not parsed: %v", err)
+	}
+}
+
 func TestCompilerMode(t *testing.T) {
 	tests := []struct {
 		mode Mode
