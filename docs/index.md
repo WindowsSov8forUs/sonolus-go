@@ -1,23 +1,30 @@
-# sonolus-go
+# sonolus-go 文档
 
-全 Go 语言实现的 Sonolus 引擎编译工具链。将 Go 源代码子集编译为 Sonolus EngineData，支持 Play / Watch / Preview / Tutorial 四种模式。
+`sonolus-go` 将受限的 Go DSL 编译为 Sonolus EngineData。编译器支持 Play、Watch、Preview、Tutorial 四种模式，生成 EngineConfiguration、Engine ROM 和对应模式的 EngineData。
 
-```bash
-go install github.com/WindowsSov8forUs/sonolus-go/cmd/sonolus-go@latest
-sonolus-go build -m play engine.go
-```
+项目提供引擎编译、开发期数据服务和 pack 生成。
 
-## 文档
+## 文档导航
 
-| 文档 | 说明 |
-|------|------|
-| [快速入门](getting-started.md) | 环境准备、第一个引擎、基本用法 |
-| [DSL 语言参考](dsl-reference.md) | 完整语法、类型系统、运行时函数、多文件引擎 |
-| [CLI 参考](cli.md) | build / serve / pack / host / level 命令 |
-| [编译器架构](architecture.md) | 编译流水线、包结构 |
-| [优化器](optimization.md) | 三级优化流水线、Pass 列表 |
-| [性能基准](performance.md) | 编译性能数据 |
+- [快速开始](getting-started.md)：建立一个可编译的四模式引擎包。
+- [DSL 参考](dsl-reference.md)：资源、Configuration、ROM、Archetype、callback 和受支持 Go 子集。
+- [命令行](cli.md)：`build`、`serve`、`pack`、`level` 的参数和输出。
+- [编译器架构](architecture.md)：`Package -> Frontend -> IR -> Optimize -> Backend` 数据流。
+- [优化器](optimization.md)：Minimal、Fast、Standard 的语义和适用场景。
+- [性能](performance.md)：编译耗时、节点规模、Temporary Memory 和开发期实践。
 
-## 许可
+## 支持边界
 
-MIT
+`sonolus`、`sonolus/play`、`sonolus/watch`、`sonolus/preview`、`sonolus/tutorial` 和 `sonolus/native` 是编译器识别的声明桩包。它们的函数体不是普通 Go 运行时实现；调用的实际含义来自 compiler catalog。
+
+允许的标准库仅包括：
+
+- `_ "embed"`：使用 `//go:embed` 时由 Go 语言要求导入；`sonolus.ROMFile` 不直接使用 `embed` 包类型，因此采用空白导入。
+- `math`：仅允许 catalog 已登记的常量和函数。
+- `math/rand`：仅允许 `Float64` 和 `Intn`。
+
+其他标准库、第三方包、dot import 和动态 Go 特性会在加载或 frontend 阶段被拒绝。用户主 module 内的普通包可以递归导入并用于静态 helper。
+
+## 稳定性
+
+公开 API 与 DSL 当前属于 freeze candidate。内部 IR、优化器实现和 backend 节点组织仍可在不改变公开语义的前提下调整。正式稳定前仍需要至少一个完整引擎在 Sonolus Runtime 中进行端到端验证。
