@@ -63,13 +63,13 @@ Backend 在模式范围共享 node pool，子节点优先写入并按值或 `Run
 
 ## 基准与回归
 
-仓库提供固定的 `minimal` 与 `reference` 编译 corpus，可分别观察三个优化等级的完整四模式编译成本和最终节点数：
+仓库根目录下的 `godori/` 是固定的实际引擎 corpus；内部 conformance fixture 负责覆盖泛型、闭包、variadic helper 和静态 callable 等 DSL 边界。二者共同观察三个优化等级的完整四模式编译成本和最终节点数：
 
 ```bash
-go test ./internal/compiler -run '^$' -bench BenchmarkCompileAll -benchmem
+go test ./godori ./internal/compiler -run '^$' -bench BenchmarkCompileAll -benchmem
 ```
 
-`TestReferenceArtifactScale` 为 reference corpus 设置宽松的结构上限，用于捕获意外的节点规模爆炸；绝对耗时不作为普通 CI 的硬阈值，避免机器负载造成误报。性能改动应在相同机器上多次运行 benchmark 后比较 `ns/op`、内存分配和 `nodes/op`。
+Godori 的端到端测试检查产物结构、节点索引和确定性；绝对耗时不作为普通 CI 的硬阈值，避免机器负载造成误报。性能改动应在相同机器上多次运行 benchmark 后比较 `ns/op`、内存分配和 `nodes/op`。
 
 性能改动必须同时检查：
 

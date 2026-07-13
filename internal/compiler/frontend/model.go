@@ -32,6 +32,8 @@ type ConfigurationDeclaration struct {
 	Variable    string
 	Pos         token.Position
 	Value       *resource.EngineConfiguration
+	OptionIDs   map[*types.Var]int
+	Defaults    map[*types.Var]float64
 }
 
 type ModeResources struct {

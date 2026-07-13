@@ -1,0 +1,250 @@
+package main
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"runtime/debug"
+	"strconv"
+)
+
+func TestParseMode(t *testing.T) {
+	tests := []struct {
+		input string
+		want  Mode
+		err   bool
+	}{
+		{"play", ModePlay, false},
+		{"watch", ModeWatch, false},
+		{"preview", ModePreview, false},
+		{"tutorial", ModeTutorial, false},
+		{"all", ModeAll, false},
+		{"", "", true},
+		{"unknown", "", true},
+		{"PLAY", "", true},
+	}
+	for _, tt := range tests {
+		got, err := ParseMode(tt.input)
+		if tt.err && err == nil {
+			t.Errorf("ParseMode(%q): expected error, got %v", tt.input, got)
+		}
+		if !tt.err && err != nil {
+			t.Errorf("ParseMode(%q): unexpected error: %v", tt.input, err)
+		}
+		if !tt.err && got != tt.want {
+			t.Errorf("ParseMode(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestModeExpand(t *testing.T) {
+	if len(ModePlay.Expand()) != 1 || ModePlay.Expand()[0] != ModePlay {
+		t.Error("single mode should expand to itself")
+	}
+	got := ModeAll.Expand()
+	if len(got) != 4 {
+		t.Fatalf("ModeAll.Expand() len = %d, want 4", len(got))
+	}
+	for i, m := range []Mode{ModePlay, ModeWatch, ModePreview, ModeTutorial} {
+		if got[i] != m {
+			t.Errorf("ModeAll.Expand()[%d] = %v, want %v", i, got[i], m)
+		}
+	}
+}
+
+func TestAllModeNames(t *testing.T) {
+	names := allModeNames()
+	if len(names) != 4 {
+		t.Fatalf("allModeNames() len = %d, want 4", len(names))
+	}
+	for i, want := range []string{"play", "watch", "preview", "tutorial"} {
+		if names[i] != want {
+			t.Errorf("allModeNames()[%d] = %q, want %q", i, names[i], want)
+		}
+	}
+}
+
+func TestMode_String(t *testing.T) {
+	tests := []struct {
+		mode Mode
+		want string
+	}{
+		{ModePlay, "play"},
+		{ModeWatch, "watch"},
+		{ModePreview, "preview"},
+		{ModeTutorial, "tutorial"},
+		{ModeAll, "all"},
+	}
+	for _, tt := range tests {
+		if got := tt.mode.String(); got != tt.want {
+			t.Errorf("Mode(%q).String() = %q, want %q", tt.mode, got, tt.want)
+		}
+	}
+}
+
+func TestParseOptLevel(t *testing.T) {
+	tests := []struct {
+		input   int
+		want    compiler.OptimizationLevel
+		wantErr bool
+	}{
+		{0, compiler.OptimizationMinimal, false},
+		{1, compiler.OptimizationFast, false},
+		{2, compiler.OptimizationStandard, false},
+		{-1, 0, true},
+		{3, 0, true},
+	}
+	for _, tt := range tests {
+		got, err := parseOptLevel(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("parseOptLevel(%d) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+		}
+		if !tt.wantErr && got != tt.want {
+			t.Errorf("parseOptLevel(%d) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestRunCLIParsesSubcommandFlags(t *testing.T) {
+	err := runCLI([]string{"build", "-o", "fixture", "-O", "3", "./testdata/multimode"})
+	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCLIDevCommand(t *testing.T) {
+	err := runCLI([]string{"dev", "-unknown"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -unknown") {
+		t.Fatalf("dev command was not parsed: %v", err)
+	}
+
+	err = runCLI([]string{"serve"})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "serve"`) {
+		t.Fatalf("legacy serve command remains available: %v", err)
+	}
+}
+
+func TestRunCLIVetCommand(t *testing.T) {
+	err := runCLI([]string{"vet", "-m", "invalid"})
+	if err == nil || !strings.Contains(err.Error(), "unknown mode: invalid") {
+		t.Fatalf("vet command was not parsed: %v", err)
+	}
+
+	err = runCLI([]string{"vet", "-unknown"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -unknown") {
+		t.Fatalf("vet flags were not parsed: %v", err)
+	}
+}
+
+func TestRunCLIListCommandRejectsFlags(t *testing.T) {
+	err := runCLI([]string{"list", "-m", "play"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -m") {
+		t.Fatalf("list unexpectedly accepted flags: %v", err)
+	}
+}
+
+func TestRunCLIRejectsLegacyCheckAndSchemaCommands(t *testing.T) {
+	for _, command := range []string{"check", "schema"} {
+		err := runCLI([]string{command})
+		if err == nil || !strings.Contains(err.Error(), `unknown command "`+command+`"`) {
+			t.Errorf("legacy command %q remains available: %v", command, err)
+		}
+	}
+}
+
+func TestCompilerMode(t *testing.T) {
+	tests := []struct {
+		mode Mode
+		want compiler.Mode
+	}{
+		{ModePlay, compiler.ModePlay},
+		{ModeWatch, compiler.ModeWatch},
+		{ModePreview, compiler.ModePreview},
+		{ModeTutorial, compiler.ModeTutorial},
+		{Mode("unknown"), compiler.ModePlay},
+	}
+	for _, tt := range tests {
+		if got := tt.mode.CompilerMode(); got != tt.want {
+			t.Errorf("CompilerMode() = %v, want %v", got, tt.want)
+		}
+	}
+}
+func TestResolveBuildMetadataPrefersInjectedValues(t *testing.T) {
+	info := &debug.BuildInfo{
+		Main: debug.Module{Version: "v2.0.0-rc2"},
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "fallback-commit"},
+			{Key: "vcs.time", Value: "fallback-date"},
+		},
+	}
+
+	got := resolveBuildMetadata("2.0.0-rc2", "release-commit", "release-date", info)
+	want := buildMetadata{version: "2.0.0-rc2", commit: "release-commit", date: "release-date"}
+	if got != want {
+		t.Fatalf("resolveBuildMetadata() = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolveBuildMetadataUsesModuleVersion(t *testing.T) {
+	info := &debug.BuildInfo{Main: debug.Module{Version: "v2.0.0-rc1"}}
+
+	got := resolveBuildMetadata("dev", "unknown", "unknown", info)
+	want := buildMetadata{version: "2.0.0-rc1", commit: "unknown", date: "unknown"}
+	if got != want {
+		t.Fatalf("resolveBuildMetadata() = %#v, want %#v", got, want)
+	}
+	if formatted := got.String(); formatted != "sonolus-go 2.0.0-rc1" {
+		t.Fatalf("String() = %q", formatted)
+	}
+}
+
+func TestResolveBuildMetadataUsesVCSSettings(t *testing.T) {
+	info := &debug.BuildInfo{
+		Main: debug.Module{Version: "(devel)"},
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "local-commit"},
+			{Key: "vcs.time", Value: "2026-07-13T00:00:00Z"},
+		},
+	}
+
+	got := resolveBuildMetadata("dev", "unknown", "unknown", info)
+	if formatted := got.String(); formatted != "sonolus-go dev (commit local-commit, built 2026-07-13T00:00:00Z)" {
+		t.Fatalf("String() = %q", formatted)
+	}
+}
+
+func TestBuildMetadataStringOmitsUnavailableFields(t *testing.T) {
+	metadata := buildMetadata{version: "dev", commit: "local-commit", date: "unknown"}
+	if got := metadata.String(); got != "sonolus-go dev (commit local-commit)" {
+		t.Fatalf("String() = %q", got)
+	}
+}
+func TestCLICompilerImportsStayAtPublicBoundary(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{
+		"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler": true,
+	}
+	for _, filename := range files {
+		file, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", filename, err)
+		}
+		for _, spec := range file.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				t.Fatalf("unquote import in %s: %v", filename, err)
+			}
+			const compilerPrefix = "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
+			if len(path) >= len(compilerPrefix) && path[:len(compilerPrefix)] == compilerPrefix && !allowed[path] {
+				t.Errorf("%s imports compiler implementation package %q", filename, path)
+			}
+		}
+	}
+}

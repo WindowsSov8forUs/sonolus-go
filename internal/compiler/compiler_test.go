@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 )
@@ -44,7 +46,7 @@ func TestCompilerSchemaUsesDeclarationsWithoutLoweringCallbacks(t *testing.T) {
 	if _, err := compiler.Compile(mode.ModePlay); err == nil {
 		t.Fatal("callback lowering unexpectedly succeeded")
 	}
-	// A caller cannot mutate the cached schema.
+
 	schema.Archetypes[0].Name = "mutated"
 	again, err := compiler.Schema()
 	if err != nil || again.Archetypes[0].Name != "Note" {
@@ -103,29 +105,6 @@ func TestCompilerFailureDoesNotCommitCandidateMode(t *testing.T) {
 	}
 	if before.Play == nil || after.Play == nil || after.Watch != nil {
 		t.Fatalf("failed candidate was committed: %#v", after)
-	}
-}
-
-func TestCompilerSupportsAllOptimizationLevels(t *testing.T) {
-	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
-		compiler := NewCompiler(Options{Optimization: level}, "./testdata/multimode")
-		if _, err := compiler.Compile(mode.ModePlay); err != nil {
-			t.Fatalf("optimization level %d: %v", level, err)
-		}
-	}
-}
-
-func TestCompilerBuildsAllModesAtEveryOptimizationLevel(t *testing.T) {
-	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
-		t.Run(level.String(), func(t *testing.T) {
-			artifacts, err := NewCompiler(Options{Optimization: level}, "./testdata/reference").CompileAll()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if artifacts.Play == nil || artifacts.Watch == nil || artifacts.Preview == nil || artifacts.Tutorial == nil {
-				t.Fatalf("level %d produced incomplete artifacts", level)
-			}
-		})
 	}
 }
 
@@ -258,5 +237,76 @@ func TestCompilerStatsAndSourceFiles(t *testing.T) {
 	}
 	if stats := compiler.Stats(); !stats.Cached {
 		t.Fatalf("cached stats = %#v", stats)
+	}
+}
+func TestDiscoverTargets(t *testing.T) {
+	targets, err := DiscoverTargets(ModePlay, "./testdata/multimode", "./testdata/conformance", "./mode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("targets = %#v", targets)
+	}
+	if targets[0].PackagePath >= targets[1].PackagePath {
+		t.Fatalf("targets are not sorted: %#v", targets)
+	}
+	for _, target := range targets {
+		if target.ModulePath != "github.com/WindowsSov8forUs/sonolus-go/v2" {
+			t.Fatalf("module path = %q", target.ModulePath)
+		}
+	}
+}
+
+func TestDiscoverTargetsRejectsNoEngine(t *testing.T) {
+	if _, err := DiscoverTargets(ModePlay, "./mode"); err == nil {
+		t.Fatal("non-main package was accepted as an engine")
+	}
+}
+func TestOptimizeProjectCopiesDeclarationsAndIR(t *testing.T) {
+	voidType := ir.Type{Name: "void"}
+	callback := &frontend.CallbackDeclaration{Name: "update", IR: &ir.Function{
+		Name: "update", Result: voidType, Entry: 0,
+		Blocks: []*ir.Block{
+			{ID: 0, Terminator: ir.Branch{Condition: ir.Const{Value: 1}, True: 1, False: 2}},
+			{ID: 1, Terminator: ir.Return{Value: ir.Value{Type: voidType}}},
+			{ID: 2, Terminator: ir.Return{Value: ir.Value{Type: voidType}}},
+		},
+	}}
+	archetype := &frontend.ArchetypeDeclaration{Name: "Note", Callbacks: []*frontend.CallbackDeclaration{callback}}
+	declarations := &frontend.ModeDeclarations{Mode: mode.ModePlay, Archetypes: []*frontend.ArchetypeDeclaration{archetype}}
+	project := &frontend.Project{Modes: map[mode.Mode]*frontend.ModeDeclarations{mode.ModePlay: declarations}}
+
+	result, err := optimizeProject(optimize.NewOptimizer(0), project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	optimized := result.Modes[mode.ModePlay].Archetypes[0].Callbacks[0]
+	if result == project || result.Modes[mode.ModePlay] == declarations || result.Modes[mode.ModePlay].Archetypes[0] == archetype || optimized == callback || optimized.IR == callback.IR {
+		t.Fatal("optimized project shares mutable declaration or IR containers")
+	}
+	if len(optimized.IR.Blocks) != 1 {
+		t.Fatalf("optimized blocks = %d", len(optimized.IR.Blocks))
+	}
+	if len(callback.IR.Blocks) != 3 {
+		t.Fatal("frontend callback IR was modified")
+	}
+}
+func TestInternalConformanceFixtureCompilesAtEveryOptimizationLevel(t *testing.T) {
+	pattern := "./testdata/conformance"
+	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+		t.Run(level.String(), func(t *testing.T) {
+			artifacts, err := NewCompiler(Options{Optimization: level}, pattern).CompileAll()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, data := range map[string]any{
+				"play": artifacts.Play, "watch": artifacts.Watch,
+				"preview": artifacts.Preview, "tutorial": artifacts.Tutorial,
+			} {
+				if _, err := normalizeEngineData(data); err != nil {
+					t.Fatalf("%s node graph: %v", name, err)
+				}
+			}
+		})
 	}
 }

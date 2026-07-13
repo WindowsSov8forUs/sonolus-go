@@ -43,8 +43,7 @@ func TestNodeSerializationByteExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Nodes must serialize identically to the reference: value nodes as
-	// {"value":n}, function nodes as {"func":...,"args":[...]}, children first.
+
 	want := `"nodes":[{"value":1000},{"value":0},{"func":"Get","args":[0,1]}]`
 	if !strings.Contains(string(b), want) {
 		t.Errorf("nodes serialization mismatch.\ngot: %s\nwant substring: %s", b, want)
@@ -94,7 +93,7 @@ func TestPackageAnyNilInput(t *testing.T) {
 	if len(blob) == 0 {
 		t.Error("PackageAny(nil) returned empty blob")
 	}
-	// Verify it round-trips.
+
 	_, err = codec.Decompress[json.RawMessage](blob)
 	if err != nil {
 		t.Errorf("PackageAny(nil) output not valid gzip JSON: %v", err)
@@ -102,7 +101,7 @@ func TestPackageAnyNilInput(t *testing.T) {
 }
 
 func TestPackageRoundTripError(t *testing.T) {
-	// Decompress valid output from Compress.
+
 	data := tinyPlayData(t)
 	blob, err := codec.Compress(data)
 	if err != nil {
@@ -130,7 +129,7 @@ func TestROMInvalidFile(t *testing.T) {
 func TestROMTruncatedFile(t *testing.T) {
 	dir := t.TempDir()
 	truncROM := filepath.Join(dir, "trunc.rom")
-	// Write 5 bytes (not divisible by 4 — float32 requires 4-byte alignment).
+
 	if err := os.WriteFile(truncROM, []byte{0, 0, 0, 0, 0}, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +159,6 @@ func TestPackageNonPlay_Write(t *testing.T) {
 		t.Fatalf("DefaultROMBytes: %v", err)
 	}
 
-	// Preview mode
 	previewData := &resource.EnginePreviewData{
 		Skin:  resource.EngineSkinData{},
 		Nodes: []resource.EngineDataNode{},
@@ -240,8 +238,8 @@ func TestWriteAtomicReplacesCompleteSnapshot(t *testing.T) {
 func TestBuildROMFromFile_Valid(t *testing.T) {
 	dir := t.TempDir()
 	romPath := filepath.Join(dir, "valid.rom")
-	// Write 8 bytes (2 float32 values).
-	data := []byte{0, 0, 0x80, 0x3F, 0, 0, 0, 0x40} // 1.0, 2.0 in little-endian
+
+	data := []byte{0, 0, 0x80, 0x3F, 0, 0, 0, 0x40}
 	if err := os.WriteFile(romPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +247,7 @@ func TestBuildROMFromFile_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildROMFromFile: %v", err)
 	}
-	// BuildROMFromFile returns gzipped bytes, not raw float32 values.
+
 	if len(rom) == 0 {
 		t.Fatal("ROM bytes should not be empty")
 	}
@@ -260,10 +258,73 @@ func TestDefaultROM(t *testing.T) {
 	if len(rom) == 0 {
 		t.Error("DefaultROM should have entries for non-finite float values")
 	}
-	// Verify all entries are non-finite (NaN/Inf).
+
 	for _, v := range rom {
 		if !(v != v || v > 3e38 || v < -3e38) {
 			t.Errorf("expected non-finite ROM value, got %v", v)
 		}
 	}
+}
+
+// TestEndToEndPlay verifies that a compiled play artifact can be packaged,
+// written, and decoded without changing its schema.
+func TestEndToEndPlay(t *testing.T) {
+	data := &resource.EnginePlayData{
+		Skin:     resource.EngineSkinData{},
+		Effect:   resource.EngineEffectData{},
+		Particle: resource.EngineParticleData{},
+		Buckets:  []resource.EngineDataBucket{},
+		Archetypes: []resource.EnginePlayDataArchetype{{
+			Name:       "Note",
+			HasInput:   true,
+			Imports:    []resource.EngineDataArchetypeImport{},
+			Exports:    []resource.EngineArchetypeDataName{},
+			Initialize: &resource.EnginePlayDataArchetypeCallback{Index: 0},
+		}},
+		Nodes: []resource.EngineDataNode{resource.EngineDataValueNode{Value: 1}},
+	}
+
+	pkg, err := PackagePlay(&resource.EngineConfiguration{}, data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "engine")
+	if err := pkg.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	blob, err := os.ReadFile(filepath.Join(dir, FilePlayData))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := codec.Decompress[resource.EnginePlayData](blob)
+	if err != nil {
+		t.Fatalf("decompress written file: %v", err)
+	}
+	if len(got.Archetypes) != 1 {
+		t.Errorf("archetypes = %d, want 1", len(got.Archetypes))
+	}
+	if len(got.Nodes) == 0 {
+		t.Errorf("expected non-empty nodes")
+	}
+	t.Logf("end-to-end play engine: %d nodes", len(got.Nodes))
+}
+
+// TestReadRealEngineData validates that our types + codec correctly read a real,
+// already-built engine produced by the reference toolchain. Skipped if the
+// local fixture is unavailable.
+func TestReadRealEngineData(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "sonolus-notgarupa-engine", "dist", "notgarupa", "previewData")
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("real engine fixture not available: %v", err)
+	}
+	data, err := codec.Decompress[resource.EnginePreviewData](blob)
+	if err != nil {
+		t.Fatalf("decompress real previewData: %v", err)
+	}
+	if len(data.Nodes) == 0 || len(data.Archetypes) == 0 {
+		t.Fatalf("real previewData looks empty: %d nodes, %d archetypes", len(data.Nodes), len(data.Archetypes))
+	}
+	t.Logf("read real notgarupa previewData: %d nodes, %d archetypes", len(data.Nodes), len(data.Archetypes))
 }

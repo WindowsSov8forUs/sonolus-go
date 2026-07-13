@@ -1,0 +1,54 @@
+{
+  "bgmOffset": 0,
+  "entities": [
+    {
+      "name": "bpm",
+      "archetype": "#BPM_CHANGE",
+      "data": [
+        { "name": "#BEAT", "value": 0 },
+        { "name": "#BPM", "value": 120 }
+      ]
+    },
+    { "name": "stage", "archetype": "Stage", "data": [] },
+    {
+      "name": "tap-1",
+      "archetype": "TapNote",
+      "data": [
+        { "name": "#BEAT", "value": 2 },
+        { "name": "lane", "value": -2 }
+      ]
+    },
+    {
+      "name": "tap-2",
+      "archetype": "TapNote",
+      "data": [
+        { "name": "#BEAT", "value": 4 },
+        { "name": "lane", "value": 0 }
+      ]
+    },
+    {
+      "name": "tap-3",
+      "archetype": "TapNote",
+      "data": [
+        { "name": "#BEAT", "value": 6 },
+        { "name": "lane", "value": 2 }
+      ]
+    },
+    {
+      "name": "tap-4",
+      "archetype": "TapNote",
+      "data": [
+        { "name": "#BEAT", "value": 8 },
+        { "name": "lane", "value": -1 }
+      ]
+    },
+    {
+      "name": "tap-5",
+      "archetype": "TapNote",
+      "data": [
+        { "name": "#BEAT", "value": 10 },
+        { "name": "lane", "value": 1 }
+      ]
+    }
+  ]
+}
