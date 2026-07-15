@@ -80,9 +80,9 @@ func dominanceFor(context Context, function *ir.Function) *Dominance {
 	return ComputeDominance(function)
 }
 
-func interferenceFor(context Context, function *ir.Function) []map[int]bool {
+func interferenceFor(context Context, function *ir.Function) interferenceGraph {
 	if context.analyses != nil {
-		if value, ok := context.analyses.values[AnalysisLiveness].([]map[int]bool); ok {
+		if value, ok := context.analyses.values[AnalysisLiveness].(interferenceGraph); ok {
 			return value
 		}
 	}
@@ -107,6 +107,14 @@ type ManagedPass interface {
 	Requires() []Analysis
 	Preserves() []Analysis
 	Destroys() []Analysis
+}
+
+type conservativeManagedPass struct{ Pass }
+
+func (conservativeManagedPass) Requires() []Analysis  { return nil }
+func (conservativeManagedPass) Preserves() []Analysis { return nil }
+func (conservativeManagedPass) Destroys() []Analysis {
+	return []Analysis{AnalysisDominance, AnalysisSSA, AnalysisLiveness}
 }
 
 type Optimizer struct {
@@ -144,6 +152,11 @@ func NewOptimizer(level Level) *Optimizer {
 			Allocate{}, RenumberBlocks{},
 		}
 	}
+	for index, pass := range optimizer.passes {
+		if _, managed := pass.(ManagedPass); !managed {
+			optimizer.passes[index] = conservativeManagedPass{Pass: pass}
+		}
+	}
 	return optimizer
 }
 
@@ -161,12 +174,13 @@ func (o *Optimizer) Optimize(context Context, function *ir.Function) (*ir.Functi
 	if err := o.Validate(); err != nil {
 		return nil, fmt.Errorf("optimize %s: %w", contextLabel(context, function), err)
 	}
-	if err := ir.Validate(function); err != nil {
+	validator := new(ir.Validator)
+	if err := validator.Validate(function); err != nil {
 		return nil, fmt.Errorf("optimize %s input: %w", contextLabel(context, function), err)
 	}
 	result := CloneFunction(function)
 	context.analyses = newAnalysisManager()
-	for _, pass := range o.passes {
+	for passIndex, pass := range o.passes {
 		if managed, ok := pass.(ManagedPass); ok {
 			for _, required := range managed.Requires() {
 				if err := context.analyses.ensure(required, result); err != nil {
@@ -177,8 +191,14 @@ func (o *Optimizer) Optimize(context Context, function *ir.Function) (*ir.Functi
 		if err := pass.Run(context, result); err != nil {
 			return nil, fmt.Errorf("optimize %s pass %s: %w", contextLabel(context, function), pass.Name(), err)
 		}
-		if err := ir.Validate(result); err != nil {
-			return nil, fmt.Errorf("optimize %s pass %s produced invalid IR: %w", contextLabel(context, function), pass.Name(), err)
+		var validationErr error
+		if passIndex == len(o.passes)-1 {
+			validationErr = validator.ValidateFinal(result)
+		} else {
+			validationErr = validator.Validate(result)
+		}
+		if validationErr != nil {
+			return nil, fmt.Errorf("optimize %s pass %s produced invalid IR: %w", contextLabel(context, function), pass.Name(), validationErr)
 		}
 		if managed, ok := pass.(ManagedPass); ok {
 			context.analyses.invalidateExcept(managed.Preserves())
@@ -188,9 +208,6 @@ func (o *Optimizer) Optimize(context Context, function *ir.Function) (*ir.Functi
 		} else {
 			context.analyses.invalidateExcept(nil)
 		}
-	}
-	if err := ir.ValidateFinal(result); err != nil {
-		return nil, fmt.Errorf("optimize %s final form: %w", contextLabel(context, function), err)
 	}
 	return result, nil
 }

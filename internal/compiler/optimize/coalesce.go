@@ -4,11 +4,16 @@ import "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 
 type CoalesceFlow struct{}
 
+func (CoalesceFlow) Requires() []Analysis  { return nil }
+func (CoalesceFlow) Preserves() []Analysis { return []Analysis{AnalysisLiveness} }
+func (CoalesceFlow) Destroys() []Analysis  { return nil }
+
 func (CoalesceFlow) Name() string { return "CoalesceFlow" }
 
 func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 	for {
 		predecessors := predecessorCounts(function)
+		cycles := cyclicBlocks(function)
 		changed := false
 
 		for _, block := range function.Blocks {
@@ -16,7 +21,7 @@ func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 				continue
 			}
 			jump, ok := block.Terminator.(ir.Jump)
-			if !ok || jump.Target == block.ID || len(function.Blocks[jump.Target].Phis) != 0 || inCycle(function, block.ID) {
+			if !ok || jump.Target == block.ID || len(function.Blocks[jump.Target].Phis) != 0 || cycles[block.ID] {
 				continue
 			}
 			replaceTarget(function, block.ID, jump.Target)
@@ -32,7 +37,7 @@ func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 
 		for _, block := range function.Blocks {
 			jump, ok := block.Terminator.(ir.Jump)
-			if !ok || jump.Target == block.ID || jump.Target == function.Entry || predecessors[jump.Target] != 1 || inCycle(function, jump.Target) {
+			if !ok || jump.Target == block.ID || jump.Target == function.Entry || predecessors[jump.Target] != 1 || cycles[jump.Target] {
 				continue
 			}
 			target := function.Blocks[jump.Target]
@@ -46,7 +51,7 @@ func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 			}
 			block.Instructions = append(block.Instructions, target.Instructions...)
 			block.Terminator = target.Terminator
-			for _, successor := range terminatorTargets(block.Terminator) {
+			forEachTerminatorTarget(block.Terminator, func(successor int) {
 				for i := range function.Blocks[successor].Phis {
 					for j := range function.Blocks[successor].Phis[i].Args {
 						if function.Blocks[successor].Phis[i].Args[j].Predecessor == target.ID {
@@ -54,7 +59,7 @@ func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 						}
 					}
 				}
-			}
+			})
 			changed = true
 			break
 		}
@@ -70,11 +75,11 @@ func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 func predecessorCounts(function *ir.Function) []int {
 	result := make([]int, len(function.Blocks))
 	for _, block := range function.Blocks {
-		for _, target := range terminatorTargets(block.Terminator) {
+		forEachTerminatorTarget(block.Terminator, func(target int) {
 			if target >= 0 && target < len(result) {
 				result[target]++
 			}
-		}
+		})
 	}
 	return result
 }
@@ -109,27 +114,62 @@ func replaceTarget(function *ir.Function, from, to int) {
 	}
 }
 
-func inCycle(function *ir.Function, id int) bool {
-	for _, target := range terminatorTargets(function.Blocks[id].Terminator) {
-		if reaches(function, target, id, map[int]bool{}) {
-			return true
+func cyclicBlocks(function *ir.Function) []bool {
+	count := len(function.Blocks)
+	indices := make([]int, count)
+	lowLink := make([]int, count)
+	onStack := make([]bool, count)
+	for index := range indices {
+		indices[index] = -1
+	}
+	stack := make([]int, 0, count)
+	cycles := make([]bool, count)
+	nextIndex := 0
+	var visit func(int)
+	visit = func(block int) {
+		indices[block], lowLink[block] = nextIndex, nextIndex
+		nextIndex++
+		stack = append(stack, block)
+		onStack[block] = true
+		forEachTerminatorTarget(function.Blocks[block].Terminator, func(target int) {
+			if target < 0 || target >= count {
+				return
+			}
+			if indices[target] < 0 {
+				visit(target)
+				lowLink[block] = min(lowLink[block], lowLink[target])
+			} else if onStack[target] {
+				lowLink[block] = min(lowLink[block], indices[target])
+			}
+		})
+		if lowLink[block] != indices[block] {
+			return
+		}
+		start := len(stack) - 1
+		for start > 0 && stack[start] != block {
+			start--
+		}
+		component := stack[start:]
+		stack = stack[:start]
+		for _, member := range component {
+			onStack[member] = false
+		}
+		if len(component) > 1 {
+			for _, member := range component {
+				cycles[member] = true
+			}
+			return
+		}
+		forEachTerminatorTarget(function.Blocks[block].Terminator, func(target int) {
+			if target == block {
+				cycles[block] = true
+			}
+		})
+	}
+	for block := range function.Blocks {
+		if indices[block] < 0 {
+			visit(block)
 		}
 	}
-	return false
-}
-
-func reaches(function *ir.Function, current, target int, seen map[int]bool) bool {
-	if current == target {
-		return true
-	}
-	if current < 0 || current >= len(function.Blocks) || seen[current] {
-		return false
-	}
-	seen[current] = true
-	for _, next := range terminatorTargets(function.Blocks[current].Terminator) {
-		if reaches(function, next, target, seen) {
-			return true
-		}
-	}
-	return false
+	return cycles
 }

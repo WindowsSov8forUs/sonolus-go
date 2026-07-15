@@ -142,7 +142,7 @@ func (ToSSA) Run(context Context, function *ir.Function) error {
 			}
 			block.Terminator = v
 		}
-		for _, succ := range terminatorTargets(block.Terminator) {
+		forEachTerminatorTarget(block.Terminator, func(succ int) {
 			for i := range function.Blocks[succ].Phis {
 				k := key{function.Blocks[succ].Phis[i].Local.ID, function.Blocks[succ].Phis[i].Local.Offset}
 				s := stacks[k]
@@ -150,7 +150,7 @@ func (ToSSA) Run(context Context, function *ir.Function) error {
 					function.Blocks[succ].Phis[i].Args = append(function.Blocks[succ].Phis[i].Args, ir.PhiArg{Predecessor: id, Value: s[len(s)-1]})
 				}
 			}
-		}
+		})
 		for _, child := range dom.Children[id] {
 			rename(child)
 		}
@@ -255,14 +255,14 @@ func (FromSSA) Run(_ Context, function *ir.Function) error {
 		}
 		block.Phis = nil
 	}
-	rewriteSSA := func(expr ir.Expr) ir.Expr {
+	rewriteSSA := func(expr ir.Expr) (ir.Expr, bool) {
 		if load, ok := expr.(ir.Load); ok {
 			if p, ok := load.Place.(ir.SSAPlace); ok {
 				load.Place = placeFor(p)
-				return load
+				return load, true
 			}
 		}
-		return expr
+		return expr, false
 	}
 	for _, block := range function.Blocks {
 		for i, in := range block.Instructions {
@@ -270,12 +270,11 @@ func (FromSSA) Run(_ Context, function *ir.Function) error {
 				if p, ok := store.Place.(ir.SSAPlace); ok {
 					store.Place = placeFor(p)
 				}
-				store.Value = rewriteExpr(store.Value, rewriteSSA)
 				block.Instructions[i] = store
 			}
 		}
 	}
-	rewriteFunctionExpressions(function, rewriteSSA)
+	rewriteFunctionExpressionsChanged(function, rewriteSSA)
 	return nil
 }
 
@@ -289,7 +288,7 @@ func splitPhiCriticalEdges(function *ir.Function) {
 		for _, phi := range block.Phis {
 			for _, arg := range phi.Args {
 				key := edge{from: arg.Predecessor, to: block.ID}
-				if _, exists := edges[key]; exists || len(terminatorTargets(function.Blocks[arg.Predecessor].Terminator)) <= 1 {
+				if _, exists := edges[key]; exists || terminatorTargetCount(function.Blocks[arg.Predecessor].Terminator) <= 1 {
 					continue
 				}
 				id := len(function.Blocks)

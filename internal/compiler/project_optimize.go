@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -58,23 +59,33 @@ func optimizeProject(optimizer *optimize.Optimizer, project *frontend.Project) (
 	}
 
 	var wg sync.WaitGroup
-	for _, job := range jobs {
-		wg.Add(1)
-		go func(job *callbackOptimization) {
-			defer wg.Done()
-			if job.callback == nil {
-				job.err = fmt.Errorf("callback declaration is nil")
-				return
-			}
-			function, err := optimizer.Optimize(optimize.Context{Mode: job.mode, Callback: job.callback.Name}, job.callback.IR)
-			if err != nil {
-				job.err = err
-				return
-			}
-			cloned := *job.callback
-			cloned.IR = function
-			job.result = &cloned
-		}(job)
+	if len(jobs) != 0 {
+		workers := min(runtime.GOMAXPROCS(0), len(jobs))
+		jobQueue := make(chan *callbackOptimization)
+		for range workers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for job := range jobQueue {
+					if job.callback == nil {
+						job.err = fmt.Errorf("callback declaration is nil")
+						continue
+					}
+					function, err := optimizer.Optimize(optimize.Context{Mode: job.mode, Callback: job.callback.Name}, job.callback.IR)
+					if err != nil {
+						job.err = err
+						continue
+					}
+					cloned := *job.callback
+					cloned.IR = function
+					job.result = &cloned
+				}
+			}()
+		}
+		for _, job := range jobs {
+			jobQueue <- job
+		}
+		close(jobQueue)
 	}
 	wg.Wait()
 

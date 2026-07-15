@@ -17,12 +17,19 @@ if ($LASTEXITCODE -ne 0) {
     throw "Python optimizer harness failed with exit code $LASTEXITCODE"
 }
 $generated = ($output -join "`n") | ConvertFrom-Json
+$pipelineHarness = Join-Path $root "internal/compiler/testdata/optimize/harness_pipeline.py"
+$pipelineOutput = python $pipelineHarness
+if ($LASTEXITCODE -ne 0) {
+    throw "Python optimizer pipeline harness failed with exit code $LASTEXITCODE"
+}
+$pipeline = ($pipelineOutput -join "`n") | ConvertFrom-Json
 $snapshot = [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 4
     pythonCommit = $expected
     ssaCases = $generated.ssaCases
     sccpCases = $generated.sccpCases
     fromSSACases = $generated.fromSSACases
+    pipelineCases = $pipeline
 }
 $golden = Join-Path $PSScriptRoot "py_pass_golden.json"
 [System.IO.File]::WriteAllText(

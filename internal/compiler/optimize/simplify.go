@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
 
@@ -47,21 +48,22 @@ type FlattenAssociativeOps struct{}
 
 func (FlattenAssociativeOps) Name() string { return "FlattenAssociativeOps" }
 func (FlattenAssociativeOps) Run(_ Context, f *ir.Function) error {
-	rewriteFunctionExpressions(f, flattenExpr)
+	rewriteFunctionExpressionsChanged(f, flattenExprChanged)
 	return nil
 }
-func flattenExpr(e ir.Expr) ir.Expr {
+func flattenExprChanged(e ir.Expr) (ir.Expr, bool) {
 	call, ok := e.(ir.RuntimeCall)
 	if !ok || !flattenable(call.Function) {
-		return e
+		return e, false
 	}
 	if len(call.Args) == 0 {
-		return call
+		return call, false
 	}
 	if child, ok := call.Args[0].(ir.RuntimeCall); ok && child.Function == call.Function && child.Pure {
 		call.Args = append(append([]ir.Expr(nil), child.Args...), call.Args[1:]...)
+		return call, true
 	}
-	return call
+	return call, false
 }
 func flattenable(op resource.RuntimeFunction) bool {
 	switch op {
@@ -75,16 +77,16 @@ type UnflattenAssociativeOps struct{}
 
 func (UnflattenAssociativeOps) Name() string { return "UnflattenAssociativeOps" }
 func (UnflattenAssociativeOps) Run(_ Context, f *ir.Function) error {
-	rewriteFunctionExpressions(f, func(e ir.Expr) ir.Expr {
+	rewriteFunctionExpressionsChanged(f, func(e ir.Expr) (ir.Expr, bool) {
 		call, ok := e.(ir.RuntimeCall)
 		if !ok || !flattenable(call.Function) || len(call.Args) <= 2 {
-			return e
+			return e, false
 		}
 		result := ir.Expr(ir.RuntimeCall{Function: call.Function, Args: []ir.Expr{call.Args[0], call.Args[1]}, Result: call.Result, Pure: call.Pure, Pos: call.Pos})
 		for _, a := range call.Args[2:] {
 			result = ir.RuntimeCall{Function: call.Function, Args: []ir.Expr{result, a}, Result: call.Result, Pure: call.Pure, Pos: call.Pos}
 		}
-		return result
+		return result, true
 	})
 	return nil
 }
@@ -93,13 +95,13 @@ type RemoveRedundantArguments struct{}
 
 func (RemoveRedundantArguments) Name() string { return "RemoveRedundantArguments" }
 func (RemoveRedundantArguments) Run(_ Context, f *ir.Function) error {
-	rewriteFunctionExpressions(f, simplifyAlgebra)
+	rewriteFunctionExpressionsChanged(f, simplifyAlgebraChanged)
 	return nil
 }
-func simplifyAlgebra(e ir.Expr) ir.Expr {
+func simplifyAlgebraChanged(e ir.Expr) (ir.Expr, bool) {
 	call, ok := e.(ir.RuntimeCall)
 	if !ok || !call.Pure {
-		return e
+		return e, false
 	}
 	is := func(e ir.Expr, v float64) bool { c, ok := e.(ir.Const); return ok && c.Value == v }
 	filterTail := func(identity float64) []ir.Expr {
@@ -114,33 +116,42 @@ func simplifyAlgebra(e ir.Expr) ir.Expr {
 		}
 		return args
 	}
+	changed := false
 	switch call.Function {
 	case resource.RuntimeFunctionAdd, resource.RuntimeFunctionMultiply:
 		identity := float64(0)
 		if call.Function == resource.RuntimeFunctionMultiply {
 			identity = 1
 		}
-		args := call.Args[:0]
+		args := make([]ir.Expr, 0, len(call.Args))
 		for _, arg := range call.Args {
 			if !is(arg, identity) {
 				args = append(args, arg)
+			} else {
+				changed = true
 			}
 		}
-		call.Args = args
+		if changed {
+			call.Args = args
+		}
 	case resource.RuntimeFunctionSubtract, resource.RuntimeFunctionDivide:
 		identity := float64(0)
 		if call.Function == resource.RuntimeFunctionDivide {
 			identity = 1
 		}
-		call.Args = filterTail(identity)
+		args := filterTail(identity)
+		if len(args) != len(call.Args) {
+			call.Args = args
+			changed = true
+		}
 	}
 	if len(call.Args) == 1 {
-		return call.Args[0]
+		return call.Args[0], true
 	}
 	if call.Function == resource.RuntimeFunctionSubtract && len(call.Args) == 2 && is(call.Args[0], 0) {
-		return ir.RuntimeCall{Function: resource.RuntimeFunctionNegate, Args: []ir.Expr{call.Args[1]}, Result: call.Result, Pure: true, Pos: call.Pos}
+		return ir.RuntimeCall{Function: resource.RuntimeFunctionNegate, Args: []ir.Expr{call.Args[1]}, Result: call.Result, Pure: true, Pos: call.Pos}, true
 	}
-	return call
+	return call, changed
 }
 
 type RewriteToSwitch struct{}
@@ -200,6 +211,10 @@ func equalityCase(expr ir.Expr) (ir.Expr, float64, bool) {
 
 type NormalizeSwitch struct{}
 
+func (NormalizeSwitch) Requires() []Analysis  { return nil }
+func (NormalizeSwitch) Preserves() []Analysis { return []Analysis{AnalysisLiveness} }
+func (NormalizeSwitch) Destroys() []Analysis  { return nil }
+
 func (NormalizeSwitch) Name() string { return "NormalizeSwitch" }
 func (NormalizeSwitch) Run(_ Context, f *ir.Function) error {
 	for _, b := range f.Blocks {
@@ -245,6 +260,10 @@ func (NormalizeSwitch) Run(_ Context, f *ir.Function) error {
 
 type CombineExitBlocks struct{}
 
+func (CombineExitBlocks) Requires() []Analysis  { return nil }
+func (CombineExitBlocks) Preserves() []Analysis { return []Analysis{AnalysisLiveness} }
+func (CombineExitBlocks) Destroys() []Analysis  { return nil }
+
 func (CombineExitBlocks) Name() string { return "CombineExitBlocks" }
 func (CombineExitBlocks) Run(c Context, f *ir.Function) error {
 	first := -1
@@ -267,9 +286,12 @@ func (CombineExitBlocks) Run(c Context, f *ir.Function) error {
 
 type CopyCoalesce struct{}
 
-func (CopyCoalesce) Name() string { return "CopyCoalesce" }
-func (CopyCoalesce) Run(_ Context, f *ir.Function) error {
-	interference := localInterference(f)
+func (CopyCoalesce) Name() string          { return "CopyCoalesce" }
+func (CopyCoalesce) Requires() []Analysis  { return []Analysis{AnalysisLiveness} }
+func (CopyCoalesce) Preserves() []Analysis { return []Analysis{AnalysisLiveness} }
+func (CopyCoalesce) Destroys() []Analysis  { return nil }
+func (CopyCoalesce) Run(context Context, f *ir.Function) error {
+	interference := interferenceFor(context, f).clone()
 	parent := make([]int, len(f.Locals))
 	for i := range parent {
 		parent[i] = i
@@ -291,17 +313,16 @@ func (CopyCoalesce) Run(_ Context, f *ir.Function) error {
 				continue
 			}
 			a, b := find(target.ID), find(source.ID)
-			if a != b && !interference[a][b] {
+			if a != b && !interference[a].has(b) {
 				if b < a {
 					a, b = b, a
 				}
 				parent[b] = a
-				for other := range interference[b] {
+				interference[b].each(func(other int) {
 					if other != a {
-						interference[a][other] = true
-						interference[other][a] = true
+						addInterference(interference, a, other)
 					}
-				}
+				})
 			}
 		}
 	}
@@ -334,14 +355,27 @@ func (CopyCoalesce) Run(_ Context, f *ir.Function) error {
 			}
 		}
 	}
-	rewriteFunctionExpressions(f, func(expr ir.Expr) ir.Expr {
+	rewriteFunctionExpressionsChanged(f, func(expr ir.Expr) (ir.Expr, bool) {
 		if load, ok := expr.(ir.Load); ok {
 			load.Place = remap(load.Place)
-			return load
+			return load, true
 		}
-		return expr
+		return expr, false
 	})
 	f.Locals = locals
+	coalesced := newInterferenceGraph(len(locals))
+	for oldID := range interference {
+		left := representatives[find(oldID)]
+		interference[oldID].each(func(other int) {
+			right := representatives[find(other)]
+			if left != right {
+				addInterference(coalesced, left, right)
+			}
+		})
+	}
+	if context.analyses != nil {
+		context.analyses.values[AnalysisLiveness] = coalesced
+	}
 	return (RemoveNoOps{}).Run(Context{}, f)
 }
 
@@ -349,69 +383,181 @@ type LoopInvariantCodeMotion struct{}
 
 func (LoopInvariantCodeMotion) Name() string          { return "LoopInvariantCodeMotion" }
 func (LoopInvariantCodeMotion) Requires() []Analysis  { return []Analysis{AnalysisDominance} }
-func (LoopInvariantCodeMotion) Preserves() []Analysis { return []Analysis{AnalysisDominance} }
-func (LoopInvariantCodeMotion) Destroys() []Analysis  { return []Analysis{AnalysisLiveness} }
+func (LoopInvariantCodeMotion) Preserves() []Analysis { return nil }
+func (LoopInvariantCodeMotion) Destroys() []Analysis {
+	return []Analysis{AnalysisDominance, AnalysisLiveness}
+}
 func (LoopInvariantCodeMotion) Run(context Context, f *ir.Function) error {
 	dom := dominanceFor(context, f)
 	preds := predecessors(f)
+	latchesByHeader := map[int][]int{}
 	for latch, block := range f.Blocks {
-		for _, header := range terminatorTargets(block.Terminator) {
-			if !dominates(dom, header, latch) {
-				continue
+		forEachTerminatorTarget(block.Terminator, func(header int) {
+			if dominates(dom, header, latch) {
+				latchesByHeader[header] = append(latchesByHeader[header], latch)
 			}
-			loop := naturalLoop(preds, header, latch)
-			outside := make([]int, 0, len(preds[header]))
-			for _, predecessor := range preds[header] {
-				if !loop[predecessor] {
-					outside = append(outside, predecessor)
-				}
+		})
+	}
+	headers := make([]int, 0, len(latchesByHeader))
+	for header := range latchesByHeader {
+		headers = append(headers, header)
+	}
+	sort.Ints(headers)
+	for _, header := range headers {
+		latches := latchesByHeader[header]
+		loop := map[int]bool{header: true}
+		for _, latch := range latches {
+			for id := range naturalLoop(preds, header, latch) {
+				loop[id] = true
 			}
-			if len(outside) != 1 {
-				continue
+		}
+		outside := make([]int, 0, len(preds[header]))
+		for _, predecessor := range preds[header] {
+			if !loop[predecessor] {
+				outside = append(outside, predecessor)
 			}
-			preheader := f.Blocks[outside[0]]
-			jump, ok := preheader.Terminator.(ir.Jump)
-			if !ok || jump.Target != header {
-				continue
+		}
+		preheader := licmPreheader(f, header, loop, outside)
+		if preheader == nil {
+			continue
+		}
+		defs := map[int]bool{}
+		loopIDs := make([]int, 0, len(loop))
+		for id := range loop {
+			loopIDs = append(loopIDs, id)
+		}
+		sort.Ints(loopIDs)
+		for _, id := range loopIDs {
+			for _, phi := range f.Blocks[id].Phis {
+				defs[phi.Target.ID] = true
 			}
-			defs := map[int]bool{}
-			loopIDs := make([]int, 0, len(loop))
-			for id := range loop {
-				loopIDs = append(loopIDs, id)
-			}
-			sort.Ints(loopIDs)
-			for _, id := range loopIDs {
-				for _, instruction := range f.Blocks[id].Instructions {
-					if store, ok := instruction.(ir.Store); ok {
-						if place, ok := store.Place.(ir.SSAPlace); ok {
-							defs[place.ID] = true
-						}
+			for _, instruction := range f.Blocks[id].Instructions {
+				if store, ok := instruction.(ir.Store); ok {
+					if place, ok := store.Place.(ir.SSAPlace); ok {
+						defs[place.ID] = true
 					}
 				}
 			}
-			invariant := map[int]bool{}
-			for changed := true; changed; {
-				changed = false
-				for _, id := range loopIDs {
-					instructions := f.Blocks[id].Instructions
-					kept := instructions[:0]
-					for _, instruction := range instructions {
-						store, ok := instruction.(ir.Store)
-						place, isSSA := store.Place.(ir.SSAPlace)
-						if !ok || !isSSA || invariant[place.ID] || !loopInvariantExpr(store.Value, defs, invariant) {
-							kept = append(kept, instruction)
-							continue
-						}
-						preheader.Instructions = append(preheader.Instructions, store)
-						invariant[place.ID] = true
-						changed = true
-					}
-					f.Blocks[id].Instructions = kept
+		}
+		nextSSA := maxSSAID(f) + 1
+		hoisted := map[string]ir.SSAPlace{}
+		var rewrite func(ir.Expr) ir.Expr
+		rewrite = func(expression ir.Expr) ir.Expr {
+			if loopInvariantExpr(context, expression, defs, nil) && expressionCost(expression) >= 4 {
+				key := exprKey(expression)
+				place, exists := hoisted[key]
+				if !exists {
+					place = ir.SSAPlace{ID: nextSSA, Name: "licm"}
+					nextSSA++
+					hoisted[key] = place
+					preheader.Instructions = append(preheader.Instructions, ir.Store{Place: place, Value: cloneExpr(expression)})
 				}
+				return ir.Load{Place: place}
+			}
+			switch value := expression.(type) {
+			case ir.Load:
+				value.Place = rewritePlace(value.Place, rewrite)
+				return value
+			case ir.RuntimeCall:
+				value.Args = append([]ir.Expr(nil), value.Args...)
+				for index := range value.Args {
+					value.Args[index] = rewrite(value.Args[index])
+				}
+				return value
+			default:
+				return expression
+			}
+		}
+		for _, id := range loopIDs {
+			dominatesEveryLatch := true
+			for _, latch := range latches {
+				if !dominates(dom, id, latch) {
+					dominatesEveryLatch = false
+					break
+				}
+			}
+			if !dominatesEveryLatch {
+				continue
+			}
+			block := f.Blocks[id]
+			for index, instruction := range block.Instructions {
+				switch value := instruction.(type) {
+				case ir.Store:
+					value.Place = rewritePlace(value.Place, rewrite)
+					value.Value = rewrite(value.Value)
+					block.Instructions[index] = value
+				case ir.Eval:
+					value.Value = rewrite(value.Value)
+					block.Instructions[index] = value
+				}
+			}
+			switch value := block.Terminator.(type) {
+			case ir.Branch:
+				value.Condition = rewrite(value.Condition)
+				block.Terminator = value
+			case ir.Switch:
+				value.Value = rewrite(value.Value)
+				block.Terminator = value
+			case ir.Return:
+				for index := range value.Value.Slots {
+					value.Value.Slots[index] = rewrite(value.Value.Slots[index])
+				}
+				block.Terminator = value
 			}
 		}
 	}
 	return nil
+}
+
+func licmPreheader(function *ir.Function, header int, loop map[int]bool, outside []int) *ir.Block {
+	if len(outside) == 0 {
+		return nil
+	}
+	sort.Ints(outside)
+	if len(outside) == 1 {
+		candidate := function.Blocks[outside[0]]
+		jump, ok := candidate.Terminator.(ir.Jump)
+		if ok && jump.Target == header && len(candidate.Phis) == 0 {
+			return candidate
+		}
+	}
+
+	id := len(function.Blocks)
+	preheader := &ir.Block{ID: id, Terminator: ir.Jump{Target: header}}
+	function.Blocks = append(function.Blocks, preheader)
+	for _, predecessor := range outside {
+		retargetEdge(function.Blocks[predecessor], header, id)
+	}
+
+	nextSSA := maxSSAID(function) + 1
+	headerBlock := function.Blocks[header]
+	for phiIndex := range headerBlock.Phis {
+		phi := &headerBlock.Phis[phiIndex]
+		outsideArgs := make([]ir.PhiArg, 0, len(outside))
+		loopArgs := phi.Args[:0]
+		for _, argument := range phi.Args {
+			if loop[argument.Predecessor] {
+				loopArgs = append(loopArgs, argument)
+			} else {
+				outsideArgs = append(outsideArgs, argument)
+			}
+		}
+		if len(outsideArgs) == 0 {
+			phi.Args = loopArgs
+			continue
+		}
+		value := outsideArgs[0].Value
+		if len(outsideArgs) > 1 {
+			value = ir.SSAPlace{ID: nextSSA, Name: "licm.preheader"}
+			nextSSA++
+			preheader.Phis = append(preheader.Phis, ir.Phi{Target: value, Local: phi.Local, Args: outsideArgs})
+		}
+		phi.Args = append(loopArgs, ir.PhiArg{Predecessor: id, Value: value})
+		sort.Slice(phi.Args, func(left, right int) bool {
+			return phi.Args[left].Predecessor < phi.Args[right].Predecessor
+		})
+	}
+	return preheader
 }
 
 func dominates(dom *Dominance, ancestor, block int) bool {
@@ -443,19 +589,25 @@ func naturalLoop(preds [][]int, header, latch int) map[int]bool {
 	return result
 }
 
-func loopInvariantExpr(expr ir.Expr, defs, invariant map[int]bool) bool {
+func loopInvariantExpr(context Context, expr ir.Expr, defs, invariant map[int]bool) bool {
 	switch value := expr.(type) {
 	case ir.Const:
 		return true
 	case ir.Load:
-		place, ok := value.Place.(ir.SSAPlace)
-		return ok && (!defs[place.ID] || invariant[place.ID])
+		switch place := value.Place.(type) {
+		case ir.SSAPlace:
+			return !defs[place.ID] || invariant[place.ID]
+		case ir.MemoryPlace:
+			return place.Read && !place.Write && catalog.MemoryReadonly(context.Mode, context.Callback, place.Storage) && loopInvariantExpr(context, place.Index, defs, invariant)
+		default:
+			return false
+		}
 	case ir.RuntimeCall:
 		if !value.Pure {
 			return false
 		}
 		for _, arg := range value.Args {
-			if !loopInvariantExpr(arg, defs, invariant) {
+			if !loopInvariantExpr(context, arg, defs, invariant) {
 				return false
 			}
 		}

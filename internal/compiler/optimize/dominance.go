@@ -88,9 +88,7 @@ func reversePostorder(function *ir.Function) []int {
 			return
 		}
 		seen[id] = true
-		for _, t := range terminatorTargets(function.Blocks[id].Terminator) {
-			visit(t)
-		}
+		forEachTerminatorTarget(function.Blocks[id].Terminator, visit)
 		post = append(post, id)
 	}
 	visit(function.Entry)

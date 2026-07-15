@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 2,
+  "cases": [
+    {
+      "name": "linear_constant",
+      "locals": ["x"],
+      "inputs": [0],
+      "blocks": [
+        {"statements": [["setLocal", "x", ["const", 3]], ["setMemory", 0, ["local", "x"]]], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "diamond_constant",
+      "locals": ["x"],
+      "inputs": [0],
+      "blocks": [
+        {"statements": [["setLocal", "x", ["const", 5]]], "terminator": ["branch", ["call", "Greater", ["local", "x"], ["const", 3]], 1, 2]},
+        {"statements": [["setMemory", 0, ["const", 1]]], "terminator": ["jump", 3]},
+        {"statements": [["setMemory", 0, ["const", 2]]], "terminator": ["jump", 3]},
+        {"statements": [], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "diamond_memory",
+      "locals": ["x"],
+      "inputs": [0, 6],
+      "blocks": [
+        {"statements": [["setLocal", "x", ["memory", 0]]], "terminator": ["branch", ["call", "Greater", ["local", "x"], ["const", 5]], 1, 2]},
+        {"statements": [["setMemory", 1, ["const", 1]]], "terminator": ["jump", 3]},
+        {"statements": [["setMemory", 1, ["const", 2]]], "terminator": ["jump", 3]},
+        {"statements": [], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "loop_memory",
+      "locals": ["sum", "i", "v"],
+      "inputs": [0, 2],
+      "blocks": [
+        {"statements": [["setLocal", "sum", ["const", 0]], ["setLocal", "i", ["const", 0]]], "terminator": ["jump", 1]},
+        {"statements": [], "terminator": ["branch", ["call", "Less", ["local", "i"], ["const", 10]], 2, 3]},
+        {"statements": [["setLocal", "v", ["memory", 0]], ["setLocal", "sum", ["call", "Add", ["local", "sum"], ["local", "v"]]], ["setLocal", "i", ["call", "Add", ["local", "i"], ["const", 1]]]], "terminator": ["jump", 1]},
+        {"statements": [["setMemory", 1, ["local", "sum"]]], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "switch_chain",
+      "locals": ["x"],
+      "inputs": [1, 2, 3],
+      "blocks": [
+        {"statements": [["setLocal", "x", ["memory", 0]]], "terminator": ["branch", ["call", "Equal", ["local", "x"], ["const", 1]], 1, 2]},
+        {"statements": [["setMemory", 1, ["const", 10]]], "terminator": ["jump", 5]},
+        {"statements": [], "terminator": ["branch", ["call", "Equal", ["local", "x"], ["const", 2]], 3, 4]},
+        {"statements": [["setMemory", 1, ["const", 20]]], "terminator": ["jump", 5]},
+        {"statements": [["setMemory", 1, ["const", 30]]], "terminator": ["jump", 5]},
+        {"statements": [], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "readonly_cse_loop",
+      "locals": ["i", "left", "right"],
+      "inputs": [0, 1],
+      "blocks": [
+        {"statements": [["setLocal", "i", ["const", 0]]], "terminator": ["jump", 1]},
+        {"statements": [], "terminator": ["branch", ["call", "Less", ["local", "i"], ["const", 3]], 2, 3]},
+        {"statements": [["setLocal", "left", ["call", "Add", ["memoryAt", "EngineRom", 0], ["const", 1]]], ["setLocal", "right", ["call", "Add", ["memoryAt", "EngineRom", 0], ["const", 1]]], ["setMemory", 1, ["call", "Add", ["local", "left"], ["local", "right"]]], ["setLocal", "i", ["call", "Add", ["local", "i"], ["const", 1]]]], "terminator": ["jump", 1]},
+        {"statements": [], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "impure_effect",
+      "locals": [],
+      "inputs": [0],
+      "blocks": [
+        {"statements": [["eval", ["effectCall", "DebugLog", ["const", 7]]], ["setMemory", 0, ["const", 1]]], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "allocation_4095",
+      "locals": [{"name": "large", "size": 4095}],
+      "inputs": [0],
+      "blocks": [
+        {"statements": [["setLocal", "large", 4094, ["const", 9]], ["setMemory", 0, ["local", "large", 4094]]], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "allocation_4096",
+      "locals": [{"name": "large", "size": 4096}],
+      "inputs": [0],
+      "blocks": [
+        {"statements": [["setLocal", "large", 4095, ["const", 10]], ["setMemory", 0, ["local", "large", 4095]]], "terminator": ["return"]}
+      ]
+    },
+    {
+      "name": "allocation_4097",
+      "locals": [{"name": "large", "size": 4097}],
+      "inputs": [],
+      "expectAllocateError": true,
+      "blocks": [
+        {"statements": [["setLocal", "large", 4096, ["const", 11]], ["setMemory", 0, ["local", "large", 4096]]], "terminator": ["return"]}
+      ]
+    }
+  ]
+}

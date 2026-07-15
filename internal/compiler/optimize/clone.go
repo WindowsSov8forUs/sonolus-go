@@ -9,6 +9,10 @@ func CloneFunction(function *ir.Function) *ir.Function {
 	result := &ir.Function{
 		Name: function.Name, Result: cloneType(function.Result), Entry: function.Entry,
 		Locals: make([]ir.Type, len(function.Locals)), Blocks: make([]*ir.Block, len(function.Blocks)), Allocated: function.Allocated,
+		Diagnostics: make(map[int]string, len(function.Diagnostics)),
+	}
+	for code, message := range function.Diagnostics {
+		result.Diagnostics[code] = message
 	}
 	for i, local := range function.Locals {
 		result.Locals[i] = cloneType(local)
@@ -57,7 +61,7 @@ func cloneExpr(expression ir.Expr) ir.Expr {
 		for i, argument := range expression.Args {
 			args[i] = cloneExpr(argument)
 		}
-		return ir.RuntimeCall{Function: expression.Function, Args: args, Result: cloneType(expression.Result), Pure: expression.Pure, Pos: expression.Pos}
+		return ir.RuntimeCall{Function: expression.Function, Args: args, Result: cloneType(expression.Result), Pure: expression.Pure, Pos: expression.Pos, Diagnostic: expression.Diagnostic}
 	default:
 		return expression
 	}
