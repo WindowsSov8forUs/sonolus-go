@@ -23,6 +23,23 @@ type ModeDeclarations struct {
 	Archetypes    []*ArchetypeDeclaration
 	Globals       []*CallbackDeclaration
 	ROM           *ROMDeclaration
+	Streams       *StreamDeclaration
+}
+
+type StreamDeclaration struct {
+	PackagePath string
+	TypeName    string
+	Variable    string
+	Size        int
+	Fields      []StreamFieldDeclaration
+}
+
+type StreamFieldDeclaration struct {
+	Name       string
+	Type       string
+	Kind       string
+	ValueSlots int
+	Size       int
 }
 
 type ConfigurationDeclaration struct {
@@ -45,6 +62,7 @@ type ModeResources struct {
 	SpriteIDs   map[string]int
 	EffectIDs   map[string]int
 	ParticleIDs map[string]int
+	StreamSize  int
 	// FieldIDs maps a resource declaration field to its scalar ID or the
 	// consecutive IDs assigned to its fixed-size array elements.
 	FieldIDs map[*types.Var][]int
@@ -61,6 +79,9 @@ type ArchetypeDeclaration struct {
 	Callbacks      []*CallbackDeclaration
 	CallbackOrders map[string]int
 	Named          *types.Named
+	BaseNamed      *types.Named
+	Base           *ArchetypeDeclaration
+	MRO            []*ArchetypeDeclaration
 }
 
 type FieldDeclaration struct {

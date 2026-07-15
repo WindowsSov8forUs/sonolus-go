@@ -23,18 +23,27 @@ var aggregateOperations = operationSet(
 )
 
 var resourceOperations = operationSet(
-	"archetype.spawn", "sprite.draw", "sprite.exists", "sprite.drawCurvedB", "sprite.drawCurvedT",
+	"archetype.spawn", "entityRef.get", "entityRef.getUnchecked", "entityRef.as", "entityRef.matches", "entityRef.getAs", "sprite.draw", "sprite.exists", "sprite.drawCurvedB", "sprite.drawCurvedT",
 	"sprite.drawCurvedL", "sprite.drawCurvedR", "sprite.drawCurvedBT", "sprite.drawCurvedLR", "judgment.judge",
 	"clip.play", "clip.playScheduled", "clip.playLooped", "clip.playLoopedScheduled", "loop.stop",
 	"loop.stopScheduled", "particle.spawn", "particle.move", "particle.destroy", "instruction.show", "instruction.clear",
+	"stream.set", "stream.has", "stream.previousKey", "stream.nextKey", "stream.get",
+	"stream.previousKeyOrDefault", "stream.nextKeyOrDefault", "stream.hasPreviousKey", "stream.hasNextKey",
+	"stream.previousKeyInclusive", "stream.nextKeyInclusive", "stream.getPrevious", "stream.getNext",
+	"stream.getPreviousInclusive", "stream.getNextInclusive", "stream.itemsFrom", "stream.itemsFromDescending",
+	"stream.itemsSincePreviousFrame", "stream.keysFrom", "stream.keysFromDescending", "stream.keysSincePreviousFrame",
+	"stream.valuesFrom", "stream.valuesFromDescending", "stream.valuesSincePreviousFrame", "streamData.set", "streamData.get",
 )
 
 var containerOperations = operationSet(
-	"varArray.new", "varArray.len", "varArray.capacity", "varArray.isFull", "varArray.get", "varArray.set",
-	"varArray.append", "varArray.pop", "varArray.clear", "varArray.contains", "varArray.insert",
-	"arrayMap.new", "arrayMap.len", "arrayMap.capacity", "arrayMap.get", "arrayMap.set", "arrayMap.delete",
+	"varArray.new", "varArray.len", "varArray.capacity", "varArray.isFull", "varArray.get", "varArray.getUnchecked", "varArray.set", "varArray.setUnchecked",
+	"varArray.append", "varArray.appendUnchecked", "varArray.pop", "varArray.clear", "varArray.contains", "varArray.insert",
+	"varArray.removeAt", "varArray.remove", "varArray.index", "varArray.lastIndex", "varArray.count", "varArray.swap", "varArray.swapUnchecked", "varArray.reverse", "varArray.shuffle", "varArray.sortFunc", "varArray.extend",
+	"varArray.indexMinFunc", "varArray.indexMaxFunc", "varArray.minFunc", "varArray.maxFunc", "varArray.values", "varArray.valuesReversed", "varArray.items", "entities.sortLinked", "entities.sortDoublyLinked",
+	"arrayMap.new", "arrayMap.len", "arrayMap.capacity", "arrayMap.isFull", "arrayMap.get", "arrayMap.set", "arrayMap.delete",
 	"arrayMap.contains", "arrayMap.clear",
-	"arraySet.new", "arraySet.len", "arraySet.capacity", "arraySet.add", "arraySet.remove", "arraySet.contains", "arraySet.clear",
+	"arrayMap.getOK", "arrayMap.pop", "arrayMap.keys", "arrayMap.values", "arrayMap.items",
+	"arraySet.new", "arraySet.len", "arraySet.capacity", "arraySet.isFull", "arraySet.add", "arraySet.remove", "arraySet.contains", "arraySet.clear", "arraySet.values",
 )
 
 func supportsRecipe(recipe catalog.Recipe) bool {

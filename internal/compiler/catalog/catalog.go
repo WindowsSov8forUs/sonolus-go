@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 )
 
 type Kind string
@@ -49,6 +50,73 @@ type RuntimeSignature struct {
 	ResultSlots      int
 }
 
+type SimulationClass string
+
+const (
+	SimulationControl SimulationClass = "control"
+	SimulationPure    SimulationClass = "pure"
+	SimulationMemory  SimulationClass = "memory"
+	SimulationRandom  SimulationClass = "random"
+	SimulationEffect  SimulationClass = "effect"
+	SimulationHandler SimulationClass = "handler"
+)
+
+type RuntimeSimulation struct {
+	Class        SimulationClass
+	Signature    RuntimeSignature
+	Effect       Effect
+	Strategy     string
+	SpecialShape bool
+	Shape        string
+	Arguments    string
+}
+
+func LookupRuntimeSimulation(runtime resource.RuntimeFunction) (RuntimeSimulation, bool) {
+	metadata, ok := RuntimeSimulations[runtime]
+	return metadata, ok
+}
+
+func MemoryReadonly(currentMode mode.Mode, callback, storage string) bool {
+	for _, recipes := range []map[string]memoryRecipe{memoryRecipes, uiMemoryRecipes} {
+		for key, recipe := range recipes {
+			if recipe.storage != storage || !recipe.write {
+				continue
+			}
+			var symbol *Symbol
+			for index := range Symbols {
+				if Symbols[index].Key() == key {
+					symbol = &Symbols[index]
+					break
+				}
+			}
+			if symbol == nil {
+				continue
+			}
+			modeAllowed := len(symbol.Modes) == 0
+			for _, candidate := range symbol.Modes {
+				if candidate == string(currentMode) {
+					modeAllowed = true
+					break
+				}
+			}
+			if !modeAllowed {
+				continue
+			}
+			phaseAllowed := len(symbol.Phases) == 0
+			for _, phase := range symbol.Phases {
+				if phase == callback {
+					phaseAllowed = true
+					break
+				}
+			}
+			if phaseAllowed {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func LookupRuntimeSignature(runtime resource.RuntimeFunction) (RuntimeSignature, bool) {
 	signature, ok := RuntimeSignatures[runtime]
 	if !ok {
@@ -59,6 +127,8 @@ func LookupRuntimeSignature(runtime resource.RuntimeFunction) (RuntimeSignature,
 
 var internalRuntimeSignatures = map[resource.RuntimeFunction]RuntimeSignature{
 	resource.RuntimeFunctionAnd:      {MinArgs: 0, MaxArgs: -1, ResultSlots: 1},
+	resource.RuntimeFunctionOr:       {MinArgs: 0, MaxArgs: -1, ResultSlots: 1},
+	resource.RuntimeFunctionIf:       {MinArgs: 3, MaxArgs: 3, ResultSlots: 1},
 	resource.RuntimeFunctionSubtract: {MinArgs: 2, MaxArgs: 2, ResultSlots: 1},
 }
 

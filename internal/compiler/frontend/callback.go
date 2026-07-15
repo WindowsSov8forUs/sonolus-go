@@ -67,8 +67,11 @@ func findFuncDecl(pkg *packages.Package, fn *types.Func) *ast.FuncDecl {
 	}
 	for _, file := range pkg.Syntax {
 		for _, decl := range file.Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && pkg.TypesInfo.Defs[fd.Name] == fn {
-				return fd
+			if fd, ok := decl.(*ast.FuncDecl); ok {
+				declared := pkg.TypesInfo.Defs[fd.Name]
+				if declared == fn || declared == fn.Origin() {
+					return fd
+				}
 			}
 		}
 	}
@@ -92,7 +95,7 @@ func calledObject(pkg *packages.Package, expr ast.Expr) types.Object {
 	}
 }
 
-func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, configuration *ConfigurationDeclaration, m mode.Mode, hasMarker bool) ([]*CallbackDeclaration, []error) {
+func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, configuration *ConfigurationDeclaration, m mode.Mode, hasMarker bool, checks RuntimeChecks) ([]*CallbackDeclaration, []error) {
 	if !hasMarker {
 		return nil, nil
 	}
@@ -155,7 +158,7 @@ func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *
 		go func(i int, job callbackJob) {
 			defer wg.Done()
 			key := callbackKey(job.name)
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, configuration, nil, m, key)
+			bodyIR, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, configuration, nil, m, key, checks)
 			callbacks[i] = &CallbackDeclaration{Name: key, Function: job.fn, Decl: job.decl, IR: bodyIR}
 			jobErrs[i] = lowerErrs
 		}(i, job)

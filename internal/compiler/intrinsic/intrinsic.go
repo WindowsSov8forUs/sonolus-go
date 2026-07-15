@@ -17,7 +17,7 @@ import (
 
 type Kind uint8
 
-const StandardLibraryFilterError = "this standard library package is not allowed; only embed, math, and math/rand are allowed"
+const StandardLibraryFilterError = "this standard library package is not allowed; only embed, iter, math, and math/rand are allowed"
 
 const (
 	RuntimeFunction Kind = iota
@@ -86,7 +86,7 @@ func LookupObject(obj types.Object) (Symbol, bool) {
 }
 
 func IsAllowedPackage(path string) bool {
-	return path == "embed" || path == "math" || path == "math/rand"
+	return path == "embed" || path == "iter" || path == "math" || path == "math/rand"
 }
 
 var (
@@ -113,7 +113,7 @@ func IsAllowedStandardDependency(path string) bool {
 				visit(dep)
 			}
 		}
-		for _, path := range []string{"embed", "math", "math/rand"} {
+		for _, path := range []string{"embed", "iter", "math", "math/rand"} {
 			visit(path)
 		}
 	})

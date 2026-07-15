@@ -9,6 +9,11 @@ type Note struct {
 	watch.Archetype `archetype:"name=Note"`
 }
 
+type Spawned struct {
+	watch.Archetype `archetype:"name=Spawned"`
+	Value           float64 `archetype:"memory"`
+}
+
 type EffectsData struct {
 	sonolus.EffectResource
 	Hit sonolus.Clip
@@ -55,6 +60,7 @@ func (*Note) Preprocess() {
 	Effects.Hit.Play(0)
 	_, _, _ = watch.Environment.Debug(), watch.Environment.AspectRatio(), watch.Environment.Replay()
 	_ = watch.Replay.IsReplay()
+	watch.Spawn(Spawned{Value: value})
 	watch.Debug.Log(value)
 	watch.Debug.Pause()
 }

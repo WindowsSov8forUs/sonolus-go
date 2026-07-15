@@ -1,3 +1,5 @@
+//go:build play
+
 package main
 
 import (
@@ -5,18 +7,17 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
 
+type ReplayStreams struct {
+	sonolus.StreamResource
+	Value sonolus.Stream[float64]
+}
+
+var Replay = ReplayStreams{}
+
 type Note struct {
 	play.Archetype `archetype:"name=Note"`
 }
 
 func (*Note) Preprocess() {
-	first := sonolus.NewVarArray[float64](2)
-	second := sonolus.NewVarArray[float64](2)
-	values := first
-	if play.Environment.Debug() {
-		values = second
-	}
-	values.Append(1)
+	play.Streams.Set(1, 0, 1)
 }
-
-func main() {}

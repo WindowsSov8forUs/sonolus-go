@@ -20,7 +20,8 @@ var memoryBlocks = map[mode.Mode]map[string]int{
 		"LevelScore": 2004, "LevelLife": 2005, "EngineRom": 3000,
 		"memory": 4000, "data": 4001, "shared": 4002,
 		"CurrentEntityInfo": 4003, "CurrentEntityDespawn": 4004, "CurrentInputResult": 4005,
-		"EntityInfo": 4103, "ArchetypeLife": 5000, "ArchetypeScore": 5001,
+		"EntityDataArray": 4101, "EntitySharedMemoryArray": 4102, "EntityInfo": 4103,
+		"ArchetypeLife": 5000, "ArchetypeScore": 5001,
 	},
 	mode.ModeWatch: {
 		"RuntimeEnvironment": 1000, "RuntimeUpdate": 1001,
@@ -29,7 +30,8 @@ var memoryBlocks = map[mode.Mode]map[string]int{
 		"LevelMemory": 2000, "LevelData": 2001, "LevelOption": 2002, "LevelBucket": 2003,
 		"LevelScore": 2004, "LevelLife": 2005, "EngineRom": 3000,
 		"memory": 4000, "data": 4001, "shared": 4002,
-		"CurrentEntityInfo": 4003, "CurrentInputResult": 4004, "EntityInfo": 4103,
+		"CurrentEntityInfo": 4003, "CurrentInputResult": 4004,
+		"EntityDataArray": 4101, "EntitySharedMemoryArray": 4102, "EntityInfo": 4103,
 		"ArchetypeLife": 5000, "ArchetypeScore": 5001,
 	},
 	mode.ModePreview: {
@@ -37,7 +39,8 @@ var memoryBlocks = map[mode.Mode]map[string]int{
 		"RuntimeTransform": 1002, "SkinTransform": 1002,
 		"RuntimeUI": 1003, "RuntimeUIConfiguration": 1004,
 		"PreviewData": 2000, "PreviewOption": 2001, "EngineRom": 3000,
-		"data": 4000, "shared": 4001, "CurrentEntityInfo": 4002, "EntityInfo": 4102,
+		"data": 4000, "shared": 4001, "CurrentEntityInfo": 4002,
+		"EntityDataArray": 4100, "EntitySharedMemoryArray": 4101, "EntityInfo": 4102,
 	},
 	mode.ModeTutorial: {
 		"RuntimeEnvironment": 1000, "RuntimeUpdate": 1001,

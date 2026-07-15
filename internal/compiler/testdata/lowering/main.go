@@ -18,11 +18,12 @@ type Note struct {
 
 type Spawned struct {
 	play.Archetype `archetype:"name=Spawned"`
-	Imported       float64 `archetype:"imported"`
-	Data           float64 `archetype:"data"`
-	Value          float64 `archetype:"memory"`
-	Shared         float64 `archetype:"shared"`
-	Exported       float64 `archetype:"exported"`
+	Imported       float64                   `archetype:"imported"`
+	Data           float64                   `archetype:"data"`
+	Value          float64                   `archetype:"memory"`
+	Shared         float64                   `archetype:"shared"`
+	SharedValues   sonolus.VarArray[float64] `archetype:"shared,cap=2"`
+	Exported       float64                   `archetype:"exported"`
 }
 
 type Skin struct {
@@ -95,6 +96,11 @@ func (n *Note) Preprocess() {
 	}
 	values := [3]float64{0: 1, 2: 3}
 	sum := float64(len(values) + cap(values))
+	target := n.Ref.Get()
+	sum += target.Imported + target.Data + target.Shared
+	target.Shared = sum
+	target.SharedValues.Append(sum)
+	sum += float64(target.SharedValues.Len())
 	for i := range 3 {
 		sum += float64(i)
 	}
@@ -291,6 +297,8 @@ func (n *Note) Preprocess() {
 	play.Life.AddScheduled(1, 2)
 	_, _ = play.Input.Offset(), play.Input.Judge(1, 1, sonolus.JudgmentWindows{})
 	_, _, _, _ = play.Multiplayer.IsMultiplayer(), play.Environment.Debug(), play.Environment.Multiplayer(), play.Environment.AspectRatio()
+	levelValue := play.LevelMemory.Get(3)
+	play.LevelMemory.Set(4, levelValue)
 	play.Streams.Set(0, 1, 2)
 	play.Debug.Log(sum)
 	_, _ = (sonolus.JudgmentWindow{}).Judge(a, b), (sonolus.JudgmentWindows{}).Judge(a, b)

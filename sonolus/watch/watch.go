@@ -61,6 +61,7 @@ func (entityAPI) Info() EntityInfo            { return EntityInfo{} }
 func (entityAPI) InfoAt(index int) EntityInfo { return EntityInfo{} }
 func (entityAPI) Result() InputResult         { return InputResult{} }
 func (entityAPI) SetResult(value InputResult) {}
+func Spawn[T any](data T)                     {}
 
 var Entity entityAPI
 

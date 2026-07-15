@@ -40,6 +40,13 @@ func (canvasAPI) Print(options PrintOptions) {}
 
 var Canvas canvasAPI
 
+type levelDataAPI struct{}
+
+func (levelDataAPI) Get(index int) float64        { return 0 }
+func (levelDataAPI) Set(index int, value float64) {}
+
+var LevelData levelDataAPI
+
 type screenAPI struct{}
 
 func (screenAPI) Rect() sonolus.Rect { return sonolus.Rect{} }

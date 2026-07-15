@@ -37,11 +37,12 @@ type Load struct{ Place Place }
 func (Load) expr() {}
 
 type RuntimeCall struct {
-	Function resource.RuntimeFunction
-	Args     []Expr
-	Result   Type
-	Pure     bool
-	Pos      SourcePos
+	Function   resource.RuntimeFunction
+	Args       []Expr
+	Result     Type
+	Pure       bool
+	Pos        SourcePos
+	Diagnostic string
 }
 
 func (RuntimeCall) expr() {}
@@ -158,11 +159,12 @@ type Phi struct {
 }
 
 type Function struct {
-	Name   string
-	Result Type
-	Entry  int
-	Blocks []*Block
-	Locals []Type
+	Name        string
+	Result      Type
+	Entry       int
+	Blocks      []*Block
+	Locals      []Type
+	Diagnostics map[int]string
 	// Allocated is set after locals have been rewritten to one physical
 	// Temporary Memory layout. Frontend IR intentionally leaves it false.
 	Allocated bool

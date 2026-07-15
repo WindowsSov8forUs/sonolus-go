@@ -16,6 +16,12 @@ import (
 )
 
 func layoutSize(t types.Type) (int, error) {
+	if named, ok := namedType(t); ok && (typeID(named) == rootID("Stream") || typeID(named) == rootID("StreamData")) {
+		if named.TypeArgs().Len() != 1 {
+			return 0, fmt.Errorf("stream type requires one type argument")
+		}
+		return layoutSize(named.TypeArgs().At(0))
+	}
 	if basic, ok := types.Unalias(t).Underlying().(*types.Basic); ok {
 		if basic.Info()&(types.IsBoolean|types.IsInteger|types.IsFloat) != 0 {
 			return 1, nil
@@ -92,6 +98,18 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 			errs = append(errs, fmt.Errorf("%s: %s.%s: sonolus struct tags are no longer supported for archetypes; use %s", pkg.Fset.Position(field.Pos()), named.Obj().Name(), field.Name(), replacement))
 		}
 		if field.Embedded() {
+			if tag, ok := archetypeTag(st.Tag(i)); ok && tag.Flags["base"] {
+				errs = append(errs, validateTag(named.Obj().Name()+"."+field.Name(), tag, []string{"base"}, nil)...)
+				base, ok := types.Unalias(field.Type()).(*types.Named)
+				if !ok || field.Type() != base {
+					errs = append(errs, fmt.Errorf("%s.%s: archetype base must be a directly embedded named struct type", named.Obj().Name(), field.Name()))
+				} else if result.BaseNamed != nil {
+					errs = append(errs, fmt.Errorf("%s: multiple archetype bases are not allowed", named.Obj().Name()))
+				} else {
+					result.BaseNamed = base
+				}
+				continue
+			}
 			if id == markerID(m, "CallbackOrders") {
 				tag, _ := archetypeTag(st.Tag(i))
 				for key, raw := range tag.Items {
@@ -206,7 +224,117 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 	return result, errs
 }
 
-func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode) []error {
+func resolveArchetypeInheritance(declarations []*ArchetypeDeclaration) []error {
+	byType := make(map[*types.Named]*ArchetypeDeclaration, len(declarations))
+	for _, declaration := range declarations {
+		byType[declaration.Named] = declaration
+	}
+	states := make(map[*ArchetypeDeclaration]int, len(declarations))
+	var errs []error
+	var resolve func(*ArchetypeDeclaration) bool
+	resolve = func(declaration *ArchetypeDeclaration) bool {
+		switch states[declaration] {
+		case 1:
+			errs = append(errs, fmt.Errorf("%s: archetype inheritance cycle", declaration.TypeName))
+			return false
+		case 2:
+			return true
+		}
+		states[declaration] = 1
+		if declaration.BaseNamed != nil {
+			base := byType[declaration.BaseNamed]
+			if base == nil {
+				errs = append(errs, fmt.Errorf("%s: archetype base %s is not declared in the current mode", declaration.TypeName, declaration.BaseNamed.Obj().Name()))
+				states[declaration] = 2
+				return false
+			}
+			if !resolve(base) {
+				states[declaration] = 2
+				return false
+			}
+			declaration.Base = base
+			if !inheritArchetypeLayout(declaration, base, &errs) {
+				states[declaration] = 2
+				return false
+			}
+			declaration.MRO = append([]*ArchetypeDeclaration{declaration}, base.MRO...)
+		} else {
+			declaration.MRO = []*ArchetypeDeclaration{declaration}
+		}
+		states[declaration] = 2
+		return true
+	}
+	for _, declaration := range declarations {
+		resolve(declaration)
+	}
+	return errs
+}
+
+func inheritArchetypeLayout(derived, base *ArchetypeDeclaration, errs *[]error) bool {
+	offsets := map[string]int{"data": 0, "memory": 0, "shared": 0, "exported": 0}
+	receiverOffset := 0
+	external := map[string]bool{}
+	fields := make([]*FieldDeclaration, 0, len(base.Fields)+len(derived.Fields))
+	appendField := func(source *FieldDeclaration, inherited bool) {
+		field := *source
+		storage := field.Storage
+		if storage == "imported" || storage == "data" {
+			storage = "data"
+		}
+		field.Offset = offsets[storage]
+		field.ReceiverOffset = receiverOffset
+		fields = append(fields, &field)
+		receiverOffset += field.Size
+		offsets[storage] += field.Size
+		if field.Storage == "imported" || field.Storage == "exported" {
+			if external[field.ExternalName] && !inherited {
+				*errs = append(*errs, fmt.Errorf("%s: duplicate inherited external field name %q", derived.TypeName, field.ExternalName))
+			}
+			external[field.ExternalName] = true
+		}
+	}
+	for _, field := range base.Fields {
+		appendField(field, true)
+	}
+	for _, field := range derived.Fields {
+		for _, inherited := range base.Fields {
+			if field.GoName == inherited.GoName {
+				*errs = append(*errs, fmt.Errorf("%s: field %q duplicates inherited archetype field", derived.TypeName, field.GoName))
+				return false
+			}
+		}
+		appendField(field, false)
+	}
+	for storage, size := range offsets {
+		limit := map[string]int{"data": 32, "memory": 64, "shared": 32, "exported": 32}[storage]
+		if size > limit {
+			*errs = append(*errs, fmt.Errorf("%s: inherited %s storage exceeds capacity %d", derived.TypeName, storage, limit))
+			return false
+		}
+	}
+	derived.Fields = fields
+	derived.Imports = nil
+	derived.Exports = nil
+	for _, field := range fields {
+		if field.Storage == "imported" {
+			derived.Imports = append(derived.Imports, resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(field.ExternalName), Index: field.Offset, Def: field.Default})
+		}
+		if field.Storage == "exported" {
+			derived.Exports = append(derived.Exports, resource.EngineArchetypeDataName(field.ExternalName))
+		}
+	}
+	orders := make(map[string]int, len(base.CallbackOrders)+len(derived.CallbackOrders))
+	for key, order := range base.CallbackOrders {
+		orders[key] = order
+	}
+	for key, order := range derived.CallbackOrders {
+		orders[key] = order
+	}
+	derived.CallbackOrders = orders
+	return true
+}
+
+func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, checks RuntimeChecks) []error {
 	var errs []error
 	methodSet := types.NewMethodSet(types.NewPointer(result.Named))
 	foundOrders := map[string]bool{}
@@ -246,7 +374,7 @@ func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Packag
 		wg.Add(1)
 		go func(i int, job callbackJob) {
 			defer wg.Done()
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, archetypes, m, job.key)
+			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, archetypes, m, job.key, checks)
 			callbacks[i] = &CallbackDeclaration{Name: job.key, Order: result.CallbackOrders[job.key], Function: job.fn, Decl: job.decl, IR: bodyIR}
 			jobErrs[i] = lowerErrs
 		}(i, job)

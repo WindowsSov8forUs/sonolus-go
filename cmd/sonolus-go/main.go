@@ -41,21 +41,23 @@ func runCLI(args []string) error {
 		mode := flags.String("m", "all", "engine mode: play, watch, preview, tutorial, all")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
+		checks := flags.String("runtime-checks", "none", "runtime checks: none, terminate, notify")
 		stats := flags.Bool("stats", false, "print compilation timing")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdBuild(flags.Args(), *out, *mode, *optimization, *rom, *stats)
+		return cmdBuild(flags.Args(), *out, *mode, *optimization, *rom, *checks, *stats)
 	case "vet":
 		flags := commandFlags(command)
 		mode := flags.String("m", "all", "engine mode: play, watch, preview, tutorial, all")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
+		checks := flags.String("runtime-checks", "none", "runtime checks: none, terminate, notify")
 		stats := flags.Bool("stats", false, "print compilation timing")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdVet(flags.Args(), *mode, *optimization, *rom, *stats)
+		return cmdVet(flags.Args(), *mode, *optimization, *rom, *checks, *stats)
 	case "list":
 		flags := commandFlags(command)
 		if err := flags.Parse(args); err != nil {
@@ -68,11 +70,12 @@ func runCLI(args []string) error {
 		addr := flags.String("addr", ":8080", "development server listen address")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
+		checks := flags.String("runtime-checks", "notify", "runtime checks: none, terminate, notify")
 		stats := flags.Bool("stats", false, "print compilation timing")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdDev(flags.Args(), *out, *addr, *optimization, *rom, *stats)
+		return cmdDev(flags.Args(), *out, *addr, *optimization, *rom, *checks, *stats)
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", command)
@@ -86,10 +89,10 @@ func commandFlags(command string) *flag.FlagSet {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] <package-pattern>...")
-	fmt.Fprintln(os.Stderr, "       sonolus-go vet [-m <mode>] [-O 0|1|2] [-rom <file>] [-stats] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "usage: sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] [-runtime-checks <level>] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "       sonolus-go vet [-m <mode>] [-O 0|1|2] [-rom <file>] [-runtime-checks <level>] [-stats] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go list <package-pattern>...")
-	fmt.Fprintln(os.Stderr, "       sonolus-go dev [-o <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "       sonolus-go dev [-o <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] [-runtime-checks <level>] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "  build modes: play, watch, preview, tutorial, all (default)")
 	fmt.Fprintln(os.Stderr, "  opt levels:  0=minimal, 1=fast, 2=standard (default)")
 }

@@ -94,7 +94,7 @@ func primaryDeclarationMarker(named *types.Named) (markerField, bool, []error) {
 	var primary []markerField
 	var errs []error
 	for _, candidate := range structMarkers(named) {
-		isPrimary := candidate.id == rootID("Configuration")
+		isPrimary := candidate.id == rootID("Configuration") || candidate.id == rootID("StreamResource")
 		if _, ok := resourceMarkerKinds[candidate.id]; ok {
 			isPrimary = true
 		}

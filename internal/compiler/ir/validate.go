@@ -2,7 +2,25 @@ package ir
 
 import "fmt"
 
+type ssaDefinition struct {
+	block int
+	kind  uint8
+}
+
+type Validator struct {
+	reachable         []bool
+	queue             []int
+	definitions       []ssaDefinition
+	definitionSet     []bool
+	sparseDefinitions map[int]ssaDefinition
+	denseDefinitions  bool
+}
+
 func Validate(fn *Function) error {
+	return new(Validator).Validate(fn)
+}
+
+func (validator *Validator) Validate(fn *Function) error {
 	if fn == nil {
 		return fmt.Errorf("function is nil")
 	}
@@ -15,19 +33,31 @@ func Validate(fn *Function) error {
 	if err := validateType(fn.Result); err != nil {
 		return fmt.Errorf("function %s result: %w", fn.Name, err)
 	}
-	reachable := map[int]bool{}
-	queue := []int{fn.Entry}
-	for len(queue) != 0 {
-		id := queue[0]
-		queue = queue[1:]
-		if reachable[id] {
-			continue
-		}
+	if cap(validator.reachable) < len(fn.Blocks) {
+		validator.reachable = make([]bool, len(fn.Blocks))
+	} else {
+		validator.reachable = validator.reachable[:len(fn.Blocks)]
+		clear(validator.reachable)
+	}
+	validator.queue = validator.queue[:0]
+	if cap(validator.queue) < len(fn.Blocks) {
+		validator.queue = make([]int, 0, len(fn.Blocks))
+	}
+	validator.queue = append(validator.queue, fn.Entry)
+	reachable, queue := validator.reachable, validator.queue
+	for head := 0; head < len(queue); head++ {
+		id := queue[head]
 		if id < 0 || id >= len(fn.Blocks) {
 			return fmt.Errorf("block target %d does not exist", id)
 		}
+		if reachable[id] {
+			continue
+		}
 		reachable[id] = true
 		block := fn.Blocks[id]
+		if block == nil {
+			return fmt.Errorf("block %d is nil", id)
+		}
 		if block.ID != id {
 			return fmt.Errorf("block index %d has ID %d", id, block.ID)
 		}
@@ -38,39 +68,67 @@ func Validate(fn *Function) error {
 		case Jump:
 			queue = append(queue, term.Target)
 		case Branch:
-			if err := validateExpr(term.Condition, fn); err != nil {
-				return fmt.Errorf("block %d branch: %w", id, err)
-			}
 			queue = append(queue, term.True, term.False)
 		case Switch:
-			if err := validateExpr(term.Value, fn); err != nil {
-				return fmt.Errorf("block %d switch: %w", id, err)
-			}
 			queue = append(queue, term.Default)
 			for _, item := range term.Cases {
 				queue = append(queue, item.Target)
 			}
 		case Return:
-			if len(term.Value.Slots) != fn.Result.Slots {
-				return fmt.Errorf("block %d returns %d slots; expected %d", id, len(term.Value.Slots), fn.Result.Slots)
-			}
-			for _, value := range term.Value.Slots {
-				if err := validateExpr(value, fn); err != nil {
-					return fmt.Errorf("block %d return: %w", id, err)
-				}
-			}
 		case Unreachable:
 		default:
 			return fmt.Errorf("block %d has unknown terminator %T", id, term)
 		}
 	}
+	validator.queue = queue
 	for id, typ := range fn.Locals {
 		if err := validateType(typ); err != nil {
 			return fmt.Errorf("local %d: %w", id, err)
 		}
 	}
-	ssaDefinitions := map[int]string{}
+	definitionCount, maxDefinitionID := 0, -1
 	for _, block := range fn.Blocks {
+		if block == nil {
+			continue
+		}
+		for _, phi := range block.Phis {
+			if phi.Target.ID >= 0 {
+				definitionCount++
+				maxDefinitionID = max(maxDefinitionID, phi.Target.ID)
+			}
+		}
+		for _, instruction := range block.Instructions {
+			if store, ok := instruction.(Store); ok {
+				if place, ok := store.Place.(SSAPlace); ok && place.ID >= 0 {
+					definitionCount++
+					maxDefinitionID = max(maxDefinitionID, place.ID)
+				}
+			}
+		}
+	}
+	validator.denseDefinitions = maxDefinitionID <= definitionCount*2+64
+	if validator.denseDefinitions {
+		length := maxDefinitionID + 1
+		if cap(validator.definitions) < length {
+			validator.definitions = make([]ssaDefinition, length)
+			validator.definitionSet = make([]bool, length)
+		} else {
+			validator.definitions = validator.definitions[:length]
+			validator.definitionSet = validator.definitionSet[:length]
+			clear(validator.definitions)
+			clear(validator.definitionSet)
+		}
+	} else {
+		if validator.sparseDefinitions == nil {
+			validator.sparseDefinitions = make(map[int]ssaDefinition, definitionCount)
+		} else {
+			clear(validator.sparseDefinitions)
+		}
+	}
+	for _, block := range fn.Blocks {
+		if block == nil {
+			return fmt.Errorf("function %s contains a nil block", fn.Name)
+		}
 		if block.ID < 0 || block.ID >= len(fn.Blocks) || fn.Blocks[block.ID] != block {
 			return fmt.Errorf("block has invalid ID %d", block.ID)
 		}
@@ -78,27 +136,24 @@ func Validate(fn *Function) error {
 			if phi.Target.ID < 0 {
 				return fmt.Errorf("block %d phi has invalid target", block.ID)
 			}
-			if previous, exists := ssaDefinitions[phi.Target.ID]; exists {
-				return fmt.Errorf("block %d phi target %d is already defined by %s", block.ID, phi.Target.ID, previous)
+			if previous, exists := validator.recordDefinition(phi.Target.ID, ssaDefinition{block: block.ID, kind: 1}); exists {
+				return fmt.Errorf("block %d phi target %d is already defined by block %d %s", block.ID, phi.Target.ID, previous.block, ssaDefinitionKindName(previous.kind))
 			}
-			ssaDefinitions[phi.Target.ID] = fmt.Sprintf("block %d phi", block.ID)
-			if err := validatePlace(phi.Local, fn); err != nil {
+			if err := validateLocalPlace(phi.Local, fn); err != nil {
 				return fmt.Errorf("block %d phi local: %w", block.ID, err)
 			}
-			seenPredecessors := map[int]bool{}
 			previousPredecessor := -1
 			for _, arg := range phi.Args {
 				if arg.Predecessor < 0 || arg.Predecessor >= len(fn.Blocks) || arg.Value.ID < 0 {
 					return fmt.Errorf("block %d phi has invalid argument", block.ID)
 				}
-				if seenPredecessors[arg.Predecessor] {
+				if arg.Predecessor == previousPredecessor {
 					return fmt.Errorf("block %d phi has duplicate predecessor %d", block.ID, arg.Predecessor)
 				}
 				if arg.Predecessor < previousPredecessor {
 					return fmt.Errorf("block %d phi arguments are not ordered by predecessor", block.ID)
 				}
 				previousPredecessor = arg.Predecessor
-				seenPredecessors[arg.Predecessor] = true
 				if !containsTarget(fn.Blocks[arg.Predecessor].Terminator, block.ID) {
 					return fmt.Errorf("block %d phi argument predecessor %d has no edge to block", block.ID, arg.Predecessor)
 				}
@@ -108,10 +163,12 @@ func Validate(fn *Function) error {
 			switch value := instruction.(type) {
 			case Store:
 				if place, ok := value.Place.(SSAPlace); ok {
-					if previous, exists := ssaDefinitions[place.ID]; exists {
-						return fmt.Errorf("block %d SSA target %d is already defined by %s", block.ID, place.ID, previous)
+					if place.ID < 0 {
+						return fmt.Errorf("block %d store: SSA place has invalid ID %d", block.ID, place.ID)
 					}
-					ssaDefinitions[place.ID] = fmt.Sprintf("block %d store", block.ID)
+					if previous, exists := validator.recordDefinition(place.ID, ssaDefinition{block: block.ID, kind: 2}); exists {
+						return fmt.Errorf("block %d SSA target %d is already defined by block %d %s", block.ID, place.ID, previous.block, ssaDefinitionKindName(previous.kind))
+					}
 				}
 				if err := validatePlace(value.Place, fn); err != nil {
 					return fmt.Errorf("block %d store: %w", block.ID, err)
@@ -138,6 +195,28 @@ func Validate(fn *Function) error {
 		}
 	}
 	return nil
+}
+
+func (validator *Validator) recordDefinition(id int, definition ssaDefinition) (ssaDefinition, bool) {
+	if validator.denseDefinitions {
+		if validator.definitionSet[id] {
+			return validator.definitions[id], true
+		}
+		validator.definitions[id], validator.definitionSet[id] = definition, true
+		return ssaDefinition{}, false
+	}
+	previous, exists := validator.sparseDefinitions[id]
+	if !exists {
+		validator.sparseDefinitions[id] = definition
+	}
+	return previous, exists
+}
+
+func ssaDefinitionKindName(kind uint8) string {
+	if kind == 1 {
+		return "phi"
+	}
+	return "store"
 }
 
 func containsTarget(terminator Terminator, target int) bool {
@@ -236,6 +315,9 @@ func validateRuntimeCall(value RuntimeCall, fn *Function) error {
 	if value.Function == "" {
 		return fmt.Errorf("runtime call has no function")
 	}
+	if value.Diagnostic != "" && value.Function != "DebugLog" {
+		return fmt.Errorf("runtime diagnostic marker requires DebugLog")
+	}
 	if err := validateType(value.Result); err != nil {
 		return fmt.Errorf("runtime result: %w", err)
 	}
@@ -254,9 +336,7 @@ func validatePlace(place Place, fn *Function) error {
 			return fmt.Errorf("SSA place has invalid ID %d", p.ID)
 		}
 	case LocalPlace:
-		if p.ID < 0 || p.ID >= len(fn.Locals) || p.Offset < 0 || p.Offset >= fn.Locals[p.ID].Slots {
-			return fmt.Errorf("local place %d:%d is outside its layout", p.ID, p.Offset)
-		}
+		return validateLocalPlace(p, fn)
 	case IndexedLocalPlace:
 		if p.ID < 0 || p.ID >= len(fn.Locals) || p.Base < 0 || p.Length <= 0 || p.Stride <= 0 || p.Offset < 0 || p.Offset >= p.Stride || p.Base+p.Length*p.Stride > fn.Locals[p.ID].Slots {
 			return fmt.Errorf("indexed local place %d:%d has an invalid layout (base=%d length=%d stride=%d localSlots=%d)", p.ID, p.Offset, p.Base, p.Length, p.Stride, localSlots(fn, p.ID))
@@ -277,9 +357,20 @@ func validatePlace(place Place, fn *Function) error {
 	return nil
 }
 
+func validateLocalPlace(place LocalPlace, fn *Function) error {
+	if place.ID < 0 || place.ID >= len(fn.Locals) || place.Offset < 0 || place.Offset >= fn.Locals[place.ID].Slots {
+		return fmt.Errorf("local place %d:%d is outside its layout", place.ID, place.Offset)
+	}
+	return nil
+}
+
 // ValidateFinal verifies the backend-facing subset after optimization.
 func ValidateFinal(fn *Function) error {
-	if err := Validate(fn); err != nil {
+	return new(Validator).ValidateFinal(fn)
+}
+
+func (validator *Validator) ValidateFinal(fn *Function) error {
+	if err := validator.Validate(fn); err != nil {
 		return err
 	}
 	if !fn.Allocated {
@@ -308,6 +399,9 @@ func ValidateFinal(fn *Function) error {
 			case Load:
 				return checkPlace(value.Place)
 			case RuntimeCall:
+				if value.Diagnostic != "" {
+					return fmt.Errorf("unresolved runtime diagnostic marker remains")
+				}
 				for _, arg := range value.Args {
 					if err := checkExpr(arg); err != nil {
 						return err

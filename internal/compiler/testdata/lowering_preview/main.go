@@ -21,6 +21,8 @@ func (*Note) Preprocess() {
 	preview.UI.SetMenu(preview.UI.Menu())
 	preview.UI.SetProgress(preview.UI.Progress())
 	value := preview.Canvas.Size() + preview.Screen.Rect().Width() + preview.SafeArea.Rect().Width()
+	value += preview.LevelData.Get(0)
+	preview.LevelData.Set(1, value)
 	value += preview.UI.MenuConfiguration().Scale + preview.UI.ProgressConfiguration().Scale
 	_, _ = preview.Entity.Info(), preview.Entity.InfoAt(0)
 	_, _, _ = preview.Canvas.Scroll(), preview.Environment.Debug(), preview.Environment.AspectRatio()

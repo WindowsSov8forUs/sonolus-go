@@ -70,6 +70,8 @@ var memoryRecipes = map[string]memoryRecipe{
 	"sonolus/play.environmentAPI.Debug":         {"RuntimeEnvironment", 0, 0, -1, false},
 	"sonolus/play.environmentAPI.AspectRatio":   {"RuntimeEnvironment", 1, 0, -1, false},
 	"sonolus/play.environmentAPI.Multiplayer":   {"RuntimeEnvironment", 4, 0, -1, false},
+	"sonolus/play.levelMemoryAPI.Get":           {"LevelMemory", 0, 1, 0, false},
+	"sonolus/play.levelMemoryAPI.Set":           {"LevelMemory", 0, 1, 0, true},
 
 	"sonolus/watch.timeAPI.Now":                {"RuntimeUpdate", 0, 0, -1, false},
 	"sonolus/watch.timeAPI.Delta":              {"RuntimeUpdate", 1, 0, -1, false},
@@ -105,6 +107,8 @@ var memoryRecipes = map[string]memoryRecipe{
 	"sonolus/preview.canvasAPI.Scroll":           {"RuntimeCanvas", 0, 0, -1, false},
 	"sonolus/preview.canvasAPI.Size":             {"RuntimeCanvas", 1, 0, -1, false},
 	"sonolus/preview.canvasAPI.Set":              {"RuntimeCanvas", 0, 0, -1, true},
+	"sonolus/preview.levelDataAPI.Get":           {"PreviewData", 0, 1, 0, false},
+	"sonolus/preview.levelDataAPI.Set":           {"PreviewData", 0, 1, 0, true},
 	"sonolus/preview.entityAPI.Info":             {"CurrentEntityInfo", 0, 0, -1, false},
 	"sonolus/preview.entityAPI.InfoAt":           {"EntityInfo", 0, 2, 0, false},
 	"sonolus/preview.environmentAPI.Debug":       {"RuntimeEnvironment", 0, 0, -1, false},
@@ -265,8 +269,40 @@ var aggregateRecipes = map[string]string{
 var forbiddenRecipes = map[string]string{}
 
 var resourceRecipes = map[string]string{
-	"sonolus/play.Spawn":  "archetype.spawn",
-	"sonolus.Sprite.Draw": "sprite.draw", "sonolus.Sprite.Exists": "sprite.exists",
+	"sonolus/play.Spawn":                      "archetype.spawn",
+	"sonolus/watch.Spawn":                     "archetype.spawn",
+	"sonolus.EntityRef.Get":                   "entityRef.get",
+	"sonolus.EntityRef.GetUnchecked":          "entityRef.getUnchecked",
+	"sonolus.EntityRefAs":                     "entityRef.as",
+	"sonolus.EntityRefMatches":                "entityRef.matches",
+	"sonolus.EntityRefGetAs":                  "entityRef.getAs",
+	"sonolus.Stream.Set":                      "stream.set",
+	"sonolus.Stream.Has":                      "stream.has",
+	"sonolus.Stream.PreviousKey":              "stream.previousKey",
+	"sonolus.Stream.NextKey":                  "stream.nextKey",
+	"sonolus.Stream.Get":                      "stream.get",
+	"sonolus.Stream.PreviousKeyOrDefault":     "stream.previousKeyOrDefault",
+	"sonolus.Stream.NextKeyOrDefault":         "stream.nextKeyOrDefault",
+	"sonolus.Stream.HasPreviousKey":           "stream.hasPreviousKey",
+	"sonolus.Stream.HasNextKey":               "stream.hasNextKey",
+	"sonolus.Stream.PreviousKeyInclusive":     "stream.previousKeyInclusive",
+	"sonolus.Stream.NextKeyInclusive":         "stream.nextKeyInclusive",
+	"sonolus.Stream.GetPrevious":              "stream.getPrevious",
+	"sonolus.Stream.GetNext":                  "stream.getNext",
+	"sonolus.Stream.GetPreviousInclusive":     "stream.getPreviousInclusive",
+	"sonolus.Stream.GetNextInclusive":         "stream.getNextInclusive",
+	"sonolus.Stream.ItemsFrom":                "stream.itemsFrom",
+	"sonolus.Stream.ItemsFromDescending":      "stream.itemsFromDescending",
+	"sonolus.Stream.ItemsSincePreviousFrame":  "stream.itemsSincePreviousFrame",
+	"sonolus.Stream.KeysFrom":                 "stream.keysFrom",
+	"sonolus.Stream.KeysFromDescending":       "stream.keysFromDescending",
+	"sonolus.Stream.KeysSincePreviousFrame":   "stream.keysSincePreviousFrame",
+	"sonolus.Stream.ValuesFrom":               "stream.valuesFrom",
+	"sonolus.Stream.ValuesFromDescending":     "stream.valuesFromDescending",
+	"sonolus.Stream.ValuesSincePreviousFrame": "stream.valuesSincePreviousFrame",
+	"sonolus.StreamData.Set":                  "streamData.set",
+	"sonolus.StreamData.Get":                  "streamData.get",
+	"sonolus.Sprite.Draw":                     "sprite.draw", "sonolus.Sprite.Exists": "sprite.exists",
 	"sonolus.Sprite.DrawCurvedB": "sprite.drawCurvedB", "sonolus.Sprite.DrawCurvedT": "sprite.drawCurvedT",
 	"sonolus.Sprite.DrawCurvedL": "sprite.drawCurvedL", "sonolus.Sprite.DrawCurvedR": "sprite.drawCurvedR",
 	"sonolus.Sprite.DrawCurvedBT": "sprite.drawCurvedBT", "sonolus.Sprite.DrawCurvedLR": "sprite.drawCurvedLR",
@@ -280,14 +316,24 @@ var resourceRecipes = map[string]string{
 
 var containerRecipes = map[string]string{
 	"sonolus.NewVarArray": "varArray.new", "sonolus.VarArray.Len": "varArray.len", "sonolus.VarArray.Capacity": "varArray.capacity",
-	"sonolus.VarArray.IsFull": "varArray.isFull", "sonolus.VarArray.Get": "varArray.get", "sonolus.VarArray.Set": "varArray.set",
-	"sonolus.VarArray.Append": "varArray.append", "sonolus.VarArray.Pop": "varArray.pop", "sonolus.VarArray.Clear": "varArray.clear",
+	"sonolus.VarArray.IsFull": "varArray.isFull", "sonolus.VarArray.Get": "varArray.get", "sonolus.VarArray.GetUnchecked": "varArray.getUnchecked", "sonolus.VarArray.Set": "varArray.set", "sonolus.VarArray.SetUnchecked": "varArray.setUnchecked",
+	"sonolus.VarArray.Append": "varArray.append", "sonolus.VarArray.AppendUnchecked": "varArray.appendUnchecked", "sonolus.VarArray.Pop": "varArray.pop", "sonolus.VarArray.Clear": "varArray.clear",
 	"sonolus.VarArray.Contains": "varArray.contains", "sonolus.VarArray.Insert": "varArray.insert",
-	"sonolus.NewArrayMap": "arrayMap.new", "sonolus.ArrayMap.Len": "arrayMap.len", "sonolus.ArrayMap.Capacity": "arrayMap.capacity",
+	"sonolus.VarArray.RemoveAt": "varArray.removeAt", "sonolus.VarArray.Remove": "varArray.remove",
+	"sonolus.VarArray.Index": "varArray.index", "sonolus.VarArray.LastIndex": "varArray.lastIndex", "sonolus.VarArray.Count": "varArray.count",
+	"sonolus.VarArray.Swap": "varArray.swap", "sonolus.VarArray.SwapUnchecked": "varArray.swapUnchecked", "sonolus.VarArray.Reverse": "varArray.reverse",
+	"sonolus.VarArray.Shuffle": "varArray.shuffle", "sonolus.VarArray.SortFunc": "varArray.sortFunc", "sonolus.VarArray.Extend": "varArray.extend",
+	"sonolus.VarArray.IndexMinFunc": "varArray.indexMinFunc", "sonolus.VarArray.IndexMaxFunc": "varArray.indexMaxFunc",
+	"sonolus.VarArray.MinFunc": "varArray.minFunc", "sonolus.VarArray.MaxFunc": "varArray.maxFunc", "sonolus.VarArray.Values": "varArray.values", "sonolus.VarArray.ValuesReversed": "varArray.valuesReversed", "sonolus.VarArray.Items": "varArray.items",
+	"sonolus.SortLinkedEntities": "entities.sortLinked", "sonolus.SortDoublyLinkedEntities": "entities.sortDoublyLinked",
+	"sonolus.NewArrayMap": "arrayMap.new", "sonolus.ArrayMap.Len": "arrayMap.len", "sonolus.ArrayMap.Capacity": "arrayMap.capacity", "sonolus.ArrayMap.IsFull": "arrayMap.isFull",
 	"sonolus.ArrayMap.Get": "arrayMap.get", "sonolus.ArrayMap.Set": "arrayMap.set", "sonolus.ArrayMap.Delete": "arrayMap.delete",
 	"sonolus.ArrayMap.Contains": "arrayMap.contains", "sonolus.ArrayMap.Clear": "arrayMap.clear",
-	"sonolus.NewArraySet": "arraySet.new", "sonolus.ArraySet.Len": "arraySet.len", "sonolus.ArraySet.Capacity": "arraySet.capacity",
+	"sonolus.ArrayMap.GetOK": "arrayMap.getOK", "sonolus.ArrayMap.Pop": "arrayMap.pop",
+	"sonolus.ArrayMap.Keys": "arrayMap.keys", "sonolus.ArrayMap.Values": "arrayMap.values", "sonolus.ArrayMap.Items": "arrayMap.items",
+	"sonolus.NewArraySet": "arraySet.new", "sonolus.ArraySet.Len": "arraySet.len", "sonolus.ArraySet.Capacity": "arraySet.capacity", "sonolus.ArraySet.IsFull": "arraySet.isFull",
 	"sonolus.ArraySet.Add": "arraySet.add", "sonolus.ArraySet.Remove": "arraySet.remove", "sonolus.ArraySet.Contains": "arraySet.contains", "sonolus.ArraySet.Clear": "arraySet.clear",
+	"sonolus.ArraySet.Values": "arraySet.values",
 }
 
 // LookupRecipe is the sole classification point for public DSL symbols. A
@@ -332,6 +378,8 @@ func LookupRecipe(symbol *Symbol) Recipe {
 			return Recipe{Kind: RecipeCompileTime, Reason: "resource constructor"}
 		case "SliderOption", "ToggleOption", "SelectOption":
 			return Recipe{Kind: RecipeCompileTime, Reason: "configuration constructor"}
+		case "Zero", "SlotsOf", "Assert", "Require", "StaticAssert", "RuntimeChecksEnabled", "Unreachable", "Terminate", "Notify":
+			return Recipe{Kind: RecipeCompileTime, Reason: "static type utility"}
 		}
 	}
 	return Recipe{Kind: RecipeForbidden, Reason: "callback lowering recipe has not been defined"}
