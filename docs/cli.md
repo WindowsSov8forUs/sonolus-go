@@ -16,7 +16,8 @@ sonolus-go build -o game ./engine
 
 ```text
 sonolus-go build [-o <name>] [-m <mode>]
-                 [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
+                 [-O 0|1|2] [-runtime-checks none|terminate|notify]
+                 [-rom <file>] [-stats] <pattern>...
 ```
 
 参数：
@@ -26,6 +27,7 @@ sonolus-go build [-o <name>] [-m <mode>]
 - `-O`：`0=minimal`、`1=fast`、`2=standard`，默认 `2`。
 - `-rom`：原始 little-endian float32 ROM fallback。
 - `-stats`：输出各模式 load/frontend 和共享 optimize/backend/total 时间。
+- `-runtime-checks`：动态检查策略，默认 `none`。
 
 源码声明 ROM 优先。源码 ROM 缺失或显式为空时使用 `-rom` fallback。fallback 长度必须是 4 的倍数。
 
@@ -35,6 +37,7 @@ sonolus-go build [-o <name>] [-m <mode>]
 
 ```text
 sonolus-go vet [-m <mode>] [-O 0|1|2]
+                 [-runtime-checks none|terminate|notify]
                  [-rom <file>] [-stats] <pattern>...
 ```
 
@@ -54,10 +57,13 @@ sonolus-go list <pattern>...
 
 ```text
 sonolus-go dev [-o <name>] [-addr <:8080>]
-                 [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
+                 [-O 0|1|2] [-runtime-checks none|terminate|notify]
+                 [-rom <file>] [-stats] <pattern>...
 ```
 
 `dev` 总是编译四种模式且要求 patterns 恰好匹配一个引擎；`-o` 可覆盖开发服务器显示的引擎名称。它启动完整 Sonolus 开发服务器，提供一个 engine item、一个 `Dev Level` 和内置的有效开发资源。Sonolus 客户端可直接连接 `-addr` 对应的地址。
+
+`dev` 的 runtime checks 默认 `notify`。终端输入 `decode <code>` 可查询当前成功快照的诊断消息，输入 `help` 查看命令；失败重编译不会替换诊断表。
 
 除标准 `/sonolus/*` info、list、details 和 repository 路由外，它保留以下编译诊断端点：
 

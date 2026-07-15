@@ -21,7 +21,7 @@ development LevelFile
 
 根调度器是 `internal/compiler.Compiler`。CLI 只依赖该根包门面，不直接调用 frontend、IR 或 backend。
 
-仓库根目录下的 `godori/` 是完整链路的长期验收工程：同一组源码覆盖 Play、Watch、Preview、Tutorial、Development Level 和 CLI dev server。它参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 的 pydori 设计，但仅实现 Tap-only 基础玩法，并使用 Go DSL 原生结构。
+仓库根目录下的 `godori/` 是完整链路的长期验收工程：同一组源码覆盖 Play、Watch、Preview、Tutorial、Development Level 和 CLI dev server。它参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 的 pydori 设计，包含 Tap、Flick、Directional Flick、普通与 Flick 终点 Hold 链、同时押宽 hitbox 切分、回放 stream 与分段 Hold 音效、组合 judgment bucket、动态管理 archetype、BPM/Timescale、Preview 与 Tutorial，并使用 Go DSL 原生结构。
 
 CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
 
@@ -83,6 +83,8 @@ Catalog 是公开 Sonolus API 的唯一语义来源，记录：
 
 Frontend 按准确 `go/types.Object` 查 catalog，不依赖 import alias 或源码文本猜测。
 
+Callable、pointer、catalog container 与 static interface 的 runtime 分支合并统一表示为有限变体：一槽 Temporary Memory tag 加按源码首次出现排序的静态 alternatives。各 alternative 保留独立 callable 捕获环境与具体泛型 type substitution、pointer place set、container backing descriptor 或 concrete interface payload；helper 参数/返回与 dispatch 只生成 CFG，不在最终 IR 中留下 Go 函数、pointer、container descriptor 或 interface 对象。Iterator 创建时冻结 descriptor tag，后续变量重绑不会改变既有 iterator 的目标。Entity view 在本地 aggregate 中同样只展开为一槽 entity index。
+
 ## IR
 
 `internal/compiler/ir` 是与 Go frontend 解耦的强类型 CFG：
@@ -90,7 +92,7 @@ Frontend 按准确 `go/types.Object` 查 catalog，不依赖 import alias 或源
 - Function 由显式 Block 组成。
 - Terminator 为 Jump、Branch、Switch、Return 或 Unreachable。
 - Value 带 DSL Type 和有序 scalar slots。
-- Place 表示 virtual local、indexed local 或 semantic memory。
+- Place 表示 virtual local、indexed local 或 semantic memory；嵌套动态 entity/array index 在 frontend 中规范化为可组合 affine address。
 - RuntimeCall 保存 RuntimeFunction、参数顺序、返回 layout、effect 和轻量 SourcePos。
 
 IR 不导入 AST、`go/token`、`go/types`、packages、frontend 或 catalog。
@@ -99,7 +101,7 @@ IR 不导入 AST、`go/token`、`go/types`、packages、frontend 或 catalog。
 
 ## Optimize
 
-Optimizer 深拷贝每个 callback IR，并执行所选 pipeline。分析缓存只存在于单次 Optimize 调用，不跨 callback 或并发共享。详情见 [优化器](optimization.md)。
+Optimizer 深拷贝每个 callback IR，并执行所选 pipeline。callback 使用不超过 `GOMAXPROCS` 的有界 worker pool 并行优化，结果与错误仍按稳定 job 顺序归并。分析缓存只存在于单次 Optimize 调用，不跨 callback 或并发共享；未声明契约的 pass 按保守策略清空缓存，CopyCoalesce clone 并重映射干涉图，后续只删除指令/CFG 的 pass 可保留该 over-approximation 供 Allocate 复用。liveness 与 interference graph 使用固定宽度 bitset。LICM/CSE 只把 catalog 按 mode/callback 判定为 readonly 的 semantic memory 作为候选，RuntimeUI 等存在同阶段 setter 的 storage 保持屏障。详情见 [优化器](optimization.md)。
 
 Temporary Memory 上限为 4096 slots。allocation 将 virtual local 重写为物理 Temporary Memory layout；backend 拒绝残留 SSA、Phi 或未分配 local。
 
@@ -130,7 +132,12 @@ type Artifacts struct {
 	Watch         *resource.EngineWatchData
 	Preview       *resource.EnginePreviewData
 	Tutorial      *resource.EngineTutorialData
+	Diagnostics   map[int]string
 }
 ```
 
 `internal/build` 将存在的模式产物 gzip 后原子写入目录。
+
+`sonolus/sim` 消费相同最终 Artifacts，并通过不依赖 compiler 门面的 `internal/simexec` 直接解释各模式 EngineData node pool；reference tests、Py final-tree 差分和公开 simulator 共用这一个 executor。它不绕过 optimizer/backend，因此用于比较三个优化等级的 callback 返回值、semantic memory、streams 与副作用顺序。Temporary Memory 的物理编号与内容不属于跨优化等级的可观察语义。
+
+Catalog generator 为完整 core RuntimeFunction inventory 生成唯一 simulation metadata，包括 class、arity/result slots、effect、strategy、特殊 shape 标记与 memory/stream 参数角色；同一 RuntimeFunction 的 facade recipe 不得产生写入语义冲突。Simulator 在访问参数节点前按该生成策略验证 arity/shape 和参数，保留 IEEE NaN/Inf，并对非法 node、argument/state、memory/stream index、缺失 handler 与 step limit 返回可由 `errors.As` 获取的 `sim.ExecutionError`，不得因畸形 EngineData panic。
