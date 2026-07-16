@@ -13,7 +13,8 @@ Node indexes are deliberately excluded from the golden: callback roots are
 expanded into RuntimeFunction trees so child-first deduplication differences do
 not appear as semantic differences.
 
-After auditing a new reference revision, regenerate with:
+After auditing a new reference revision, regenerate the four-mode Go audit
+artifact and the JavaScript RuntimeFunction semantics golden with:
 
 ```powershell
 & internal/compiler/testdata/backend/regenerate.ps1
@@ -28,7 +29,15 @@ JavaScript compiler and covers number serialization, peephole output, and the
 child-first node pool. Unlike the four-mode audit artifact, this is a direct
 cross-implementation golden comparison.
 
-The regeneration command compiles the Go fixture after the implementation has
-been audited against the pinned reference sources. It does not execute the
-Python or JavaScript compilers, so the golden is a checked-in semantic audit
-artifact rather than an independently cross-compiled output.
+Regenerate the SNode golden separately from a checkout at the pinned commit:
+
+```bash
+internal/compiler/testdata/backend/regenerate_snode.sh ../sonolus.js-compiler/src
+```
+
+The PowerShell regeneration command compiles the Go fixture after the
+implementation has been audited against the pinned reference sources and runs
+the JavaScript native semantics harness. It does not execute the Python
+compiler. The four-mode reference golden is therefore a checked-in semantic
+audit artifact, while `runtime_native_golden.json` and `snode_golden.json` are
+direct outputs from the pinned JavaScript implementation.

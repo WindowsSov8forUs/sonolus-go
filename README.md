@@ -73,6 +73,7 @@ sonolus-go dev -o godori ./godori
 - [编译器架构](docs/architecture.md)
 - [优化器](docs/optimization.md)
 - [性能与规模](docs/performance.md)
+- [维护指南](docs/maintenance.md)
 
 ## 许可
 

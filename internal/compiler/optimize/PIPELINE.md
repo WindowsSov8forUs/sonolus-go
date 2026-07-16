@@ -13,10 +13,10 @@ Temporary Memory allocation is owned by this package. Minimal allocates locals s
 Backend SNode peephole rules follow `sonolus.js-compiler` commit `37b0eee`, `src/snode/optimize`. They run bottom-up after IR finalization and preserve evaluation of eliminated dynamic arithmetic arguments with `Execute`.
 
 The pinned Python optimizer golden and regeneration harness live under
-`internal/compiler/testdata/optimize`. Schema v3 uses one neutral JSON CFG
-fixture parsed independently by Go and Python. Tests compare normalized RPO CFG
-snapshots after ToSSA, first SCCP cleanup, second SCCP, FromSSA, Allocate, and
-the final Standard EngineData tree.
+`internal/compiler/testdata/optimize`. The schema v2 neutral JSON CFG fixture is
+parsed independently by Go and Python. Regeneration produces a schema v4
+snapshot containing canonical text and structured CFG at ToSSA, first SCCP
+cleanup, second SCCP, FromSSA, Allocate, and the final Standard EngineData tree.
 
 Equivalent private CFG differences are listed by exact case, checkpoint, JSON
 pointer, Go value, Python value, and reason in `py_pass_allowlist.json`.
