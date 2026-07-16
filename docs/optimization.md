@@ -1,114 +1,85 @@
 # 优化器
 
-sonolus-go 实现了一个多级优化流水线，对标 sonolus.py 的优化器。
+## 目标与契约
 
-sonolus-go 提供三级优化，通过 `pipeline.go` 中的 `Minimal()`/`Fast()`/`Standard()` 函数定义。
-完整的分歧说明和 pass-by-pass 对比见 [PIPELINE.md](../internal/compiler/ir/optimize/PIPELINE.md)。
+`internal/compiler/optimize` 接受强类型 CFG IR，返回深拷贝后的 final-form IR。它不认识 AST、`go/types`、frontend、backend 或 Sonolus 物理 memory block。
 
-### Standard（完整优化，44 passes）
+每个 pass 后执行 `ir.Validate`，pipeline 结束执行 `ir.ValidateFinal`。错误包含 mode、callback、function 和 pass 名称。
 
-完整的 SSA 往返 + 双轮 SCCP + 三轮内联 + 循环优化 + 寄存器分配：
+默认等级是 Standard。CLI 映射：
 
-```
-Pre-SSA: CoalesceFlow → CoalesceSmallConditionalBlocks → UCE → DCE
-SSA:     ToSSA → SCCP → UCE → DCE → CoalesceFlow →
-         NormalizeBlocks → InlineVars×2(+DCE) → SCCP →
-         FlattenAssociativeOps → RemoveRedundantArguments → DCE →
-         CoalesceFlow → RewriteToSwitch → InlineVars(aggressive) →
-         UnflattenAssociativeOps → LICM → CSE → NormalizeBlocks →
-         FlattenAssociativeOps → InlineVars → DCE →
-         FlattenAssociativeOps → RemoveRedundantArguments
-Exit:    FromSSA → UnflattenAssociativeOps
-Post:    CopyCoalesce → UCE → CoalesceFlow → CombineExitBlocks →
-         NormalizeSwitch → AdvancedDCE → DCE →
-         CoalesceFlow → UCE → DCE → RenumberVars
-Alloc:   AllocateLive
-```
+| `-O` | 等级 | 用途 |
+|---|---|---|
+| `0` | Minimal | 最少且保守的结构清理，便于调试 |
+| `1` | Fast | 不进入 SSA 的快速编译 |
+| `2` | Standard | 完整优化，默认 |
 
-- 完整 SSA 往返（ToSSA → FromSSA）
-- 两轮 SCCP（SSA 内联前后各一次）
-- 三轮内联（保守 → 保守 → 激进）+ RewriteToSwitch
-- 循环不变量外提（LICM）+ 全局公共子表达式消除（CSE）
-- 活性感知线性扫描寄存器分配（AllocateLive）
+所有等级必须保持 callback 语义一致。
 
-### Fast（均衡优化，26 passes）
+## Minimal
 
-单轮 SSA + 一轮内联 + 顺序分配（spill 时回退到活性分配）：
+主要步骤：
 
-```
-Pre:  CoalesceFlow → UCE → DCE → CoalesceFlow
-SSA:  ToSSA → SCCP → UCE → DCE → CoalesceFlow →
-      NormalizeBlocks → InlineVars → DCE → CoalesceFlow
-Exit: FlattenAssociativeOps → FromSSA → UnflattenAssociativeOps
-Post: CoalesceFlow → UCE → DCE → NormalizeSwitch →
-      CombineExitBlocks → CoalesceFlow → UCE → DCE → RenumberVars
-Alloc: TryAllocateBasic
+1. 常量 Branch/Switch 折叠。
+2. 删除不可达 block。
+3. 合并简单控制流。
+4. 删除明确 no-op。
+5. 顺序分配 local。
+6. 稳定重编号。
+
+Minimal 不建立 SSA，不进行跨 block 数据流优化。顺序分配超过 4096 Temporary Memory slots 时直接失败。
+
+## Fast
+
+主要步骤：
+
+```text
+CoalesceFlow
+RemoveUnreachable
+TryAllocateBasic
+CoalesceFlow
+RenumberBlocks
 ```
 
-- 单轮 SSA + SCCP
-- 一轮内联
-- TryAllocateBasic: 先尝试顺序分配，超过 256 槽时回退到 AllocateLive
+Fast 首先尝试顺序分配；超过限制时使用保守活性复用。它不进入 SSA，适合开发期追求更短编译时间且需要比 Minimal 更好的内存分配时使用。
 
-### Minimal（最快编译，6 passes）
+## Standard
 
-无 SSA 构造，仅基本清理 + 顺序分配：
+Standard 以 `sonolus.py@1040bc0` 的 pass 语义和顺序为基线，包含：
 
-```
-CoalesceFlow → UCE → DCE → CoalesceFlow → RenumberVars
-Alloc: AllocateBasic
-```
+- CFG 清理和小条件块合并。
+- ToSSA、两轮 SCCP、FromSSA。
+- 普通与高级 DCE。
+- variable inline、aggressive inline。
+- associative flatten/unflatten 和 redundant argument removal。
+- if-chain 到 switch 重写、switch/exit 规范化。
+- LICM、CSE、copy coalescing。
+- 基于活性干涉图的确定性 first-fit allocation。
 
-- 仅基本块合并 + 死代码消除
-- 无 SSA、SCCP、内联、LICM、CSE
-- AllocateBasic 顺序分配（无活性分析）
+只提升可静态寻址的 scalar local slot。动态索引 aggregate 保持 memory 形式，避免错误 alias 推断。
 
-## 优化 Pass 列表
+## 副作用与数值
 
-| Pass | 文件 | 说明 |
-|------|------|------|
-| **ToSSA** | `ssa.go` | SSA 形式构造（phi 插入 + 变量重命名） |
-| **FromSSA** | `ssa.go` | SSA 销毁（phi 具体化到边复制） |
-| **SCCP** | `sccp.go` | 稀疏条件常量传播（三值晶格：Undef/Const/NAC） |
-| **InlineVars** | `inlining.go` | SSA 变量内联（积极/保守双模式） |
-| **LICM** | `licm.go` | 循环不变量外提（自然循环 + 回边检测） |
-| **CSE** | `cse.go` | 全局公共子表达式消除（支配树遍历） |
-| **CopyCoalesce** | `copycoalesce.go` | 副本合并（活性增强的 union-find） |
-| **DCE** | `dce.go` | 标记-清除死代码消除 |
-| **UCE** | `uce.go` | 不可达代码消除 |
-| **AdvancedDCE** | `advanced.go` | 高级死代码消除（基于活性分析） |
-| **CoalesceFlow** | `coalesce.go` | 控制流合并（空块跳过 + 线性链合并） |
-| **CoalesceSmallConditionalBlocks** | `coalesce_small_cond.go` | 小条件块折叠 |
-| **CombineExitBlocks** | `combine_exit.go` | 出口块合并 |
-| **RewriteToSwitch** | `rewrite.go` | if-else 链 → switch 重写 |
-| **NormalizeSwitch** | `normalize_switch.go` | Switch case 算术序列归一化 |
-| **FlattenAssociativeOps** | `flatten.go` | 结合运算展平（Add/Mul/Mod/Rem） |
-| **UnflattenAssociativeOps** | `unflatten.go` | 结合运算分解（n-ary → binary） |
-| **RemoveRedundantArguments** | `redundant_args.go` | 代数简化（0/1 单位元移除 + Sub(0,a)→Negate） |
-| **NormalizeBlocks** | `normalize_blocks.go` | BlockPlace.Index nil→Const(0) 归一化 |
-| **RenumberVars** | `renumber_vars.go` | 临时变量确定性重编号 |
-| **AllocateBasic** | `alloc_basic.go` | 顺序寄存器分配（无活性分析） |
-| **TryAllocateBasic** | `alloc_basic.go` | 分层分配（顺序优先，spill 时回退） |
-| **AllocateLive** | `advanced.go` | 线性扫描寄存器分配（基于活性区间打包） |
+优化只处理 local 和 catalog 明确标记为 pure 的 RuntimeCall。semantic memory、动态索引和非纯调用采用保守规则，不跨副作用读取、删除或重排。
 
-## SNode Peephole 优化
+SCCP 不折叠随机调用或未确认与 Sonolus Runtime 数值行为一致的运算。NaN、Inf 和 Runtime 浮点细节不能按普通 Go 常量语义擅自推断。
 
-最终 SNode 树层面的运行时特定优化：
+## Allocation
 
-| 优化 | 说明 |
-|------|------|
-| Arithmetic flattening/folding | `Add`/`Subtract`/`Multiply`/`Divide` 合并常量 + 单位元消除 |
-| Mod/Rem/Power flattening | 结合性展平 |
-| Get/GetShifted pattern | `Get(index + y*stride)` → `GetShifted(...)` |
-| Set/SetShifted pattern | `Set(x, Read(x) + 1)` → `SetAdd(x, 1)` |
-| If(x, y, 0) → And(x, y) | 条件化简 |
-| SwitchWithDefault normalize | 算术序列检测 + default 消除 |
-| While body tail removal | 空循环体消除 |
+Temporary Memory 硬限制为 4096 slots：
 
-## 参考
+- Minimal：声明顺序连续分配。
+- Fast：优先 basic，必要时保守活性复用。
+- Standard：按 local size 与稳定 ID 排序，对干涉图确定性 first-fit。
 
-- sonolus.py 优化器: `../sonolus.py/sonolus/backend/optimize/`
+无法装入时错误会报告 callback、所需 slots 和 4096 上限，不自动降低优化等级。
 
----
+## Backend SNode peephole
 
-> 参考：[编译器架构](architecture.md) · [性能基准](performance.md)
-- sonolus.js-compiler SNode 优化: `../sonolus.js-internal/compiler/src/snode/optimize/`
+IR optimizer 之后，backend 始终执行以 `sonolus.js-compiler@37b0eee` 为基线的 SNode peephole，包括算术单位元、常量组合、Get/Set shifted 互换、SetAdd 等融合和控制流尾值清理。
+
+被代数消去但可能有副作用的动态参数会用 `Execute` 保留求值，确保严格的左到右副作用顺序。
+
+## 差分与回归
+
+仓库保存固定 Py pass snapshot 和 JS SNode golden。普通 Go CI 只读取 checked-in golden，不依赖相邻 Python/Node checkout。更新固定参考版本时，必须显式运行对应 testdata regeneration script并审核差异。

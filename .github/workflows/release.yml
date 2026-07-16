@@ -4,8 +4,8 @@ name: Release
 # packages them into archives, and uploads to a GitHub Release.
 #
 # To cut a release:
-#   git tag -a v0.3.0 -m "v0.3.0"
-#   git push origin v0.3.0
+#   git tag -a v1.1.0-rc.1 -m "v1.1.0-rc.1"
+#   git push origin v1.1.0-rc.1
 
 on:
   push:
@@ -53,7 +53,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: "~> v2"
+          version: "v2.12.7"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

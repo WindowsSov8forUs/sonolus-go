@@ -1,345 +1,266 @@
 package ir
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/modecompile"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/snode"
 )
 
-var canon = modecompile.Canon
-
-// mustLower calls CFGToSNode and panics on error. This is a test helper;
-// CFGToSNode failures indicate an invariant violation in the test setup.
-func mustLower(sn snode.SNode, err error) snode.SNode {
-	if err != nil {
-		panic(err)
+func TestTypedCFG(t *testing.T) {
+	local := LocalPlace{ID: 0, Name: "x"}
+	entry := &Block{ID: 0}
+	entry.Instructions = append(entry.Instructions, Store{Place: local, Value: Const{Value: 1}})
+	entry.Terminator = Branch{Condition: RuntimeCall{Function: resource.RuntimeFunctionGreater, Args: []Expr{Load{Place: local}, Const{}}, Result: Type{Name: "bool", Slots: 1}, Pure: true}, True: 1, False: 2}
+	fn := Function{Name: "test", Entry: 0, Blocks: []*Block{entry, {ID: 1, Terminator: Return{}}, {ID: 2, Terminator: Unreachable{}}}}
+	if fn.Entry != 0 || len(fn.Blocks) != 3 {
+		t.Fatalf("unexpected CFG: %#v", fn)
 	}
-	return sn
-}
-
-// TestFinalizeSingleBlockBreak reproduces the pydori should_spawn node shape:
-// a single block whose body is Break(1,1), terminating the JumpLoop.
-func TestFinalizeSingleBlockBreak(t *testing.T) {
-	gen := NewIDGen()
-	b := NewBlock()
-	b.Statements = []Node{gen.ImpureInstr(resource.RuntimeFunctionBreak, Const(1), Const(1))}
-
-	got := canon(mustLower(CFGToSNode(gen, b)))
-	want := "Block(JumpLoop(Execute(Break(#1,#1),#1),#0))"
-	if got != want {
-		t.Errorf("\n got: %s\nwant: %s", got, want)
+	branch, ok := fn.Blocks[0].Terminator.(Branch)
+	if !ok || branch.True != 1 || branch.False != 2 {
+		t.Fatalf("unexpected branch: %#v", fn.Blocks[0].Terminator)
 	}
 }
 
-func TestFinalizeSetFallthrough(t *testing.T) {
-	gen := NewIDGen()
-	b := NewBlock()
-	b.Statements = []Node{gen.SetPlace(Cell(0, 0), Const(5))}
-
-	got := canon(mustLower(CFGToSNode(gen, b)))
-	want := "Block(JumpLoop(Execute(Set(#0,#0,#5),#1),#0))"
-	if got != want {
-		t.Errorf("\n got: %s\nwant: %s", got, want)
+func TestBuilderFinish(t *testing.T) {
+	b := NewBuilder("callback", Type{Name: "float64", Slots: 1})
+	entry, exit := b.NewBlock(), b.NewBlock()
+	if err := b.SetEntry(entry); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestFinalizeConditional(t *testing.T) {
-	gen := NewIDGen()
-	b0 := NewBlock()
-	b0.Test = GetPlace(Cell(1, 0))
-	bTrue := NewBlock()
-	bFalse := NewBlock()
-	b0.ConnectTo(bFalse, Cond(0))
-	b0.ConnectTo(bTrue, nil)
-
-	got := canon(mustLower(CFGToSNode(gen, b0)))
-	// order: b0=0, bTrue=1, bFalse=2; exit=3; both leaves jump to 3 and dedup.
-	want := "Block(JumpLoop(Execute(If(Get(#1,#0),#1,#2)),Execute(#3),Execute(#3),#0))"
-	if got != want {
-		t.Errorf("\n got: %s\nwant: %s", got, want)
+	if err := b.SetCurrent(entry); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestFinalizeSwitchIntegerDense(t *testing.T) {
-	gen := NewIDGen()
-	b0 := NewBlock()
-	b0.Test = GetPlace(Cell(0, 0))
-	b1, b2, b3, bDef := NewBlock(), NewBlock(), NewBlock(), NewBlock()
-	b0.ConnectTo(b1, Cond(0))
-	b0.ConnectTo(b2, Cond(1))
-	b0.ConnectTo(b3, Cond(2))
-	b0.ConnectTo(bDef, nil)
-
-	got := canon(mustLower(CFGToSNode(gen, b0)))
-	// order: b0=0, bDef=1, b3=2, b2=3, b1=4; default index=1.
-	want := "Block(JumpLoop(" +
-		"Execute(SwitchIntegerWithDefault(Get(#0,#0),#4,#3,#2,#1))," +
-		"Execute(#5),Execute(#5),Execute(#5),Execute(#5),#0))"
-	if got != want {
-		t.Errorf("\n got: %s\nwant: %s", got, want)
+	local := b.NewLocal("x", Type{Name: "float64", Slots: 1})
+	if err := b.Store(Places(local), Value{Type: local.Type, Slots: []Expr{Const{Value: 2}}}, SourcePos{}); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestFinalizeSwitchSparse(t *testing.T) {
-	gen := NewIDGen()
-	b0 := NewBlock()
-	b0.Test = GetPlace(Cell(0, 0))
-	b1, b2, b3, bDef := NewBlock(), NewBlock(), NewBlock(), NewBlock()
-	b0.ConnectTo(b1, Cond(0))
-	b0.ConnectTo(b2, Cond(2))
-	b0.ConnectTo(b3, Cond(5))
-	b0.ConnectTo(bDef, nil)
-
-	got := canon(mustLower(CFGToSNode(gen, b0)))
-	// order: b0=0, bDef=1, b3=2, b2=3, b1=4.
-	want := "Block(JumpLoop(" +
-		"Execute(SwitchWithDefault(Get(#0,#0),#0,#4,#2,#3,#5,#2,#1))," +
-		"Execute(#5),Execute(#5),Execute(#5),Execute(#5),#0))"
-	if got != want {
-		t.Errorf("\n got: %s\nwant: %s", got, want)
+	if err := b.Jump(exit); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestFinalizeEqualBranch(t *testing.T) {
-	gen := NewIDGen()
-	b0 := NewBlock()
-	b0.Test = GetPlace(Cell(0, 0))
-	b1, bDef := NewBlock(), NewBlock()
-	b0.ConnectTo(b1, Cond(3))
-	b0.ConnectTo(bDef, nil)
-
-	got := canon(mustLower(CFGToSNode(gen, b0)))
-	// order: b0=0, bDef=1, b1=2.
-	want := "Block(JumpLoop(Execute(If(Equal(Get(#0,#0),#3),#2,#1)),Execute(#3),Execute(#3),#0))"
-	if got != want {
-		t.Errorf("\n got: %s\nwant: %s", got, want)
+	if err := b.SetCurrent(exit); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// TestFinalizeToNodes drives finalize all the way into the deduplicated node
-// list via the existing appender.
-
-func TestFinalizeToNodes(t *testing.T) {
-	gen := NewIDGen()
-	b := NewBlock()
-	b.Statements = []Node{gen.ImpureInstr(resource.RuntimeFunctionBreak, Const(1), Const(1))}
-
-	var nodes []resource.EngineDataNode
-	root, err := snode.NewAppender(&nodes).Append(mustLower(CFGToSNode(gen, b)))
+	if err := b.Return(local); err != nil {
+		t.Fatal(err)
+	}
+	fn, err := b.Finish()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if root != 5 || len(nodes) != 6 {
-		t.Fatalf("root=%d nodes=%d, want root=5 nodes=6", root, len(nodes))
+	if fn.Entry != 0 || len(fn.Locals) != 1 || len(fn.Blocks) != 2 {
+		t.Fatalf("unexpected function: %#v", fn)
 	}
 }
 
-func TestFloorMod(t *testing.T) {
-	tests := []struct {
-		a, b, want float64
-	}{
-		{7, 3, 1},
-		{-7, 3, 2},  // Python -7%3 == 2
-		{7, -3, -2}, // Python 7%-3 == -2
-		{-7, -3, -1},
-		{-1, 3, 2},
-		{0, 3, 0},
+func TestBuilderRejectsInvalidIR(t *testing.T) {
+	b := NewBuilder("invalid", Type{})
+	entry := b.NewBlock()
+	_ = b.SetEntry(entry)
+	_ = b.SetCurrent(entry)
+	readonly := MemoryPlace{Storage: "imported", Index: Const{}, Read: true}
+	if err := b.Store([]Place{readonly}, Value{Type: Type{Slots: 1}, Slots: []Expr{Const{}}}, SourcePos{}); err == nil {
+		t.Fatal("expected read-only store error")
 	}
-	for _, tc := range tests {
-		got := FloorMod(tc.a, tc.b)
-		if got != tc.want {
-			t.Errorf("FloorMod(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
-		}
+	_ = b.Jump(entry)
+	if err := b.Jump(entry); err == nil {
+		t.Fatal("expected duplicate terminator error")
+	}
+	if _, err := b.Finish(); err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-// ── P1-3: IR package additional coverage ──
-
-func TestAllocateTestBlocks_Basic(t *testing.T) {
-	gen := NewIDGen()
-	b0 := NewBlock()
-	b1 := NewBlock()
-	b0.Statements = []Node{gen.SetPlace(Cell(0, 0), Const(1))}
-	b0.ConnectTo(b1, nil)
-	b1.Statements = []Node{gen.SetPlace(Cell(0, 1), Const(2))}
-
-	allocated, err := AllocateTestBlocks(b0, DefaultTempMemoryBlock)
+func TestBuilderCreatesValidatedPlaces(t *testing.T) {
+	b := NewBuilder("places", Type{})
+	local := b.NewLocal("array", Type{Name: "array", Slots: 4})
+	base := Places(local)[0].(LocalPlace)
+	indexed, err := b.IndexedLocal(base, Const{Value: 1}, 2, 2, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if allocated == nil {
-		t.Fatal("AllocateTestBlocks returned nil")
+	if indexed.Base != 0 || indexed.Length != 2 || indexed.Stride != 2 || indexed.Offset != 1 {
+		t.Fatalf("unexpected indexed place: %#v", indexed)
 	}
-	canon(mustLower(CFGToSNode(gen, allocated)))
-}
-
-func TestAllocateTestBlocks_Empty(t *testing.T) {
-	gen := NewIDGen()
-	b := NewBlock()
-	b.Statements = []Node{gen.SetPlace(Cell(0, 0), Const(42))}
-	allocated, err := AllocateTestBlocks(b, DefaultTempMemoryBlock)
+	memory, err := b.Memory("shared", Const{}, 4, 2, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if allocated == nil {
-		t.Fatal("AllocateTestBlocks returned nil")
+	if memory.Storage != "shared" || memory.Stride != 4 || memory.Offset != 2 {
+		t.Fatalf("unexpected memory place: %#v", memory)
 	}
 }
 
-func TestReversePostorder_Basic(t *testing.T) {
-	b0 := NewBlock()
-	b1 := NewBlock()
-	b2 := NewBlock()
-	b0.ConnectTo(b1, nil)
-	b1.ConnectTo(b2, nil)
-
-	order := ReversePostorder(b0)
-	if len(order) != 3 {
-		t.Fatalf("len = %d, want 3", len(order))
+func TestBuilderRejectsInvalidPlacesImmediately(t *testing.T) {
+	b := NewBuilder("places", Type{})
+	local := b.NewLocal("array", Type{Name: "array", Slots: 4})
+	base := Places(local)[0].(LocalPlace)
+	if _, err := b.IndexedLocal(base, Const{}, 2, 3, 0); err == nil {
+		t.Fatal("expected indexed local layout error")
 	}
-	// Reverse postorder: b2 (deepest) should appear before b0 (entry).
-	foundEntry := false
-	for i, b := range order {
-		if b == b0 && i < len(order)-1 {
-			foundEntry = true
-		}
-	}
-	if !foundEntry {
-		t.Logf("order: b0@%v b1@%v b2@%v", indexOf(order, b0), indexOf(order, b1), indexOf(order, b2))
+	if _, err := b.Memory("", Const{}, 0, 0, true, false); err == nil {
+		t.Fatal("expected memory layout error")
 	}
 }
 
-func indexOf(blocks []*BasicBlock, target *BasicBlock) int {
-	for i, b := range blocks {
-		if b == target {
-			return i
-		}
+func TestBuilderJumpIfOpenPreservesTerminator(t *testing.T) {
+	b := NewBuilder("terminated", Type{})
+	entry, first, second := b.NewBlock(), b.NewBlock(), b.NewBlock()
+	_ = b.SetEntry(entry)
+	_ = b.SetCurrent(entry)
+	if err := b.Jump(first); err != nil {
+		t.Fatal(err)
 	}
-	return -1
-}
-
-func TestPreorder_Basic(t *testing.T) {
-	b0 := NewBlock()
-	b1 := NewBlock()
-	b2 := NewBlock()
-	b0.ConnectTo(b1, nil)
-	b0.ConnectTo(b2, Cond(0))
-
-	order := Preorder(b0)
-	if len(order) != 3 {
-		t.Fatalf("len = %d, want 3", len(order))
+	if err := b.JumpIfOpen(second); err != nil {
+		t.Fatal(err)
 	}
-	if order[0] != b0 {
-		t.Error("first should be entry")
+	if got := entry.Terminator.(Jump).Target; got != first.ID {
+		t.Fatalf("jump target = %d, want %d", got, first.ID)
 	}
 }
 
-func TestWalk_AddInstr(t *testing.T) {
-	gen := NewIDGen()
-	root := gen.PureInstr(resource.RuntimeFunctionAdd, Const(1), Const(2))
-	var nodes []Node
-	Walk(root, func(n Node) { nodes = append(nodes, n) })
-	if len(nodes) < 2 {
-		t.Errorf("Walk visited %d nodes, want at least 2", len(nodes))
+func TestBuilderRejectsForgedBlockAndInstructionAfterTerminator(t *testing.T) {
+	b := NewBuilder("ownership", Type{})
+	entry := b.NewBlock()
+	if err := b.SetEntry(entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetCurrent(&Block{ID: entry.ID}); err == nil {
+		t.Fatal("expected forged block to be rejected")
+	}
+	if err := b.SetCurrent(entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Return(Value{Type: Type{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Eval(RuntimeCall{Function: resource.RuntimeFunctionDebugPause, Result: Type{}}); err == nil {
+		t.Fatal("expected instruction after terminator to be rejected")
 	}
 }
 
-func TestWalk_SetInstr(t *testing.T) {
-	gen := NewIDGen()
-	root := gen.SetPlace(Cell(0, 0), Const(5))
-	var nodes []Node
-	Walk(root, func(n Node) { nodes = append(nodes, n) })
-	if len(nodes) < 1 {
-		t.Error("Walk visited no nodes for Set")
+func TestBuilderRejectsInvalidLocalTypeWithoutPanicking(t *testing.T) {
+	b := NewBuilder("invalid-local", Type{})
+	value := b.NewLocal("bad", Type{Name: "bad", Slots: -1})
+	if len(value.Slots) != 0 {
+		t.Fatalf("invalid local returned slots: %#v", value)
+	}
+	if _, err := b.Finish(); err == nil || !strings.Contains(err.Error(), "invalid local") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestBlocks_Writable(t *testing.T) {
-	bs := Blocks(ModePlay)
-	// BlockRuntimeEnvironment should not be writable in typical callbacks.
-	if bs.Writable(BlockRuntimeEnvironment, "initialize") {
-		t.Error("BlockRuntimeEnvironment should be read-only in initialize")
-	}
-	// Temp memory block may or may not be in block tables — either answer is valid.
-	isWritable := bs.Writable(DefaultTempMemoryBlock, "updateSequential")
-	t.Logf("DefaultTempMemoryBlock writable in updateSequential: %v", isWritable)
-}
-
-func TestBlocks_RuntimeConstant(t *testing.T) {
-	bs := Blocks(ModePlay)
-	if bs.RuntimeConstant(BlockRuntimeEnvironment) {
-		t.Log("BlockRuntimeEnvironment is a runtime constant block")
+func TestValidateRejectsReachableUnterminatedBlock(t *testing.T) {
+	fn := &Function{Name: "invalid", Entry: 0, Blocks: []*Block{{ID: 0}}}
+	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "no terminator") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestNewTemp_Basic(t *testing.T) {
-	tb := NewTemp("myvar")
-	if tb.Name != "myvar" {
-		t.Errorf("Name = %q, want %q", tb.Name, "myvar")
-	}
-	if tb.Size != 1 {
-		t.Errorf("Size = %d, want 1", tb.Size)
+func TestMemoryPlaceRetainsSemanticStorage(t *testing.T) {
+	p := MemoryPlace{Storage: "shared", Index: Const{Value: 3}, Offset: 2, Read: true, Write: true}
+	if p.Storage != "shared" || p.Offset != 2 || !p.Read || !p.Write {
+		t.Fatalf("unexpected memory place: %#v", p)
 	}
 }
 
-func TestTempCell(t *testing.T) {
-	tb := NewTemp("x")
-	cell := TempCell(tb)
-	if cell.Block != tb {
-		t.Error("TempCell block should be the TempBlock")
+func TestValidateRejectsInvalidLoadedPlace(t *testing.T) {
+	fn := &Function{
+		Name:   "invalid-load",
+		Entry:  0,
+		Locals: []Type{{Name: "float64", Slots: 1}},
+		Blocks: []*Block{{ID: 0, Terminator: Return{Value: Value{Type: Type{Slots: 1}, Slots: []Expr{Load{Place: LocalPlace{ID: 0, Offset: 1}}}}}}},
+		Result: Type{Slots: 1},
+	}
+	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "outside its layout") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestNewBlockPlace_Basic(t *testing.T) {
-	bp := NewBlockPlace(Const(0), Const(0), 0)
-	if bp.Offset != 0 {
-		t.Errorf("Offset = %d, want 0", bp.Offset)
+func TestValidateRejectsWriteOnlyLoad(t *testing.T) {
+	fn := &Function{
+		Name:   "write-only-load",
+		Entry:  0,
+		Blocks: []*Block{{ID: 0, Terminator: Return{Value: Value{Type: Type{Slots: 1}, Slots: []Expr{Load{Place: MemoryPlace{Storage: "exported", Index: Const{}, Write: true}}}}}}},
+		Result: Type{Slots: 1},
+	}
+	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "write-only") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestSideEffects_Pure(t *testing.T) {
-	if !SideEffects(resource.RuntimeFunctionSet) {
-		t.Error("Set should have side effects")
+func TestValidateChecksUnreachableBlockStructure(t *testing.T) {
+	fn := &Function{
+		Name:  "invalid-unreachable",
+		Entry: 0,
+		Blocks: []*Block{
+			{ID: 0, Terminator: Return{}},
+			{ID: 1, Terminator: Jump{Target: 3}},
+		},
 	}
-	if SideEffects(resource.RuntimeFunctionAdd) {
-		t.Error("Add should be pure")
-	}
-	if !Pure(resource.RuntimeFunctionAdd) {
-		t.Error("Add should be marked pure")
-	}
-	if Pure(resource.RuntimeFunctionSet) {
-		t.Error("Set should not be pure")
-	}
-}
-
-func TestCond_Nil(t *testing.T) {
-	c := Cond(0)
-	if c == nil {
-		t.Fatal("Cond returned nil")
-	}
-	if *c != 0 {
-		t.Errorf("Cond(0) = %v, want 0", *c)
+	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "target 3") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestIEEERem(t *testing.T) {
-	tests := []struct {
-		a, b, want float64
-	}{
-		{7, 3, 1},
-		{-7, 3, -1}, // IEEE remainder(-7,3) == -1
-		{7, -3, 1},
-		{-7, -3, -1},
-		{10, 3, 1},
-		{-10, 3, -1},
+func TestValidateRejectsInvalidDynamicPlace(t *testing.T) {
+	fn := &Function{
+		Name:   "invalid-indexed-local",
+		Entry:  0,
+		Locals: []Type{{Name: "array", Slots: 4}},
+		Blocks: []*Block{{ID: 0, Terminator: Return{Value: Value{Type: Type{Name: "float64", Slots: 1}, Slots: []Expr{
+			Load{Place: IndexedLocalPlace{ID: 0, Index: Load{Place: LocalPlace{ID: 9}}, Length: 2, Stride: 3, Offset: 2}},
+		}}}}},
+		Result: Type{Name: "float64", Slots: 1},
 	}
-	for _, tc := range tests {
-		got := IEEERem(tc.a, tc.b)
-		if got != tc.want {
-			t.Errorf("IEEERem(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
-		}
+	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "invalid layout") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRejectsReturnTypeMismatch(t *testing.T) {
+	fn := &Function{
+		Name:   "wrong-return-type",
+		Entry:  0,
+		Blocks: []*Block{{ID: 0, Terminator: Return{Value: Value{Type: Type{Name: "int", Slots: 1}, Slots: []Expr{Const{}}}}}},
+		Result: Type{Name: "float64", Slots: 1},
+	}
+	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "returns type") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateChecksRuntimeCallResultShape(t *testing.T) {
+	fn := &Function{
+		Name:  "scalar-eval",
+		Entry: 0,
+		Blocks: []*Block{{
+			ID: 0,
+			Instructions: []Instruction{Eval{Value: RuntimeCall{
+				Function: resource.RuntimeFunctionAdd,
+				Result:   Type{Name: "float64", Slots: 1},
+			}}},
+			Terminator: Return{Value: Value{Type: Type{Name: "void"}}},
+		}},
+		Result: Type{Name: "void"},
+	}
+	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "eval requires a void runtime call") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateFinalRejectsSSAInTerminator(t *testing.T) {
+	fn := &Function{
+		Name: "ssa-return", Entry: 0, Allocated: true,
+		Result: Type{Name: "number", Slots: 1},
+		Blocks: []*Block{{ID: 0, Terminator: Return{Value: Value{
+			Type: Type{Name: "number", Slots: 1}, Slots: []Expr{Load{Place: SSAPlace{ID: 1, Name: "x"}}},
+		}}}},
+	}
+	if err := Validate(fn); err != nil {
+		t.Fatalf("intermediate SSA should validate: %v", err)
+	}
+	if err := ValidateFinal(fn); err == nil || !strings.Contains(err.Error(), "SSA place") {
+		t.Fatalf("final validation error = %v", err)
 	}
 }

@@ -1,540 +1,200 @@
-# DSL 语言参考
+# Go DSL 参考
 
-sonolus-go 将 Go 语法的一个受限子集编译为 Sonolus EngineData。本参考面向引擎作者——如果你刚开始，先看[快速入门](getting-started.md)。
+## 基本原则
 
-## 快速上手
+编译器接受的是静态可分析的 Go 子集，而不是任意合法 Go 程序。所有 Sonolus API 通过 `go/types.Object` 身份与 catalog 项匹配，因此 import alias 合法，同名用户函数不能伪造 intrinsic 或资源 constructor。
+
+四种模式使用 build tag `play`、`watch`、`preview`、`tutorial` 独立加载。未带模式 tag 的文件会进入每种模式。
+
+## 名称型资源
+
+资源由一对带相同 directive 的类型和唯一 singleton 变量声明：
 
 ```go
-package myengine
-
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
-
-type Skin struct { Note float64 }
-
-type Note struct {
-    Beat float64 `sonolus:"imported"`
-    X    float64 `sonolus:"memory"`
+//sonolus:resource skin standard
+type SkinData struct {
+	Note    sonolus.Sprite
+	Digits  [10]sonolus.Sprite
 }
 
-func (n *Note) Initialize() {
-    n.X = sonolus.Sin(n.Beat)
-    sonolus.SkinSprite("Note").Draw(sonolus.Quad{Blx: n.X, Bly: 0, Tlx: n.X+1, Tly: 0, Trx: n.X+1, Try: 1, Brx: n.X, Bry: 1})
-	sonolus.EffectClip("Hit").Play(0.1)
-}
-```
-
-编译：
-
-```bash
-sonolus-go build -m play engine.go
-```
-
-## 包声明与 Import
-
-```go
-package myengine    // 包名用作引擎名
-```
-
-### 导入子包（多文件引擎）
-
-```go
-import "notes"      // → 自动发现 ./notes/*.go 中的原型
-import "stage"      // → 自动发现 ./stage/*.go 中的原型
-```
-
-子目录中只能定义原型 struct 和回调——资源类型（Skin / Effect / Buckets / Instruction）必须在主包。
-
-### 导入 sonolus 包（推荐）
-
-```go
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
-```
-
-之后所有运行时调用使用 `sonolus.` 前缀：
-
-```go
-sonolus.Draw(...)        // 函数调用
-x := sonolus.Time        // 全局变量
-	sonolus.Vec2{X: x, Y: y}
-sonolus.DebugPause()     // 调试
-```
-
-**函数名映射**：`lowerFirst(Sel.Name)` — `Draw` → `draw`，`DebugPause` → `debugPause`，`GetShifted` → `getShifted`。
-
-使用 `sonolus.` 前缀的引擎源码是合法的 Go 程序——`go vet`、`gopls` 自动补全均可用。裸名（`draw(...)`）仍可工作但不通过静态检查。
-
-详见[快速入门](getting-started.md)和[架构文档](architecture.md)。
-
-## 结构体定义
-
-```go
-type Name struct {
-    Field Type `sonolus:"tag"`
+//sonolus:resource skin standard
+var Skin = &SkinData{
+	Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN"),
+	Digits: [10]sonolus.Sprite{
+		sonolus.SkinSprite("digit-0"),
+		// ...
+	},
 }
 ```
 
-字段标签决定引擎内存布局：
+支持的名称型资源和 constructor：
 
-| 标签 | 内存块 | 可写 | 说明 |
-|------|--------|------|------|
-| `imported` | EntityMemory (0) | 否 | 从父原型传入 |
-| `memory` | EntityMemory (1+) | 是 | 私有每实体存储 |
-| `data` | EntityData | 否 | 只读原型数据 |
-| `shared` | EntityShared | 是 | 共享可变状态 |
-| `input` | EntityInput | 是 | 输入状态 |
-| `despawn` | EntityDespawn | 是 | 消失效果存储 |
-| `info` | EntityInfo | 否 | 只读实体元数据 |
-| `exported` | Exported | 是 | 导出值（仅 Play） |
-| `scored` | Exported | 是 | 分数计数器（仅 Play） |
-| `lifed` | Exported | 是 | 生命值（仅 Play） |
+| Directive | 字段类型 | Constructor |
+|---|---|---|
+| `skin [default|standard|lightweight]` | `sonolus.Sprite` | `sonolus.SkinSprite(name)` |
+| `effect` | `sonolus.Clip` | `sonolus.EffectClip(name)` |
+| `particle` | `sonolus.Effect` | `sonolus.ParticleEffect(name)` |
+| `instruction` | `sonolus.Text` | `sonolus.InstructionText(name)` |
+| `instructionIcon` | `sonolus.Icon` | `sonolus.InstructionIcon(name)` |
 
-### 特殊结构体名
+Handle 是空结构，用户无法直接指定 ID。名称只从准确 constructor 调用的静态字符串参数中提取。字段顺序和定长数组元素顺序决定连续资源 ID。
 
-特定名字的 struct 定义引擎资源（大小写敏感）：
+模式资源支持范围：
 
-| 类型名 | 所在模式 | 说明 |
-|--------|---------|------|
-| `Skin` | 全部 | 精灵/纹理定义 |
-| `Effect` | Play, Watch, Tutorial | 音效片段定义 |
-| `Particle` | Play, Watch, Tutorial | 粒子效果定义 |
-| `Buckets` | Play, Watch | 桶/生成规则定义 |
-| `Instruction` | Tutorial | 教程文本/图标定义 |
-| `UI` | 全部 | EngineConfiguration UI 覆写。支持 `RuntimeUiConfig` 记录类型嵌套展开 |
+| 模式 | 资源 |
+|---|---|
+| Play | skin、effect、particle、buckets |
+| Watch | skin、effect、particle、buckets |
+| Preview | skin |
+| Tutorial | skin、effect、particle、instruction、instructionIcon |
 
-#### UI 配置示例
+## Bucket
+
+Bucket 有独立结构，不属于名称型资源：
 
 ```go
-// RuntimeUiConfig 自动展开（推荐）
-type UI struct {
-    Menu      RuntimeUiConfig `sonolus:"ui"`
-    Judgment  RuntimeUiConfig `sonolus:"ui"`
-    Combo     RuntimeUiConfig `sonolus:"ui"`
-    Primary   RuntimeUiConfig `sonolus:"ui"`
-    Secondary RuntimeUiConfig `sonolus:"ui"`
+//sonolus:resource buckets
+type BucketData struct {
+	Tap sonolus.Bucket
 }
 
-var ui = UI{Menu: RuntimeUiConfig{Scale: 1.0, Alpha: 1.0}}
-```
-
-> 兼容旧式平坦标签：`sonolus:"ui=menu.scale"`。新项目建议使用 `RuntimeUiConfig`。
-
-对标 Python `menu = RuntimeUiConfig(scale=1.0, alpha=1.0)`。
-
-### 记录类型字段
-
-字段类型可以是已知记录类型——编译器自动展开为多个 float64 槽位：
-
-```go
-type Note struct {
-    pos Vec2  `sonolus:"memory"`   // 展开为 pos.x, pos.y (2 槽)
-    m   Mat   `sonolus:"memory"`   // 展开为 6 槽
-    q   Quad  `sonolus:"memory"`   // 展开为 8 槽
-}
-// 访问: n.pos.X = value; x := n.pos.Y
-```
-
-支持的记录类型：`Vec2`(2)、`Quad`(8)、`Mat`(6)、`Rect`(4)、`Trans`(9)、`Transform2d`(16)、`Pair`(2)、`EntityInfo`(3)、`EntityRef`(1)、`EntityLife`(4)、`EntityScore`(4)、`PlayEntityInput`(5)、`JudgmentWindow`(6)、`ConsecutiveLife`(2)、`ConsecutiveScore`(3)、`RuntimeUiConfig`(2)。支持 `sonolus.Vec2` 等限定名。
-
-记录类型字段支持**复合写回**（`n.Q = n.Q.Rotate(a)`）和**链式方法调用**（`n.Q.Rotate(a).Translate(v)`）。
-
-## 回调方法
-
-方法名决定编译为哪个 Sonolus 回调：
-
-**Play 模式（8 个回调）：**
-`Preprocess`, `SpawnOrder`, `ShouldSpawn`, `Initialize`, `UpdateSequential`, `Touch`, `UpdateParallel`, `Terminate`
-
-**Watch 模式（7 个回调）：**
-`Preprocess`, `SpawnTime`, `DespawnTime`, `Initialize`, `UpdateSequential`, `UpdateParallel`, `Terminate`
-
-**Preview 模式（2 个回调）：**
-`Preprocess`, `Render`
-
-**Tutorial 模式（3 个全局函数）：**
-`Preprocess()`, `Navigate() float64`, `Update()`
-
-**Watch 全局**：`UpdateSpawn() float64`
-
-## 控制流
-
-```go
-// if / else
-if condition { ... } else { ... }
-
-// switch
-switch value {
-case 0: ...
-case 1, 2: ...
-default: ...
-}
-
-// 无标签 switch
-switch {
-case x > 0: ...
-default: ...
-}
-
-// for 循环（仅条件）
-for i < 10 { ... }
-
-// for range
-for i := range 5 { ... }  // i = 0, 1, 2, 3, 4
-
-// 短路运算符
-if a && b { ... }  // a 为 false 时不求值 b
-if a || b { ... }  // a 为 true 时不求值 b
-
-// 复合赋值
-x += 1; x *= 2; x++
-```
-
-## 变量与赋值
-
-```go
-x := 1.0        // 声明并赋值
-x = 2.0         // 覆写
-x += 1.0        // 复合赋值
-x++             // 递增
-```
-
-所有数值类型运行时均为 `float64`。
-
-## 类型系统
-
-| 类型 | 运行时表示 |
-|------|-----------|
-| `float64`, `int`, `bool` | float64 |
-| `Vec2` | 2 个 float64 (x, y) |
-| `Quad` | 8 个 float64 |
-| `Mat` / `Rect` / `Trans` / `Pair` / `Transform2d` | 2-16 个 float64 |
-| 用户定义 struct | 带标签的 float64 字段 |
-
-不支持：`string`、`map`、`chan`、`interface`、slice、函数类型。
-
-## 运行时函数
-
-完整运行时函数列表见 `internal/compiler/frontend/builtins.go`。以下是分类概览：
-
-> **比较与逻辑运算符**使用原生 Go 语法：`==`、`!=`、`<`、`<=`、`>`、`>=`、`&&`、`||`、`!`。引擎对应的 `Equal`、`Less`、`And` 等 RuntimeFunction 由编译器通过 `applyBinary`/`applyUnary` 自动生成，不作为可调用 stub 暴露。
-
-| 分类 | 函数示例 | 个数 |
-|------|---------|------|
-| 算术 | `Abs`, `Sign`, `Floor`, `Ceil`, `Round`, `Frac` | ~10 |
-| 数学 | `Sin`, `Cos`, `Tan`, `Log`, `Power`, `Clamp`, `Lerp` | ~30 |
-| 缓动 | `EaseInSine` ... `EaseOutInElastic` | 36 |
-| 内存 | `Get`, `Set`, `GetShifted`, `SetShifted`, `SetAdd*`, `SetMul*` 等 | ~40 |
-| 绘制 | `Draw`, `DrawCurvedB/T/L/R/BT/LR`, `Paint` | 8 |
-| 音频 | `Play`, `PlayScheduled`, `PlayLooped`, `PlayLoopedScheduled`, `StopLooped`, `StopLoopedScheduled` | 6 |
-| 粒子 | `SpawnParticle`, `MoveParticle`, `DestroyParticle` | 3 |
-| 实体 | `Spawn` | 1 |
-| 判定 | `Judge`, `JudgeSimple`, `ExportValue` | 3 |
-| 生命 | `AddLife` | 1 |
-| 调试 | `DebugLog`, `DebugPause`, `DebugError`, `DebugAssertTrue` 等 | 7 |
-| 随机 | `Random`, `RandomInteger` | 2 |
-| Stream | `StreamSet`, `StreamHas`, `StreamGetNextKey` 等 | 5 |
-| 时间 | `BeatToTime`, `TimeToScaledTime` 等 | 8 |
-| 栈 | `StackInit`, `StackPush`, `StackPop` 等 | 14 |
-| 触摸 | `TouchID`, `TouchStarted`, `TouchEnded`, `TouchX`, `TouchY` | 5 |
-| 资源查询 | `HasSkinSprite`, `HasEffectClip`, `HasParticle` | 3 |
-| 资源引用 | `SkinSprite`, `Skin`, `EffectClip`, `ParticleClip` | 4 |
-| 关卡设置 | `Score`, `Life` | 2 |
-| 矩阵变换 | `SkinTransform`, `SetSkinTransform`, `ParticleTransform`, `SetParticleTransform`, `Background`, `SetBackground` | 6 |
-| 辅助数学 | `Screen`, `SafeArea`, `OffsetAdjustedTime`, `PrevTime`, `Pnpoly`, `PerspectiveApproach` | 6 |
-| 实体信息 | `EntityInfoIndex`, `EntityInfoArchetype`, `EntityInfoState`, `EntityInfoAt`, `SelfInfo` | 5 |
-
-### 引擎全局变量
-
-```go
-time, deltaTime, scaledTime, touchCount, isSkip, isReplay,
-isDebug, aspectRatio, audioOffset, inputOffset, isMultiplayer,
-scrollDirection, canvasSize, navigationDirection,
-safeAreaXMin, safeAreaXMax, safeAreaYMin, safeAreaYMax,
-perfectMultiplier, greatMultiplier, goodMultiplier,
-lifeInitial, lifeMaximum,
-entityPerfect, entityGreat, entityGood, entityMiss,
-entityLifePerfect, entityLifeGreat, entityLifeGood, entityLifeMiss
-```
-
-### 记录类型方法
-
-| 类型 | 方法 |
-|------|------|
-| `Vec2` | `Add`, `Sub`, `Mul`, `Div`, `Magnitude`, `Dot`, `Normalize`, `NormalizeOrZero`, `Angle`, `Rotate`, `RotateAbout`, `Orthogonal`, `AngleDiff`, `SignedAngleDiff` |
-| `Quad` | `Center`, `Translate`, `Scale`, `Permute`, `Rotate`, `Top`, `Right`, `Bottom`, `Left`, `Contains` |
-| `Mat` | `Scale`, `Translate`, `Compose`, `Rotate` |
-| `Rect` | `W`, `H`, `Center`, `Translate`, `Scale` |
-| `Trans` | `Compose`, `Translate`, `Scale`, `Rotate`, `TransformVec` |
-| `Transform2d` | `Translate`, `Scale`, `ScaleAbout`, `Rotate`, `RotateAbout`, `Compose`, `ComposeBefore`, `TransformVec`, `TransformQuad`, `PerspectiveX`, `PerspectiveY`, `SimplePerspectiveX`, `SimplePerspectiveY` |
-| `Pair` | `Lt`, `Le`, `Gt`, `Ge`, `Tuple` |
-| `VarArray` | `Len`, `Capacity`, `IsFull`, `Append`, `Pop`, `Insert`, `Sort`, `Clear`, `Contains`, `Index`, `Remove`, `SetAdd`, `SetRemove` |
-| `ArrayMap` | `Len`, `Capacity`, `Clear`, `Keys`, `Values`, `Items`, `Get`, `Set`, `Delete`, `Contains`, `Pop` |
-| `ArraySet` | `Len`, `Capacity`, `Clear`, `Add`, `Remove`, `Contains` |
-| `FrozenNumSet` | `Len`, `Capacity`, `Contains` |
-| `EntityRef` | `Get`, `Set` |
-| `EntityInfo` | `IsWaiting`, `IsActive`, `IsDespawned` |
-| `JudgmentWindow` | `Judge` |
-
-### 矩阵变换 (Transform2d)
-
-Transform2d 是 4×4 仿射变换矩阵，用于 Skin/Particle/Background 的渲染变换。
-支持复合字面量创建和方法链：
-
-```go
-// 复合字面量创建
-t := Transform2d{
-    A00: w, A11: h,
-    A22: 1, A33: 1,
-    A13: stageT,
-}
-sonolus.SetSkinTransform(t)
-
-// 从引擎读取 + 方法链
-skin := sonolus.SkinTransform()
-result := skin.Translate(sonolus.Vec2{X: 1, Y: 2}).Rotate(0.5)
-sonolus.SetSkinTransform(result)
-```
-
-对标 Python `Transform2d(a00=w, a11=h)` 和 JS `skin.transform`。
-
-
-### 实体信息 (EntityInfo)
-
-跨实体信息查询与 JS/Python 对照：
-
-```go
-// 常量
-sonolus.EntityStateWaiting   // 0
-sonolus.EntityStateActive    // 1
-sonolus.EntityStateDespawned // 2
-
-// 跨实体 — 结构化访问（对应 sonolus.js: entityInfos.get(idx)）
-info := sonolus.EntityInfoAt(idx)
-info.State                   // entity idx 的状态 (0/1/2)
-info.Index                   // entity idx 的自身索引
-info.Archetype               // entity idx 的原型 ID
-info.IsActive()              // 等同于 info.State == 1
-
-// 跨实体 — 内联访问（不经过临时变量，最优 IR）
-if sonolus.EntityInfoAt(idx).State == sonolus.EntityStateActive {
-    // ...
-}
-
-// 跨实体 — 单字段访问（只需一个字段时避免生成多余 GetShifted）
-sonolus.EntityInfoState(idx)      // 等同于 sonolus.EntityInfoAt(idx).State
-sonolus.EntityInfoArchetype(idx)  // 等同于 sonolus.EntityInfoAt(idx).Archetype
-sonolus.EntityInfoIndex(idx)      // 等同于 sonolus.EntityInfoAt(idx).Index
-
-// 自身实体 — 结构化访问（对应 sonolus.js: this.info）
-sonolus.SelfInfo().State    // 从 block 4003 读取
-
-// 自身实体 — 标签展开
-type Note struct {
-    Self EntityInfo `sonolus:"info"`  // → Self.Index, Self.Archetype, Self.State (只读)
-}
-func (n *Note) Touch() {
-    if n.Self.State == sonolus.EntityStateActive { ... }
-    if n.Self.IsActive() { ... }
-}
-
-// 迭代所有实体（终止条件与 JS for..of 等价）
-for i := float64(0); sonolus.EntityInfoIndex(i) == i; i++ {
-    // i 遍历每个已存在的实体
+//sonolus:resource buckets
+var Buckets = &BucketData{
+	Tap: sonolus.JudgmentBucket(
+		"#MILLISECONDS",
+		sonolus.JudgmentBucketSprite(Skin.Note, 0, 0, 1, 1, 0),
+	),
 }
 ```
 
-| 场景 | sonolus.js | sonolus.py | sonolus-go |
-|------|-----------|-----------|------------|
-| 跨实体状态 | `entityInfos.get(idx).state` | `entity_info_at(idx).state` | `sonolus.EntityInfoAt(idx).State` |
-| 活跃检查 | `info.state === EntityState.Active` | `entity_info_at(idx).state == 1` | `info.IsActive()` |
-| 自身状态 | `this.info.state` | `self._info.state` | `sonolus.SelfInfo().State` |
-| 迭代 | `for (const info of entityInfos)` | `for idx: entity_info_at(idx)` | `for i := 0; EntityInfoIndex(i) == i; i++` |
+Bucket constructor 必须是 catalog 中的准确对象，参数必须能在声明阶段静态解释。
 
-### 皮肤精灵 (Skin / Sprite)
+## Configuration
 
-通过 `sonolus.Skin().Sprites.Name` 按名引用精灵，可赋给局部变量复用：
+Configuration 使用专用 `configuration` tag：
 
 ```go
-type Skin struct {
-	Note float64  // ID = 0
-	Hold float64  // ID = 1
+type GameConfiguration struct {
+	sonolus.Configuration
+
+	Speed  float64          `configuration:"slider,name=Speed,def=1,min=0.5,max=2,step=0.1,unit=#TIMES"`
+	Auto   bool             `configuration:"toggle,name=Auto,def=false"`
+	Lane   int              `configuration:"select,name=Lane,def=0,values=4|6|8"`
+	UI     sonolus.UIConfig `configuration:"ui"`
+	Replay []string         `configuration:"replayFallback"`
 }
 
-// 命名空间引用（对标 JS: skin.sprites.note）
-skin := sonolus.Skin()
-skin.Sprites.Note.Draw(quad, z, a)
-skin.Sprites.Note.Exists()
-skin.Sprites.Exists(0)
-// 局部变量复用（对标 JS: const note = skin.sprites.note）
-sprite := skin.Sprites.Note
-sprite.Draw(quad, z, a)
-if sprite.Exists() { ... }
-```
-
-| 场景 | sonolus.js | sonolus.py | sonolus-go |
-|------|-----------|-----------|------------|
-| 按名引用 | `skin.sprites.note` | N/A (装饰器模式) | `Skin().Sprites.Note` |
-| 存在检查 | `sprite.exists` | `sprite.is_available` | `sprite.Exists()` |
-| 绘制 | `sprite.draw(quad,z,a)` | `sprite.draw(quad,z,a)` | `sprite.Draw(quad,z,a)` |
-
-### 音效片段 (EffectClip)
-
-通过 `sonolus.Effect().Clips.Name` 命名空间引用音效片段：
-
-```go
-type Effect struct {
-	HitSound  float64  // ID = 0
-	MissSound float64  // ID = 1
-}
-
-// 命名空间引用（对标 JS: effect.clips.hitSound）
-effect := sonolus.Effect()
-effect.Clips.HitSound.Play(0.1)
-effect.Clips.HitSound.Schedule(targetTime, 0.1)
-```
-
-| 场景 | sonolus.js | sonolus.py | sonolus-go |
-|------|-----------|-----------|------------|
-| 即时播放 | `clip.play(distance)` | `effect.play(distance)` | `Effect().Clips.Name.Play(d)` |
-| 预排程 | `clip.schedule(time, d)` | `effect.schedule(time, d)` | `Effect().Clips.Name.Schedule(t, d)` |
-
-### 粒子效果 (ParticleClip)
-
-通过 `sonolus.Particle().Effects.Name` 命名空间引用粒子效果。支持复合参数（Quad）自动解构：
-
-```go
-type Particle struct {
-	Explosion float64  // ID = 0
-}
-
-// 命名空间引用（对标 JS: particle.effects.explosion）
-q := sonolus.Quad{...)
-particle := sonolus.Particle()
-particle.Effects.Explosion.Spawn(q, 1, 0)
-//                                    ^^ Quad 8 字段自动解构为标量
-```
-
-| 场景 | sonolus.js | sonolus.py | sonolus-go |
-|------|-----------|-----------|------------|
-| 生成粒子 | `effect.spawn(quad, dur, loop)` | `effect.spawn(quad, dur, loop)` | `Particle().Effects.Name.Spawn(quad, dur, loop)` |
-| 移动粒子 | `handle.move(quad)` | `handle.move(quad)` | `handle.Move(quad)`（已有） |
-| 销毁粒子 | `handle.destroy()` | `handle.destroy()` | `handle.Destroy()`（已有） |
-
-### 判定 (Judgment)
-
-判定计算与写入的三方对照：
-
-```go
-// 判定窗口定义
-var windows = sonolus.JudgmentWindow{
-    PerfectMin: -0.05, PerfectMax: 0.05,
-    GreatMin:   -0.1,  GreatMax:   0.1,
-    GoodMin:    -0.15, GoodMax:    0.15,
-}
-
-// 计算判定等级（对应 JS: input.judge, Python: window.judge）
-level := windows.Judge(actualTime, targetTime)
-// level = 0 (Miss), 1 (Perfect), 2 (Great), 3 (Good)
-
-// 写入判定结果（推荐：PlayEntityInput）
-n.Result.Judgment = level
-```
-
-| 场景 | sonolus.js | sonolus.py | sonolus-go |
-|------|-----------|-----------|------------|
-| 判定计算 | `input.judge(hitTime, targetTime, windows)` | `window.judge(actual, target)` | `windows.Judge(actual, target)` |
-| 判定写入 | `this.result.judgment = judgment` | `self.result.judgment = judgment` | `n.Result.Judgment = level` 或 `n.Result.Judgment = level` |
-| 桶写入 | `this.result.bucket.index = idx` | `self.result.bucket = Bucket(id=idx)` | `n.Result.BucketIndex = idx` |
-| 判定等级 | `Judgment.Perfect` (1) | `Judgment.PERFECT` (1) | 裸 float64: 0/1/2/3 |
-| 引擎 ops | 1 Judge + 1 SetShifted | ~13 比较 + 1 Set | 1 Judge (+ 1 Set) |
-
-### Canvas 打印 (Preview 模式)
-
-canvas := sonolus.Canvas()
-通过 `canvas.Print()` 在 Preview 模式打印数值。非 Preview 模式编译时消除（零 IR 节点）。
-
-```go
-canvas := sonolus.Canvas()
-canvas.Print(PrintOptions{
-    Value:   123,
-    Format:  0,          // 0=Number, 1=Percent, 10=Time, ...
-    AnchorX: 0.5, AnchorY: 0.5,
-    SizeX: 16, SizeY: 16,
-    // Color/Alpha/Rotation 等取零值默认值
-})
-```
-
-| 场景 | sonolus.js | sonolus.py | sonolus-go |
-|------|-----------|-----------|------------|
-| 打印数值 | `canvas.print({value,fmt,...})` | `print_number(value,fmt=...)` | `Canvas().Print(PrintOptions{...})` |
-| 默认值 | ❌ 全部必填 | ✅ 关键字默认值 | ✅ 零值 = 默认 |
-| 模式消除 | N/A (仅 Preview) | N/A (仅 Preview) | ✅ 编译时 no-op |
-
-### 结构化 Score/Life (EntityScore / EntityLife)
-
-通过 `sonolus:"scored"` / `sonolus:"lifed"` 标签使用结构化记录类型：
-
-```go
-type Note struct {
-    Score EntityScore `sonolus:"scored"`  // block 4006: Score.Perfect..Miss
-    Life  EntityLife  `sonolus:"lifed"`   // block 4007: Life.Perfect..Miss
-}
-n.Score.Perfect = 100    // 对齐 JS: this.entityScore.perfect = 100
-n.Life.Miss = -50        // 对齐 JS: this.entityLife.miss = -50
-```
-
-| 场景 | sonolus.js | sonolus.py | sonolus-go |
-|------|-----------|-----------|------------|
-| 分数写入 | `this.entityScore.perfect = 100` | `self.entity_score_multiplier` | `n.Score.Perfect = 100` |
-| 生命写入 | `this.entityLife.miss = -50` | `self.entity_life.miss = -50` | `n.Life.Miss = -50` |
-| 关卡基础分 | `score.base.perfect` | 无独立 API | `s.Base.Perfect`（支持链式写入） |
-| 关卡连击分 | `score.consecutive.perfect.multiplier` | ❌ | `s.Consecutive.Perfect.Multiplier` |
-| 连击生命递增 | `life.consecutive.perfect.increment` | ❌ | `sonolus.Life().Consecutive.Perfect.Increment` |
-| 初始/最大生命 | `life.initial` / `life.max` | ❌ | `sonolus.Life().Initial` / `.Max` |
-| 原型生命 | `life.archetypes.get(idx).miss` | `archetype_life` | `life.Archetypes[idx].Miss` |
-| 延迟变化 | `life.addScheduled(v, t)` | ❌ | `life.AddScheduled(v, t)` |
-
-### 结构化 EntityInput
-
-通过 `sonolus:"input"` 标签使用 `PlayEntityInput` 记录类型，一个字段替代五个：
-
-```go
-type Note struct {
-    Result PlayEntityInput `sonolus:"input"`  // → Result.Judgment..Result.Haptic
-}
-
-func (n *Note) Touch() {
-    n.Result.Judgment = 1        // 4005[0]
-    n.Result.BucketIndex = 0     // 4005[2]
-    n.Result.Accuracy = sonolus.Abs(actual - target)  // 4005[1]
+var Config = GameConfiguration{
+	UI: sonolus.UIConfig{
+		Scope:          "game",
+		PrimaryMetric:  sonolus.UIMetricArcade,
+		SecondaryMetric: sonolus.UIMetricLife,
+	},
+	Replay: []string{"Speed", "Lane"},
 }
 ```
 
-对标 JS `this.result.bucket.index`，Python `self.result.bucket`。
+规则：
 
-## 静态构造器
+- `slider` 字段必须为 `float64`，使用 `name/def/min/max/step`，`unit` 可选。
+- `toggle` 字段必须为 `bool`，使用 `name/def`。
+- `select` 字段必须为 `int`，使用 `name/def/values`；values 用 `|` 分隔。
+- `ui` 字段必须为 `sonolus.UIConfig`。
+- `replayFallback` 字段必须为 `[]string`，值必须引用 option 的最终外部名称，禁止空值和重复。
+- 旧 `sonolus` Configuration tag 不受支持。
+
+## ROM
+
+静态 ROM：
 
 ```go
-	sonolus.Vec2{X: x, Y: y}
-	sonolus.Quad{Blx: blx, Bly: bly, Tlx: tlx, Tly: tly, Trx: trx, Try: try, Brx: brx, Bry: bry}
+var ROM = sonolus.ROMValues{1, 2, 3}
 ```
 
-> 兼容旧式裸名：`vec2(x, y)`, `quad(...)`, `mat(...)` 等。 新项目建议使用 `sonolus.` 前缀构造器。
+嵌入 ROM：
 
-## 不支持的特性
+```go
+import _ "embed"
 
-这些 Go 构造被编译器拒绝：
+//go:embed rom.bin
+var ROM sonolus.ROMFile
+```
 
-| 构造 | 原因 |
-|------|------|
-| `defer` / `go` (goroutine) | 引擎单线程，无运行时调度 |
-| `chan` / `select` | 无并发支持 |
-| `map` / `interface{}` | 运行时仅有 float64，无堆类型 |
-| 递归 | 函数内联展开，无法递归调用 |
-| 多返回值函数 (`func f() (a, b float64)`) | 用户函数仅单返回值；复合解构 `a, b := pair.Tuple()` 支持 |
-| 变参用户函数 (`func f(args ...float64)`) | 仅内置函数支持变参 |
-| struct 嵌套 / 匿名嵌入 | 内存布局必须平坦 |
-| 类型别名 / 类型定义 (`type A B`) | 仅支持 struct 定义 |
+Go 要求包含 `//go:embed` directive 的源文件导入 `embed`。这里没有直接使用 `embed.FS` 等包内标识符，所以使用空白导入；它只负责让 Go 接受并处理 directive，实际 ROM 变量仍使用 `sonolus.ROMFile` marker。
 
----
+只允许一个 ROM 声明。`ROMFile` 必须精确绑定一个文件，文件长度必须是 4 的倍数。用户 ROM 按 little-endian float32 保存；backend 会在前面添加 NaN、`+Inf`、`-Inf` 三个固定值。
 
-> 参考：[快速入门](getting-started.md) · [CLI 参考](cli.md) · [编译器架构](architecture.md) · [优化器](optimization.md)
+## Archetype
+
+```go
+type TapNote struct {
+	play.Archetype      `sonolus:"name=TapNote,hasInput=true"`
+	play.CallbackOrders `sonolus:"preprocess=-10,updateSequential=5"`
+
+	Beat     float64          `sonolus:"imported,name=#BEAT,default=0"`
+	Data     float64          `sonolus:"data"`
+	Position sonolus.Vec2     `sonolus:"memory"`
+	Shared   float64          `sonolus:"shared"`
+	HitTime  float64          `sonolus:"exported,name=hitTime"`
+}
+```
+
+Storage：
+
+| Tag | 含义 |
+|---|---|
+| `imported` | Entity Data import，可配置 `name` 和 `default` |
+| `data` | 对应模式的 Entity Data storage |
+| `memory` | 当前实体 memory |
+| `shared` | archetype shared memory |
+| `exported` | Play export，仅 Play 可用，必须提供稳定外部名称 |
+
+固定记录、定长数组和 catalog 容器按 catalog layout 占用多个连续 slot。`VarArray`、`ArrayMap`、`ArraySet` 必须带编译期可确定的 capacity/backing。
+
+## Callback
+
+Callback 名由方法名决定，必须是无参数 receiver 方法：
+
+| 模式 | Callback | 返回值 |
+|---|---|---|
+| Play | `Preprocess`、`Initialize`、`UpdateSequential`、`Touch`、`UpdateParallel`、`Terminate` | 无 |
+| Play | `SpawnOrder` | `float64` |
+| Play | `ShouldSpawn` | `bool` |
+| Watch | `Preprocess`、`Initialize`、`UpdateSequential`、`UpdateParallel`、`Terminate` | 无 |
+| Watch | `SpawnTime`、`DespawnTime` | `float64` |
+| Preview | `Preprocess`、`Render` | 无 |
+
+`CallbackOrders` 中的 key 使用 lower camel callback 名。不存在对应方法、未知 callback 或重复 marker 都会报错。
+
+全局 callback：
+
+- Watch：嵌入 `watch.GlobalCallbacks` 后可选 `func UpdateSpawn() float64`。
+- Tutorial：嵌入 `tutorial.GlobalCallbacks` 后可选 `func Preprocess()`、`Navigate()`、`Update()`。
+
+## 支持的 Go 子集
+
+支持：
+
+- 常量、局部变量、短声明、普通/复合/多重赋值、自增自减。
+- 标量、已登记 struct 和定长数组复合值，字段访问和数组索引。
+- 算术、比较、逻辑短路、显式数值转换。
+- `if/else`、三段式与条件 `for`、`switch`、`break`、`continue`、`return`。
+- `range` 整数、定长数组、静态 variadic 参数和 catalog 容器。
+- 跨用户包 helper、具体方法、泛型实例、立即调用闭包、命名/多返回值和裸 return。
+- 唯一初始化且不逃逸的局部函数变量；调用会被静态内联。
+
+静态 variadic 参数只允许 `len/cap`、索引、`range` 和向另一个 variadic helper 静态转发。
+
+明确拒绝：
+
+- 递归，包括通过函数变量形成的间接递归。
+- 接口派发、反射、类型断言、goroutine、channel、`defer`。
+- package 级函数变量、函数返回值、函数值重赋、逃逸或运行时目标选择。
+- 普通运行时 slice/map/string 操作和未登记 builtin。
+- 动态容器 backing/capacity 和无法静态确定目标的调用。
+
+## 标准库
+
+`math` 支持 catalog 登记的常量及函数，例如 `Abs`、`Floor`、`Sin`、`Atan2`、`Min`、`Max`、`Pow`、`Mod`。`math/rand.Float64()` 映射到 Sonolus Runtime RNG，`rand.Intn(n)` 映射到 `[0,n)` 整数随机；常量 `n <= 0` 在编译期报错。
+
+这些映射遵循 Sonolus Runtime 数值语义，不承诺与普通 Go 对 NaN、Inf、溢出、seed 或并发行为完全一致。

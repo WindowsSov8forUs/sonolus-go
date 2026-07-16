@@ -1,0 +1,4 @@
+Func|not-static|6:12|dynamic
+Append|not-static|7:14|append([]int{}, 1)
+Channel|not-static|8:15|make(chan int)
+Bounds|static-panic|9:14|[]int{1}[2]

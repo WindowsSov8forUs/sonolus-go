@@ -2,11 +2,10 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/engine"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
 )
 
 func TestParseMode(t *testing.T) {
@@ -86,12 +85,12 @@ func TestMode_String(t *testing.T) {
 func TestParseOptLevel(t *testing.T) {
 	tests := []struct {
 		input   int
-		want    optimize.Level
+		want    compiler.OptimizationLevel
 		wantErr bool
 	}{
-		{0, optimize.LevelMinimal, false},
-		{1, optimize.LevelFast, false},
-		{2, optimize.LevelStandard, false},
+		{0, compiler.OptimizationMinimal, false},
+		{1, compiler.OptimizationFast, false},
+		{2, compiler.OptimizationStandard, false},
 		{-1, 0, true},
 		{3, 0, true},
 	}
@@ -106,41 +105,34 @@ func TestParseOptLevel(t *testing.T) {
 	}
 }
 
-func TestBuildOpts(t *testing.T) {
-	// Without stats: Stats should be nil, Opt set.
-	opts := buildOpts(nil, optimize.LevelStandard)
-	if opts.Stats != nil {
-		t.Error("buildOpts(nil, ...).Stats should be nil")
-	}
-	if opts.Opt != optimize.LevelStandard {
-		t.Errorf("buildOpts Opt = %v, want LevelStandard", opts.Opt)
-	}
-
-	// With existing CompileStats: should be carried through.
-	s := &engine.CompileStats{}
-	opts2 := buildOpts(s, optimize.LevelFast)
-	if opts2.Stats != s {
-		t.Error("buildOpts with non-nil stats should carry them through")
-	}
-	if opts2.Opt != optimize.LevelFast {
-		t.Errorf("buildOpts Opt = %v, want LevelFast", opts2.Opt)
+func TestRunCLIParsesSubcommandFlags(t *testing.T) {
+	err := runCLI([]string{"build", "-name", "fixture", "-O", "3", "./testdata/multimode"})
+	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestIRMode(t *testing.T) {
+func TestRunCLILevelRequiresChart(t *testing.T) {
+	err := runCLI([]string{"level", "-o", t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "exactly one chart path") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCompilerMode(t *testing.T) {
 	tests := []struct {
 		mode Mode
-		want ir.Mode
+		want compiler.Mode
 	}{
-		{ModePlay, ir.ModePlay},
-		{ModeWatch, ir.ModeWatch},
-		{ModePreview, ir.ModePreview},
-		{ModeTutorial, ir.ModeTutorial},
-		{Mode("unknown"), ir.ModePlay}, // default fallback
+		{ModePlay, compiler.ModePlay},
+		{ModeWatch, compiler.ModeWatch},
+		{ModePreview, compiler.ModePreview},
+		{ModeTutorial, compiler.ModeTutorial},
+		{Mode("unknown"), compiler.ModePlay},
 	}
 	for _, tt := range tests {
-		if got := tt.mode.IRMode(); got != tt.want {
-			t.Errorf("IRMode() = %v, want %v", got, tt.want)
+		if got := tt.mode.CompilerMode(); got != tt.want {
+			t.Errorf("CompilerMode() = %v, want %v", got, tt.want)
 		}
 	}
 }

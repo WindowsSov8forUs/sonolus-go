@@ -1,81 +1,91 @@
-# CLI 参考
+# 命令行参考
 
-## 命令概览
+## 通用输入
 
-```bash
-sonolus-go [command] [flags]
-```
-
-| 命令 | 说明 |
-|------|------|
-| `build` | 编译引擎源码为 EngineData |
-| `serve` | 本地开发服务器（含热编译） |
-| `pack` | Sonolus 包源树输出 |
-| `host` | 生产模式打包 + HTTP 服务 |
-| `level` | 关卡数据编译 |
-
-## `build`
+引擎命令直接接受一个或多个 `packages.Load` pattern：
 
 ```bash
-sonolus-go build <source> [-m <mode>] [-o <dir>] [-O <level>] [--rom <path>] [--stats]
+sonolus-go build ./engine
+sonolus-go build -name game ./engine ./shared
+sonolus-go build -name game ./engines/...
 ```
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `<source>` | （必填） | `.go` 文件或源码目录路径 |
-| `-m play` | `play` | 仅编译 Play 模式 |
-| `-m watch` | — | 仅编译 Watch 模式 |
-| `-m preview` | — | 仅编译 Preview 模式 |
-| `-m tutorial` | — | 仅编译 Tutorial 模式 |
-| `-m all` | — | 并行编译全部四种模式 |
-| `-o <dir>` | `dist` | 输出目录 |
-| `-O 0` | `2` | 最小优化（~6 pass，调试用） |
-| `-O 1` | — | 快速优化（~26 pass） |
-| `-O 2` | — | 标准优化（~44 pass，默认） |
-| `--rom <path>` | 内置默认 | 自定义 ROM 文件（raw float32 二进制，4 字节对齐） |
-| `--stats` | `false` | 打印各模式编译耗时统计 |
+只有单个明确目录 pattern 可以自动推导 engine name。多个 pattern、import pattern 或 wildcard 必须显式传 `-name`。不支持旧式单 `.go` 文件 prelude 输入。
 
-## `serve`
+## build
+
+```text
+sonolus-go build [-name <name>] [-o <dir>] [-m <mode>]
+                 [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
+```
+
+参数：
+
+- `-name`：引擎名称。
+- `-o`：输出根目录，默认 `dist`。
+- `-m`：`play`、`watch`、`preview`、`tutorial` 或 `all`，默认 `all`。
+- `-O`：`0=minimal`、`1=fast`、`2=standard`，默认 `2`。
+- `-rom`：原始 little-endian float32 ROM fallback。
+- `-stats`：输出各模式 load/frontend 和共享 optimize/backend/total 时间。
+
+源码声明 ROM 优先。源码 ROM 缺失或显式为空时使用 `-rom` fallback。fallback 长度必须是 4 的倍数。
+
+输出位于 `<out>/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
+
+## serve
+
+```text
+sonolus-go serve [-name <name>] [-addr <:8080>]
+                 [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
+```
+
+`serve` 总是编译四种模式，提供开发期端点：
+
+- `/sonolus/engines/info`
+- `/sonolus/engine/configuration`
+- `/sonolus/engine/play-data`
+- `/sonolus/engine/watch-data`
+- `/sonolus/engine/preview-data`
+- `/sonolus/engine/tutorial-data`
+- `/sonolus/engine/rom`
+
+它监听成功快照中的 Go 和 embed 文件。文件变化后创建新的 Compiler 并重新编译；失败时记录错误并继续服务上一次成功快照。
+
+## pack
+
+```text
+sonolus-go pack [-name <name>] [-author <name>] [-o <dir>]
+                [-O 0|1|2] [-rom <file>] [-stats] <pattern>...
+```
+
+`pack` 编译全部四种模式，生成临时 `sonolus-pack-go` source tree，并输出到：
+
+```text
+<dir>/<name>-pack
+```
+
+输出目录默认为 `dist`，author 默认为 `sonolus-go`。当前 adapter 使用默认 skin、background、effect 和 particle item 引用，并生成满足 pack schema 的基础 item。
+
+## level
+
+```text
+sonolus-go level [-o <dir>] <chart.json>
+```
+
+读取 JSON level definition，转换为 `resource.LevelData` 并 gzip 写为：
+
+```text
+<out>/<chart-name>/LevelData
+```
+
+`level` 是纯数据打包，不经过 engine compiler。
+
+## version
 
 ```bash
-sonolus-go serve <source> [-addr <host:port>] [--rom <path>]
+sonolus-go version
+sonolus-go -version
+sonolus-go --version
 ```
 
-启动本地 HTTP 服务器，**编译全部四种模式**。源码变更时自动重编译并热加载。
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `<source>` | （必填） | `.go` 文件或源码目录路径 |
-| `-addr <host:port>` | `:8080` | 监听地址 |
-| `--rom <path>` | 内置默认 | 自定义 ROM 文件 |
-
-## `pack`
-
-```bash
-sonolus-go pack <source> [-author <name>] [--rom <path>]
-```
-
-编译全部四种模式，输出 sonolus-pack 兼容的源树到 `dist/` 目录。
-不启动服务器——仅生成文件。
-
-## `host`
-
-```bash
-sonolus-go host <source> [-addr <host:port>] [-author <name>]
-```
-
-编译引擎 → 打包 → 启动生产级 HTTP 服务器（通过 sonolus-server-go）。
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `<source>` | （必填） | `.go` 文件或源码目录路径 |
-| `-addr <host:port>` | `:8080` | 监听地址 |
-| `-author <name>` | `sonolus-go` | 引擎作者名 |
-
-## 环境变量
-
-sonolus-go 不依赖环境变量。所有配置通过命令行标志传递。发布 Release 的二进制为静态链接（`CGO_ENABLED=0`），无需任何运行时依赖。
-
----
-
-> 参考：[快速入门](getting-started.md) · [DSL 语言参考](dsl-reference.md) · [编译器架构](architecture.md)
+输出构建时注入的版本、commit 和日期；未注入时显示开发默认值。
