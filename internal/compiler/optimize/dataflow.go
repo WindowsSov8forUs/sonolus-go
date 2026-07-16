@@ -629,7 +629,7 @@ func evaluateRuntime(op resource.RuntimeFunction, a []float64) (float64, bool) {
 		case resource.RuntimeFunctionCeil:
 			result, ok = math.Ceil(a[0]), true
 		case resource.RuntimeFunctionRound:
-			result, ok = math.RoundToEven(a[0]), true
+			result, ok = sonolusRound(a[0]), true
 		case resource.RuntimeFunctionTrunc:
 			result, ok = math.Trunc(a[0]), true
 		case resource.RuntimeFunctionLog:
@@ -749,6 +749,17 @@ func finiteConstant(value float64) (float64, bool) {
 	return value, true
 }
 
+func sonolusRound(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value == 0 {
+		return value
+	}
+	result := math.Floor(value + 0.5)
+	if result == 0 && value < 0 {
+		return math.Copysign(0, -1)
+	}
+	return result
+}
+
 type InlineVars struct{ Aggressive bool }
 
 func (p InlineVars) Name() string {
@@ -862,7 +873,8 @@ func (CommonSubexpressionElimination) Run(context Context, f *ir.Function) error
 					return cseExpression(context, expr, block, available, &nextSSA, true)
 				})
 				value.Value = cseExpression(context, value.Value, block, available, &nextSSA, true)
-				if target, ok := value.Place.(ir.SSAPlace); ok && movableExpression(context, value.Value) {
+				_, constant := value.Value.(ir.Const)
+				if target, ok := value.Place.(ir.SSAPlace); ok && !constant && movableExpression(context, value.Value) {
 					key := exprKey(value.Value)
 					if previous, exists := available[key]; exists {
 						value.Value = ir.Load{Place: previous}
@@ -938,6 +950,9 @@ func maxSSAID(function *ir.Function) int {
 }
 
 func cseExpression(context Context, expression ir.Expr, block *ir.Block, available map[string]ir.SSAPlace, next *int, extract bool) ir.Expr {
+	if _, ok := expression.(ir.Const); ok {
+		return expression
+	}
 	switch value := expression.(type) {
 	case ir.Load:
 		value.Place = rewritePlace(value.Place, func(index ir.Expr) ir.Expr {

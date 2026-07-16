@@ -111,14 +111,15 @@ func TestSCCPDoesNotFoldNonFiniteSensitiveRuntimeCalls(t *testing.T) {
 	}
 }
 
-func TestSCCPUsesSonolusRoundAndModuloSemantics(t *testing.T) {
+func TestSCCPUsesJavaScriptRoundAndModuloSemantics(t *testing.T) {
 	for _, test := range []struct {
 		function resource.RuntimeFunction
 		args     []float64
 		want     float64
 	}{
-		{resource.RuntimeFunctionRound, []float64{2.5}, 2},
+		{resource.RuntimeFunctionRound, []float64{2.5}, 3},
 		{resource.RuntimeFunctionRound, []float64{3.5}, 4},
+		{resource.RuntimeFunctionRound, []float64{-1.5}, -1},
 		{resource.RuntimeFunctionMod, []float64{-3, 2}, 1},
 		{resource.RuntimeFunctionRem, []float64{-3, 2}, -1},
 	} {
@@ -165,6 +166,33 @@ func TestTryAllocateBasicFallsBackToLivenessReuse(t *testing.T) {
 	}
 	if len(fn.Locals) != 1 || fn.Locals[0].Slots != 1 {
 		t.Fatalf("physical locals = %#v", fn.Locals)
+	}
+}
+
+func TestAllocateRetriesAfterConservativeInterferenceExhaustsSlots(t *testing.T) {
+	const count = TemporaryMemorySlots + 1
+	locals := make([]ir.Type, count)
+	instructions := make([]ir.Instruction, count)
+	for index := range locals {
+		locals[index] = ir.Type{Name: "scalar", Slots: 1}
+		instructions[index] = ir.Store{Place: ir.LocalPlace{ID: index}, Value: ir.Const{Value: float64(index)}}
+	}
+	function := &ir.Function{
+		Name: "conservative", Entry: 0, Result: ir.Type{}, Locals: locals,
+		Blocks: []*ir.Block{{ID: 0, Instructions: instructions, Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}}}},
+	}
+	conservative := newInterferenceGraph(count)
+	all := newBitSet(count)
+	for index := range count {
+		all.set(index)
+	}
+	addClique(conservative, all)
+	context := Context{analyses: &analysisManager{values: map[Analysis]any{AnalysisLiveness: conservative}}}
+	if err := (Allocate{}).Run(context, function); err != nil {
+		t.Fatal(err)
+	}
+	if len(function.Locals) != 1 || function.Locals[0].Slots != 1 {
+		t.Fatalf("physical locals = %#v", function.Locals)
 	}
 }
 
@@ -395,6 +423,70 @@ func TestCSEExtractsNestedReadonlyAndCanonicalizesSafeCommutativeOps(t *testing.
 	}
 	if err := ir.Validate(function); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCSEKeepsConstantsInsteadOfReplacingThemWithSSALoads(t *testing.T) {
+	number := ir.Type{Name: "number", Slots: 1}
+	constant := ir.SSAPlace{ID: 1, Name: "constant"}
+	function := &ir.Function{
+		Name: "cse-constant", Entry: 0, Result: number,
+		Blocks: []*ir.Block{{
+			ID: 0,
+			Instructions: []ir.Instruction{
+				ir.Store{Place: constant, Value: ir.Const{Value: 1}},
+			},
+			Terminator: ir.Return{Value: ir.Value{Type: number, Slots: []ir.Expr{
+				ir.RuntimeCall{
+					Function: resource.RuntimeFunctionAdd,
+					Args:     []ir.Expr{ir.Const{Value: 2}, ir.Const{Value: 1}},
+					Result:   number,
+					Pure:     true,
+				},
+			}}},
+		}},
+	}
+	if err := (CommonSubexpressionElimination{}).Run(Context{}, function); err != nil {
+		t.Fatal(err)
+	}
+	store := function.Blocks[0].Instructions[0].(ir.Store)
+	if _, ok := store.Value.(ir.Const); !ok {
+		t.Fatalf("constant store = %#v, want constant", store.Value)
+	}
+	returned := function.Blocks[0].Terminator.(ir.Return).Value.Slots[0].(ir.RuntimeCall)
+	if value, ok := returned.Args[1].(ir.Const); !ok || value.Value != 1 {
+		t.Fatalf("nested constant = %#v, want Const(1)", returned.Args[1])
+	}
+}
+
+func TestRemoveRedundantArgumentsKeepsUnaryOperations(t *testing.T) {
+	number := ir.Type{Name: "number", Slots: 1}
+	value := ir.LocalPlace{ID: 0}
+	function := &ir.Function{
+		Name:   "unary-operations",
+		Entry:  0,
+		Locals: []ir.Type{number},
+		Result: number,
+		Blocks: []*ir.Block{{
+			ID: 0,
+			Instructions: []ir.Instruction{
+				ir.Store{Place: value, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionNegate, Args: []ir.Expr{ir.Load{Place: value}}, Result: number, Pure: true}},
+			},
+			Terminator: ir.Return{Value: ir.Value{Type: number, Slots: []ir.Expr{
+				ir.RuntimeCall{Function: resource.RuntimeFunctionAbs, Args: []ir.Expr{ir.Load{Place: value}}, Result: number, Pure: true},
+			}}},
+		}},
+	}
+	if err := (RemoveRedundantArguments{}).Run(Context{}, function); err != nil {
+		t.Fatal(err)
+	}
+	store := function.Blocks[0].Instructions[0].(ir.Store)
+	if call, ok := store.Value.(ir.RuntimeCall); !ok || call.Function != resource.RuntimeFunctionNegate {
+		t.Fatalf("negate was removed: %#v", store.Value)
+	}
+	result := function.Blocks[0].Terminator.(ir.Return).Value.Slots[0]
+	if call, ok := result.(ir.RuntimeCall); !ok || call.Function != resource.RuntimeFunctionAbs {
+		t.Fatalf("abs was removed: %#v", result)
 	}
 }
 

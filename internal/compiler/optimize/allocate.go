@@ -34,7 +34,10 @@ func (Allocate) Requires() []Analysis  { return []Analysis{AnalysisLiveness} }
 func (Allocate) Preserves() []Analysis { return nil }
 func (Allocate) Destroys() []Analysis  { return []Analysis{AnalysisLiveness} }
 func (Allocate) Run(context Context, function *ir.Function) error {
-	return allocateLocalsWithInterference(function, interferenceFor(context, function), false)
+	if err := allocateLocalsWithInterference(function, interferenceFor(context, function), false); err == nil {
+		return nil
+	}
+	return allocateLocalsWithInterference(function, localInterference(function), false)
 }
 
 func sequentialSize(function *ir.Function) int {
@@ -58,6 +61,7 @@ func allocateLocalsWithInterference(function *ir.Function, interference interfer
 	}
 	offsets := make([]int, len(function.Locals))
 	size := 0
+	failedID := -1
 	if interference == nil {
 		for id, local := range function.Locals {
 			offsets[id] = size
@@ -116,6 +120,9 @@ func allocateLocalsWithInterference(function *ir.Function, interference interfer
 				}
 				if offset > limit {
 					offset = TemporaryMemorySlots
+					if failedID < 0 {
+						failedID = id
+					}
 				}
 			}
 			offsets[id] = offset
@@ -126,6 +133,23 @@ func allocateLocalsWithInterference(function *ir.Function, interference interfer
 		}
 	}
 	if size > TemporaryMemorySlots {
+		if failedID >= 0 {
+			local := function.Locals[failedID]
+			neighbors := make([]int, 0)
+			interference[failedID].each(func(other int) { neighbors = append(neighbors, other) })
+			sort.SliceStable(neighbors, func(i, j int) bool {
+				return function.Locals[neighbors[i]].Slots > function.Locals[neighbors[j]].Slots
+			})
+			if len(neighbors) > 8 {
+				neighbors = neighbors[:8]
+			}
+			conflicts := make([]string, len(neighbors))
+			for index, other := range neighbors {
+				conflict := function.Locals[other]
+				conflicts[index] = fmt.Sprintf("%d:%s[%d]@%d", other, conflict.Name, conflict.Slots, offsets[other])
+			}
+			return fmt.Errorf("Temporary Memory requires %d slots; limit is %d: cannot place local %d (%s, %d slots), largest conflicts %v", size, TemporaryMemorySlots, failedID, local.Name, local.Slots, conflicts)
+		}
 		return fmt.Errorf("Temporary Memory requires %d slots; limit is %d", size, TemporaryMemorySlots)
 	}
 	remap := func(place ir.Place) ir.Place {
