@@ -12,6 +12,7 @@
 - [编译器架构](architecture.md)：`Package -> Frontend -> IR -> Optimize -> Backend` 数据流。
 - [优化器](optimization.md)：Minimal、Fast、Standard 的语义和适用场景。
 - [性能](performance.md)：编译耗时、节点规模、Temporary Memory 和开发期实践。
+- [维护指南](maintenance.md)：生成文件、Py/JS 固定基线、差分资产、完整验收与提交清理。
 
 ## 支持边界
 
