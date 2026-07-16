@@ -28,12 +28,12 @@ sonolus-go version
 
 ## 基础使用
 
-引擎源码必须位于 Go module 中，入口 package 为 `main`。从一个最小四模式项目开始，请阅读[快速开始](docs/getting-started.md)。
+引擎源码必须位于 Go module 中，入口 package 为 `main`。本仓库的 [`godori/`](godori/) 是一个可游玩的 Tap-only 四模式引擎，也是公开示例和端到端验收工程。其声明方式和项目结构见[快速开始](docs/getting-started.md)。
 
 编译全部四种模式：
 
 ```bash
-sonolus-go build -m all ./engine
+sonolus-go build -o godori -m all ./godori
 ```
 
 只编译 Play：
@@ -45,19 +45,19 @@ sonolus-go build -o my-engine -m play ./engine
 检查引擎能否完整编译但不生成产物：
 
 ```bash
-sonolus-go vet ./engine
+sonolus-go vet ./godori
 ```
 
 输出供关卡工具使用的 archetype 字段 schema：
 
 ```bash
-sonolus-go list ./engine
+sonolus-go list ./godori
 ```
 
 启动带源码监听和自动重编译的开发服务器：
 
 ```bash
-sonolus-go dev ./engine
+sonolus-go dev -o godori ./godori
 ```
 
 `dev` 提供可由 Sonolus 客户端直接打开的 Dev Level。可选的嵌入式开发 LevelData 声明见[快速开始](docs/getting-started.md#开发服务器)。

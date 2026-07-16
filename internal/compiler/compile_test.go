@@ -818,6 +818,37 @@ func TestParseDeclarationsConfigurationStaticFields(t *testing.T) {
 	}
 }
 
+func TestConfigurationOptionsLowerToRuntimeMemory(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reader *frontend.ArchetypeDeclaration
+	for _, archetype := range decl.Archetypes {
+		if archetype.Name == "ConfigurationReader" {
+			reader = archetype
+			break
+		}
+	}
+	if reader == nil {
+		t.Fatal("ConfigurationReader declaration is missing")
+	}
+	facts := inspectFunction(callbackByName(t, reader.Callbacks, "spawnOrder"))
+	wantOffsets := map[int]bool{0: false, 1: false, 2: false}
+	for _, place := range facts.loads {
+		if place.Storage == "LevelOption" {
+			if _, ok := wantOffsets[place.Offset]; ok {
+				wantOffsets[place.Offset] = true
+			}
+		}
+	}
+	for offset, found := range wantOffsets {
+		if !found {
+			t.Fatalf("LevelOption offset %d was not read: %#v", offset, facts.loads)
+		}
+	}
+}
+
 func TestParseDeclarationsConfigurationStaticAlias(t *testing.T) {
 	decl, err := parseMode(mode.ModePlay, "./testdata/configurationalias")
 	if err != nil {

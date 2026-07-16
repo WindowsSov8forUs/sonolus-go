@@ -83,6 +83,7 @@ type lowerer struct {
 	frames          []*lowerFrame
 	callStack       map[any]bool
 	resourceIDs     map[*types.Var][]int
+	configuration   *ConfigurationDeclaration
 	archetypeFields map[*types.Var]*FieldDeclaration
 	archetypes      map[*types.Named]archetypeBinding
 	breaks          []*ir.Block
@@ -436,6 +437,23 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 			return lowerValue{}
 		}
 		if field, ok := sel.Obj().(*types.Var); ok {
+			if l.configuration != nil {
+				if id, exists := l.configuration.OptionIDs[field]; exists {
+					if l.mode == mode.ModeTutorial {
+						return lowerValue{type_: field.Type(), slots: []ir.Expr{ir.Const{Value: l.configuration.Defaults[field]}}}
+					}
+					storage := "LevelOption"
+					if l.mode == mode.ModePreview {
+						storage = "PreviewOption"
+					}
+					place, err := l.builder.Memory(storage, ir.Const{}, 0, id, true, false)
+					if err != nil {
+						l.errorAt(n, "%v", err)
+						return zeroValue(field.Type())
+					}
+					return lowerValue{type_: field.Type(), slots: []ir.Expr{ir.Load{Place: place}}, places: []ir.Place{place}}
+				}
+			}
 			if ids, exists := l.resourceIDs[field]; exists {
 				slots := make([]ir.Expr, len(ids))
 				for i, id := range ids {
@@ -2751,7 +2769,7 @@ func (l *lowerer) assignRangeValue(target ast.Expr, op token.Token, value lowerV
 	l.store(local, value, target)
 }
 
-func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string) (*ir.Function, []error) {
+func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string) (*ir.Function, []error) {
 	if decl == nil {
 		return nil, nil
 	}
@@ -2769,7 +2787,7 @@ func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *pa
 	for _, field := range fields {
 		archetypeFields[field.Object] = field
 	}
-	l := &lowerer{mode: m, phase: phase, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, archetypeFields: archetypeFields, archetypes: archetypes}
+	l := &lowerer{mode: m, phase: phase, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, configuration: configuration, archetypeFields: archetypeFields, archetypes: archetypes}
 	entry := l.newBlock()
 	_ = builder.SetEntry(entry)
 	l.setCurrent(entry)

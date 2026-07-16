@@ -20,7 +20,7 @@ type pythonPassGolden struct {
 
 func loadPythonPassGolden(t *testing.T) pythonPassGolden {
 	t.Helper()
-	data, err := os.ReadFile("testdata/py_pass_golden.json")
+	data, err := os.ReadFile("../testdata/optimize/py_pass_golden.json")
 	if err != nil {
 		t.Fatal(err)
 	}

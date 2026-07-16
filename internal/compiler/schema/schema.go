@@ -103,7 +103,8 @@ func Build(play, watch, preview []ModeArchetype) *Contract {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		contract.Project.Archetypes = append(contract.Project.Archetypes, Archetype{Name: name, Fields: append([]string(nil), byName[name].fields...)})
+		fields := append([]string{}, byName[name].fields...)
+		contract.Project.Archetypes = append(contract.Project.Archetypes, Archetype{Name: name, Fields: fields})
 	}
 	return contract
 }

@@ -21,6 +21,8 @@ development LevelFile
 
 根调度器是 `internal/compiler.Compiler`。CLI 只依赖该根包门面，不直接调用 frontend、IR 或 backend。
 
+仓库根目录下的 `godori/` 是完整链路的长期验收工程：同一组源码覆盖 Play、Watch、Preview、Tutorial、Development Level 和 CLI dev server。它参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 的 pydori 设计，但仅实现 Tap-only 基础玩法，并使用 Go DSL 原生结构。
+
 CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
 
 开发 LevelData 是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析共享 embed 声明并对三种普通关卡模式校验；`internal/devserver` 将成功的引擎与关卡快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。

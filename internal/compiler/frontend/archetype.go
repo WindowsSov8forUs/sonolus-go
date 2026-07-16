@@ -206,7 +206,7 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 	return result, errs
 }
 
-func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, archetypes map[*types.Named]archetypeBinding, m mode.Mode) []error {
+func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode) []error {
 	var errs []error
 	methodSet := types.NewMethodSet(types.NewPointer(result.Named))
 	foundOrders := map[string]bool{}
@@ -246,7 +246,7 @@ func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Packag
 		wg.Add(1)
 		go func(i int, job callbackJob) {
 			defer wg.Done()
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, archetypes, m, job.key)
+			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, archetypes, m, job.key)
 			callbacks[i] = &CallbackDeclaration{Name: job.key, Order: result.CallbackOrders[job.key], Function: job.fn, Decl: job.decl, IR: bodyIR}
 			jobErrs[i] = lowerErrs
 		}(i, job)

@@ -135,3 +135,59 @@ func containsFunction(node snode, function resource.RuntimeFunction) bool {
 	}
 	return false
 }
+func TestOmitConstantCallback(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     mode.Mode
+		callback string
+		value    valueNode
+		want     bool
+	}{
+		{name: "play spawn order default", mode: mode.ModePlay, callback: "spawnOrder", value: 0, want: true},
+		{name: "play spawn order nondefault", mode: mode.ModePlay, callback: "spawnOrder", value: 1, want: false},
+		{name: "play should spawn default", mode: mode.ModePlay, callback: "shouldSpawn", value: 1, want: true},
+		{name: "play should spawn false", mode: mode.ModePlay, callback: "shouldSpawn", value: 0, want: false},
+		{name: "watch spawn time default", mode: mode.ModeWatch, callback: "spawnTime", value: 0, want: true},
+		{name: "watch spawn time nondefault", mode: mode.ModeWatch, callback: "spawnTime", value: 1, want: false},
+		{name: "watch despawn time default", mode: mode.ModeWatch, callback: "despawnTime", value: 0, want: true},
+		{name: "watch despawn time nondefault", mode: mode.ModeWatch, callback: "despawnTime", value: -1, want: false},
+		{name: "watch update spawn default", mode: mode.ModeWatch, callback: "updateSpawn", value: 0, want: true},
+		{name: "watch update spawn nondefault", mode: mode.ModeWatch, callback: "updateSpawn", value: 3, want: false},
+		{name: "ordinary callback", mode: mode.ModeWatch, callback: "initialize", value: 1, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := omitConstantCallback(test.mode, test.callback, test.value); got != test.want {
+				t.Fatalf("omitConstantCallback(%s, %q, %v) = %v, want %v", test.mode, test.callback, test.value, got, test.want)
+			}
+		})
+	}
+}
+func TestSNodeMultiplyZeroPreservesDynamicEvaluation(t *testing.T) {
+	dynamic := call(resource.RuntimeFunctionDebugLog, valueNode(1))
+	result := simplify(call(resource.RuntimeFunctionMultiply, valueNode(0), dynamic))
+	execute, ok := result.(functionNode)
+	if !ok || execute.function != resource.RuntimeFunctionExecute || len(execute.args) != 2 || !isValue(execute.args[1], 0) {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestSNodeFusesSetAdd(t *testing.T) {
+	get := call(resource.RuntimeFunctionGet, valueNode(10000), valueNode(3))
+	result := simplify(call(resource.RuntimeFunctionSet, valueNode(10000), valueNode(3), call(resource.RuntimeFunctionAdd, get, valueNode(2))))
+	set, ok := result.(functionNode)
+	if !ok || set.function != resource.RuntimeFunctionSetAdd || len(set.args) != 3 {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestSNodeNormalizesArithmeticSwitch(t *testing.T) {
+	result := simplify(call(resource.RuntimeFunctionSwitchWithDefault,
+		call(resource.RuntimeFunctionGet, valueNode(1), valueNode(2)),
+		valueNode(2), valueNode(10), valueNode(4), valueNode(20), valueNode(6), valueNode(30), valueNode(0),
+	))
+	switchNode, ok := result.(functionNode)
+	if !ok || switchNode.function != resource.RuntimeFunctionSwitchInteger || len(switchNode.args) != 4 {
+		t.Fatalf("result = %#v", result)
+	}
+}

@@ -2,6 +2,7 @@ package optimize
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
@@ -138,6 +139,9 @@ func normalizeReachable(function *ir.Function) error {
 				arg.Predecessor = predecessor
 				args = append(args, arg)
 			}
+			sort.Slice(args, func(i, j int) bool {
+				return args[i].Predecessor < args[j].Predecessor
+			})
 			block.Phis[phiIndex].Args = args
 		}
 	}

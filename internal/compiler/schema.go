@@ -81,7 +81,7 @@ func cloneProjectSchema(value *ProjectSchema) *ProjectSchema {
 	}
 	result := &ProjectSchema{Archetypes: make([]ArchetypeSchema, len(value.Archetypes))}
 	for i, archetype := range value.Archetypes {
-		result.Archetypes[i] = ArchetypeSchema{Name: archetype.Name, Fields: append([]string(nil), archetype.Fields...)}
+		result.Archetypes[i] = ArchetypeSchema{Name: archetype.Name, Fields: append([]string{}, archetype.Fields...)}
 	}
 	return result
 }

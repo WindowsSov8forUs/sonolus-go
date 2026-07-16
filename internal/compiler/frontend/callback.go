@@ -92,7 +92,7 @@ func calledObject(pkg *packages.Package, expr ast.Expr) types.Object {
 	}
 }
 
-func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, m mode.Mode, hasMarker bool) ([]*CallbackDeclaration, []error) {
+func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, configuration *ConfigurationDeclaration, m mode.Mode, hasMarker bool) ([]*CallbackDeclaration, []error) {
 	if !hasMarker {
 		return nil, nil
 	}
@@ -155,7 +155,7 @@ func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *
 		go func(i int, job callbackJob) {
 			defer wg.Done()
 			key := callbackKey(job.name)
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, nil, m, key)
+			bodyIR, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, configuration, nil, m, key)
 			callbacks[i] = &CallbackDeclaration{Name: key, Function: job.fn, Decl: job.decl, IR: bodyIR}
 			jobErrs[i] = lowerErrs
 		}(i, job)

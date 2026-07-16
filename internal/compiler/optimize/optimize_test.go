@@ -121,6 +121,43 @@ func TestFoldConstantSwitchUsesFirstMatchAndDefault(t *testing.T) {
 	}
 }
 
+func TestRewriteToSwitchKeepsPhiArgumentsOrderedAfterRenumbering(t *testing.T) {
+	equal := func(value float64) ir.Expr {
+		return ir.RuntimeCall{
+			Function: resource.RuntimeFunctionEqual,
+			Args:     []ir.Expr{ir.Load{Place: ir.LocalPlace{ID: 0}}, ir.Const{Value: value}},
+			Result:   numberType,
+			Pure:     true,
+		}
+	}
+	fn := function(
+		&ir.Block{ID: 0, Terminator: ir.Branch{Condition: equal(1), True: 3, False: 1}},
+		&ir.Block{ID: 1, Terminator: ir.Branch{Condition: equal(2), True: 4, False: 2}},
+		&ir.Block{ID: 2, Terminator: ir.Jump{Target: 5}},
+		&ir.Block{ID: 3, Terminator: ir.Jump{Target: 5}},
+		&ir.Block{ID: 4, Terminator: ir.Jump{Target: 5}},
+		&ir.Block{ID: 5, Phis: []ir.Phi{{Args: []ir.PhiArg{
+			{Predecessor: 2, Value: ir.SSAPlace{ID: 0}},
+			{Predecessor: 3, Value: ir.SSAPlace{ID: 1}},
+			{Predecessor: 4, Value: ir.SSAPlace{ID: 2}},
+		}}}, Terminator: ir.Return{Value: ir.Value{Type: voidType}}},
+	)
+	fn.Locals = []ir.Type{numberType}
+
+	if err := (RewriteToSwitch{}).Run(Context{}, fn); err != nil {
+		t.Fatal(err)
+	}
+	for _, block := range fn.Blocks {
+		for _, phi := range block.Phis {
+			for i := 1; i < len(phi.Args); i++ {
+				if phi.Args[i-1].Predecessor > phi.Args[i].Predecessor {
+					t.Fatalf("phi arguments are not ordered: %#v", phi.Args)
+				}
+			}
+		}
+	}
+}
+
 func TestCoalesceFlowMergesLinearButPreservesLoopAndJoin(t *testing.T) {
 	linear := function(&ir.Block{ID: 0, Terminator: ir.Jump{Target: 1}}, &ir.Block{ID: 1, Terminator: ir.Jump{Target: 2}}, returnVoid(2))
 	if err := (CoalesceFlow{}).Run(Context{}, linear); err != nil {

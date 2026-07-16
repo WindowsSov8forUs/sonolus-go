@@ -312,13 +312,15 @@ func optionBase(field *types.Var, value source.StaticValue) (resource.EngineConf
 	}, nil
 }
 
-func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source.ASTTracer) (*resource.EngineConfiguration, []error) {
+func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source.ASTTracer) (*resource.EngineConfiguration, map[*types.Var]int, map[*types.Var]float64, []error) {
 	cfg := &resource.EngineConfiguration{Options: []resource.EngineConfigurationOption{}}
+	optionIDs := map[*types.Var]int{}
+	defaults := map[*types.Var]float64{}
 	var errs []error
 	st := named.Underlying().(*types.Struct)
 	binding, evalErr := tracer.EvalObject(singleton)
 	if evalErr != nil {
-		return cfg, []error{fmt.Errorf("%s: configuration singleton must be statically evaluable: %w", singleton.Name(), evalErr)}
+		return cfg, optionIDs, defaults, []error{fmt.Errorf("%s: configuration singleton must be statically evaluable: %w", singleton.Name(), evalErr)}
 	}
 	configurationValue := binding.Value
 	externalNames := map[string]bool{}
@@ -438,6 +440,8 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 				errs = append(errs, fmt.Errorf("%s: configuration.%s requires min <= default <= max and step > 0", call.Pos, field.Name()))
 				continue
 			}
+			optionIDs[field] = len(cfg.Options)
+			defaults[field] = def
 			cfg.Options = append(cfg.Options, resource.EngineConfigurationSliderOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSlider, Def: def, Min: min, Max: max, Step: step, Unit: core.Text(unit)})
 		case types.Typ[types.Bool]:
 			def, ok := staticBoolConfig(optionConfig, "Default")
@@ -449,6 +453,8 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 			if def {
 				n = 1
 			}
+			optionIDs[field] = len(cfg.Options)
+			defaults[field] = float64(n)
 			cfg.Options = append(cfg.Options, resource.EngineConfigurationToggleOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeToggle, Def: n})
 		case types.Typ[types.Int]:
 			def, defOK := staticIntConfig(optionConfig, "Default")
@@ -470,6 +476,8 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 				errs = append(errs, fmt.Errorf("%s: configuration.%s default must index a non-empty static values list", call.Pos, field.Name()))
 				continue
 			}
+			optionIDs[field] = len(cfg.Options)
+			defaults[field] = float64(def)
 			cfg.Options = append(cfg.Options, resource.EngineConfigurationSelectOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSelect, Def: def, Values: values})
 		}
 	}
@@ -478,5 +486,5 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 			errs = append(errs, fmt.Errorf("configuration: replay fallback %q does not name an option", fallback))
 		}
 	}
-	return cfg, errs
+	return cfg, optionIDs, defaults, errs
 }

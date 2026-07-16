@@ -25,7 +25,7 @@ type jsSNodeGolden struct {
 }
 
 func TestSNodeMatchesPinnedJavaScriptGolden(t *testing.T) {
-	path := filepath.Join("testdata", "snode_golden.json")
+	path := filepath.Join("..", "testdata", "backend", "snode_golden.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

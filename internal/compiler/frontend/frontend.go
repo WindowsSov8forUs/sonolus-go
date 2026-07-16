@@ -23,6 +23,11 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 	resources := map[string]bool{}
 	configurationFound := false
 	globalFound := false
+	type globalPackage struct {
+		pkg       *packages.Package
+		hasMarker bool
+	}
+	var globalPackages []globalPackage
 	userPackages := collectPackages(pkg)
 	tracer := source.NewASTTracer(pkg)
 	packagesByTypes := make(map[*types.Package]*packages.Package, len(userPackages))
@@ -119,7 +124,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 					continue
 				}
 				configurationFound = true
-				cfg, cfgErrs := parseConfiguration(named, vars[0], tracer)
+				cfg, optionIDs, defaults, cfgErrs := parseConfiguration(named, vars[0], tracer)
 				errs = append(errs, cfgErrs...)
 				out.Configuration = &ConfigurationDeclaration{
 					Mode:        m,
@@ -128,6 +133,8 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 					Variable:    vars[0].Name(),
 					Pos:         p.Fset.Position(vars[0].Pos()),
 					Value:       cfg,
+					OptionIDs:   optionIDs,
+					Defaults:    defaults,
 				}
 				continue
 			}
@@ -144,7 +151,10 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 				continue
 			}
 		}
-		globals, globalErrs := globalCallbacks(packagesByTypes, p, &out.Resources, m, hasGlobals)
+		globalPackages = append(globalPackages, globalPackage{pkg: p, hasMarker: hasGlobals})
+	}
+	for _, candidate := range globalPackages {
+		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, m, candidate.hasMarker)
 		errs = append(errs, globalErrs...)
 		out.Globals = append(out.Globals, globals...)
 	}
@@ -164,7 +174,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 			errs = append(errs, fmt.Errorf("%s: archetype source package is unavailable", declaration.Name))
 			continue
 		}
-		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, archetypes, m)...)
+		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, archetypes, m)...)
 	}
 	if len(errs) > 0 {
 		messages := make([]string, len(errs))

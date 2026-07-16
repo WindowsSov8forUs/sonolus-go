@@ -174,8 +174,9 @@ sonolus-go dev .
 
 ## 下一步
 
-- 仓库中的 [`examples/minimal`](../examples/minimal) 是可直接编译的四模式最小示例，并由端到端测试持续验证。
-- [`examples/conformance`](../examples/conformance) 集中覆盖泛型 helper、闭包、控制流和更多静态资源，可用于核对 DSL 边界。
+- 仓库中的 [`godori/`](../godori/) 是可直接编译和游玩的 Tap-only 四模式引擎，并由端到端测试持续验证。可从 [`play.go`](../godori/play.go)、[`watch.go`](../godori/watch.go)、[`preview.go`](../godori/preview.go) 和 [`tutorial.go`](../godori/tutorial.go) 查看各模式实现。
+- `godori` 参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 中 pydori 的整体设计，以当前 Go DSL 独立重写。它只实现 Stage 与 TapNote，不包含 Hold、Flick、StreamGroup 或发布级关卡构造系统。
+- 泛型 helper、闭包、variadic helper、整数 range 和静态 callable 等 DSL 边界由内部 conformance fixture 覆盖，不作为公开引擎示例。
 - 在 [DSL 参考](dsl-reference.md) 中查看资源、字段 storage 和 callback 表。
 - 在 [命令行](cli.md) 中查看 package pattern、ROM fallback 和优化等级。
 - 在 [优化器](optimization.md) 中选择 `-O` 等级。
