@@ -21,11 +21,13 @@ development LevelFile
 
 根调度器是 `internal/compiler.Compiler`。CLI 只依赖该根包门面，不直接调用 frontend、IR 或 backend。
 
-仓库根目录下的 `godori/` 是完整链路的长期验收工程：同一组源码覆盖 Play、Watch、Preview、Tutorial、Development Level 和 CLI dev server。它参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 的 pydori 设计，包含 Tap、Flick、Directional Flick、普通与 Flick 终点 Hold 链、同时押宽 hitbox 切分、回放 stream 与分段 Hold 音效、组合 judgment bucket、动态管理 archetype、BPM/Timescale、Preview 与 Tutorial，并使用 Go DSL 原生结构。
+仓库根目录下的 `godori/` 是完整链路的长期验收工程：同一组源码覆盖 Play、Watch、Preview、Tutorial、Development Level 和 CLI dev server。它参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 的 pydori 设计，包含 Tap、Flick、Directional Flick、以 abstract note 和 `prev`/`next` 统一链表示的任意 anchor Hold、同时押宽 hitbox 切分、99999 实体容量的回放 stream 与分段 Hold 音效、组合 judgment bucket、动态管理 archetype、BPM/Timescale、projective stage transform、统一 layer z 规则、音符边界淡入淡出、周期 Flick 箭头、screen-space affine particle 校正、Preview 与 Tutorial，并使用结构化 level globals 复用公共状态布局。
 
 CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
 
 开发 LevelData 是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析共享 embed 声明并对三种普通关卡模式校验；`internal/devserver` 将成功的引擎与关卡快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
+
+`sonolus/level` 是宿主侧类型化 LevelData builder，与 `sonolus/sim` 一样不属于 callback catalog。它把普通 Go struct、定长数组和类型化实体引用展开为 `resource.LevelData`；Godori 的 `levelgen` 使用它生成 checked-in `dev-level.json`。生成与加载是两条独立路径：builder 负责构造，`internal/level` 仍以最终 JSON 和三模式声明契约为权威校验。
 
 `list` 使用独立的 declaration-only frontend 路径读取 Play、Watch、Preview archetype 字段，不 lower callback。字段来源 Contract 同时供 Py 兼容 schema 投影和 Development Level 的逐模式 imports 校验使用。
 
@@ -83,7 +85,9 @@ Catalog 是公开 Sonolus API 的唯一语义来源，记录：
 
 Frontend 按准确 `go/types.Object` 查 catalog，不依赖 import alias 或源码文本猜测。
 
-Callable、pointer、catalog container 与 static interface 的 runtime 分支合并统一表示为有限变体：一槽 Temporary Memory tag 加按源码首次出现排序的静态 alternatives。各 alternative 保留独立 callable 捕获环境与具体泛型 type substitution、pointer place set、container backing descriptor 或 concrete interface payload；helper 参数/返回与 dispatch 只生成 CFG，不在最终 IR 中留下 Go 函数、pointer、container descriptor 或 interface 对象。Iterator 创建时冻结 descriptor tag，后续变量重绑不会改变既有 iterator 的目标。Entity view 在本地 aggregate 中同样只展开为一槽 entity index。
+`LevelMemoryResource` 与 `LevelDataResource` 是 declaration-only marker。Frontend 按稳定声明顺序为每个模式的多个 singleton 分配共享 semantic memory layout，并为 nested record、定长数组和 container 建立路径化 layout tree；selector 与动态数组索引沿 descriptor 派生对应 `MemoryPlace`。容器字段只在 IR 中保留 size slot 和 backing descriptor，不把完整 backing 物化到 Temporary Memory。LevelData 的 preprocess-only 写权限同时供 IR validator 与 optimizer readonly oracle 使用。
+
+Callable、pointer、catalog container 与 static interface 的 runtime 分支合并统一表示为有限变体：一槽 Temporary Memory tag 加按源码首次出现排序的静态 alternatives。各 alternative 保留独立 callable 捕获环境与具体泛型 type substitution、pointer place set、container backing descriptor 或 concrete interface payload；helper 参数/返回与 dispatch 只生成 CFG，不在最终 IR 中留下 Go 函数、pointer、container descriptor 或 interface 对象。Callable cell 和一维固定 callable 数组在赋值、参数、返回与 value range 时复制当前 tag，而不是共享后续重绑；package callable 数组从静态 initializer 重建为不可变函数表。普通 package scalar、runtime record 与定长数组通过 ASTTracer 验证 pure static initializer，再按 runtime layout 重建不可变值；它们不占用长期 semantic memory。Static struct value 额外保留 literal 字段的显式性，使 Configuration 能在不吞掉显式零值的前提下应用 Py 默认 UI。Iterator 创建时冻结 descriptor tag，后续变量重绑不会改变既有 iterator 的目标。Entity view 在本地 aggregate 中同样只展开为一槽 entity index。单次注册的 defer 使用函数级 active cell 汇入统一 return block 并逆序内联；可能重复注册的 defer 不建立运行时栈。
 
 ## IR
 
@@ -101,7 +105,7 @@ IR 不导入 AST、`go/token`、`go/types`、packages、frontend 或 catalog。
 
 ## Optimize
 
-Optimizer 深拷贝每个 callback IR，并执行所选 pipeline。callback 使用不超过 `GOMAXPROCS` 的有界 worker pool 并行优化，结果与错误仍按稳定 job 顺序归并。分析缓存只存在于单次 Optimize 调用，不跨 callback 或并发共享；未声明契约的 pass 按保守策略清空缓存，CopyCoalesce clone 并重映射干涉图，后续只删除指令/CFG 的 pass 可保留该 over-approximation 供 Allocate 复用。liveness 与 interference graph 使用固定宽度 bitset。LICM/CSE 只把 catalog 按 mode/callback 判定为 readonly 的 semantic memory 作为候选，RuntimeUI 等存在同阶段 setter 的 storage 保持屏障。详情见 [优化器](optimization.md)。
+Optimizer 深拷贝每个 callback IR，并执行所选 pipeline。callback 使用不超过 `GOMAXPROCS` 的有界 worker pool 并行优化，结果与错误仍按稳定 job 顺序归并。分析缓存只存在于单次 Optimize 调用，不跨 callback 或并发共享；未声明契约的 pass 按保守策略清空缓存，CopyCoalesce clone 并重映射干涉图，后续只删除指令/CFG 的 pass 可保留该 over-approximation 供 Allocate 复用。若该保守图无法满足 4096 slots，Allocate 会基于当前最终 CFG 重算精确 liveness/interference 后重试；精确图仍超限才返回包含失败 local 的稳定错误。liveness 与 interference graph 使用固定宽度 bitset。LICM/CSE 只把 catalog 按 mode/callback 判定为 readonly 的 semantic memory 作为候选，RuntimeUI 等存在同阶段 setter 的 storage 保持屏障。详情见 [优化器](optimization.md)。
 
 Temporary Memory 上限为 4096 slots。allocation 将 virtual local 重写为物理 Temporary Memory layout；backend 拒绝残留 SSA、Phi 或未分配 local。
 

@@ -114,6 +114,21 @@ func Navigate()   {}
 func Update()     {}
 ```
 
+跨 Archetype 共享状态可使用结构化 level global：
+
+```go
+type RuntimeState struct {
+    sonolus.LevelMemoryResource
+    Active sonolus.VarArray[sonolus.EntityRef[Note]]
+}
+
+var State = RuntimeState{
+    Active: sonolus.NewVarArray[sonolus.EntityRef[Note]](16),
+}
+```
+
+需要仅在 `Preprocess` 初始化、随后只读的数据时嵌入 `sonolus.LevelDataResource`。多个声明会自动取得互不重叠的稳定布局；完整模式映射与写权限见 [DSL 参考](dsl-reference.md#level-memory-与-level-data)。
+
 Watch 的可选全局 callback 使用 `watch.GlobalCallbacks`，并可定义 `func UpdateSpawn() float64`。Tutorial 的三个全局 callback 和 Watch 的 `UpdateSpawn` 都是可选的；存在时必须严格符合签名。
 
 ## 编译
@@ -164,6 +179,27 @@ var DevelopmentLevel sonolus.LevelFile
 }
 ```
 
+开发关卡也可以使用宿主侧 `sonolus/level` 包从类型化 Go 值生成，再将生成的 JSON 保持为 checked-in embed 文件：
+
+```go
+type NoteData struct {
+    Beat float64 `level:"#BEAT"`
+    Lane float64 `level:"lane"`
+    Next level.Ref[NoteData] `level:"next,omitempty"`
+}
+
+var Note = level.MustDefine[NoteData]("Note")
+
+func buildLevel() (*resource.LevelData, error) {
+    first := Note.New(NoteData{Beat: 1, Lane: -1})
+    second := Note.New(NoteData{Beat: 2, Lane: 1})
+    first.Data.Next = second.Ref()
+    return level.NewBuilder().Add(first, second).Build()
+}
+```
+
+`sonolus/level` 在普通 Go 进程中运行，不属于 callback DSL，也不进入 Compiler IR。它会稳定自动命名实体、验证同关卡引用，并按与 Archetype imports 相同的数组/record 规则展开字段。Godori 使用 `go generate ./godori` 更新 `godori/dev-level.json`，测试会逐字节确认生成结果没有过期。
+
 同一文件必须对 Play、Watch 和 Preview 可见。实体 archetype 和每个 data name 必须存在于三个模式对应的声明中；实体引用必须指向同一关卡内的命名实体。未声明时使用空开发关卡。
 
 ```bash
@@ -175,7 +211,7 @@ sonolus-go dev .
 ## 下一步
 
 - 仓库中的 [`godori/`](../godori/) 是可直接编译和游玩的四模式引擎，并由端到端测试持续验证。可从 [`play.go`](../godori/play.go)、[`watch.go`](../godori/watch.go)、[`preview.go`](../godori/preview.go) 和 [`tutorial.go`](../godori/tutorial.go) 查看各模式实现。
-- `godori` 参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 中 pydori 的整体设计，以当前 Go DSL 独立重写。当前覆盖 Tap、Flick、Directional Flick、普通与 Flick 终点 Hold 链、同时押宽 hitbox 切分、SimLine、BPM/Timescale、Play/Watch stream、Watch replay Hold 分段音效、组合 judgment bucket、动态效果 archetype、Preview 与 Tutorial；它仍是编译器验收工程，不是 pydori 的逐功能移植。
+- `godori` 参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 中 pydori 的整体设计，以当前 Go DSL 独立重写。当前覆盖 Tap、Flick、Directional Flick、由 abstract note 与 `prev`/`next` 统一链描述的任意 anchor Hold、同时押宽 hitbox 切分、九槽 projective stage transform、统一 layer z、音符淡入淡出、周期 Flick 箭头与 affine particle quad、SimLine、BPM/Timescale、99999 实体容量的 Play/Watch stream、Watch replay Hold 分段音效、组合 judgment bucket、动态效果 archetype、结构化 level globals、两秒分栏 Preview 与 Tutorial；它仍是编译器验收工程，不是 pydori 的逐源码移植。
 - 泛型 helper、闭包、variadic helper、整数 range 和静态 callable 等 DSL 边界由内部 conformance fixture 覆盖，不作为公开引擎示例。
 - 在 [DSL 参考](dsl-reference.md) 中查看资源、字段 storage 和 callback 表。
 - 在 [命令行](cli.md) 中查看 package pattern、ROM fallback 和优化等级。
