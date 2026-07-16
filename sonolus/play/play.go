@@ -1,7 +1,7 @@
 // Package play declares Play-mode markers and runtime facades.
 package play
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
 type Archetype struct{}
 type CallbackOrders struct{}

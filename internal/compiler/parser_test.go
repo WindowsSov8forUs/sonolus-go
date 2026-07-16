@@ -9,10 +9,10 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 func loadInto(t *testing.T, parser *frontend.Parser, m mode.Mode, pattern string) {

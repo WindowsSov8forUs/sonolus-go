@@ -1,6 +1,6 @@
 package optimize
 
-import "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 
 func rewriteExpr(expr ir.Expr, fn func(ir.Expr) ir.Expr) ir.Expr {
 	switch value := expr.(type) {

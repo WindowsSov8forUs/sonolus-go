@@ -1,7 +1,7 @@
 // Package watch declares Watch-mode markers and runtime facades.
 package watch
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
 type Archetype struct{}
 type CallbackOrders struct{}

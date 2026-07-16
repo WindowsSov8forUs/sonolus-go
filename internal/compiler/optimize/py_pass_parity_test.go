@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
 
 type pythonPassGolden struct {

@@ -4,8 +4,8 @@ name: Release
 # packages them into archives, and uploads to a GitHub Release.
 #
 # To cut a release:
-#   git tag -a v1.1.0-rc.1 -m "v1.1.0-rc.1"
-#   git push origin v1.1.0-rc.1
+#   git tag -a v2.0.0-rc.1 -m "v2.0.0-rc.1"
+#   git push origin v2.0.0-rc.1
 
 on:
   push:
@@ -23,10 +23,10 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.12"
       - run: go test ./...
       - run: go vet ./...
 
@@ -35,13 +35,13 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # needed for changelog generation
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.12"
 
       - name: Configure git for private repos
         run: |

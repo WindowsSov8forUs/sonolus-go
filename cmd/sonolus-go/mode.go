@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 )
 
 // errUnknownMode is returned when the user supplies an unrecognized mode string.

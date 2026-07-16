@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/catalog"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
 )
 
 func TestEveryCatalogOperationHasFrontendLowering(t *testing.T) {

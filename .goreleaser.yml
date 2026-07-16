@@ -32,7 +32,7 @@ builds:
 
 archives:
   - id: default
-    builds: [sonolus-go]
+    ids: [sonolus-go]
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -88,5 +88,7 @@ release:
 
     ```bash
     sonolus-go build -o my-engine -m all ./engine
-    sonolus-go serve -o my-engine ./engine
+    sonolus-go vet ./engine
+    sonolus-go list ./engine
+    sonolus-go dev -o my-engine ./engine
     ```

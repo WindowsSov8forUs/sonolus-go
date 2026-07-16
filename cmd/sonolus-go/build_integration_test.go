@@ -15,8 +15,8 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/build"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 )
 
 func fixturePattern() string {

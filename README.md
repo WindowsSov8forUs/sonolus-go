@@ -6,10 +6,10 @@
 
 从 [GitHub Releases](https://github.com/WindowsSov8forUs/sonolus-go/releases) 下载对应平台的预编译可执行文件，并将其加入 `PATH`。
 
-也可以从源码安装。项目需要 Go 1.25 或更高版本：
+也可以从源码安装。项目需要 Go 1.25.12 或更高版本：
 
 ```bash
-go install github.com/WindowsSov8forUs/sonolus-go/cmd/sonolus-go@latest
+go install github.com/WindowsSov8forUs/sonolus-go/v2/cmd/sonolus-go@latest
 ```
 
 开发当前仓库时可直接编译：

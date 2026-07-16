@@ -12,10 +12,10 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/catalog"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/intrinsic"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/intrinsic"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 )
 
 type lowerValue struct {

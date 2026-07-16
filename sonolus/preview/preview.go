@@ -1,7 +1,7 @@
 // Package preview declares Preview-mode markers and runtime facades.
 package preview
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
 type Archetype struct{}
 type CallbackOrders struct{}

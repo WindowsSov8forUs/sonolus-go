@@ -3,8 +3,8 @@ package frontend
 import (
 	"fmt"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/catalog"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
 
 func validateRuntimeCalls(function *ir.Function) []error {

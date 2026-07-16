@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"go/token"
 
-	sourcetracer "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source/tracer"
-	compilerTag "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/tag"
+	sourcetracer "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source/tracer"
+	compilerTag "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/tag"
 )
 
 type ErrInvalidTagOption struct {

@@ -3,7 +3,7 @@ package main
 import (
 	"math/rand"
 
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
 
 type Note struct {

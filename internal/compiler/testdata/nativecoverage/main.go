@@ -2,8 +2,8 @@
 package main
 
 import (
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/native"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/native"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
 
 type NativeCoverage struct {

@@ -12,8 +12,8 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core"
 	"github.com/WindowsSov8forUs/sonolus-core-go/database"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/build"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 	sonolusserver "github.com/WindowsSov8forUs/sonolus-server-go"
 	"github.com/gin-gonic/gin"
 )

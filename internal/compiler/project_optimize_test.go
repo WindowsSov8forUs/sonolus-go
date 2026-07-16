@@ -3,10 +3,10 @@ package compiler
 import (
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/frontend"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 )
 
 func TestOptimizeProjectCopiesDeclarationsAndIR(t *testing.T) {

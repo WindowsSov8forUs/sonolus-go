@@ -1,6 +1,6 @@
 package main
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
 type GameConfiguration struct {
 	sonolus.Configuration

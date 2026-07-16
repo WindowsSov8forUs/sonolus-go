@@ -10,10 +10,10 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
-	developmentserver "github.com/WindowsSov8forUs/sonolus-go/internal/devserver"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/level"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/build"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
+	developmentserver "github.com/WindowsSov8forUs/sonolus-go/v2/internal/devserver"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/level"
 )
 
 type devServerState struct {

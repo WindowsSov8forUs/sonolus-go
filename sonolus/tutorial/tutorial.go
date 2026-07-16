@@ -1,7 +1,7 @@
 // Package tutorial declares Tutorial-mode markers and runtime facades.
 package tutorial
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
 type GlobalCallbacks struct{}
 

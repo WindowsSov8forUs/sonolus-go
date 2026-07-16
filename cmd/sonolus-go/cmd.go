@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/build"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 )
 
 var engineOutputRoot = "dist"

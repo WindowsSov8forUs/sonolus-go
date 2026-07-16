@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 	"golang.org/x/tools/go/packages"
 )
 

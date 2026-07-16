@@ -3,8 +3,8 @@
 package main
 
 import (
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/watch"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/watch"
 )
 
 type SkinData struct {

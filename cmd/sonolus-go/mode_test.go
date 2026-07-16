@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 )
 
 func TestParseMode(t *testing.T) {

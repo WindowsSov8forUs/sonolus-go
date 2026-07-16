@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 )
 
 var callbacks = map[mode.Mode]map[string]string{

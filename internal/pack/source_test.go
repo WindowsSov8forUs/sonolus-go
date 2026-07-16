@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 )
 
 // TestEmitPackSource verifies basic file output for a compiled engine.

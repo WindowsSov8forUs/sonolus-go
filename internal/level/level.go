@@ -20,11 +20,11 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/codec"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/directive"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
-	compilerschema "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/schema"
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/directive"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	compilerschema "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/schema"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 // Development is a normalized development level and its source files.

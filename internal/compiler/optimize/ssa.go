@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
 
 type ToSSA struct{}

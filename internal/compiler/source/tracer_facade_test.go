@@ -3,7 +3,7 @@ package source
 import (
 	"testing"
 
-	sourcetracer "github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source/tracer"
+	sourcetracer "github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source/tracer"
 )
 
 func TestDirectTracerPackage(t *testing.T) {

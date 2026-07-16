@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 )
 
 func BenchmarkCompileAll(b *testing.B) {

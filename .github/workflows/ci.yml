@@ -7,20 +7,29 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.25.12'
       - run: go test ./...
       - run: go vet ./...
       - run: go build ./cmd/sonolus-go/
 
+  vulnerability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.12'
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
   fuzz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.25.12'
       - run: go test -run '^$' -fuzz=FuzzStaticValueEval -fuzztime=30s ./internal/compiler/source/
       - run: go test -run '^$' -fuzz=FuzzCompiledCallbackOptimizationSemantics -fuzztime=30s ./internal/compiler/

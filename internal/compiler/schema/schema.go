@@ -5,7 +5,7 @@ package schema
 import (
 	"sort"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 )
 
 type Project struct {

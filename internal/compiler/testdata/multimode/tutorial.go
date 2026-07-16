@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
 type SkinData struct {
 	sonolus.SkinResource

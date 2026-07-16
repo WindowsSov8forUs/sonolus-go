@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 )
 
 func readFallbackROM(path string) ([]byte, error) {

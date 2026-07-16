@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 )
 
 var updateReferenceGolden = flag.Bool("update-reference", false, "update checked-in compiler reference golden")

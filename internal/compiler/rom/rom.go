@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/directive"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/directive"
 )
 
 type RomSpec struct {

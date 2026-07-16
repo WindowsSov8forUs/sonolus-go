@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus"
-	"github.com/WindowsSov8forUs/sonolus-go/sonolus/tutorial"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/tutorial"
 )
 
 type Callbacks struct{ tutorial.GlobalCallbacks }

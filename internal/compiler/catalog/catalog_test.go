@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/catalog"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
 )
 
 func repositoryRoot(t *testing.T) string {
