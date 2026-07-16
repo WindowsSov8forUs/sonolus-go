@@ -33,13 +33,18 @@ type PlaySkin struct {
 var PlayAssets = &PlaySkin{
 	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard}, Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN")}
 
+type SingleValue struct{ Value float64 }
+
 type TapNote struct {
 	play.Archetype      `archetype:"name=TapNote,hasInput=true"`
 	play.CallbackOrders `archetype:"preprocess=-10,updateSequential=5"`
-	Beat                float64      `archetype:"imported,name=#BEAT,default=1"`
-	Position            sonolus.Vec2 `archetype:"memory"`
-	Shared              float64      `archetype:"shared"`
-	HitTime             float64      `archetype:"exported,name=hitTime"`
+	Beat                float64         `archetype:"imported,name=#BEAT,default=1"`
+	Target              sonolus.Vec2    `archetype:"imported,name=target"`
+	Path                [2]sonolus.Vec2 `archetype:"imported,name=path"`
+	Single              SingleValue     `archetype:"imported,name=single"`
+	Position            sonolus.Vec2    `archetype:"memory"`
+	Shared              float64         `archetype:"shared"`
+	HitPosition         sonolus.Vec2    `archetype:"exported,name=hit"`
 }
 
 func (*TapNote) Preprocess() {

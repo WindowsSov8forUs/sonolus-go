@@ -179,66 +179,85 @@ func TestListWritesStableSchemaJSONWithoutArtifacts(t *testing.T) {
     {
       "name": "AccentTapNote",
       "fields": [
+        "end_time",
         "#BEAT",
-        "lane"
+        "lane",
+        "direction",
+        "prev",
+        "next"
       ]
     },
     {
       "name": "DirectionalFlickNote",
       "fields": [
+        "end_time",
         "#BEAT",
         "lane",
-        "direction"
+        "direction",
+        "prev",
+        "next"
       ]
     },
     {
       "name": "FlickNote",
       "fields": [
+        "end_time",
         "#BEAT",
-        "lane"
+        "lane",
+        "direction",
+        "prev",
+        "next"
       ]
     },
     {
       "name": "HoldAnchorNote",
       "fields": [
+        "end_time",
         "#BEAT",
-        "lane"
+        "lane",
+        "direction",
+        "prev",
+        "next"
       ]
     },
     {
       "name": "HoldConnector",
       "fields": [
-        "head",
-        "anchor",
-        "end",
-        "flickEnd",
-        "segment"
+        "first",
+        "second"
       ]
     },
     {
       "name": "HoldEndNote",
       "fields": [
-        "head",
+        "end_time",
         "#BEAT",
-        "lane"
+        "lane",
+        "direction",
+        "prev",
+        "next"
       ]
     },
     {
       "name": "HoldFlickNote",
       "fields": [
-        "head",
+        "end_time",
         "#BEAT",
-        "lane"
+        "lane",
+        "direction",
+        "prev",
+        "next"
       ]
     },
     {
       "name": "HoldHeadNote",
       "fields": [
+        "end_time",
         "#BEAT",
         "lane",
-        "anchor",
-        "end",
-        "flickEnd"
+        "direction",
+        "prev",
+        "next"
       ]
     },
     {
@@ -248,13 +267,13 @@ func TestListWritesStableSchemaJSONWithoutArtifacts(t *testing.T) {
     {
       "name": "HoldTickNote",
       "fields": [
-        "head",
-        "#BEAT"
+        "end_time",
+        "#BEAT",
+        "lane",
+        "direction",
+        "prev",
+        "next"
       ]
-    },
-    {
-      "name": "InputManager",
-      "fields": []
     },
     {
       "name": "ScheduledLaneEffect",
@@ -274,8 +293,12 @@ func TestListWritesStableSchemaJSONWithoutArtifacts(t *testing.T) {
     {
       "name": "TapNote",
       "fields": [
+        "end_time",
         "#BEAT",
-        "lane"
+        "lane",
+        "direction",
+        "prev",
+        "next"
       ]
     }
   ]

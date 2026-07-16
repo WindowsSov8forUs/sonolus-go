@@ -11,11 +11,32 @@ import (
 
 type PlayReplayStreams struct {
 	sonolus.StreamResource
-	Reserved   [100]sonolus.Stream[float64]
-	EmptyLanes [7]sonolus.Stream[float64]
+	Reserved   [99999]sonolus.Stream[float64]
+	EmptyLanes sonolus.Stream[[7]bool]
 }
 
 var Replay = PlayReplayStreams{}
+
+type PlayInputMemory struct {
+	sonolus.LevelMemoryResource
+	ClaimedTouches sonolus.ArraySet[float64]
+}
+
+var InputMemory = PlayInputMemory{ClaimedTouches: sonolus.NewArraySet[float64](16)}
+
+type PlayNoteMemory struct {
+	sonolus.LevelMemoryResource
+	ActiveNotes sonolus.VarArray[sonolus.EntityRef[PlayBasicNote]]
+}
+
+var NoteMemory = PlayNoteMemory{ActiveNotes: sonolus.NewVarArray[sonolus.EntityRef[PlayBasicNote]](16)}
+
+type PlayLayoutData struct {
+	sonolus.LevelDataResource
+	Transform sonolus.Transform2D
+}
+
+var Layout = PlayLayoutData{}
 
 type PlaySkin struct {
 	sonolus.SkinResource
@@ -113,25 +134,57 @@ type PlayTimescaleChange struct {
 
 type PlayStage struct {
 	play.Archetype      `archetype:"name=Stage"`
-	play.CallbackOrders `archetype:"updateSequential=-20,touch=20"`
+	play.CallbackOrders `archetype:"updateSequential=-1,touch=2"`
 }
 
 func (*PlayStage) SpawnOrder() float64 { return -1e8 }
 func (*PlayStage) ShouldSpawn() bool   { return true }
 func (*PlayStage) Initialize() {
 	sonolus.Assert(Config.LaneWidth > 0, "lane width must be positive")
-	play.Spawn(PlayInputManager{})
 }
 func (*PlayStage) Preprocess() {
+	Layout.Transform = stageTransform()
+	play.SkinTransform.Set(Layout.Transform)
 	play.Score.SetBase(play.BaseScore{Perfect: 1, Great: 0.5, Good: 0.25})
-	play.UI.SetMenu(menuLayout())
-	play.UI.SetJudgment(judgmentLayout())
-	play.UI.SetComboValue(comboValueLayout())
-	play.UI.SetComboText(comboTextLayout())
-	play.UI.SetPrimaryMetricBar(primaryMetricBarLayout())
-	play.UI.SetPrimaryMetricValue(primaryMetricValueLayout())
-	play.UI.SetSecondaryMetricBar(secondaryMetricBarLayout())
-	play.UI.SetSecondaryMetricValue(secondaryMetricValueLayout())
+	window := noteBucketWindowMilliseconds()
+	Buckets.Tap.SetWindow(window)
+	Buckets.HoldHead.SetWindow(window)
+	Buckets.HoldEnd.SetWindow(window)
+	Buckets.HoldTick.SetWindow(window)
+	Buckets.Flick.SetWindow(window)
+	Buckets.DirectionalFlick.SetWindow(window)
+	configurePlayNoteArchetype[PlayTapNote]()
+	configurePlayNoteArchetype[PlayAccentTapNote]()
+	configurePlayNoteArchetype[PlayFlickNote]()
+	configurePlayNoteArchetype[PlayDirectionalFlickNote]()
+	configurePlayNoteArchetype[PlayHoldHeadNote]()
+	configurePlayNoteArchetype[PlayHoldAnchorNote]()
+	configurePlayNoteArchetype[PlayHoldEndNote]()
+	configurePlayNoteArchetype[PlayHoldFlickNote]()
+	configurePlayNoteArchetype[PlayHoldTickNote]()
+	screen := play.Screen.Rect()
+	menuConfig := play.UI.MenuConfiguration()
+	comboConfig := play.UI.ComboConfiguration()
+	primaryConfig := play.UI.PrimaryMetricConfiguration()
+	secondaryConfig := play.UI.SecondaryMetricConfiguration()
+	play.UI.SetMenu(menuLayout(screen, menuConfig))
+	play.UI.SetJudgment(judgmentLayout(play.UI.JudgmentConfiguration()))
+	play.UI.SetComboValue(comboValueLayout(screen, comboConfig))
+	play.UI.SetComboText(comboTextLayout(screen, comboConfig))
+	play.UI.SetPrimaryMetricBar(primaryMetricBarLayout(screen, primaryConfig))
+	play.UI.SetPrimaryMetricValue(primaryMetricValueLayout(screen, primaryConfig))
+	play.UI.SetSecondaryMetricBar(secondaryMetricBarLayout(screen, secondaryConfig, menuConfig))
+	play.UI.SetSecondaryMetricValue(secondaryMetricValueLayout(screen, secondaryConfig, menuConfig, primaryConfig))
+}
+
+func configurePlayNoteArchetype[T any]() {
+	archetype := play.ArchetypeID[T]()
+	missLife := -100.0
+	if play.ArchetypeKey[T]() == 5 {
+		missLife = -20
+	}
+	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
+	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: missLife})
 }
 func (*PlayStage) UpdateParallel() {
 	drawPlayStage()
@@ -142,8 +195,9 @@ func (*PlayStage) UpdateSequential() {
 }
 
 func (*PlayStage) Touch() {
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
+	effectLanes := [7]bool{}
+	hasEffectLane := false
+	for touch := range play.Touches.Values() {
 		if !touch.Started || isTouchClaimed(touch.ID) {
 			continue
 		}
@@ -152,50 +206,192 @@ func (*PlayStage) Touch() {
 			lanes.Append(lane)
 		}
 		for lane := range lanes.Values() {
-			if !laneRect(float64(lane)).Contains(touch.Position) {
+			if !containsTransformedRect(Layout.Transform, laneRect(float64(lane)), touch.Position) {
 				continue
 			}
-			claimTouch(touch.ID)
 			if Config.SFX {
 				play.Audio.Play(Effects.Stage, 0.02)
 			}
 			if Config.LaneEffects {
-				Particles.Lane.Spawn(laneRect(float64(lane)).ToQuad(), 0.2, false)
+				Particles.Lane.Spawn(laneParticleQuad(Layout.Transform, float64(lane)), 0.2, false)
 			}
-			Replay.EmptyLanes[lane+3].Set(play.Time.Now(), 1)
-			break
+			effectLanes[lane+3] = true
+			hasEffectLane = true
 		}
 	}
-}
-
-type PlayInputManager struct {
-	play.Archetype      `archetype:"name=InputManager"`
-	play.CallbackOrders `archetype:"updateSequential=20"`
-}
-
-func (*PlayInputManager) UpdateSequential() {
-	prepareActiveHitboxes()
+	if hasEffectLane {
+		Replay.EmptyLanes.Set(play.Time.Now(), effectLanes)
+	}
 }
 
 func drawPlayStage() {
-	Skin.StageMiddle.Draw(stageRect().ToQuad(), 5, 1)
 	for lane := -3; lane <= 3; lane++ {
-		Skin.Lane.Draw(laneRect(float64(lane)).ToQuad(), 10, 0.8)
-		Skin.Slot.Draw(noteRect(float64(lane), judgmentLineY).Scale(0.65).ToQuad(), 15, 0.7)
+		Skin.Lane.Draw(laneRect(float64(lane)).ToQuad(), layerLane, 1)
 	}
-	Skin.LeftBorder.Draw(leftBorderRect().ToQuad(), 12, 1)
-	Skin.RightBorder.Draw(rightBorderRect().ToQuad(), 12, 1)
-	Skin.JudgmentLine.Draw(judgmentRect().ToQuad(), 20, 1)
-	Skin.Cover.Draw(stageCoverRect().ToQuad(), 40, 1)
+	Skin.LeftBorder.Draw(leftBorderRect().ToQuad(), layerLane, 1)
+	Skin.RightBorder.Draw(rightBorderRect().ToQuad(), layerLane, 1)
+	Skin.JudgmentLine.Draw(judgmentRect().ToQuad(), layerJudgmentLine, 1)
+}
+
+type PlayBasicNote struct {
+	play.Archetype   `archetype:"abstract"`
+	Beat             float64                          `archetype:"imported,name=#BEAT"`
+	Lane             float64                          `archetype:"imported,name=lane"`
+	Direction        float64                          `archetype:"imported,name=direction"`
+	Previous         sonolus.EntityRef[PlayBasicNote] `archetype:"imported,name=prev"`
+	Next             sonolus.EntityRef[PlayBasicNote] `archetype:"imported,name=next"`
+	ReplayEndTime    float64                          `archetype:"exported,name=end_time"`
+	TargetTime       float64                          `archetype:"data"`
+	TargetScaledTime float64                          `archetype:"data"`
+	EndTime          float64                          `archetype:"data"`
+	EndScaledTime    float64                          `archetype:"data"`
+	BestJudgmentTime float64                          `archetype:"memory"`
+	Resolved         bool                             `archetype:"memory"`
+	TouchID          float64                          `archetype:"shared"`
+	HoldLane         float64                          `archetype:"shared"`
+	Judged           bool                             `archetype:"shared"`
+}
+
+func (n *PlayBasicNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
+func (n *PlayBasicNote) ShouldSpawn() bool {
+	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
+}
+
+func (n *PlayBasicNote) holdHeadRef() sonolus.EntityRef[PlayHoldHeadNote] {
+	return playHoldHeadRef(play.CurrentEntityRef[PlayBasicNote]())
+}
+
+func playHoldHeadRef(ref sonolus.EntityRef[PlayBasicNote]) sonolus.EntityRef[PlayHoldHeadNote] {
+	for previous := ref.Get().Previous; previous.Index > 0; previous = previous.Get().Previous {
+		ref = previous
+	}
+	return sonolus.EntityRefAs[PlayHoldHeadNote](ref)
+}
+
+func (n *PlayBasicNote) Preprocess() {
+	if Config.Mirror {
+		n.Lane = -n.Lane
+		n.Direction = -n.Direction
+	}
+	n.TargetTime = play.Time.BeatToTime(n.Beat)
+	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
+	n.EndTime = play.Time.BeatToTime(n.endBeat())
+	n.EndScaledTime = play.Time.TimeToScaledTime(n.EndTime)
+	key := int(play.Entity.Key())
+	if key == 6 {
+		return
+	}
+	if key == 2 || key == 3 || key == 5 {
+		n.BestJudgmentTime = unsetJudgmentTime
+	}
+	schedulePlaySFX(n.TargetTime, key == 2 || key == 3)
+	result := play.Entity.Result()
+	result.Accuracy = 1
+	switch key {
+	case 1:
+		result.Bucket = Buckets.Tap
+	case 2:
+		result.Bucket = Buckets.Flick
+	case 3:
+		result.Bucket = Buckets.DirectionalFlick
+	case 4:
+		result.Bucket = Buckets.HoldHead
+	case 5:
+		result.Bucket = Buckets.HoldTick
+	case 7:
+		result.Bucket = Buckets.HoldEnd
+	}
+	play.Entity.SetResult(result)
+}
+
+func (n *PlayBasicNote) Initialize() {
+	if int(play.Entity.Key()) == 4 {
+		play.Spawn(PlayHoldManager{Head: sonolus.EntityRefAs[PlayHoldHeadNote](play.CurrentEntityRef[PlayBasicNote]())})
+	}
+}
+
+func (n *PlayBasicNote) UpdateSequential() {
+	switch int(play.Entity.Key()) {
+	case 1:
+		n.updateTap()
+	case 2:
+		if n.Previous.Index > 0 {
+			n.updateHoldFlick()
+		} else {
+			n.updateFlick(0)
+		}
+	case 3:
+		n.updateFlick(displayDirection(n.Direction))
+	case 4:
+		n.updateHoldHead()
+	case 5:
+		n.updateHoldTick()
+	case 6:
+		play.Entity.SetDespawn(true)
+	case 7:
+		n.updateHoldEnd()
+	}
+}
+
+func (n *PlayBasicNote) Touch() {
+	switch int(play.Entity.Key()) {
+	case 1:
+		n.touchTap()
+	case 2:
+		if n.Previous.Index > 0 {
+			n.touchHoldFlick()
+		} else {
+			n.touchFlick(0)
+		}
+	case 3:
+		n.touchFlick(displayDirection(n.Direction))
+	case 4:
+		n.touchHoldHead()
+	case 5:
+		n.touchHoldTick()
+	case 7:
+		n.touchHoldEnd()
+	}
+}
+
+func (n *PlayBasicNote) Terminate() {
+	n.ReplayEndTime = play.Time.Now()
+}
+
+func (n *PlayBasicNote) UpdateParallel() {
+	y := noteY(n.TargetScaledTime, play.Time.Scaled())
+	switch int(play.Entity.Key()) {
+	case 1:
+		drawNoteBody(Skin.Note, n.Lane, y)
+	case 2:
+		drawFlickNote(Skin.Flick, Skin.FlickArrow, n.Lane, y, play.Time.Now())
+	case 3:
+		if displayDirection(n.Direction) > 0 {
+			drawDirectionalFlickNote(Skin.RightFlick, Skin.RightFlickArrow, n.Lane, y, n.Direction, play.Time.Now())
+		} else {
+			drawDirectionalFlickNote(Skin.LeftFlick, Skin.LeftFlickArrow, n.Lane, y, n.Direction, play.Time.Now())
+		}
+	case 4:
+		lane := n.Lane
+		if y < judgmentLineY {
+			y = judgmentLineY
+		}
+		if n.hasActiveTouch() && play.Time.Scaled() >= n.TargetScaledTime {
+			lane = n.HoldLane
+			Skin.HoldHead.Draw(noteRect(lane, y).ToQuad(), layerZ(layerNoteHead, lane, 0), 1)
+		} else {
+			drawNoteBody(Skin.HoldHead, lane, y)
+		}
+	case 5:
+		drawNoteBody(Skin.HoldTick, n.Lane, y)
+	case 7:
+		drawNoteBody(Skin.HoldTail, n.Lane, y)
+	}
 }
 
 type PlayTapNote struct {
-	play.Archetype      `archetype:"name=TapNote,hasInput=true"`
-	play.CallbackOrders `archetype:"preprocess=-10"`
-	Beat                float64 `archetype:"imported,name=#BEAT"`
-	Lane                float64 `archetype:"imported,name=lane"`
-	TargetTime          float64 `archetype:"data"`
-	TargetScaledTime    float64 `archetype:"data"`
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=TapNote,hasInput=true,key=1"`
 }
 
 type PlayAccentTapNote struct {
@@ -203,274 +399,113 @@ type PlayAccentTapNote struct {
 	play.Archetype `archetype:"name=AccentTapNote"`
 }
 
-func (n *PlayTapNote) Preprocess() {
-	n.TargetTime = play.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
-	schedulePlaySFX(n.TargetTime, false)
-	archetype := int(play.Entity.Info().Archetype)
-	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
-	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: -100})
-	result := play.Entity.Result()
-	result.Bucket = Buckets.Tap
-	play.Entity.SetResult(result)
-}
-
-func (n *PlayTapNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *PlayTapNote) ShouldSpawn() bool {
-	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
-}
-
-func (n *PlayTapNote) UpdateSequential() {
+func (n *PlayBasicNote) updateTap() {
 	if play.Time.Now() > n.TargetTime+0.15+play.Input.Offset() {
-		result := play.Entity.Result()
-		result.Judgment = sonolus.JudgmentMiss
-		result.Accuracy = 0.15
-		result.Bucket = Buckets.Tap
-		result.BucketValue = 150
-		play.Entity.SetResult(result)
-		play.Entity.SetDespawn(true)
+		failPlayHold(Buckets.Tap)
 		return
 	}
-	registerActiveNote(n.TargetTime, n.Lane, 0, false)
+	registerActiveNote(0)
 }
 
-func (n *PlayTapNote) Touch() {
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
-		if !touch.Started || !simultaneousHitbox(n.TargetTime, n.Lane, 0).Contains(touch.Position) {
-			continue
-		}
-		hitTime := touch.StartTime - play.Input.Offset()
-		if !withinJudgmentWindow(hitTime, n.TargetTime) {
+func (n *PlayBasicNote) touchTap() {
+	if !withinJudgmentWindow(play.Time.Now()-play.Input.Offset(), n.TargetTime) {
+		return
+	}
+	for touch := range play.Touches.Values() {
+		if !touch.Started || !containsTransformedRect(Layout.Transform, simultaneousHitbox(n.TargetTime, n.Lane, 0), touch.Position) {
 			continue
 		}
 		if isTouchClaimed(touch.ID) {
 			continue
 		}
 		claimTouch(touch.ID)
-		finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.Tap, Particles.TapLinear, Particles.Tap, false)
+		finishPlayNote(n.Lane, n.TargetTime, touch.StartTime, Buckets.Tap, Particles.TapLinear, Particles.Tap, false)
 		return
 	}
-}
-
-func (n *PlayTapNote) UpdateParallel() {
-	Skin.Note.Draw(noteRect(n.Lane, noteY(n.TargetScaledTime, play.Time.Scaled())).ToQuad(), 30, 1)
 }
 
 type PlayFlickNote struct {
-	play.Archetype   `archetype:"name=FlickNote,hasInput=true"`
-	Beat             float64 `archetype:"imported,name=#BEAT"`
-	Lane             float64 `archetype:"imported,name=lane"`
-	TargetTime       float64 `archetype:"data"`
-	TargetScaledTime float64 `archetype:"data"`
-	TouchID          float64 `archetype:"memory"`
-	Captured         bool    `archetype:"memory"`
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=FlickNote,hasInput=true,key=2"`
 }
 
-func (n *PlayFlickNote) Preprocess() {
-	n.TargetTime = play.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
-	schedulePlaySFX(n.TargetTime, true)
-	archetype := int(play.Entity.Info().Archetype)
-	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
-	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: -100})
-	result := play.Entity.Result()
-	result.Bucket = Buckets.Flick
-	play.Entity.SetResult(result)
-}
-
-func (n *PlayFlickNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *PlayFlickNote) ShouldSpawn() bool {
-	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
-}
-
-func (n *PlayFlickNote) UpdateSequential() {
-	if play.Time.Now() > n.TargetTime+0.15+play.Input.Offset() {
-		result := play.Entity.Result()
-		result.Judgment = sonolus.JudgmentMiss
-		result.Accuracy = 0.15
-		result.Bucket = Buckets.Flick
-		result.BucketValue = 150
-		play.Entity.SetResult(result)
-		play.Entity.SetDespawn(true)
+func (n *PlayBasicNote) updateFlick(direction float64) {
+	offsetAdjustedTime := play.Time.Now() - play.Input.Offset()
+	hitTime, ready := holdTickResolution(n.BestJudgmentTime, n.TargetTime, offsetAdjustedTime)
+	if ready {
+		if hitTime > unsetJudgmentTime {
+			n.resolveFlick(direction, hitTime)
+		} else if direction == 0 {
+			failPlayHold(Buckets.Flick)
+		} else {
+			failPlayHold(Buckets.DirectionalFlick)
+		}
 		return
 	}
-	registerActiveNote(n.TargetTime, n.Lane, 0, n.Captured)
+	activeTouchID := 0.0
+	if n.hasActiveTouch() {
+		activeTouchID = n.TouchID
+	}
+	registerActiveNote(activeTouchID)
 }
 
-func (n *PlayFlickNote) Touch() {
-	if !n.Captured {
-		for i := 0; i < play.Touches.Count(); i++ {
-			touch := play.Touches.Get(i)
-			hitTime := touch.StartTime - play.Input.Offset()
-			if touch.Started && !isTouchClaimed(touch.ID) && simultaneousHitbox(n.TargetTime, n.Lane, 0).Contains(touch.Position) && withinJudgmentWindow(hitTime, n.TargetTime) {
+func (n *PlayBasicNote) touchFlick(direction float64) {
+	offsetAdjustedTime := play.Time.Now() - play.Input.Offset()
+	if !withinJudgmentWindow(offsetAdjustedTime, n.TargetTime) {
+		return
+	}
+	if !n.hasActiveTouch() {
+		for touch := range play.Touches.Values() {
+			if touch.Started && !isTouchClaimed(touch.ID) && containsTransformedRect(Layout.Transform, simultaneousHitbox(n.TargetTime, n.Lane, direction), touch.Position) {
 				claimTouch(touch.ID)
 				n.TouchID = touch.ID
-				n.Captured = true
 				break
 			}
 		}
 	}
-	if !n.Captured {
+	if !n.hasActiveTouch() {
 		return
 	}
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
+	for touch := range play.Touches.Values() {
 		if touch.ID != n.TouchID {
 			continue
 		}
-		if touch.Ended {
-			n.Captured = false
-			return
+		hitTime := offsetAdjustedTime
+		meetsSpeed := direction == 0 && touch.Speed >= flickSpeedThreshold*laneWidth() || direction != 0 && touch.Speed >= directionalFlickSpeedThreshold(n.Direction)
+		meetsDirection := direction == 0 || touch.Velocity.X*direction > 0
+		if containsTransformedRect(Layout.Transform, simultaneousHitbox(n.TargetTime, n.Lane, direction), touch.Position) && meetsSpeed && meetsDirection {
+			if n.BestJudgmentTime <= unsetJudgmentTime || math.Abs(hitTime-n.TargetTime) < math.Abs(n.BestJudgmentTime-n.TargetTime) {
+				n.BestJudgmentTime = hitTime
+			}
 		}
-		hitTime := play.Time.Now() - play.Input.Offset()
-		if withinJudgmentWindow(hitTime, n.TargetTime) && touch.Speed >= flickSpeedThreshold*Config.LaneWidth {
-			finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.Flick, Particles.FlickLinear, Particles.Flick, true)
+		if touch.Ended || n.BestJudgmentTime >= n.TargetTime {
+			n.resolveFlick(direction, n.BestJudgmentTime)
 		}
 		return
 	}
 }
 
-func (n *PlayFlickNote) UpdateParallel() {
-	y := noteY(n.TargetScaledTime, play.Time.Scaled())
-	Skin.Flick.Draw(noteRect(n.Lane, y).ToQuad(), 30, 1)
-	Skin.FlickArrow.Draw(noteRect(n.Lane, y).Scale(0.7).ToQuad(), 31, 1)
+func (n *PlayBasicNote) resolveFlick(direction, hitTime float64) {
+	if direction == 0 {
+		finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.Flick, Particles.FlickLinear, Particles.Flick, true)
+	} else if direction > 0 {
+		finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.DirectionalFlick, Particles.RightFlickLinear, Particles.RightFlick, true)
+	} else {
+		finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.DirectionalFlick, Particles.LeftFlickLinear, Particles.LeftFlick, true)
+	}
 }
 
 type PlayDirectionalFlickNote struct {
-	play.Archetype   `archetype:"name=DirectionalFlickNote,hasInput=true"`
-	Beat             float64 `archetype:"imported,name=#BEAT"`
-	Lane             float64 `archetype:"imported,name=lane"`
-	Direction        float64 `archetype:"imported,name=direction"`
-	TargetTime       float64 `archetype:"data"`
-	TargetScaledTime float64 `archetype:"data"`
-	TouchID          float64 `archetype:"memory"`
-	Captured         bool    `archetype:"memory"`
-}
-
-func (n *PlayDirectionalFlickNote) Preprocess() {
-	n.TargetTime = play.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
-	schedulePlaySFX(n.TargetTime, true)
-	archetype := int(play.Entity.Info().Archetype)
-	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
-	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: -100})
-	result := play.Entity.Result()
-	result.Bucket = Buckets.DirectionalFlick
-	play.Entity.SetResult(result)
-}
-
-func (n *PlayDirectionalFlickNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *PlayDirectionalFlickNote) ShouldSpawn() bool {
-	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
-}
-
-func (n *PlayDirectionalFlickNote) UpdateSequential() {
-	if play.Time.Now() > n.TargetTime+0.15+play.Input.Offset() {
-		result := play.Entity.Result()
-		result.Judgment = sonolus.JudgmentMiss
-		result.Accuracy = 0.15
-		result.Bucket = Buckets.DirectionalFlick
-		result.BucketValue = 150
-		play.Entity.SetResult(result)
-		play.Entity.SetDespawn(true)
-		return
-	}
-	registerActiveNote(n.TargetTime, n.Lane, displayDirection(n.Direction), n.Captured)
-}
-
-func (n *PlayDirectionalFlickNote) Touch() {
-	if !n.Captured {
-		for i := 0; i < play.Touches.Count(); i++ {
-			touch := play.Touches.Get(i)
-			hitTime := touch.StartTime - play.Input.Offset()
-			if touch.Started && !isTouchClaimed(touch.ID) && simultaneousHitbox(n.TargetTime, n.Lane, displayDirection(n.Direction)).Contains(touch.Position) && withinJudgmentWindow(hitTime, n.TargetTime) {
-				claimTouch(touch.ID)
-				n.TouchID = touch.ID
-				n.Captured = true
-				break
-			}
-		}
-	}
-	if !n.Captured {
-		return
-	}
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
-		if touch.ID != n.TouchID {
-			continue
-		}
-		if touch.Ended {
-			n.Captured = false
-			return
-		}
-		hitTime := play.Time.Now() - play.Input.Offset()
-		direction := displayDirection(n.Direction)
-		if withinJudgmentWindow(hitTime, n.TargetTime) &&
-			touch.Speed >= directionalFlickSpeedThreshold(n.Direction) && touch.Velocity.X*direction > 0 {
-			if direction > 0 {
-				finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.DirectionalFlick, Particles.RightFlickLinear, Particles.RightFlick, true)
-			} else {
-				finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.DirectionalFlick, Particles.LeftFlickLinear, Particles.LeftFlick, true)
-			}
-		}
-		return
-	}
-}
-
-func (n *PlayDirectionalFlickNote) UpdateParallel() {
-	y := noteY(n.TargetScaledTime, play.Time.Scaled())
-	if displayDirection(n.Direction) > 0 {
-		drawDirectionalFlickNote(Skin.RightFlick, Skin.RightFlickArrow, n.Lane, y, n.Direction)
-	} else {
-		drawDirectionalFlickNote(Skin.LeftFlick, Skin.LeftFlickArrow, n.Lane, y, n.Direction)
-	}
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=DirectionalFlickNote,hasInput=true,key=3"`
 }
 
 type PlayHoldHeadNote struct {
-	play.Archetype   `archetype:"name=HoldHeadNote,hasInput=true"`
-	Beat             float64                               `archetype:"imported,name=#BEAT"`
-	Lane             float64                               `archetype:"imported,name=lane"`
-	Anchor           sonolus.EntityRef[PlayHoldAnchorNote] `archetype:"imported,name=anchor"`
-	End              sonolus.EntityRef[PlayHoldEndNote]    `archetype:"imported,name=end"`
-	FlickEnd         sonolus.EntityRef[PlayHoldFlickNote]  `archetype:"imported,name=flickEnd"`
-	TargetTime       float64                               `archetype:"data"`
-	AnchorTime       float64                               `archetype:"data"`
-	EndTime          float64                               `archetype:"data"`
-	TargetScaledTime float64                               `archetype:"data"`
-	AnchorScaledTime float64                               `archetype:"data"`
-	EndScaledTime    float64                               `archetype:"data"`
-	TouchID          float64                               `archetype:"shared"`
-	Active           bool                                  `archetype:"shared"`
-	Judged           bool                                  `archetype:"shared"`
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=HoldHeadNote,hasInput=true,key=4"`
 }
 
-func (n *PlayHoldHeadNote) Preprocess() {
-	n.TargetTime = play.Time.BeatToTime(n.Beat)
-	n.AnchorTime = play.Time.BeatToTime(n.Anchor.Get().Beat)
-	n.EndTime = play.Time.BeatToTime(n.endBeat())
-	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
-	n.AnchorScaledTime = play.Time.TimeToScaledTime(n.AnchorTime)
-	n.EndScaledTime = play.Time.TimeToScaledTime(n.EndTime)
-	schedulePlaySFX(n.TargetTime, false)
-	archetype := int(play.Entity.Info().Archetype)
-	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
-	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: -100})
-	result := play.Entity.Result()
-	result.Bucket = Buckets.HoldHead
-	play.Entity.SetResult(result)
-}
-
-func (n *PlayHoldHeadNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *PlayHoldHeadNote) ShouldSpawn() bool {
-	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
-}
-
-func (*PlayHoldHeadNote) Initialize() {
-	play.Spawn(PlayHoldManager{Head: sonolus.EntityRef[PlayHoldHeadNote]{Index: play.Entity.Info().Index}})
-}
-
-func (n *PlayHoldHeadNote) UpdateSequential() {
+func (n *PlayBasicNote) updateHoldHead() {
 	now := play.Time.Now() - play.Input.Offset()
 	if !n.Judged && now > n.TargetTime+0.15 {
 		n.Judged = true
@@ -478,63 +513,86 @@ func (n *PlayHoldHeadNote) UpdateSequential() {
 		return
 	}
 	if !n.Judged {
-		registerActiveNote(n.TargetTime, n.Lane, 0, n.Active)
+		activeTouchID := 0.0
+		if n.hasActiveTouch() {
+			activeTouchID = n.TouchID
+		}
+		registerActiveNote(activeTouchID)
 	}
 }
 
-func (n *PlayHoldHeadNote) Touch() {
+func (n *PlayBasicNote) touchHoldHead() {
 	if n.Judged {
 		return
 	}
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
-		hitTime := touch.StartTime - play.Input.Offset()
-		if !touch.Started || isTouchClaimed(touch.ID) || !simultaneousHitbox(n.TargetTime, n.Lane, 0).Contains(touch.Position) || !withinJudgmentWindow(hitTime, n.TargetTime) {
+	if !withinJudgmentWindow(play.Time.Now()-play.Input.Offset(), n.TargetTime) {
+		return
+	}
+	for touch := range play.Touches.Values() {
+		if !touch.Started || isTouchClaimed(touch.ID) || !containsTransformedRect(Layout.Transform, simultaneousHitbox(n.TargetTime, n.Lane, 0), touch.Position) {
 			continue
 		}
 		claimTouch(touch.ID)
 		n.TouchID = touch.ID
-		n.Active = true
 		n.Judged = true
-		Replay.Reserved[int(play.Entity.Info().Index)].Set(play.Time.Now(), 1)
-		finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.HoldHead, Particles.HoldLinear, Particles.Hold, false)
+		Replay.Reserved[int(play.CurrentEntityRef[PlayBasicNote]().Index)].Set(play.Time.Now(), 1)
+		finishPlayNote(n.Lane, n.TargetTime, touch.StartTime, Buckets.HoldHead, Particles.HoldLinear, Particles.Hold, false)
 		return
 	}
 }
 
-func (n *PlayHoldHeadNote) UpdateParallel() {
-	now := play.Time.Scaled()
-	startLane := n.Lane
-	startY := noteY(n.TargetScaledTime, now)
-	if startY < judgmentLineY {
-		startY = judgmentLineY
+func (n *PlayBasicNote) currentLane(now float64) float64 {
+	previousTime, previousLane := n.TargetTime, n.Lane
+	nextRef := n.Next
+	for nextRef.Index > 0 {
+		next := nextRef.Get()
+		if nextRef.Key() == 6 || next.Next.Index <= 0 {
+			nextTime := play.Time.BeatToTime(next.Beat)
+			if now <= nextTime || next.Next.Index <= 0 {
+				return holdLane(now, previousTime, nextTime, previousLane, next.Lane)
+			}
+			previousTime, previousLane = nextTime, next.Lane
+		}
+		nextRef = next.Next
 	}
-	if n.Active && now >= n.TargetScaledTime {
-		startLane = n.currentScaledLane(now)
-	}
-	Skin.HoldHead.Draw(noteRect(startLane, startY).ToQuad(), 30, 1)
+	return previousLane
 }
 
-func (n *PlayHoldHeadNote) currentLane(now float64) float64 {
-	return holdChainLane(now, n.TargetTime, n.AnchorTime, n.EndTime, n.Lane, n.Anchor.Get().Lane, n.endLane())
-}
+func (n *PlayBasicNote) hasActiveTouch() bool { return n.TouchID > 0 }
 
-func (n *PlayHoldHeadNote) currentScaledLane(now float64) float64 {
-	return holdChainLane(now, n.TargetScaledTime, n.AnchorScaledTime, n.EndScaledTime, n.Lane, n.Anchor.Get().Lane, n.endLane())
-}
-
-func (n *PlayHoldHeadNote) endBeat() float64 {
-	if n.FlickEnd.Index > 0 {
-		return n.FlickEnd.Get().Beat
+func (n *PlayBasicNote) currentScaledLane(now float64) float64 {
+	previousTime, previousLane := n.TargetScaledTime, n.Lane
+	nextRef := n.Next
+	for nextRef.Index > 0 {
+		next := nextRef.Get()
+		if nextRef.Key() == 6 || next.Next.Index <= 0 {
+			nextTime := play.Time.TimeToScaledTime(play.Time.BeatToTime(next.Beat))
+			if now <= nextTime || next.Next.Index <= 0 {
+				return holdLane(now, previousTime, nextTime, previousLane, next.Lane)
+			}
+			previousTime, previousLane = nextTime, next.Lane
+		}
+		nextRef = next.Next
 	}
-	return n.End.Get().Beat
+	return previousLane
 }
 
-func (n *PlayHoldHeadNote) endLane() float64 {
-	if n.FlickEnd.Index > 0 {
-		return n.FlickEnd.Get().Lane
+func (n *PlayBasicNote) endBeat() float64 {
+	beat := n.Beat
+	for nextRef := n.Next; nextRef.Index > 0; {
+		next := nextRef.Get()
+		beat, nextRef = next.Beat, next.Next
 	}
-	return n.End.Get().Lane
+	return beat
+}
+
+func (n *PlayBasicNote) endLane() float64 {
+	lane := n.Lane
+	for nextRef := n.Next; nextRef.Index > 0; {
+		next := nextRef.Get()
+		lane, nextRef = next.Lane, next.Next
+	}
+	return lane
 }
 
 type PlayHoldManager struct {
@@ -548,25 +606,20 @@ type PlayHoldManager struct {
 
 func (n *PlayHoldManager) UpdateParallel() {
 	head := n.Head.Get()
-	if play.Time.Scaled() >= head.EndScaledTime {
+	if play.Time.Now() > head.EndTime {
 		n.stopEffects()
 		play.Entity.SetDespawn(true)
 		return
 	}
-	if !head.Active {
+	if play.Time.Now() < head.TargetTime {
+		return
+	}
+	if !head.hasActiveTouch() {
 		n.stopEffects()
 		return
 	}
-	lane := holdChainLane(
-		play.Time.Scaled(),
-		head.TargetScaledTime,
-		head.AnchorScaledTime,
-		head.EndScaledTime,
-		head.Lane,
-		head.Anchor.Get().Lane,
-		head.endLane(),
-	)
-	Skin.HoldHead.Draw(noteRect(lane, judgmentLineY).ToQuad(), 30, 1)
+	lane := head.HoldLane
+	Skin.HoldHead.Draw(noteRect(lane, judgmentLineY).ToQuad(), layerZ(layerNoteHead, lane, 0), 1)
 	n.updateEffects(lane)
 }
 
@@ -574,55 +627,30 @@ func (n *PlayHoldManager) Terminate() { n.stopEffects() }
 
 func (n *PlayHoldManager) Touch() {
 	head := n.Head.Get()
-	if head.Active {
-		for i := 0; i < play.Touches.Count(); i++ {
-			touch := play.Touches.Get(i)
-			if touch.ID != head.TouchID {
-				continue
-			}
-			if touch.Ended {
-				head.Active = false
-				Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 0)
-			}
-			return
-		}
-		head.Active = false
-		Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 0)
-	}
-	if !head.Judged || play.Time.Now()-play.Input.Offset() < head.TargetTime {
+	if !head.hasActiveTouch() {
 		return
 	}
-	lane := holdChainLane(
-		play.Time.Now()-play.Input.Offset(),
-		head.TargetTime,
-		head.AnchorTime,
-		head.EndTime,
-		head.Lane,
-		head.Anchor.Get().Lane,
-		head.endLane(),
-	)
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
-		if touch.Ended || isTouchClaimed(touch.ID) || !hitbox(lane).Contains(touch.Position) {
+	for touch := range play.Touches.Values() {
+		if touch.ID != head.TouchID {
 			continue
 		}
-		claimTouch(touch.ID)
-		head.TouchID = touch.ID
-		head.Active = true
-		Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 1)
+		if touch.Ended {
+			head.TouchID = 0
+			Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 0)
+		}
 		return
 	}
 }
 
 func (n *PlayHoldManager) updateEffects(lane float64) {
-	quad := noteRect(lane, judgmentLineY).Scale(1.5).ToQuad()
+	quad := noteCircularParticleQuad(Layout.Transform, lane)
 	if !n.EffectsActive {
 		n.EffectsActive = true
 		if Config.SFX {
 			n.LoopID = Effects.Hold.PlayLooped().ID
 		}
 		if Config.NoteEffects {
-			n.ParticleID = Particles.HoldActive.Spawn(quad, 0.3, true).ID
+			n.ParticleID = Particles.HoldActive.Spawn(quad, 1.5, true).ID
 		}
 	} else if Config.NoteEffects {
 		sonolus.ParticleHandle{ID: n.ParticleID}.Move(quad)
@@ -643,131 +671,35 @@ func (n *PlayHoldManager) stopEffects() {
 }
 
 type PlayHoldAnchorNote struct {
-	play.Archetype `archetype:"name=HoldAnchorNote"`
-	Beat           float64 `archetype:"imported,name=#BEAT"`
-	Lane           float64 `archetype:"imported,name=lane"`
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=HoldAnchorNote,key=6"`
 }
 
 type PlayHoldEndNote struct {
-	play.Archetype   `archetype:"name=HoldEndNote,hasInput=true"`
-	Head             sonolus.EntityRef[PlayHoldHeadNote] `archetype:"imported,name=head"`
-	Beat             float64                             `archetype:"imported,name=#BEAT"`
-	Lane             float64                             `archetype:"imported,name=lane"`
-	TargetTime       float64                             `archetype:"data"`
-	TargetScaledTime float64                             `archetype:"data"`
-	Resolved         bool                                `archetype:"memory"`
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=HoldEndNote,hasInput=true,key=7"`
 }
 
-func (n *PlayHoldEndNote) Preprocess() {
-	n.TargetTime = play.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
-	schedulePlaySFX(n.TargetTime, false)
-	archetype := int(play.Entity.Info().Archetype)
-	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
-	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: -100})
-	result := play.Entity.Result()
-	result.Bucket = Buckets.HoldEnd
-	play.Entity.SetResult(result)
-}
-func (n *PlayHoldEndNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *PlayHoldEndNote) ShouldSpawn() bool {
-	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
-}
-func (n *PlayHoldEndNote) UpdateSequential() {
+func (n *PlayBasicNote) updateHoldEnd() {
 	if n.Resolved {
 		return
 	}
-	head := n.Head.Get()
+	headRef := n.holdHeadRef()
+	head := headRef.Get()
 	if play.Time.Now()-play.Input.Offset() > n.TargetTime+0.15 {
 		n.Resolved = true
-		head.Active = false
-		Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 0)
+		head.TouchID = 0
+		Replay.Reserved[int(headRef.Index)].Set(play.Time.Now(), 0)
 		failPlayHold(Buckets.HoldEnd)
 		return
 	}
-	registerActiveNote(n.TargetTime, n.Lane, 0, head.Active)
-}
-func (n *PlayHoldEndNote) Touch() {
-	if n.Resolved {
-		return
+	activeTouchID := 0.0
+	if head.hasActiveTouch() {
+		activeTouchID = head.TouchID
 	}
-	head := n.Head.Get()
-	if !head.Active {
-		for i := 0; i < play.Touches.Count(); i++ {
-			touch := play.Touches.Get(i)
-			if touch.Ended || isTouchClaimed(touch.ID) || !simultaneousHitbox(n.TargetTime, n.Lane, 0).Contains(touch.Position) {
-				continue
-			}
-			claimTouch(touch.ID)
-			head.TouchID = touch.ID
-			head.Active = true
-			Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 1)
-			return
-		}
-	}
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
-		if touch.ID != head.TouchID || !touch.Ended {
-			continue
-		}
-		n.Resolved = true
-		head.Active = false
-		Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 0)
-		hitTime := play.Time.Now() - play.Input.Offset()
-		if simultaneousHitbox(n.TargetTime, n.Lane, 0).Contains(touch.Position) && withinJudgmentWindow(hitTime, n.TargetTime) {
-			finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.HoldEnd, Particles.HoldLinear, Particles.Hold, false)
-		} else {
-			failPlayHold(Buckets.HoldEnd)
-		}
-		return
-	}
+	registerActiveNote(activeTouchID)
 }
-func (n *PlayHoldEndNote) UpdateParallel() {
-	Skin.HoldTail.Draw(noteRect(n.Lane, noteY(n.TargetScaledTime, play.Time.Scaled())).ToQuad(), 30, 1)
-}
-
-type PlayHoldFlickNote struct {
-	play.Archetype   `archetype:"name=HoldFlickNote,hasInput=true"`
-	Head             sonolus.EntityRef[PlayHoldHeadNote] `archetype:"imported,name=head"`
-	Beat             float64                             `archetype:"imported,name=#BEAT"`
-	Lane             float64                             `archetype:"imported,name=lane"`
-	TargetTime       float64                             `archetype:"data"`
-	TargetScaledTime float64                             `archetype:"data"`
-	BestJudgmentTime float64                             `archetype:"memory"`
-	Resolved         bool                                `archetype:"memory"`
-}
-
-func (n *PlayHoldFlickNote) Preprocess() {
-	n.TargetTime = play.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
-	n.BestJudgmentTime = unsetJudgmentTime
-	schedulePlaySFX(n.TargetTime, true)
-	archetype := int(play.Entity.Info().Archetype)
-	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
-	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: -100})
-	result := play.Entity.Result()
-	result.Bucket = Buckets.Flick
-	play.Entity.SetResult(result)
-}
-
-func (n *PlayHoldFlickNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *PlayHoldFlickNote) ShouldSpawn() bool {
-	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
-}
-
-func (n *PlayHoldFlickNote) UpdateSequential() {
-	if n.Resolved {
-		return
-	}
-	hitTime, ready := holdTickResolution(n.BestJudgmentTime, n.TargetTime, play.Time.Now()-play.Input.Offset())
-	if ready {
-		n.resolve(hitTime)
-		return
-	}
-	registerActiveNote(n.TargetTime, n.Lane, 0, n.Head.Get().Active)
-}
-
-func (n *PlayHoldFlickNote) Touch() {
+func (n *PlayBasicNote) touchHoldEnd() {
 	if n.Resolved {
 		return
 	}
@@ -775,30 +707,92 @@ func (n *PlayHoldFlickNote) Touch() {
 	if !withinJudgmentWindow(hitTime, n.TargetTime) {
 		return
 	}
-	head := n.Head.Get()
-	if !head.Active {
+	headRef := n.holdHeadRef()
+	head := headRef.Get()
+	quad := simultaneousHitbox(n.TargetTime, n.Lane, 0)
+	n.captureHoldTouchIfNeeded(headRef, quad)
+	if !head.hasActiveTouch() {
 		return
 	}
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
-		if touch.ID != head.TouchID || touch.Ended || touch.Speed < flickSpeedThreshold*Config.LaneWidth || !simultaneousHitbox(n.TargetTime, n.Lane, 0).Contains(touch.Position) {
+	for touch := range play.Touches.Values() {
+		if touch.ID != head.TouchID || !touch.Ended {
 			continue
 		}
-		if n.BestJudgmentTime <= unsetJudgmentTime || math.Abs(hitTime-n.TargetTime) < math.Abs(n.BestJudgmentTime-n.TargetTime) {
-			n.BestJudgmentTime = hitTime
-		}
-		if n.BestJudgmentTime >= n.TargetTime {
-			n.resolve(n.BestJudgmentTime)
+		n.Resolved = true
+		head.TouchID = 0
+		Replay.Reserved[int(headRef.Index)].Set(play.Time.Now(), 0)
+		if containsTransformedRect(Layout.Transform, quad, touch.Position) {
+			finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.HoldEnd, Particles.HoldLinear, Particles.Hold, false)
+		} else {
+			failPlayHold(Buckets.HoldEnd)
 		}
 		return
 	}
 }
 
-func (n *PlayHoldFlickNote) resolve(hitTime float64) {
+type PlayHoldFlickNote struct {
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=HoldFlickNote,hasInput=true,key=2"`
+}
+
+func (n *PlayBasicNote) updateHoldFlick() {
+	if n.Resolved {
+		return
+	}
+	hitTime, ready := holdTickResolution(n.BestJudgmentTime, n.TargetTime, play.Time.Now()-play.Input.Offset())
+	if ready {
+		n.resolveHoldFlick(hitTime)
+		return
+	}
+	head := n.holdHeadRef().Get()
+	activeTouchID := 0.0
+	if head.hasActiveTouch() {
+		activeTouchID = head.TouchID
+	}
+	registerActiveNote(activeTouchID)
+}
+
+func (n *PlayBasicNote) touchHoldFlick() {
+	if n.Resolved {
+		return
+	}
+	hitTime := play.Time.Now() - play.Input.Offset()
+	if !withinJudgmentWindow(hitTime, n.TargetTime) {
+		return
+	}
+	head := n.holdHeadRef().Get()
+	headRef := n.holdHeadRef()
+	n.captureHoldTouchIfNeeded(headRef, simultaneousHitbox(n.TargetTime, n.Lane, 0))
+	if !head.hasActiveTouch() {
+		return
+	}
+	for touch := range play.Touches.Values() {
+		if touch.ID != head.TouchID {
+			continue
+		}
+		if touch.Ended {
+			n.resolveHoldFlick(n.BestJudgmentTime)
+			return
+		}
+		if touch.Speed < flickSpeedThreshold*laneWidth() || !containsTransformedRect(Layout.Transform, simultaneousHitbox(n.TargetTime, n.Lane, 0), touch.Position) {
+			return
+		}
+		if n.BestJudgmentTime <= unsetJudgmentTime || math.Abs(hitTime-n.TargetTime) < math.Abs(n.BestJudgmentTime-n.TargetTime) {
+			n.BestJudgmentTime = hitTime
+		}
+		if n.BestJudgmentTime >= n.TargetTime {
+			n.resolveHoldFlick(n.BestJudgmentTime)
+		}
+		return
+	}
+}
+
+func (n *PlayBasicNote) resolveHoldFlick(hitTime float64) {
 	n.Resolved = true
-	head := n.Head.Get()
-	head.Active = false
-	Replay.Reserved[int(n.Head.Index)].Set(play.Time.Now(), 0)
+	headRef := n.holdHeadRef()
+	head := headRef.Get()
+	head.TouchID = 0
+	Replay.Reserved[int(headRef.Index)].Set(play.Time.Now(), 0)
 	if hitTime > unsetJudgmentTime {
 		finishPlayNote(n.Lane, n.TargetTime, hitTime, Buckets.Flick, Particles.FlickLinear, Particles.Flick, true)
 	} else {
@@ -806,38 +800,21 @@ func (n *PlayHoldFlickNote) resolve(hitTime float64) {
 	}
 }
 
-func (n *PlayHoldFlickNote) UpdateParallel() {
-	y := noteY(n.TargetScaledTime, play.Time.Scaled())
-	Skin.Flick.Draw(noteRect(n.Lane, y).ToQuad(), 30, 1)
-	Skin.FlickArrow.Draw(noteRect(n.Lane, y).Scale(0.7).ToQuad(), 31, 1)
-}
-
 type PlayHoldConnector struct {
 	play.Archetype   `archetype:"name=HoldConnector"`
-	Head             sonolus.EntityRef[PlayHoldHeadNote]   `archetype:"imported,name=head"`
-	Anchor           sonolus.EntityRef[PlayHoldAnchorNote] `archetype:"imported,name=anchor"`
-	End              sonolus.EntityRef[PlayHoldEndNote]    `archetype:"imported,name=end"`
-	FlickEnd         sonolus.EntityRef[PlayHoldFlickNote]  `archetype:"imported,name=flickEnd"`
-	Segment          float64                               `archetype:"imported,name=segment"`
-	TargetScaledTime float64                               `archetype:"data"`
-	EndScaledTime    float64                               `archetype:"data"`
-	FirstLane        float64                               `archetype:"data"`
-	SecondLane       float64                               `archetype:"data"`
+	First            sonolus.EntityRef[PlayBasicNote] `archetype:"imported,name=first"`
+	Second           sonolus.EntityRef[PlayBasicNote] `archetype:"imported,name=second"`
+	TargetScaledTime float64                          `archetype:"data"`
+	EndScaledTime    float64                          `archetype:"data"`
+	FirstLane        float64                          `archetype:"data"`
+	SecondLane       float64                          `archetype:"data"`
 }
 
 func (n *PlayHoldConnector) Preprocess() {
-	targetBeat := n.Head.Get().Beat
-	endBeat := n.Anchor.Get().Beat
-	n.FirstLane = n.Head.Get().Lane
-	n.SecondLane = n.Anchor.Get().Lane
-	if n.Segment != 0 {
-		targetBeat = n.Anchor.Get().Beat
-		endBeat = n.Head.Get().endBeat()
-		n.FirstLane = n.Anchor.Get().Lane
-		n.SecondLane = n.Head.Get().endLane()
-	}
-	targetTime := play.Time.BeatToTime(targetBeat)
-	endTime := play.Time.BeatToTime(endBeat)
+	first, second := n.First.Get(), n.Second.Get()
+	n.FirstLane, n.SecondLane = first.Lane, second.Lane
+	targetTime := play.Time.BeatToTime(first.Beat)
+	endTime := play.Time.BeatToTime(second.Beat)
 	n.TargetScaledTime = play.Time.TimeToScaledTime(targetTime)
 	n.EndScaledTime = play.Time.TimeToScaledTime(endTime)
 }
@@ -845,30 +822,38 @@ func (n *PlayHoldConnector) SpawnOrder() float64 { return n.TargetScaledTime - n
 func (n *PlayHoldConnector) ShouldSpawn() bool {
 	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
 }
-func (n *PlayHoldConnector) UpdateParallel() {
-	if play.Time.Scaled() >= n.EndScaledTime {
+func (n *PlayHoldConnector) UpdateSequential() {
+	first, second := n.First.Get(), n.Second.Get()
+	now := play.Time.Now()
+	if now >= second.TargetTime {
 		play.Entity.SetDespawn(true)
 		return
 	}
-	now := play.Time.Scaled()
-	startLane := n.FirstLane
-	startY := noteY(n.TargetScaledTime, now)
-	if startY < judgmentLineY {
-		startY = judgmentLineY
+	if now < first.TargetTime {
+		return
 	}
-	if n.Head.Get().Active && now >= n.TargetScaledTime {
-		startLane = holdLane(now, n.TargetScaledTime, n.EndScaledTime, n.FirstLane, n.SecondLane)
-	}
-	endY := noteY(n.EndScaledTime, now)
-	Skin.HoldConnector.Draw(holdConnectorQuad(startLane, n.SecondLane, startY, endY), 25, Config.ConnectorAlpha)
+	head := playHoldHeadRef(n.First).Get()
+	head.HoldLane = sonolus.Remap(
+		noteY(first.TargetScaledTime, play.Time.Scaled()),
+		noteY(second.TargetScaledTime, play.Time.Scaled()),
+		first.Lane,
+		second.Lane,
+		judgmentLineY,
+	)
+}
+func (n *PlayHoldConnector) UpdateParallel() {
+	first, second := n.First.Get(), n.Second.Get()
+	firstY := noteY(first.TargetScaledTime, play.Time.Scaled())
+	secondY := noteY(second.TargetScaledTime, play.Time.Scaled())
+	Skin.HoldConnector.Draw(holdConnectorQuad(first.Lane, second.Lane, firstY, secondY), layerZ(layerConnector, math.Min(first.Lane, second.Lane), math.Min(firstY, secondY)), Config.ConnectorAlpha)
 }
 
 type PlaySimLine struct {
 	play.Archetype   `archetype:"name=SimLine"`
-	First            sonolus.EntityRef[PlayTapNote] `archetype:"imported,name=first"`
-	Second           sonolus.EntityRef[PlayTapNote] `archetype:"imported,name=second"`
-	TargetTime       float64                        `archetype:"data"`
-	TargetScaledTime float64                        `archetype:"data"`
+	First            sonolus.EntityRef[PlayBasicNote] `archetype:"imported,name=first"`
+	Second           sonolus.EntityRef[PlayBasicNote] `archetype:"imported,name=second"`
+	TargetTime       float64                          `archetype:"data"`
+	TargetScaledTime float64                          `archetype:"data"`
 }
 
 func (n *PlaySimLine) Preprocess() {
@@ -892,60 +877,41 @@ func (n *PlaySimLine) UpdateParallel() {
 		return
 	}
 	y := noteY(n.TargetScaledTime, play.Time.Scaled())
-	Skin.SimLine.Draw(simLineQuad(n.First.Get().Lane, n.Second.Get().Lane, y), 24, Config.ConnectorAlpha)
+	alpha := Config.SimLineAlpha * noteAlpha(y)
+	if alpha > 0 {
+		Skin.SimLine.Draw(simLineQuad(n.First.Get().Lane, n.Second.Get().Lane, y), layerZ(layerSimLine, math.Min(n.First.Get().Lane, n.Second.Get().Lane), y), alpha)
+	}
 }
 
 type PlayHoldTickNote struct {
-	play.Archetype   `archetype:"name=HoldTickNote,hasInput=true"`
-	Head             sonolus.EntityRef[PlayHoldHeadNote] `archetype:"imported,name=head"`
-	Beat             float64                             `archetype:"imported,name=#BEAT"`
-	Lane             float64                             `archetype:"data"`
-	TargetTime       float64                             `archetype:"data"`
-	TargetScaledTime float64                             `archetype:"data"`
-	BestJudgmentTime float64                             `archetype:"memory"`
-	Resolved         bool                                `archetype:"memory"`
+	PlayBasicNote  `archetype:"base"`
+	play.Archetype `archetype:"name=HoldTickNote,hasInput=true,key=5"`
 }
 
 func (n *PlayHoldTickNote) Preprocess() {
-	n.Lane = holdChainLane(
-		n.Beat,
-		n.Head.Get().Beat,
-		n.Head.Get().Anchor.Get().Beat,
-		n.Head.Get().endBeat(),
-		n.Head.Get().Lane,
-		n.Head.Get().Anchor.Get().Lane,
-		n.Head.Get().endLane(),
-	)
-	n.TargetTime = play.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = play.Time.TimeToScaledTime(n.TargetTime)
-	n.BestJudgmentTime = unsetJudgmentTime
-	schedulePlaySFX(n.TargetTime, false)
-	archetype := int(play.Entity.Info().Archetype)
-	play.Score.SetArchetype(archetype, play.ArchetypeScore{Multiplier: 1})
-	play.Life.SetArchetype(archetype, play.LifeValues{Perfect: 1, Miss: -20})
-	result := play.Entity.Result()
-	result.Bucket = Buckets.HoldTick
-	play.Entity.SetResult(result)
+	n.PlayBasicNote.Preprocess()
+	n.Lane = n.holdHeadRef().Get().currentLane(n.TargetTime)
 }
 
-func (n *PlayHoldTickNote) SpawnOrder() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *PlayHoldTickNote) ShouldSpawn() bool {
-	return play.Time.Scaled() >= n.TargetScaledTime-noteTravelTime()
-}
-func (n *PlayHoldTickNote) UpdateSequential() {
+func (n *PlayBasicNote) updateHoldTick() {
 	if n.Resolved {
 		return
 	}
 	offsetAdjustedTime := play.Time.Now() - play.Input.Offset()
 	hitTime, ready := holdTickResolution(n.BestJudgmentTime, n.TargetTime, offsetAdjustedTime)
 	if ready {
-		n.resolve(hitTime)
+		n.resolveHoldTick(hitTime)
 		return
 	}
-	registerActiveNote(n.TargetTime, n.Lane, 0, n.Head.Get().Active)
+	head := n.holdHeadRef().Get()
+	activeTouchID := 0.0
+	if head.hasActiveTouch() {
+		activeTouchID = head.TouchID
+	}
+	registerActiveNote(activeTouchID)
 }
 
-func (n *PlayHoldTickNote) Touch() {
+func (n *PlayBasicNote) touchHoldTick() {
 	if n.Resolved {
 		return
 	}
@@ -953,31 +919,48 @@ func (n *PlayHoldTickNote) Touch() {
 	if !withinJudgmentWindow(offsetAdjustedTime, n.TargetTime) {
 		return
 	}
-	head := n.Head.Get()
-	if !head.Active {
+	headRef := n.holdHeadRef()
+	head := headRef.Get()
+	n.captureHoldTouchIfNeeded(headRef, simultaneousHitbox(n.TargetTime, n.Lane, 0))
+	if !head.hasActiveTouch() {
 		return
 	}
-	for i := 0; i < play.Touches.Count(); i++ {
-		touch := play.Touches.Get(i)
-		if touch.ID != head.TouchID || touch.Ended || !simultaneousHitbox(n.TargetTime, n.Lane, 0).Contains(touch.Position) {
+	for touch := range play.Touches.Values() {
+		if touch.ID != head.TouchID || touch.Ended || !containsTransformedRect(Layout.Transform, simultaneousHitbox(n.TargetTime, n.Lane, 0), touch.Position) {
 			continue
 		}
 		if n.BestJudgmentTime <= unsetJudgmentTime || math.Abs(offsetAdjustedTime-n.TargetTime) < math.Abs(n.BestJudgmentTime-n.TargetTime) {
 			n.BestJudgmentTime = offsetAdjustedTime
 		}
 		if n.BestJudgmentTime >= n.TargetTime {
-			n.resolve(n.BestJudgmentTime)
+			n.resolveHoldTick(n.BestJudgmentTime)
 		}
 		return
 	}
 }
 
-func (n *PlayHoldTickNote) resolve(hitTime float64) {
+func (n *PlayBasicNote) captureHoldTouchIfNeeded(headRef sonolus.EntityRef[PlayHoldHeadNote], quad sonolus.Rect) {
+	head := headRef.Get()
+	if head.hasActiveTouch() || !head.Judged {
+		return
+	}
+	for touch := range play.Touches.Values() {
+		if touch.Ended || isTouchClaimed(touch.ID) || !containsTransformedRect(Layout.Transform, quad, touch.Position) {
+			continue
+		}
+		claimTouch(touch.ID)
+		head.TouchID = touch.ID
+		Replay.Reserved[int(headRef.Index)].Set(play.Time.Now(), 1)
+		return
+	}
+}
+
+func (n *PlayBasicNote) resolveHoldTick(hitTime float64) {
 	n.Resolved = true
 	result := play.Entity.Result()
 	result.Bucket = Buckets.HoldTick
 	if hitTime > unsetJudgmentTime {
-		judgment := play.Input.Judge(hitTime, n.TargetTime, judgmentWindows())
+		judgment := play.Input.Judge(hitTime, n.TargetTime, noteJudgmentWindows)
 		result.Judgment = judgment
 		result.Accuracy = hitTime - n.TargetTime
 		result.BucketValue = result.Accuracy * 1000
@@ -985,36 +968,32 @@ func (n *PlayHoldTickNote) resolve(hitTime float64) {
 			playJudgmentSFX(judgment, false)
 		}
 		if Config.NoteEffects && judgment != sonolus.JudgmentMiss {
-			spawnPlayNoteParticles(n.Lane, 1.2, 0.2, Particles.HoldLinear, Particles.Hold)
+			spawnPlayNoteParticles(n.Lane, Particles.HoldLinear, Particles.Hold)
 		}
 		if Config.LaneEffects && judgment != sonolus.JudgmentMiss {
-			Particles.Lane.Spawn(laneRect(n.Lane).ToQuad(), 0.2, false)
+			Particles.Lane.Spawn(laneParticleQuad(Layout.Transform, n.Lane), 0.2, false)
 		}
 	} else {
 		result.Judgment = sonolus.JudgmentMiss
-		result.Accuracy = 0.15
-		result.BucketValue = 150
+		result.Accuracy = 1
+		result.BucketValue = 1000
 	}
 	play.Entity.SetResult(result)
 	play.Entity.SetDespawn(true)
 }
-func (n *PlayHoldTickNote) UpdateParallel() {
-	Skin.HoldTick.Draw(noteRect(n.Lane, noteY(n.TargetScaledTime, play.Time.Scaled())).Scale(0.7).ToQuad(), 29, 1)
-}
-
 func failPlayHold(bucket sonolus.Bucket) {
 	result := play.Entity.Result()
 	result.Judgment = sonolus.JudgmentMiss
-	result.Accuracy = 0.15
+	result.Accuracy = 1
 	result.Bucket = bucket
-	result.BucketValue = 150
+	result.BucketValue = 1000
 	play.Entity.SetResult(result)
 	play.Entity.SetDespawn(true)
 }
 
 func finishPlayNote(lane, targetTime, hitTime float64, bucket sonolus.Bucket, linear, circular sonolus.Effect, alternative bool) {
-	accuracy := hitTime - targetTime
-	judgment := play.Input.Judge(hitTime, targetTime, judgmentWindows())
+	accuracy := sonolus.Clamp(hitTime-targetTime, -1, 1)
+	judgment := play.Input.Judge(hitTime, targetTime, noteJudgmentWindows)
 	result := play.Entity.Result()
 	result.Judgment = judgment
 	result.Accuracy = accuracy
@@ -1026,20 +1005,18 @@ func finishPlayNote(lane, targetTime, hitTime float64, bucket sonolus.Bucket, li
 			playJudgmentSFX(judgment, alternative)
 		}
 		if Config.NoteEffects {
-			spawnPlayNoteParticles(lane, 1.5, 0.3, linear, circular)
+			spawnPlayNoteParticles(lane, linear, circular)
 		}
 	}
 	if Config.LaneEffects && judgment != sonolus.JudgmentMiss {
-		Particles.Lane.Spawn(laneRect(lane).ToQuad(), 0.2, false)
+		Particles.Lane.Spawn(laneParticleQuad(Layout.Transform, lane), 0.2, false)
 	}
 	play.Entity.SetDespawn(true)
 }
 
-func spawnPlayNoteParticles(lane, scale, duration float64, linear, circular sonolus.Effect) {
-	particleRect := noteRect(lane, judgmentLineY).Scale(scale)
-	width := particleRect.R - particleRect.L
-	linear.Spawn(sonolus.Rect{T: judgmentLineY + width, R: particleRect.R, B: judgmentLineY, L: particleRect.L}.ToQuad(), duration, false)
-	circular.Spawn(particleRect.ToQuad(), duration, false)
+func spawnPlayNoteParticles(lane float64, linear, circular sonolus.Effect) {
+	linear.Spawn(noteLinearParticleQuad(Layout.Transform, lane), 0.5, false)
+	circular.Spawn(noteCircularParticleQuad(Layout.Transform, lane), 0.5, false)
 }
 
 func playJudgmentSFX(judgment sonolus.Judgment, alternative bool) {
@@ -1074,100 +1051,67 @@ func schedulePlaySFX(targetTime float64, alternative bool) {
 	}
 }
 
-const (
-	claimedTouchCountIndex = 0
-	claimedTouchStartIndex = 1
-	claimedTouchCapacity   = 16
-	activeNoteCountIndex   = 20
-	activeNoteStartIndex   = 21
-	activeNoteCapacity     = 16
-	activeNoteStride       = 6
-)
-
 func clearInputState() {
-	play.LevelMemory.Set(claimedTouchCountIndex, 0)
-	play.LevelMemory.Set(activeNoteCountIndex, 0)
+	InputMemory.ClaimedTouches.Clear()
+	NoteMemory.ActiveNotes.Clear()
 }
 
 func isTouchClaimed(id float64) bool {
-	count := int(play.LevelMemory.Get(claimedTouchCountIndex))
-	for i := 0; i < count; i++ {
-		if play.LevelMemory.Get(claimedTouchStartIndex+i) == id {
-			return true
-		}
-	}
-	return false
+	return InputMemory.ClaimedTouches.Contains(id)
 }
 
 func claimTouch(id float64) {
-	if isTouchClaimed(id) {
+	if isTouchClaimed(id) || InputMemory.ClaimedTouches.IsFull() {
 		return
 	}
-	count := int(play.LevelMemory.Get(claimedTouchCountIndex))
-	if count >= claimedTouchCapacity {
-		return
-	}
-	play.LevelMemory.Set(claimedTouchStartIndex+count, id)
-	play.LevelMemory.Set(claimedTouchCountIndex, float64(count+1))
+	InputMemory.ClaimedTouches.Add(id)
 }
 
-func registerActiveNote(targetTime, lane, direction float64, hasActiveTouch bool) {
-	if hasActiveTouch {
-		return
+func registerActiveNote(activeTouchID float64) {
+	if activeTouchID > 0 {
+		claimTouch(activeTouchID)
 	}
+	ref := play.CurrentEntityRef[PlayBasicNote]()
+	note := ref.Get()
 	now := play.Time.Now() - play.Input.Offset()
-	if !withinJudgmentWindow(now, targetTime) {
+	if !withinJudgmentWindow(now, note.TargetTime) {
 		return
 	}
-	count := int(play.LevelMemory.Get(activeNoteCountIndex))
-	if count >= activeNoteCapacity {
+	if NoteMemory.ActiveNotes.IsFull() {
 		return
 	}
-	base := activeNoteStartIndex + count*activeNoteStride
-	play.LevelMemory.Set(base, play.Entity.Info().Index)
-	play.LevelMemory.Set(base+1, targetTime)
-	play.LevelMemory.Set(base+2, lane)
-	play.LevelMemory.Set(base+3, direction)
-	box := noteHitbox(lane, direction)
-	play.LevelMemory.Set(base+4, box.L)
-	play.LevelMemory.Set(base+5, box.R)
-	play.LevelMemory.Set(activeNoteCountIndex, float64(count+1))
+	NoteMemory.ActiveNotes.Append(ref)
 }
 
 func simultaneousHitbox(targetTime, lane, direction float64) sonolus.Rect {
-	entityIndex := play.Entity.Info().Index
-	count := int(play.LevelMemory.Get(activeNoteCountIndex))
-	for i := 0; i < count; i++ {
-		base := activeNoteStartIndex + i*activeNoteStride
-		if play.LevelMemory.Get(base) == entityIndex {
-			return sonolus.Rect{
-				T: judgmentLineY + 0.35,
-				R: play.LevelMemory.Get(base + 5),
-				B: judgmentLineY - 0.35,
-				L: play.LevelMemory.Get(base + 4),
-			}
+	entityIndex := play.CurrentEntityRef[PlayBasicNote]().Index
+	box := noteHitbox(lane, direction)
+	leftOverlap := 0.0
+	rightOverlap := 0.0
+	for i := range NoteMemory.ActiveNotes.Len() {
+		stateRef := NoteMemory.ActiveNotes.Get(i)
+		if stateRef.Index != entityIndex {
+			continue
 		}
-	}
-	return noteHitbox(lane, direction)
-}
-
-func prepareActiveHitboxes() {
-	count := int(play.LevelMemory.Get(activeNoteCountIndex))
-	for i := 0; i < count; i++ {
-		base := activeNoteStartIndex + i*activeNoteStride
-		targetTime := play.LevelMemory.Get(base + 1)
-		lane := play.LevelMemory.Get(base + 2)
-		box := noteHitbox(lane, play.LevelMemory.Get(base+3))
-		leftOverlap := 0.0
-		rightOverlap := 0.0
-		for j := 0; j < count; j++ {
-			otherBase := activeNoteStartIndex + j*activeNoteStride
-			if j == i || math.Abs(play.LevelMemory.Get(otherBase+1)-targetTime) > 0.005 {
+		for j := 0; j < NoteMemory.ActiveNotes.Len(); j++ {
+			otherRef := NoteMemory.ActiveNotes.Get(j)
+			if j == i {
 				continue
 			}
-			otherLane := play.LevelMemory.Get(otherBase + 2)
-			other := noteHitbox(otherLane, play.LevelMemory.Get(otherBase+3))
-			left, right := hitboxOverlap(lane, otherLane, box, other)
+			other := otherRef.Get()
+			otherTouchID := other.TouchID
+			if other.Previous.Index > 0 {
+				otherTouchID = playHoldHeadRef(otherRef).Get().TouchID
+			}
+			if other.Judged || otherTouchID > 0 || math.Abs(other.TargetTime-targetTime) > 0.005 {
+				continue
+			}
+			otherDirection := 0.0
+			if otherRef.Key() == 3 {
+				otherDirection = displayDirection(other.Direction)
+			}
+			otherBox := noteHitbox(other.Lane, otherDirection)
+			left, right := hitboxOverlap(lane, other.Lane, box, otherBox)
 			if left > leftOverlap {
 				leftOverlap = left
 			}
@@ -1175,7 +1119,7 @@ func prepareActiveHitboxes() {
 				rightOverlap = right
 			}
 		}
-		play.LevelMemory.Set(base+4, box.L+leftOverlap/2)
-		play.LevelMemory.Set(base+5, box.R-rightOverlap/2)
+		return sonolus.Rect{T: laneTopY(), R: box.R - rightOverlap/2, B: -1, L: box.L + leftOverlap/2}
 	}
+	return box
 }

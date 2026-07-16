@@ -24,6 +24,36 @@ type ModeDeclarations struct {
 	Globals       []*CallbackDeclaration
 	ROM           *ROMDeclaration
 	Streams       *StreamDeclaration
+	LevelGlobals  []*LevelGlobalDeclaration
+}
+
+type LevelGlobalDeclaration struct {
+	PackagePath string
+	TypeName    string
+	Variable    string
+	Kind        string
+	Storage     string
+	Offset      int
+	Size        int
+	Fields      []*LevelGlobalFieldDeclaration
+}
+
+type LevelGlobalFieldDeclaration struct {
+	GoName         string
+	Kind           string
+	Storage        string
+	Offset         int
+	Size           int
+	Type           types.Type
+	Object         *types.Var
+	ContainerKind  string
+	Capacity       int
+	KeySize        int
+	ElementSize    int
+	RelativeOffset int
+	Fields         []*LevelGlobalFieldDeclaration
+	Elements       []*LevelGlobalFieldDeclaration
+	ElementStride  int
 }
 
 type StreamDeclaration struct {
@@ -72,6 +102,9 @@ type ArchetypeDeclaration struct {
 	PackagePath    string
 	TypeName       string
 	Name           string
+	Abstract       bool
+	Key            float64
+	HasKey         bool
 	HasInput       bool
 	Fields         []*FieldDeclaration
 	Imports        []resource.EngineDataArchetypeImport
@@ -87,6 +120,7 @@ type ArchetypeDeclaration struct {
 type FieldDeclaration struct {
 	GoName         string
 	ExternalName   string
+	ExternalNames  []string
 	Storage        string
 	Offset         int
 	Size           int

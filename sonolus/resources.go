@@ -87,6 +87,10 @@ func (h ParticleHandle) Move(q Quad)                                      {}
 func (h ParticleHandle) Destroy()                                         {}
 
 type Bucket struct{}
+
+func (b Bucket) Window() JudgmentWindows          { return JudgmentWindows{} }
+func (b Bucket) SetWindow(window JudgmentWindows) {}
+
 type BucketSprite struct {
 	Sprite, Fallback     Sprite
 	HasFallback          bool
@@ -149,17 +153,86 @@ type UITween struct {
 type UIAnimation struct{ Scale, Alpha UITween }
 
 const (
-	UIMetricArcade        UIMetric                 = "arcade"
-	UIMetricAccuracy      UIMetric                 = "accuracy"
-	UIMetricLife          UIMetric                 = "life"
-	UIEaseNone            UIEase                   = "none"
-	UIEaseInSine          UIEase                   = "inSine"
-	UIEaseOutSine         UIEase                   = "outSine"
-	UIEaseInOutSine       UIEase                   = "inOutSine"
-	UIJudgmentErrorNone   UIJudgmentErrorStyle     = "none"
-	UIJudgmentErrorPlus   UIJudgmentErrorStyle     = "plus"
-	UIJudgmentErrorMinus  UIJudgmentErrorStyle     = "minus"
-	UIJudgmentErrorArrow  UIJudgmentErrorStyle     = "arrow"
-	UIJudgmentErrorTop    UIJudgmentErrorPlacement = "top"
-	UIJudgmentErrorBottom UIJudgmentErrorPlacement = "bottom"
+	UIMetricArcade                  UIMetric = "arcade"
+	UIMetricArcadePercentage        UIMetric = "arcadePercentage"
+	UIMetricAccuracy                UIMetric = "accuracy"
+	UIMetricAccuracyPercentage      UIMetric = "accuracyPercentage"
+	UIMetricLife                    UIMetric = "life"
+	UIMetricPerfect                 UIMetric = "perfect"
+	UIMetricPerfectPercentage       UIMetric = "perfectPercentage"
+	UIMetricGreatGoodMiss           UIMetric = "greatGoodMiss"
+	UIMetricGreatGoodMissPercentage UIMetric = "greatGoodMissPercentage"
+	UIMetricMiss                    UIMetric = "miss"
+	UIMetricMissPercentage          UIMetric = "missPercentage"
+	UIMetricErrorHeatmap            UIMetric = "errorHeatmap"
+
+	UIEaseLinear UIEase = "linear"
+	UIEaseNone   UIEase = "none"
+
+	UIEaseInSine    UIEase = "inSine"
+	UIEaseOutSine   UIEase = "outSine"
+	UIEaseInOutSine UIEase = "inOutSine"
+	UIEaseOutInSine UIEase = "outInSine"
+
+	UIEaseInQuad    UIEase = "inQuad"
+	UIEaseOutQuad   UIEase = "outQuad"
+	UIEaseInOutQuad UIEase = "inOutQuad"
+	UIEaseOutInQuad UIEase = "outInQuad"
+
+	UIEaseInCubic    UIEase = "inCubic"
+	UIEaseOutCubic   UIEase = "outCubic"
+	UIEaseInOutCubic UIEase = "inOutCubic"
+	UIEaseOutInCubic UIEase = "outInCubic"
+
+	UIEaseInQuart    UIEase = "inQuart"
+	UIEaseOutQuart   UIEase = "outQuart"
+	UIEaseInOutQuart UIEase = "inOutQuart"
+	UIEaseOutInQuart UIEase = "outInQuart"
+
+	UIEaseInQuint    UIEase = "inQuint"
+	UIEaseOutQuint   UIEase = "outQuint"
+	UIEaseInOutQuint UIEase = "inOutQuint"
+	UIEaseOutInQuint UIEase = "outInQuint"
+
+	UIEaseInExpo    UIEase = "inExpo"
+	UIEaseOutExpo   UIEase = "outExpo"
+	UIEaseInOutExpo UIEase = "inOutExpo"
+	UIEaseOutInExpo UIEase = "outInExpo"
+
+	UIEaseInCirc    UIEase = "inCirc"
+	UIEaseOutCirc   UIEase = "outCirc"
+	UIEaseInOutCirc UIEase = "inOutCirc"
+	UIEaseOutInCirc UIEase = "outInCirc"
+
+	UIEaseInBack    UIEase = "inBack"
+	UIEaseOutBack   UIEase = "outBack"
+	UIEaseInOutBack UIEase = "inOutBack"
+	UIEaseOutInBack UIEase = "outInBack"
+
+	UIEaseInElastic    UIEase = "inElastic"
+	UIEaseOutElastic   UIEase = "outElastic"
+	UIEaseInOutElastic UIEase = "inOutElastic"
+	UIEaseOutInElastic UIEase = "outInElastic"
+
+	UIJudgmentErrorNone          UIJudgmentErrorStyle = "none"
+	UIJudgmentErrorLate          UIJudgmentErrorStyle = "late"
+	UIJudgmentErrorEarly         UIJudgmentErrorStyle = "early"
+	UIJudgmentErrorPlus          UIJudgmentErrorStyle = "plus"
+	UIJudgmentErrorMinus         UIJudgmentErrorStyle = "minus"
+	UIJudgmentErrorArrowUp       UIJudgmentErrorStyle = "arrowUp"
+	UIJudgmentErrorArrowDown     UIJudgmentErrorStyle = "arrowDown"
+	UIJudgmentErrorArrowLeft     UIJudgmentErrorStyle = "arrowLeft"
+	UIJudgmentErrorArrowRight    UIJudgmentErrorStyle = "arrowRight"
+	UIJudgmentErrorTriangleUp    UIJudgmentErrorStyle = "triangleUp"
+	UIJudgmentErrorTriangleDown  UIJudgmentErrorStyle = "triangleDown"
+	UIJudgmentErrorTriangleLeft  UIJudgmentErrorStyle = "triangleLeft"
+	UIJudgmentErrorTriangleRight UIJudgmentErrorStyle = "triangleRight"
+
+	UIJudgmentErrorLeft      UIJudgmentErrorPlacement = "left"
+	UIJudgmentErrorRight     UIJudgmentErrorPlacement = "right"
+	UIJudgmentErrorLeftRight UIJudgmentErrorPlacement = "leftRight"
+	UIJudgmentErrorTop       UIJudgmentErrorPlacement = "top"
+	UIJudgmentErrorBottom    UIJudgmentErrorPlacement = "bottom"
+	UIJudgmentErrorTopBottom UIJudgmentErrorPlacement = "topBottom"
+	UIJudgmentErrorCenter    UIJudgmentErrorPlacement = "center"
 )

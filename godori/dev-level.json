@@ -2,276 +2,762 @@
   "bgmOffset": 0,
   "entities": [
     {
+      "name": "stage",
+      "archetype": "Stage",
+      "data": []
+    },
+    {
       "name": "bpm",
       "archetype": "#BPM_CHANGE",
       "data": [
-        { "name": "#BEAT", "value": 0 },
-        { "name": "#BPM", "value": 120 }
+        {
+          "name": "#BEAT",
+          "value": 0
+        },
+        {
+          "name": "#BPM",
+          "value": 120
+        }
       ]
     },
-    { "name": "stage", "archetype": "Stage", "data": [] },
     {
       "name": "timescale",
       "archetype": "#TIMESCALE_CHANGE",
       "data": [
-        { "name": "#BEAT", "value": 8 },
-        { "name": "#TIMESCALE", "value": 0.75 }
+        {
+          "name": "#BEAT",
+          "value": 8
+        },
+        {
+          "name": "#TIMESCALE",
+          "value": 0.75
+        }
       ]
     },
     {
       "name": "bpm-fast",
       "archetype": "#BPM_CHANGE",
       "data": [
-        { "name": "#BEAT", "value": 12 },
-        { "name": "#BPM", "value": 180 }
+        {
+          "name": "#BEAT",
+          "value": 12
+        },
+        {
+          "name": "#BPM",
+          "value": 180
+        }
       ]
     },
     {
       "name": "timescale-fast",
       "archetype": "#TIMESCALE_CHANGE",
       "data": [
-        { "name": "#BEAT", "value": 21 },
-        { "name": "#TIMESCALE", "value": 1.25 }
+        {
+          "name": "#BEAT",
+          "value": 21
+        },
+        {
+          "name": "#TIMESCALE",
+          "value": 1.25
+        }
       ]
     },
     {
       "name": "tap-1",
       "archetype": "TapNote",
       "data": [
-        { "name": "#BEAT", "value": 2 },
-        { "name": "lane", "value": -2 }
+        {
+          "name": "#BEAT",
+          "value": 2
+        },
+        {
+          "name": "lane",
+          "value": -2
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "tap-2",
       "archetype": "TapNote",
       "data": [
-        { "name": "#BEAT", "value": 4 },
-        { "name": "lane", "value": 0 }
+        {
+          "name": "#BEAT",
+          "value": 4
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "tap-3",
       "archetype": "TapNote",
       "data": [
-        { "name": "#BEAT", "value": 6 },
-        { "name": "lane", "value": 2 }
+        {
+          "name": "#BEAT",
+          "value": 6
+        },
+        {
+          "name": "lane",
+          "value": 2
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "tap-3-chord",
       "archetype": "TapNote",
       "data": [
-        { "name": "#BEAT", "value": 6 },
-        { "name": "lane", "value": -2 }
+        {
+          "name": "#BEAT",
+          "value": 6
+        },
+        {
+          "name": "lane",
+          "value": -2
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "tap-3-center",
       "archetype": "TapNote",
       "data": [
-        { "name": "#BEAT", "value": 6 },
-        { "name": "lane", "value": 0 }
+        {
+          "name": "#BEAT",
+          "value": 6
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "tap-4",
       "archetype": "TapNote",
       "data": [
-        { "name": "#BEAT", "value": 8 },
-        { "name": "lane", "value": -1 }
+        {
+          "name": "#BEAT",
+          "value": 8
+        },
+        {
+          "name": "lane",
+          "value": -1
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "tap-5",
       "archetype": "TapNote",
       "data": [
-        { "name": "#BEAT", "value": 10 },
-        { "name": "lane", "value": 1 }
+        {
+          "name": "#BEAT",
+          "value": 10
+        },
+        {
+          "name": "lane",
+          "value": 1
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "flick-1",
       "archetype": "FlickNote",
       "data": [
-        { "name": "#BEAT", "value": 12 },
-        { "name": "lane", "value": 0 }
+        {
+          "name": "#BEAT",
+          "value": 12
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        }
       ]
     },
     {
       "name": "directional-flick-left",
       "archetype": "DirectionalFlickNote",
       "data": [
-        { "name": "#BEAT", "value": 14 },
-        { "name": "lane", "value": -1 },
-        { "name": "direction", "value": -2 }
+        {
+          "name": "#BEAT",
+          "value": 14
+        },
+        {
+          "name": "lane",
+          "value": -1
+        },
+        {
+          "name": "direction",
+          "value": -2
+        }
       ]
     },
     {
       "name": "directional-flick-right",
       "archetype": "DirectionalFlickNote",
       "data": [
-        { "name": "#BEAT", "value": 14 },
-        { "name": "lane", "value": 1 },
-        { "name": "direction", "value": 2 }
+        {
+          "name": "#BEAT",
+          "value": 14
+        },
+        {
+          "name": "lane",
+          "value": 1
+        },
+        {
+          "name": "direction",
+          "value": 2
+        }
       ]
     },
     {
       "name": "hold-head-1",
       "archetype": "HoldHeadNote",
       "data": [
-        { "name": "#BEAT", "value": 16 },
-        { "name": "lane", "value": -2 },
-        { "name": "anchor", "ref": "hold-anchor-1" },
-        { "name": "end", "ref": "hold-end-1" }
-      ]
-    },
-    {
-      "name": "hold-anchor-1",
-      "archetype": "HoldAnchorNote",
-      "data": [
-        { "name": "#BEAT", "value": 18 },
-        { "name": "lane", "value": 1 }
-      ]
-    },
-    {
-      "name": "hold-end-1",
-      "archetype": "HoldEndNote",
-      "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "#BEAT", "value": 20 },
-        { "name": "lane", "value": 2 }
-      ]
-    },
-    {
-      "name": "hold-connector-1a",
-      "archetype": "HoldConnector",
-      "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "anchor", "ref": "hold-anchor-1" },
-        { "name": "end", "ref": "hold-end-1" },
-        { "name": "segment", "value": 0 }
-      ]
-    },
-    {
-      "name": "hold-connector-1b",
-      "archetype": "HoldConnector",
-      "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "anchor", "ref": "hold-anchor-1" },
-        { "name": "end", "ref": "hold-end-1" },
-        { "name": "segment", "value": 1 }
-      ]
-    },
-    {
-      "name": "sim-1",
-      "archetype": "SimLine",
-      "data": [
-        { "name": "first", "ref": "tap-3-chord" },
-        { "name": "second", "ref": "tap-3-center" }
-      ]
-    },
-    {
-      "name": "sim-2",
-      "archetype": "SimLine",
-      "data": [
-        { "name": "first", "ref": "tap-3-center" },
-        { "name": "second", "ref": "tap-3" }
+        {
+          "name": "#BEAT",
+          "value": 16
+        },
+        {
+          "name": "lane",
+          "value": -2
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "next",
+          "ref": "hold-tick-early-1"
+        }
       ]
     },
     {
       "name": "hold-tick-early-1",
       "archetype": "HoldTickNote",
       "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "#BEAT", "value": 16.5 }
+        {
+          "name": "#BEAT",
+          "value": 16.5
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-head-1"
+        },
+        {
+          "name": "next",
+          "ref": "hold-tick-1"
+        }
       ]
     },
     {
       "name": "hold-tick-1",
       "archetype": "HoldTickNote",
       "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "#BEAT", "value": 17 }
-      ]
-    },
-    {
-      "name": "hold-tick-2",
-      "archetype": "HoldTickNote",
-      "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "#BEAT", "value": 19 }
+        {
+          "name": "#BEAT",
+          "value": 17
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-tick-early-1"
+        },
+        {
+          "name": "next",
+          "ref": "hold-tick-middle-1"
+        }
       ]
     },
     {
       "name": "hold-tick-middle-1",
       "archetype": "HoldTickNote",
       "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "#BEAT", "value": 17.5 }
+        {
+          "name": "#BEAT",
+          "value": 17.5
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-tick-1"
+        },
+        {
+          "name": "next",
+          "ref": "hold-anchor-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-anchor-1",
+      "archetype": "HoldAnchorNote",
+      "data": [
+        {
+          "name": "#BEAT",
+          "value": 18
+        },
+        {
+          "name": "lane",
+          "value": 1
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-tick-middle-1"
+        },
+        {
+          "name": "next",
+          "ref": "hold-anchor-1b"
+        }
+      ]
+    },
+    {
+      "name": "hold-anchor-1b",
+      "archetype": "HoldAnchorNote",
+      "data": [
+        {
+          "name": "#BEAT",
+          "value": 19
+        },
+        {
+          "name": "lane",
+          "value": -1
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-anchor-1"
+        },
+        {
+          "name": "next",
+          "ref": "hold-tick-2"
+        }
+      ]
+    },
+    {
+      "name": "hold-tick-2",
+      "archetype": "HoldTickNote",
+      "data": [
+        {
+          "name": "#BEAT",
+          "value": 19
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-anchor-1b"
+        },
+        {
+          "name": "next",
+          "ref": "hold-tick-late-1"
+        }
       ]
     },
     {
       "name": "hold-tick-late-1",
       "archetype": "HoldTickNote",
       "data": [
-        { "name": "head", "ref": "hold-head-1" },
-        { "name": "#BEAT", "value": 19.5 }
+        {
+          "name": "#BEAT",
+          "value": 19.5
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-tick-2"
+        },
+        {
+          "name": "next",
+          "ref": "hold-end-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-end-1",
+      "archetype": "HoldEndNote",
+      "data": [
+        {
+          "name": "#BEAT",
+          "value": 20
+        },
+        {
+          "name": "lane",
+          "value": 2
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-tick-late-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-a",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-head-1"
+        },
+        {
+          "name": "second",
+          "ref": "hold-tick-early-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-b",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-tick-early-1"
+        },
+        {
+          "name": "second",
+          "ref": "hold-tick-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-c",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-tick-1"
+        },
+        {
+          "name": "second",
+          "ref": "hold-tick-middle-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-d",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-tick-middle-1"
+        },
+        {
+          "name": "second",
+          "ref": "hold-anchor-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-e",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-anchor-1"
+        },
+        {
+          "name": "second",
+          "ref": "hold-anchor-1b"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-f",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-anchor-1b"
+        },
+        {
+          "name": "second",
+          "ref": "hold-tick-2"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-g",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-tick-2"
+        },
+        {
+          "name": "second",
+          "ref": "hold-tick-late-1"
+        }
+      ]
+    },
+    {
+      "name": "hold-1-connector-h",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-tick-late-1"
+        },
+        {
+          "name": "second",
+          "ref": "hold-end-1"
+        }
       ]
     },
     {
       "name": "hold-head-2",
       "archetype": "HoldHeadNote",
       "data": [
-        { "name": "#BEAT", "value": 22 },
-        { "name": "lane", "value": 3 },
-        { "name": "anchor", "ref": "hold-anchor-2" },
-        { "name": "flickEnd", "ref": "hold-flick-2" }
+        {
+          "name": "#BEAT",
+          "value": 22
+        },
+        {
+          "name": "lane",
+          "value": 3
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "next",
+          "ref": "hold-anchor-2"
+        }
       ]
     },
     {
       "name": "hold-anchor-2",
       "archetype": "HoldAnchorNote",
       "data": [
-        { "name": "#BEAT", "value": 23 },
-        { "name": "lane", "value": -1 }
-      ]
-    },
-    {
-      "name": "hold-flick-2",
-      "archetype": "HoldFlickNote",
-      "data": [
-        { "name": "head", "ref": "hold-head-2" },
-        { "name": "#BEAT", "value": 24 },
-        { "name": "lane", "value": -3 }
-      ]
-    },
-    {
-      "name": "hold-connector-2a",
-      "archetype": "HoldConnector",
-      "data": [
-        { "name": "head", "ref": "hold-head-2" },
-        { "name": "anchor", "ref": "hold-anchor-2" },
-        { "name": "flickEnd", "ref": "hold-flick-2" },
-        { "name": "segment", "value": 0 }
-      ]
-    },
-    {
-      "name": "hold-connector-2b",
-      "archetype": "HoldConnector",
-      "data": [
-        { "name": "head", "ref": "hold-head-2" },
-        { "name": "anchor", "ref": "hold-anchor-2" },
-        { "name": "flickEnd", "ref": "hold-flick-2" },
-        { "name": "segment", "value": 1 }
+        {
+          "name": "#BEAT",
+          "value": 23
+        },
+        {
+          "name": "lane",
+          "value": -1
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-head-2"
+        },
+        {
+          "name": "next",
+          "ref": "hold-tick-3"
+        }
       ]
     },
     {
       "name": "hold-tick-3",
       "archetype": "HoldTickNote",
       "data": [
-        { "name": "head", "ref": "hold-head-2" },
-        { "name": "#BEAT", "value": 23.5 }
+        {
+          "name": "#BEAT",
+          "value": 23.5
+        },
+        {
+          "name": "lane",
+          "value": 0
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-anchor-2"
+        },
+        {
+          "name": "next",
+          "ref": "hold-flick-2"
+        }
+      ]
+    },
+    {
+      "name": "hold-flick-2",
+      "archetype": "HoldFlickNote",
+      "data": [
+        {
+          "name": "#BEAT",
+          "value": 24
+        },
+        {
+          "name": "lane",
+          "value": -3
+        },
+        {
+          "name": "direction",
+          "value": 0
+        },
+        {
+          "name": "prev",
+          "ref": "hold-tick-3"
+        }
+      ]
+    },
+    {
+      "name": "hold-2-connector-a",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-head-2"
+        },
+        {
+          "name": "second",
+          "ref": "hold-anchor-2"
+        }
+      ]
+    },
+    {
+      "name": "hold-2-connector-b",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-anchor-2"
+        },
+        {
+          "name": "second",
+          "ref": "hold-tick-3"
+        }
+      ]
+    },
+    {
+      "name": "hold-2-connector-c",
+      "archetype": "HoldConnector",
+      "data": [
+        {
+          "name": "first",
+          "ref": "hold-tick-3"
+        },
+        {
+          "name": "second",
+          "ref": "hold-flick-2"
+        }
+      ]
+    },
+    {
+      "name": "sim-1",
+      "archetype": "SimLine",
+      "data": [
+        {
+          "name": "first",
+          "ref": "tap-3-chord"
+        },
+        {
+          "name": "second",
+          "ref": "tap-3-center"
+        }
+      ]
+    },
+    {
+      "name": "sim-2",
+      "archetype": "SimLine",
+      "data": [
+        {
+          "name": "first",
+          "ref": "tap-3-center"
+        },
+        {
+          "name": "second",
+          "ref": "tap-3"
+        }
+      ]
+    },
+    {
+      "name": "sim-3",
+      "archetype": "SimLine",
+      "data": [
+        {
+          "name": "first",
+          "ref": "directional-flick-left"
+        },
+        {
+          "name": "second",
+          "ref": "directional-flick-right"
+        }
       ]
     }
   ]

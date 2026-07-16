@@ -35,7 +35,7 @@ func TestCompilerBuildsCumulativeSnapshotAndReturnsClone(t *testing.T) {
 }
 
 func TestCompilerSchemaUsesDeclarationsWithoutLoweringCallbacks(t *testing.T) {
-	compiler := NewCompiler(Options{}, "./testdata/invalidcallabledynamic")
+	compiler := NewCompiler(Options{}, "./testdata/invaliddefer")
 	schema, err := compiler.Schema()
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestCompilerSchemaMatchesDeclarationFields(t *testing.T) {
 	if len(schema.Archetypes) != 1 || schema.Archetypes[0].Name != "TapNote" {
 		t.Fatalf("schema = %#v", schema)
 	}
-	want := []string{"hitTime", "#BEAT"}
+	want := []string{"hit.x", "hit.y", "#BEAT", "target.x", "target.y", "path[0].x", "path[0].y", "path[1].x", "path[1].y", "single"}
 	if !reflect.DeepEqual(schema.Archetypes[0].Fields, want) {
 		t.Fatalf("fields = %v, want %v", schema.Archetypes[0].Fields, want)
 	}

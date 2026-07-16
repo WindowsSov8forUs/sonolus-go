@@ -45,6 +45,10 @@ func TestCatalogKeysAndRuntimeCoverage(t *testing.T) {
 }
 
 func TestEveryPublicDeclarationIsCataloged(t *testing.T) {
+	hostPackages := map[string]bool{
+		"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/level": true,
+		"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/sim":   true,
+	}
 	config := &packages.Config{
 		Dir:  repositoryRoot(t),
 		Mode: packages.NeedName | packages.NeedTypes | packages.NeedImports | packages.NeedDeps,
@@ -68,7 +72,7 @@ func TestEveryPublicDeclarationIsCataloged(t *testing.T) {
 		}
 	}
 	for _, pkg := range pkgs {
-		if pkg.PkgPath == "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/sim" {
+		if hostPackages[pkg.PkgPath] {
 			continue
 		}
 		for _, name := range pkg.Types.Scope().Names() {

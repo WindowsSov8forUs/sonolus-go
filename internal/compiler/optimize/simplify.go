@@ -117,8 +117,10 @@ func simplifyAlgebraChanged(e ir.Expr) (ir.Expr, bool) {
 		return args
 	}
 	changed := false
+	identityOperation := false
 	switch call.Function {
 	case resource.RuntimeFunctionAdd, resource.RuntimeFunctionMultiply:
+		identityOperation = true
 		identity := float64(0)
 		if call.Function == resource.RuntimeFunctionMultiply {
 			identity = 1
@@ -135,6 +137,7 @@ func simplifyAlgebraChanged(e ir.Expr) (ir.Expr, bool) {
 			call.Args = args
 		}
 	case resource.RuntimeFunctionSubtract, resource.RuntimeFunctionDivide:
+		identityOperation = true
 		identity := float64(0)
 		if call.Function == resource.RuntimeFunctionDivide {
 			identity = 1
@@ -145,7 +148,7 @@ func simplifyAlgebraChanged(e ir.Expr) (ir.Expr, bool) {
 			changed = true
 		}
 	}
-	if len(call.Args) == 1 {
+	if identityOperation && len(call.Args) == 1 {
 		return call.Args[0], true
 	}
 	if call.Function == resource.RuntimeFunctionSubtract && len(call.Args) == 2 && is(call.Args[0], 0) {

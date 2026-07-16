@@ -17,10 +17,17 @@ type SkinData struct {
 var Skin = &SkinData{Note: sonolus.SkinSprite("note")}
 
 func (*Note) Preprocess() {
+	transform := preview.SkinTransform.Get()
+	preview.SkinTransform.Set(transform)
 	preview.Canvas.Set(preview.CanvasOptions{Scroll: preview.ScrollTopToBottom, Size: 10})
 	preview.UI.SetMenu(preview.UI.Menu())
 	preview.UI.SetProgress(preview.UI.Progress())
 	value := preview.Canvas.Size() + preview.Screen.Rect().Width() + preview.SafeArea.Rect().Width()
+	value += preview.Time.BeatToBPM(1) + preview.Time.BeatToTime(1)
+	value += preview.Time.BeatToStartingBeat(1) + preview.Time.BeatToStartingTime(1)
+	value += preview.Time.TimeToScaledTime(1) + preview.Time.TimeToStartingScaledTime(1)
+	value += preview.Time.TimeToStartingTime(1) + preview.Time.TimeToTimeScale(1)
+	value += preview.Entity.Key() + preview.CurrentEntityRef[Note]().Index + float64(preview.ArchetypeID[Note]()) + preview.ArchetypeKey[Note]()
 	value += preview.LevelData.Get(0)
 	preview.LevelData.Set(1, value)
 	value += preview.UI.MenuConfiguration().Scale + preview.UI.ProgressConfiguration().Scale

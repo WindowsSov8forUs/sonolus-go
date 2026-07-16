@@ -52,6 +52,13 @@ func ParseArchetypeDeclarations(pkg *packages.Package, m mode.Mode) ([]*Archetyp
 		return declarations[i].Name < declarations[j].Name
 	})
 	errs = append(errs, resolveArchetypeInheritance(declarations)...)
+	concrete := declarations[:0]
+	for _, declaration := range declarations {
+		if !declaration.Abstract {
+			concrete = append(concrete, declaration)
+		}
+	}
+	declarations = concrete
 	if len(errs) != 0 {
 		messages := make([]string, len(errs))
 		for i, err := range errs {

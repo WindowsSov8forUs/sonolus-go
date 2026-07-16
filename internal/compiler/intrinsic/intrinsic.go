@@ -54,11 +54,13 @@ func init() {
 		{"Ceil", resource.RuntimeFunctionCeil, 1}, {"Round", resource.RuntimeFunctionRound, 1},
 		{"Trunc", resource.RuntimeFunctionTrunc, 1}, {"Log", resource.RuntimeFunctionLog, 1},
 		{"Sin", resource.RuntimeFunctionSin, 1}, {"Cos", resource.RuntimeFunctionCos, 1},
-		{"Tan", resource.RuntimeFunctionTan, 1}, {"Asin", resource.RuntimeFunctionArcsin, 1},
+		{"Tan", resource.RuntimeFunctionTan, 1}, {"Sinh", resource.RuntimeFunctionSinh, 1},
+		{"Cosh", resource.RuntimeFunctionCosh, 1}, {"Tanh", resource.RuntimeFunctionTanh, 1},
+		{"Asin", resource.RuntimeFunctionArcsin, 1},
 		{"Acos", resource.RuntimeFunctionArccos, 1}, {"Atan", resource.RuntimeFunctionArctan, 1},
 		{"Atan2", resource.RuntimeFunctionArctan2, 2}, {"Min", resource.RuntimeFunctionMin, 2},
 		{"Max", resource.RuntimeFunctionMax, 2}, {"Pow", resource.RuntimeFunctionPower, 2},
-		{"Mod", resource.RuntimeFunctionMod, 2},
+		{"Mod", resource.RuntimeFunctionRem, 2},
 	} {
 		addRuntime("math", entry.name, entry.fn, entry.arity)
 	}

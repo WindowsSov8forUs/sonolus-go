@@ -6,43 +6,57 @@ import (
 	"math"
 
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
-	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/native"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/preview"
 )
 
-const (
-	previewLastTimeSlot    = 0
-	previewColumnCountSlot = 1
-)
+type PreviewChartData struct {
+	sonolus.LevelDataResource
+	LastTime float64
+	LastBeat float64
+}
 
-func updatePreviewLastTime(time float64) {
-	if time > preview.LevelData.Get(previewLastTimeSlot) {
-		preview.LevelData.Set(previewLastTimeSlot, time)
+var PreviewData = PreviewChartData{}
+
+type PreviewLayoutData struct {
+	sonolus.LevelDataResource
+	ColumnCount int
+}
+
+var PreviewLayout = PreviewLayoutData{}
+
+func updatePreviewDuration(time, beat float64) {
+	if time > PreviewData.LastTime {
+		PreviewData.LastTime = time
+	}
+	if beat > PreviewData.LastBeat {
+		PreviewData.LastBeat = beat
 	}
 }
 
 func previewLaneX(lane float64, column int) float64 {
-	return (float64(column)+0.5)*previewColumnWidth + laneX(lane)*previewLaneWidth - preview.Screen.Rect().Width()/2
+	return (float64(column)+0.5)*previewColumnWidth + lane*previewLaneWidth - preview.Screen.Rect().Width()/2
 }
 
 func previewNoteRect(lane, time float64) sonolus.Rect {
 	center := previewLaneX(lane, previewColumn(time))
-	halfWidth := 0.36 * Config.NoteSize * Config.LaneWidth
-	halfHeight := 0.06 * Config.NoteSize
+	halfWidth := previewLaneWidth / 2
+	halfHeight := previewLaneWidth / 2
 	y := previewTimeY(time)
 	return sonolus.Rect{T: y + halfHeight, R: center + halfWidth, B: y - halfHeight, L: center - halfWidth}
 }
 
 func drawPreviewDirectionalFlick(body, arrow sonolus.Sprite, lane, time, direction float64) {
-	body.Draw(previewNoteRect(lane, time).ToQuad(), 30, 1)
+	body.Draw(previewNoteRect(lane, time).ToQuad(), layerZ(layerNote, lane, time), 1)
 	direction = displayDirection(direction)
+	angle := -math.Pi / 2
 	sign := 1.0
 	if direction < 0 {
+		angle = math.Pi / 2
 		sign = -1
 	}
-	for i := range int(math.Abs(direction)) {
-		arrowLane := lane + float64(i+1)*sign
-		arrow.Draw(previewNoteRect(arrowLane, time).Scale(0.7).ToQuad(), 31, 1)
+	for index := range int(math.Abs(direction)) {
+		arrowLane := lane + float64(index+1)*sign
+		arrow.Draw(previewNoteRect(arrowLane, time).ToQuad().RotateCentered(angle), layerZ(layerArrow, arrowLane, time), 1)
 	}
 }
 
@@ -50,27 +64,45 @@ func previewBarRect(time float64) sonolus.Rect {
 	column := previewColumn(time)
 	y := previewTimeY(time)
 	return sonolus.Rect{
-		T: y + 0.006,
+		T: y + previewBarLineHeight/2,
 		R: previewLaneX(stageRight, column),
-		B: y - 0.006,
+		B: y - previewBarLineHeight/2,
 		L: previewLaneX(stageLeft, column),
 	}
 }
 
+func previewExtendedBarRect(time float64, left, right bool) sonolus.Rect {
+	result := previewBarRect(time)
+	if left {
+		result.L -= previewBarExtendWidth
+	}
+	if right {
+		result.R += previewBarExtendWidth
+	}
+	return result
+}
+
+func previewLeftOnlyBarRect(time float64) sonolus.Rect {
+	result := previewBarRect(time)
+	result.R = result.L
+	result.L -= previewBarExtendWidth
+	return result
+}
+
 func previewConnectorQuad(firstLane, secondLane, firstTime, secondTime float64, column int) sonolus.Quad {
 	return sonolus.Quad{
-		BL: sonolus.NewVec2(previewLaneX(firstLane, column)-0.36*Config.LaneWidth, previewTimeYInColumn(firstTime, column)),
-		BR: sonolus.NewVec2(previewLaneX(firstLane, column)+0.36*Config.LaneWidth, previewTimeYInColumn(firstTime, column)),
-		TR: sonolus.NewVec2(previewLaneX(secondLane, column)+0.36*Config.LaneWidth, previewTimeYInColumn(secondTime, column)),
-		TL: sonolus.NewVec2(previewLaneX(secondLane, column)-0.36*Config.LaneWidth, previewTimeYInColumn(secondTime, column)),
+		BL: sonolus.NewVec2(previewLaneX(firstLane, column)-previewLaneWidth/2, previewTimeYInColumn(firstTime, column)),
+		BR: sonolus.NewVec2(previewLaneX(firstLane, column)+previewLaneWidth/2, previewTimeYInColumn(firstTime, column)),
+		TR: sonolus.NewVec2(previewLaneX(secondLane, column)+previewLaneWidth/2, previewTimeYInColumn(secondTime, column)),
+		TL: sonolus.NewVec2(previewLaneX(secondLane, column)-previewLaneWidth/2, previewTimeYInColumn(secondTime, column)),
 	}
 }
 
 type PreviewSkin struct {
 	sonolus.SkinResource
-	Lane, Note, Flick, FlickArrow, RightFlick, RightFlickArrow, LeftFlick, LeftFlickArrow, BPM, Timescale, Measure sonolus.Sprite
-	HoldHead, HoldTail, HoldConnector, SimLine, HoldTick                                                           sonolus.Sprite
-	StageMiddle, LeftBorder, RightBorder, Slot, Cover                                                              sonolus.Sprite
+	Lane, Note, Flick, FlickArrow, RightFlick, RightFlickArrow, LeftFlick, LeftFlickArrow, BPM, Timescale, Measure, Time sonolus.Sprite
+	HoldHead, HoldTail, HoldConnector, SimLine, HoldTick                                                                 sonolus.Sprite
+	StageMiddle, LeftBorder, RightBorder, Slot, Cover                                                                    sonolus.Sprite
 }
 
 var Skin = &PreviewSkin{
@@ -86,6 +118,7 @@ var Skin = &PreviewSkin{
 	BPM:           sonolus.SkinSprite(sonolus.StandardSpriteGridPurple),
 	Timescale:     sonolus.SkinSprite(sonolus.StandardSpriteGridYellow),
 	Measure:       sonolus.SkinSprite(sonolus.StandardSpriteGridNeutral),
+	Time:          sonolus.SkinSprite(sonolus.StandardSpriteGridCyan),
 	StageMiddle:   sonolus.SkinSprite(sonolus.StandardSpriteStageMiddle), LeftBorder: sonolus.SkinSprite(sonolus.StandardSpriteStageLeftBorder),
 	RightBorder: sonolus.SkinSprite(sonolus.StandardSpriteStageRightBorder), Slot: sonolus.SkinSprite(sonolus.StandardSpriteNoteSlot),
 	Cover: sonolus.SkinSprite(sonolus.StandardSpriteStageCover),
@@ -97,30 +130,38 @@ type PreviewStage struct {
 }
 
 func (*PreviewStage) Preprocess() {
-	columnCount := previewColumnsForDuration(preview.LevelData.Get(previewLastTimeSlot))
-	preview.LevelData.Set(previewColumnCountSlot, float64(columnCount))
+	columnCount := previewColumnsForDuration(PreviewData.LastTime)
+	PreviewLayout.ColumnCount = columnCount
 	preview.Canvas.Set(preview.CanvasOptions{Scroll: preview.ScrollLeftToRight, Size: previewColumnWidth * float64(columnCount)})
-	preview.UI.SetMenu(basicMenuLayout())
-	preview.UI.SetProgress(basicProgressLayout())
+	screen := preview.Screen.Rect()
+	preview.UI.SetMenu(basicMenuLayout(screen, preview.UI.MenuConfiguration()))
+	preview.UI.SetProgress(basicProgressLayout(screen, preview.UI.ProgressConfiguration()))
 }
 func (*PreviewStage) Render() {
-	columnCount := int(preview.LevelData.Get(previewColumnCountSlot))
+	columnCount := PreviewLayout.ColumnCount
 	for column := 0; column < columnCount; column++ {
 		left := previewLaneX(stageLeft, column)
 		right := previewLaneX(stageRight, column)
-		Skin.StageMiddle.Draw(sonolus.Rect{T: 1, R: right, B: -1, L: left}.ToQuad(), 5, 1)
 		for lane := -3; lane <= 3; lane++ {
 			center := previewLaneX(float64(lane), column)
-			Skin.Lane.Draw(sonolus.Rect{T: 1, R: center + 0.36*Config.LaneWidth, B: -1, L: center - 0.36*Config.LaneWidth}.ToQuad(), 10, 0.8)
+			Skin.Lane.Draw(sonolus.Rect{T: 1, R: center + previewLaneWidth/2, B: -1, L: center - previewLaneWidth/2}.ToQuad(), layerLane, 1)
 		}
-		Skin.LeftBorder.Draw(sonolus.Rect{T: 1, R: left + 0.04, B: -1, L: left - 0.04}.ToQuad(), 12, 1)
-		Skin.RightBorder.Draw(sonolus.Rect{T: 1, R: right + 0.04, B: -1, L: right - 0.04}.ToQuad(), 12, 1)
-		Skin.Cover.Draw(sonolus.Rect{T: previewYMin, R: right, B: -1, L: left}.ToQuad(), 40, 1)
-		Skin.Cover.Draw(sonolus.Rect{T: 1, R: right, B: previewYMax, L: left}.ToQuad(), 40, 1)
+		Skin.LeftBorder.Draw(sonolus.Rect{T: 1, R: left, B: -1, L: left - previewStageBorderWidth}.ToQuad(), layerStage, 1)
+		Skin.RightBorder.Draw(sonolus.Rect{T: 1, R: right + previewStageBorderWidth, B: -1, L: right}.ToQuad(), layerStage, 1)
 	}
-	for beat := 0; beat <= 24; beat += 4 {
-		y := native.BeatToTime(float64(beat))
-		Skin.Measure.Draw(previewBarRect(y).ToQuad(), 18, 0.35)
+	screen := preview.Screen.Rect()
+	coverRight := previewColumnWidth*float64(columnCount) + 1
+	Skin.Cover.Draw(sonolus.Rect{T: previewYMin, R: coverRight, B: -1, L: screen.L}.ToQuad(), layerZ(layerPreviewCover, 0, 0), 1)
+	Skin.Cover.Draw(sonolus.Rect{T: 1, R: coverRight, B: previewYMax, L: screen.L}.ToQuad(), layerZ(layerPreviewCover, 0, 0), 1)
+	for value := 0; value <= int(math.Floor(PreviewData.LastTime)); value++ {
+		time := float64(value)
+		Skin.Time.Draw(previewLeftOnlyBarRect(time).ToQuad(), layerTimeLine, 0.8)
+		preview.Canvas.Print(preview.PrintOptions{
+			Value: time, Format: sonolus.PrintFormatTime, DecimalPlaces: 0,
+			Anchor: sonolus.NewVec2(previewLaneX(stageLeft, previewColumn(time))-previewTextMarginX, previewTimeY(time)),
+			Pivot:  sonolus.NewVec2(1, 0), Size: sonolus.NewVec2(previewTextWidth, previewTextHeight),
+			Alpha: 1, Color: sonolus.PrintColorCyan, HorizontalAlign: sonolus.HorizontalAlignRight,
+		})
 	}
 }
 
@@ -132,16 +173,19 @@ type PreviewBPMChange struct {
 }
 
 func (b *PreviewBPMChange) Preprocess() {
-	b.Time = native.BeatToTime(b.Beat)
-	updatePreviewLastTime(b.Time)
+	b.Time = preview.Time.BeatToTime(b.Beat)
 }
 func (b *PreviewBPMChange) Render() {
-	Skin.BPM.Draw(previewBarRect(b.Time).ToQuad(), 20, 0.7)
+	Skin.BPM.Draw(previewExtendedBarRect(b.Time, false, true).ToQuad(), layerZ(layerBPMChangeLine, 0, 0), 0.8)
 	preview.Canvas.Print(preview.PrintOptions{
-		Value: b.BPM, Format: sonolus.PrintFormatBPM, DecimalPlaces: 0,
-		Anchor: sonolus.NewVec2(previewLaneX(stageRight, previewColumn(b.Time))+0.2, previewTimeY(b.Time)), Pivot: sonolus.NewVec2(0, 0.5), Size: sonolus.NewVec2(1, 0.35),
+		Value: b.BPM, Format: sonolus.PrintFormatBPM, DecimalPlaces: -1,
+		Anchor: sonolus.NewVec2(previewLaneX(stageRight, previewColumn(b.Time))+previewTextMarginX, previewTimeY(b.Time)), Pivot: sonolus.NewVec2(0, 0), Size: sonolus.NewVec2(previewTextWidth, previewTextHeight),
 		Alpha: 1, Color: sonolus.PrintColorPurple, HorizontalAlign: sonolus.HorizontalAlignLeft,
 	})
+	for beat := b.Beat + 4; preview.Time.BeatToStartingBeat(beat) == b.Beat && beat <= PreviewData.LastBeat; beat += 4 {
+		time := preview.Time.BeatToTime(beat)
+		Skin.Measure.Draw(previewBarRect(time).ToQuad(), layerMeasureLine-time/100, 0.8)
+	}
 }
 
 type PreviewTimescaleChange struct {
@@ -152,23 +196,69 @@ type PreviewTimescaleChange struct {
 }
 
 func (t *PreviewTimescaleChange) Preprocess() {
-	t.Time = native.BeatToTime(t.Beat)
-	updatePreviewLastTime(t.Time)
+	t.Time = preview.Time.BeatToTime(t.Beat)
 }
 func (t *PreviewTimescaleChange) Render() {
-	Skin.Timescale.Draw(previewBarRect(t.Time).ToQuad(), 20, 0.7)
+	Skin.Timescale.Draw(previewExtendedBarRect(t.Time, true, false).ToQuad(), layerZ(layerTimescaleChangeLine, 0, 0), 0.8)
 	preview.Canvas.Print(preview.PrintOptions{
-		Value: t.Timescale, Format: sonolus.PrintFormatTimeScale, DecimalPlaces: 2,
-		Anchor: sonolus.NewVec2(previewLaneX(stageLeft, previewColumn(t.Time))-0.2, previewTimeY(t.Time)), Pivot: sonolus.NewVec2(1, 0.5), Size: sonolus.NewVec2(1, 0.35),
+		Value: t.Timescale, Format: sonolus.PrintFormatTimeScale, DecimalPlaces: -1,
+		Anchor: sonolus.NewVec2(previewLaneX(stageLeft, previewColumn(t.Time))-previewTextMarginX, previewTimeY(t.Time)), Pivot: sonolus.NewVec2(1, 0), Size: sonolus.NewVec2(previewTextWidth, previewTextHeight),
 		Alpha: 1, Color: sonolus.PrintColorYellow, HorizontalAlign: sonolus.HorizontalAlignRight,
 	})
 }
 
+type PreviewBasicNote struct {
+	preview.Archetype `archetype:"abstract"`
+	Beat              float64                             `archetype:"imported,name=#BEAT"`
+	Lane              float64                             `archetype:"imported,name=lane"`
+	Direction         float64                             `archetype:"imported,name=direction"`
+	Previous          sonolus.EntityRef[PreviewBasicNote] `archetype:"imported,name=prev"`
+	Next              sonolus.EntityRef[PreviewBasicNote] `archetype:"imported,name=next"`
+	Time              float64                             `archetype:"data"`
+}
+
+func (n *PreviewBasicNote) Preprocess() {
+	if Config.Mirror {
+		n.Lane = -n.Lane
+		n.Direction = -n.Direction
+	}
+	n.Time = preview.Time.BeatToTime(n.Beat)
+	updatePreviewDuration(n.Time, n.Beat)
+}
+
+func (n *PreviewBasicNote) Render() {
+	switch int(preview.Entity.Key()) {
+	case 1:
+		Skin.Note.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), layerZ(layerNote, n.Lane, n.Time), 1)
+	case 2:
+		Skin.Flick.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), layerZ(layerNote, n.Lane, n.Time), 1)
+		Skin.FlickArrow.Draw(previewNoteRect(n.Lane, n.Time).Translate(sonolus.NewVec2(0, 0.9*previewLaneWidth)).ToQuad(), layerZ(layerArrow, n.Lane, n.Time), 1)
+	case 3:
+		if displayDirection(n.Direction) > 0 {
+			drawPreviewDirectionalFlick(Skin.RightFlick, Skin.RightFlickArrow, n.Lane, n.Time, n.Direction)
+		} else {
+			drawPreviewDirectionalFlick(Skin.LeftFlick, Skin.LeftFlickArrow, n.Lane, n.Time, n.Direction)
+		}
+	case 4:
+		Skin.HoldHead.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), layerZ(layerNote, n.Lane, n.Time), 1)
+	case 5:
+		Skin.HoldTick.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), layerZ(layerNote, n.Lane, n.Time), 1)
+	case 7:
+		Skin.HoldTail.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), layerZ(layerNote, n.Lane, n.Time), 1)
+	}
+}
+
+func (n *PreviewBasicNote) holdHeadRef() sonolus.EntityRef[PreviewHoldHeadNote] {
+	ref := preview.CurrentEntityRef[PreviewBasicNote]()
+	for previous := n.Previous; previous.Index > 0; previous = previous.Get().Previous {
+		ref = previous
+	}
+	return sonolus.EntityRefAs[PreviewHoldHeadNote](ref)
+}
+
 type PreviewTapNote struct {
-	preview.Archetype `archetype:"name=TapNote"`
-	Beat              float64 `archetype:"imported,name=#BEAT"`
-	Lane              float64 `archetype:"imported,name=lane"`
-	Time              float64 `archetype:"data"`
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=TapNote,key=1"`
 }
 
 type PreviewAccentTapNote struct {
@@ -176,202 +266,111 @@ type PreviewAccentTapNote struct {
 	preview.Archetype `archetype:"name=AccentTapNote"`
 }
 
-func (n *PreviewTapNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
-}
-func (n *PreviewTapNote) Render() {
-	Skin.Note.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), 30, 1)
-}
-
 type PreviewFlickNote struct {
-	preview.Archetype `archetype:"name=FlickNote"`
-	Beat              float64 `archetype:"imported,name=#BEAT"`
-	Lane              float64 `archetype:"imported,name=lane"`
-	Time              float64 `archetype:"data"`
-}
-
-func (n *PreviewFlickNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
-}
-func (n *PreviewFlickNote) Render() {
-	Skin.Flick.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), 30, 1)
-	Skin.FlickArrow.Draw(previewNoteRect(n.Lane, n.Time).Translate(sonolus.NewVec2(0, 0.08)).Scale(0.7).ToQuad(), 31, 1)
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=FlickNote,key=2"`
 }
 
 type PreviewDirectionalFlickNote struct {
-	preview.Archetype `archetype:"name=DirectionalFlickNote"`
-	Beat              float64 `archetype:"imported,name=#BEAT"`
-	Lane              float64 `archetype:"imported,name=lane"`
-	Direction         float64 `archetype:"imported,name=direction"`
-	Time              float64 `archetype:"data"`
-}
-
-func (n *PreviewDirectionalFlickNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
-}
-func (n *PreviewDirectionalFlickNote) Render() {
-	if displayDirection(n.Direction) > 0 {
-		drawPreviewDirectionalFlick(Skin.RightFlick, Skin.RightFlickArrow, n.Lane, n.Time, n.Direction)
-	} else {
-		drawPreviewDirectionalFlick(Skin.LeftFlick, Skin.LeftFlickArrow, n.Lane, n.Time, n.Direction)
-	}
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=DirectionalFlickNote,key=3"`
 }
 
 type PreviewHoldHeadNote struct {
-	preview.Archetype `archetype:"name=HoldHeadNote"`
-	Beat              float64                                  `archetype:"imported,name=#BEAT"`
-	Lane              float64                                  `archetype:"imported,name=lane"`
-	Anchor            sonolus.EntityRef[PreviewHoldAnchorNote] `archetype:"imported,name=anchor"`
-	End               sonolus.EntityRef[PreviewHoldEndNote]    `archetype:"imported,name=end"`
-	FlickEnd          sonolus.EntityRef[PreviewHoldFlickNote]  `archetype:"imported,name=flickEnd"`
-	Time              float64                                  `archetype:"data"`
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=HoldHeadNote,key=4"`
 }
 
-func (n *PreviewHoldHeadNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
-}
-func (n *PreviewHoldHeadNote) Render() {
-	Skin.HoldHead.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), 30, 1)
-}
-
-func (n *PreviewHoldHeadNote) endBeat() float64 {
-	if n.FlickEnd.Index > 0 {
-		return n.FlickEnd.Get().Beat
+func (n *PreviewBasicNote) endBeat() float64 {
+	beat := n.Beat
+	for nextRef := n.Next; nextRef.Index > 0; {
+		next := nextRef.Get()
+		beat, nextRef = next.Beat, next.Next
 	}
-	return n.End.Get().Beat
+	return beat
 }
 
-func (n *PreviewHoldHeadNote) endLane() float64 {
-	if n.FlickEnd.Index > 0 {
-		return n.FlickEnd.Get().Lane
+func (n *PreviewBasicNote) endLane() float64 {
+	lane := n.Lane
+	for nextRef := n.Next; nextRef.Index > 0; {
+		next := nextRef.Get()
+		lane, nextRef = next.Lane, next.Next
 	}
-	return n.End.Get().Lane
+	return lane
+}
+
+func (n *PreviewBasicNote) laneAtBeat(beat float64) float64 {
+	previousBeat, previousLane := n.Beat, n.Lane
+	nextRef := n.Next
+	for nextRef.Index > 0 {
+		next := nextRef.Get()
+		if nextRef.Key() == 6 || next.Next.Index <= 0 {
+			if beat <= next.Beat || next.Next.Index <= 0 {
+				return holdLane(beat, previousBeat, next.Beat, previousLane, next.Lane)
+			}
+			previousBeat, previousLane = next.Beat, next.Lane
+		}
+		nextRef = next.Next
+	}
+	return previousLane
 }
 
 type PreviewHoldAnchorNote struct {
-	preview.Archetype `archetype:"name=HoldAnchorNote"`
-	Beat              float64 `archetype:"imported,name=#BEAT"`
-	Lane              float64 `archetype:"imported,name=lane"`
-	Time              float64 `archetype:"data"`
-}
-
-func (n *PreviewHoldAnchorNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=HoldAnchorNote,key=6"`
 }
 
 type PreviewHoldEndNote struct {
-	preview.Archetype `archetype:"name=HoldEndNote"`
-	Head              sonolus.EntityRef[PreviewHoldHeadNote] `archetype:"imported,name=head"`
-	Beat              float64                                `archetype:"imported,name=#BEAT"`
-	Lane              float64                                `archetype:"imported,name=lane"`
-	Time              float64                                `archetype:"data"`
-}
-
-func (n *PreviewHoldEndNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
-}
-func (n *PreviewHoldEndNote) Render() {
-	Skin.HoldTail.Draw(previewNoteRect(n.Lane, n.Time).ToQuad(), 30, 1)
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=HoldEndNote,key=7"`
 }
 
 type PreviewHoldFlickNote struct {
-	preview.Archetype `archetype:"name=HoldFlickNote"`
-	Head              sonolus.EntityRef[PreviewHoldHeadNote] `archetype:"imported,name=head"`
-	Beat              float64                                `archetype:"imported,name=#BEAT"`
-	Lane              float64                                `archetype:"imported,name=lane"`
-	Time              float64                                `archetype:"data"`
-}
-
-func (n *PreviewHoldFlickNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
-}
-func (n *PreviewHoldFlickNote) Render() {
-	quad := previewNoteRect(n.Lane, n.Time)
-	Skin.Flick.Draw(quad.ToQuad(), 30, 1)
-	Skin.FlickArrow.Draw(quad.Translate(sonolus.NewVec2(0, 0.08)).Scale(0.7).ToQuad(), 31, 1)
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=HoldFlickNote,key=2"`
 }
 
 type PreviewHoldConnector struct {
 	preview.Archetype `archetype:"name=HoldConnector"`
-	Head              sonolus.EntityRef[PreviewHoldHeadNote]   `archetype:"imported,name=head"`
-	Anchor            sonolus.EntityRef[PreviewHoldAnchorNote] `archetype:"imported,name=anchor"`
-	End               sonolus.EntityRef[PreviewHoldEndNote]    `archetype:"imported,name=end"`
-	FlickEnd          sonolus.EntityRef[PreviewHoldFlickNote]  `archetype:"imported,name=flickEnd"`
-	Segment           float64                                  `archetype:"imported,name=segment"`
+	First             sonolus.EntityRef[PreviewBasicNote] `archetype:"imported,name=first"`
+	Second            sonolus.EntityRef[PreviewBasicNote] `archetype:"imported,name=second"`
 }
 
 func (n *PreviewHoldConnector) Render() {
-	startBeat := n.Head.Get().Beat
-	endBeat := n.Anchor.Get().Beat
-	startLane := n.Head.Get().Lane
-	endLane := n.Anchor.Get().Lane
-	if n.Segment != 0 {
-		startBeat = n.Anchor.Get().Beat
-		endBeat = n.Head.Get().endBeat()
-		startLane = n.Anchor.Get().Lane
-		endLane = n.Head.Get().endLane()
-	}
-	startTime := native.BeatToTime(startBeat)
-	endTime := native.BeatToTime(endBeat)
+	first, second := n.First.Get(), n.Second.Get()
+	startTime := preview.Time.BeatToTime(first.Beat)
+	endTime := preview.Time.BeatToTime(second.Beat)
 	startColumn := previewColumn(startTime)
 	endColumn := previewColumn(endTime)
 	for column := startColumn; column <= endColumn; column++ {
-		columnStart := float64(column) * previewColumnSeconds
-		columnEnd := columnStart + previewColumnSeconds
-		segmentStart := math.Max(startTime, columnStart)
-		segmentEnd := math.Min(endTime, columnEnd)
-		segmentStartLane := holdLane(segmentStart, startTime, endTime, startLane, endLane)
-		segmentEndLane := holdLane(segmentEnd, startTime, endTime, startLane, endLane)
-		Skin.HoldConnector.Draw(previewConnectorQuad(segmentStartLane, segmentEndLane, segmentStart, segmentEnd, column), 25, Config.ConnectorAlpha)
+		Skin.HoldConnector.Draw(previewConnectorQuad(first.Lane, second.Lane, startTime, endTime, column), layerZ(layerConnector, math.Min(first.Lane, second.Lane), math.Min(startTime, endTime)), Config.ConnectorAlpha)
 	}
 }
 
 type PreviewSimLine struct {
 	preview.Archetype `archetype:"name=SimLine"`
-	First             sonolus.EntityRef[PreviewTapNote] `archetype:"imported,name=first"`
-	Second            sonolus.EntityRef[PreviewTapNote] `archetype:"imported,name=second"`
+	First             sonolus.EntityRef[PreviewBasicNote] `archetype:"imported,name=first"`
+	Second            sonolus.EntityRef[PreviewBasicNote] `archetype:"imported,name=second"`
 }
 
 func (n *PreviewSimLine) Render() {
 	if !Config.SimLines {
 		return
 	}
-	time := native.BeatToTime(n.First.Get().Beat)
+	time := preview.Time.BeatToTime(n.First.Get().Beat)
 	column := previewColumn(time)
 	firstX := previewLaneX(n.First.Get().Lane, column)
 	secondX := previewLaneX(n.Second.Get().Lane, column)
 	y := previewTimeY(time)
-	Skin.SimLine.Draw(sonolus.Rect{T: y + 0.01, R: math.Max(firstX, secondX), B: y - 0.01, L: math.Min(firstX, secondX)}.ToQuad(), 24, Config.ConnectorAlpha)
+	Skin.SimLine.Draw(sonolus.Rect{T: y + previewLaneWidth/8, R: secondX, B: y - previewLaneWidth/8, L: firstX}.ToQuad(), layerZ(layerSimLine, math.Min(n.First.Get().Lane, n.Second.Get().Lane), time), Config.SimLineAlpha)
 }
 
 type PreviewHoldTickNote struct {
-	preview.Archetype `archetype:"name=HoldTickNote"`
-	Head              sonolus.EntityRef[PreviewHoldHeadNote] `archetype:"imported,name=head"`
-	Beat              float64                                `archetype:"imported,name=#BEAT"`
-	Lane              float64                                `archetype:"data"`
-	Time              float64                                `archetype:"data"`
+	PreviewBasicNote  `archetype:"base"`
+	preview.Archetype `archetype:"name=HoldTickNote,key=5"`
 }
 
 func (n *PreviewHoldTickNote) Preprocess() {
-	n.Time = native.BeatToTime(n.Beat)
-	updatePreviewLastTime(n.Time)
-	n.Lane = holdChainLane(
-		n.Beat,
-		n.Head.Get().Beat,
-		n.Head.Get().Anchor.Get().Beat,
-		n.Head.Get().endBeat(),
-		n.Head.Get().Lane,
-		n.Head.Get().Anchor.Get().Lane,
-		n.Head.Get().endLane(),
-	)
-}
-func (n *PreviewHoldTickNote) Render() {
-	Skin.HoldTick.Draw(previewNoteRect(n.Lane, n.Time).Scale(0.7).ToQuad(), 29, 1)
+	n.PreviewBasicNote.Preprocess()
+	n.Lane = n.holdHeadRef().Get().laneAtBeat(n.Beat)
 }

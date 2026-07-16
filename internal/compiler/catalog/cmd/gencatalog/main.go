@@ -34,6 +34,16 @@ func semantic(item entry) entry {
 		return item
 	}
 	name := item.name
+	if item.pkg == "sonolus" && item.receiver == "Bucket" {
+		item.modes = "play|watch"
+		if name == "SetWindow" {
+			item.effect = "EffectWrite"
+			item.phases = "preprocess"
+		} else {
+			item.effect = "EffectRead"
+		}
+		return item
+	}
 	if item.pkg == "sonolus" && (name == "Terminate" || name == "Notify") {
 		item.effect = "EffectWrite"
 		return item
@@ -43,7 +53,7 @@ func semantic(item entry) entry {
 		item.effect = "EffectPure"
 		return item
 	}
-	readPrefixes := []string{"Get", "Has", "Len", "Capacity", "Contains", "Exists", "Count", "Now", "Delta", "Scaled", "Previous", "Offset", "BeatTo", "TimeTo", "Rect", "Info", "Result", "Is", "Aspect", "Judge", "Archetype", "Base", "Consecutive", "Initial", "Max", "Value", "Next", "Skip", "Accuracy", "Judgment", "Direction", "Debug", "Replay", "Multiplayer"}
+	readPrefixes := []string{"Get", "Has", "Len", "Capacity", "Contains", "Exists", "Count", "Now", "Delta", "Scaled", "Previous", "Offset", "BeatTo", "TimeTo", "Rect", "Info", "Result", "Is", "Aspect", "Judge", "Archetype", "Base", "Consecutive", "Initial", "Max", "Value", "Key", "Next", "Skip", "Accuracy", "Judgment", "Direction", "Debug", "Replay", "Multiplayer"}
 	for _, prefix := range readPrefixes {
 		if strings.HasPrefix(name, prefix) {
 			item.effect = "EffectRead"
@@ -92,8 +102,28 @@ func semantic(item entry) entry {
 	if item.pkg == "sonolus/watch" && item.receiver == "backgroundAPI" && strings.HasPrefix(item.name, "Set") {
 		item.phases = "preprocess|updateSequential"
 	}
+	if item.pkg == "sonolus/watch" && item.receiver == "transformAPI" && strings.HasPrefix(item.name, "Set") {
+		item.phases = "preprocess|updateSequential"
+	}
+	if item.pkg == "sonolus/preview" && item.receiver == "transformAPI" && strings.HasPrefix(item.name, "Set") {
+		item.phases = "preprocess"
+	}
 	if item.pkg == "sonolus/watch" && item.receiver == "entityAPI" && item.name == "SetResult" {
 		item.phases = "preprocess"
+	}
+	if item.name == "Set" {
+		switch item.receiver {
+		case "levelDataAPI", "dataAPI":
+			item.phases = "preprocess"
+		case "levelMemoryAPI":
+			if item.pkg == "sonolus/play" {
+				item.phases = "preprocess|updateSequential|touch"
+			} else if item.pkg == "sonolus/watch" {
+				item.phases = "preprocess|updateSequential"
+			}
+		case "memoryAPI":
+			item.phases = "preprocess|navigate|update"
+		}
 	}
 	return item
 }

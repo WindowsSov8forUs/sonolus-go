@@ -390,7 +390,7 @@ func (e *staticEvaluator) assignValue(pkg *packages.Package, value StaticValue, 
 			if err != nil {
 				return StaticValue{}, err
 			}
-			fields[index] = StaticField{Field: targetField, Value: converted}
+			fields[index] = StaticField{Field: targetField, Value: converted, Explicit: field.Explicit}
 		}
 		return StaticValue{Type: target, Kind: StaticStruct, Fields: fields}, nil
 	case StaticSliceValue, StaticMapValue, StaticPointer:
@@ -403,8 +403,11 @@ func (e *staticEvaluator) assignValue(pkg *packages.Package, value StaticValue, 
 }
 
 func (e *staticEvaluator) ensureVar(variable *staticVarState) error {
-	if variable == nil || variable.init == nil {
+	if variable == nil {
 		return nil
+	}
+	if variable.init == nil {
+		return variable.zeroErr
 	}
 	return e.ensureInitializer(variable.init)
 }
@@ -453,6 +456,7 @@ func (e *staticEvaluator) ensureInitializer(initializer *staticInitializer) erro
 	for index, variable := range initializer.init.Lhs {
 		if variableState, ok := initializer.pkg.vars[variable]; ok {
 			variableState.storage.Value = converted[index]
+			variableState.zeroErr = nil
 		}
 	}
 	initializer.values = converted

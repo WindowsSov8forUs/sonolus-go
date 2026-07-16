@@ -66,16 +66,34 @@ var Config = GodoriConfiguration{
 		Name: "#MIRROR", Default: false, Scope: "godori",
 	}),
 	UI: sonolus.UIConfig{
-		Scope:                  "godori",
-		PrimaryMetric:          sonolus.UIMetricArcade,
-		SecondaryMetric:        sonolus.UIMetricLife,
-		JudgmentErrorStyle:     sonolus.UIJudgmentErrorPlus,
+		Scope:                         "godori",
+		PrimaryMetric:                 sonolus.UIMetricArcade,
+		SecondaryMetric:               sonolus.UIMetricLife,
+		MenuVisibility:                sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		JudgmentVisibility:            sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		ComboVisibility:               sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		PrimaryMetricVisibility:       sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		SecondaryMetricVisibility:     sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		ProgressVisibility:            sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		TutorialNavigationVisibility:  sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		TutorialInstructionVisibility: sonolus.UIVisibility{Scale: 1, Alpha: 1},
+		JudgmentAnimation: sonolus.UIAnimation{
+			Scale: sonolus.UITween{From: 0, To: 1, Duration: 0.1, Ease: sonolus.UIEaseOutCubic},
+			Alpha: sonolus.UITween{From: 1, To: 0, Duration: 0.3, Ease: sonolus.UIEaseNone},
+		},
+		ComboAnimation: sonolus.UIAnimation{
+			Scale: sonolus.UITween{From: 1.2, To: 1, Duration: 0.2, Ease: sonolus.UIEaseInCubic},
+			Alpha: sonolus.UITween{From: 1, To: 1, Ease: sonolus.UIEaseNone},
+		},
+		JudgmentErrorStyle:     sonolus.UIJudgmentErrorLate,
 		JudgmentErrorPlacement: sonolus.UIJudgmentErrorTop,
 		JudgmentErrorMin:       20,
 	},
 }
 
 var ROM = sonolus.ROMValues{}
+
+//go:generate go run ./levelgen -o dev-level.json
 
 //sonolus:level
 //go:embed dev-level.json

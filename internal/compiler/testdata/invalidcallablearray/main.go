@@ -2,17 +2,17 @@ package main
 
 import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 
+func first()  {}
+func second() {}
+
+var operations = [2]func(){first, second}
+
 type Note struct {
 	play.Archetype `archetype:"name=Note"`
 }
 
-func helper() {}
-
 func (*Note) Preprocess() {
-	if play.Time.Now() > 0 {
-		fn := helper
-		fn()
-	}
+	operations[0] = second
 }
 
 func main() {}

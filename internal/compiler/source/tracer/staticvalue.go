@@ -68,8 +68,9 @@ type StaticMap struct {
 }
 
 type StaticField struct {
-	Field *types.Var
-	Value StaticValue
+	Field    *types.Var
+	Value    StaticValue
+	Explicit bool
 }
 
 // StaticCall preserves a statically resolvable function call without executing
@@ -143,8 +144,9 @@ func cloneStaticValue(value StaticValue) StaticValue {
 		result.Fields = make([]StaticField, len(value.Fields))
 		for index, field := range value.Fields {
 			result.Fields[index] = StaticField{
-				Field: field.Field,
-				Value: cloneStaticValue(field.Value),
+				Field:    field.Field,
+				Value:    cloneStaticValue(field.Value),
+				Explicit: field.Explicit,
 			}
 		}
 	case StaticPointer:

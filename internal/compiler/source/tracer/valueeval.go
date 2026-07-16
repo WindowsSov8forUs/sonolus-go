@@ -30,6 +30,7 @@ type staticVarState struct {
 	storage *StaticObject
 	init    *staticInitializer
 	index   int
+	zeroErr error
 }
 
 type staticPackageState struct {
@@ -89,13 +90,8 @@ func (e *staticEvaluator) packageState(pkg *packages.Package) (*staticPackageSta
 			continue
 		}
 		zero, err := e.zeroValue(pkg, variable.Type())
-		if err != nil {
-			delete(e.packages, pkg)
-			e.packageErrs[pkg] = err
-			return nil, err
-		}
 		storage := e.newObject(variable.Type(), zero)
-		variableState := &staticVarState{object: variable, storage: storage, index: -1}
+		variableState := &staticVarState{object: variable, storage: storage, index: -1, zeroErr: err}
 		storage.owner = variableState
 		state.vars[variable] = variableState
 	}

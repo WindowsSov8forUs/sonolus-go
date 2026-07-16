@@ -20,10 +20,12 @@ var Config = ConfigData{
 	Lane:    sonolus.SelectOption(sonolus.SelectOptionConfig{Name: "Lane", Default: 1, Values: []string{"4", "6", "8"}}),
 	UI: sonolus.UIConfig{
 		Scope:                  "game",
-		PrimaryMetric:          sonolus.UIMetricArcade,
-		SecondaryMetric:        sonolus.UIMetricLife,
-		JudgmentErrorStyle:     sonolus.UIJudgmentErrorPlus,
-		JudgmentErrorPlacement: sonolus.UIJudgmentErrorTop,
+		PrimaryMetric:          sonolus.UIMetricErrorHeatmap,
+		SecondaryMetric:        sonolus.UIMetricGreatGoodMissPercentage,
+		MenuVisibility:         sonolus.UIVisibility{Scale: 0, Alpha: 0},
+		JudgmentAnimation:      sonolus.UIAnimation{Scale: sonolus.UITween{Ease: sonolus.UIEaseOutInElastic}},
+		JudgmentErrorStyle:     sonolus.UIJudgmentErrorTriangleRight,
+		JudgmentErrorPlacement: sonolus.UIJudgmentErrorLeftRight,
 	},
 	Fallback: []string{"Speed", "Lane"},
 }
