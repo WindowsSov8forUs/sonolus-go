@@ -7,6 +7,17 @@ type Archetype struct{}
 type CallbackOrders struct{}
 type GlobalCallbacks struct{}
 
+type levelMemoryAPI struct{}
+type levelDataAPI struct{}
+
+func (levelMemoryAPI) Get(index int) float64        { return 0 }
+func (levelMemoryAPI) Set(index int, value float64) {}
+func (levelDataAPI) Get(index int) float64          { return 0 }
+func (levelDataAPI) Set(index int, value float64)   {}
+
+var LevelMemory levelMemoryAPI
+var LevelData levelDataAPI
+
 type EntityInfo struct {
 	Index, Archetype float64
 	State            sonolus.EntityState
@@ -24,12 +35,22 @@ type ConsecutiveLife struct{ Increment, Step float64 }
 
 type timeAPI struct{}
 
-func (timeAPI) Now() float64                    { return 0 }
-func (timeAPI) Delta() float64                  { return 0 }
-func (timeAPI) Scaled() float64                 { return 0 }
-func (timeAPI) Previous() float64               { return 0 }
-func (timeAPI) BeatToTime(beat float64) float64 { return 0 }
-func (timeAPI) Skip() bool                      { return false }
+func (timeAPI) Now() float64                            { return 0 }
+func (timeAPI) Delta() float64                          { return 0 }
+func (timeAPI) Scaled() float64                         { return 0 }
+func (timeAPI) Previous() float64                       { return 0 }
+func (timeAPI) OffsetAdjusted() float64                 { return 0 }
+func (timeAPI) BeatToBPM(beat float64) float64          { return 0 }
+func (timeAPI) BeatToTime(beat float64) float64         { return 0 }
+func (timeAPI) BeatToStartingBeat(beat float64) float64 { return 0 }
+func (timeAPI) BeatToStartingTime(beat float64) float64 { return 0 }
+func (timeAPI) TimeToScaledTime(value float64) float64 {
+	return 0
+}
+func (timeAPI) TimeToStartingScaledTime(value float64) float64 { return 0 }
+func (timeAPI) TimeToStartingTime(value float64) float64       { return 0 }
+func (timeAPI) TimeToTimeScale(value float64) float64          { return 0 }
+func (timeAPI) Skip() bool                                     { return false }
 
 var Time timeAPI
 
@@ -55,13 +76,27 @@ func (backgroundAPI) Set(q sonolus.Quad) {}
 
 var Background backgroundAPI
 
+type transformAPI struct{}
+
+func (transformAPI) Get() sonolus.Transform2D  { return sonolus.Transform2D{} }
+func (transformAPI) Set(t sonolus.Transform2D) {}
+
+var SkinTransform transformAPI
+var ParticleTransform transformAPI
+
 type entityAPI struct{}
 
 func (entityAPI) Info() EntityInfo            { return EntityInfo{} }
 func (entityAPI) InfoAt(index int) EntityInfo { return EntityInfo{} }
+func (entityAPI) Key() float64                { return 0 }
 func (entityAPI) Result() InputResult         { return InputResult{} }
 func (entityAPI) SetResult(value InputResult) {}
 func Spawn[T any](data T)                     {}
+func ArchetypeID[T any]() int                 { return -1 }
+func ArchetypeKey[T any]() float64            { return -1 }
+func CurrentEntityRef[T any]() sonolus.EntityRef[T] {
+	return sonolus.EntityRef[T]{}
+}
 
 var Entity entityAPI
 

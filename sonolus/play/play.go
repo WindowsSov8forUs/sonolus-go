@@ -1,7 +1,11 @@
 // Package play declares Play-mode markers and runtime facades.
 package play
 
-import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+import (
+	"iter"
+
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+)
 
 type Archetype struct{}
 type CallbackOrders struct{}
@@ -25,13 +29,19 @@ type ConsecutiveLife struct{ Increment, Step float64 }
 
 type timeAPI struct{}
 
-func (timeAPI) Now() float64                          { return 0 }
-func (timeAPI) Delta() float64                        { return 0 }
-func (timeAPI) Scaled() float64                       { return 0 }
-func (timeAPI) Previous() float64                     { return 0 }
-func (timeAPI) OffsetAdjusted() float64               { return 0 }
-func (timeAPI) BeatToTime(beat float64) float64       { return 0 }
-func (timeAPI) TimeToScaledTime(time float64) float64 { return 0 }
+func (timeAPI) Now() float64                                  { return 0 }
+func (timeAPI) Delta() float64                                { return 0 }
+func (timeAPI) Scaled() float64                               { return 0 }
+func (timeAPI) Previous() float64                             { return 0 }
+func (timeAPI) OffsetAdjusted() float64                       { return 0 }
+func (timeAPI) BeatToBPM(beat float64) float64                { return 0 }
+func (timeAPI) BeatToTime(beat float64) float64               { return 0 }
+func (timeAPI) BeatToStartingBeat(beat float64) float64       { return 0 }
+func (timeAPI) BeatToStartingTime(beat float64) float64       { return 0 }
+func (timeAPI) TimeToScaledTime(time float64) float64         { return 0 }
+func (timeAPI) TimeToStartingScaledTime(time float64) float64 { return 0 }
+func (timeAPI) TimeToStartingTime(time float64) float64       { return 0 }
+func (timeAPI) TimeToTimeScale(time float64) float64          { return 0 }
 
 var Time timeAPI
 
@@ -72,11 +82,17 @@ type entityAPI struct{}
 
 func (entityAPI) Info() EntityInfo            { return EntityInfo{} }
 func (entityAPI) InfoAt(index int) EntityInfo { return EntityInfo{} }
+func (entityAPI) Key() float64                { return 0 }
 func (entityAPI) Despawn() bool               { return false }
 func (entityAPI) SetDespawn(value bool)       {}
 func (entityAPI) Result() InputResult         { return InputResult{} }
 func (entityAPI) SetResult(value InputResult) {}
 func Spawn[T any](data T)                     {}
+func ArchetypeID[T any]() int                 { return -1 }
+func ArchetypeKey[T any]() float64            { return -1 }
+func CurrentEntityRef[T any]() sonolus.EntityRef[T] {
+	return sonolus.EntityRef[T]{}
+}
 
 var Entity entityAPI
 
@@ -118,6 +134,12 @@ type Vec2 = sonolus.Vec2
 
 func (touchesAPI) Count() int          { return 0 }
 func (touchesAPI) Get(index int) Touch { return Touch{} }
+func (touchesAPI) Values() iter.Seq[Touch] {
+	return func(func(Touch) bool) {}
+}
+func (touchesAPI) Items() iter.Seq2[int, Touch] {
+	return func(func(int, Touch) bool) {}
+}
 
 var Touches touchesAPI
 
@@ -189,11 +211,15 @@ var Streams streamsAPI
 // LevelMemory exposes Play level memory slots for engine-wide coordination.
 // Engines are responsible for assigning stable, non-overlapping indexes.
 type levelMemoryAPI struct{}
+type levelDataAPI struct{}
 
 func (levelMemoryAPI) Get(index int) float64        { return 0 }
 func (levelMemoryAPI) Set(index int, value float64) {}
+func (levelDataAPI) Get(index int) float64          { return 0 }
+func (levelDataAPI) Set(index int, value float64)   {}
 
 var LevelMemory levelMemoryAPI
+var LevelData levelDataAPI
 
 type debugAPI struct{}
 

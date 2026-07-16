@@ -5,8 +5,10 @@ package main
 import (
 	"iter"
 	"math"
+	"math/rand"
 
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/native"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
 
@@ -31,6 +33,12 @@ func (note *MetaNote) Preprocess() {
 		note.Value = 1
 	} else {
 		note.Value = 2
+	}
+	if sonolus.IsPlay() && !sonolus.IsWatch() && !sonolus.IsPreview() && !sonolus.IsTutorial() {
+		note.Value += 10
+	}
+	if sonolus.IsPreprocessing() {
+		note.Value += 20
 	}
 	if false {
 		sonolus.Unreachable("constant-pruned unreachable branch was lowered")
@@ -68,11 +76,34 @@ done:
 	for {
 		break done
 	}
+	index := 0
+	goto check
+body:
+	result += index
+	index++
+check:
+	if index < 3 {
+		goto body
+	}
 	return result
 }
 
+func simulatorClosureGoto() int {
+	return func() int {
+		result := 1
+		goto done
+		result = 100
+	done:
+		return result
+	}()
+}
+
 func (note *ControlNote) Preprocess() {
-	note.Value = float64(simulatorLabeledControl(int(note.Selector)))
+	value := simulatorLabeledControl(int(note.Selector)) + simulatorClosureGoto()
+	goto store
+	value = 0
+store:
+	note.Value = float64(value)
 }
 
 type RangeTarget struct {
@@ -112,6 +143,17 @@ type ArithmeticNote struct {
 	Value          float64 `archetype:"memory"`
 }
 
+type RandomBoundNote struct {
+	play.Archetype `archetype:"name=RandomBoundNote"`
+	Value          float64 `archetype:"memory"`
+	Bound          float64 `archetype:"memory"`
+}
+
+func (note *RandomBoundNote) Preprocess() {
+	note.Value = float64(rand.Intn(int(note.Bound)))
+	play.Debug.Log(note.Value)
+}
+
 func tracedSimulatorDivisor(value simulatorInt) simulatorInt {
 	play.Debug.Log(float64(value))
 	return value
@@ -128,9 +170,25 @@ func (note *ArithmeticNote) Preprocess() {
 	case 2:
 		result = 12
 		result /= tracedSimulatorDivisor(divisor)
-	default:
+	case 3:
 		result = 12
 		result %= tracedSimulatorDivisor(divisor)
+	case 4:
+		note.Value = math.Mod(-5, 3)
+		play.Debug.Log(note.Value)
+		return
+	case 5:
+		note.Value = native.Mod(-5, 3)
+		play.Debug.Log(note.Value)
+		return
+	case 6:
+		note.Value = math.Round(-1.5)
+		play.Debug.Log(note.Value)
+		return
+	default:
+		note.Value = native.Round(-1.5)
+		play.Debug.Log(note.Value)
+		return
 	}
 	note.Value = float64(result)
 	play.Debug.Log(note.Value)
@@ -153,6 +211,148 @@ func chooseSimulatorNumber(doubled bool, value float64) simulatorNumber {
 
 func simulatorIncrement(value float64) float64 { return value + 1 }
 func simulatorDecrement(value float64) float64 { return value - 1 }
+
+var simulatorPackageCallables = [2]func(float64) float64{simulatorIncrement, simulatorDecrement}
+var simulatorPackageNumbers = [3]float64{3, 5, 8}
+
+type simulatorPackagePoint struct{ X, Y float64 }
+type simulatorPackageBias float64
+
+var simulatorPackagePoints = [2]simulatorPackagePoint{{X: 1, Y: 2}, {X: 3, Y: 4}}
+var simulatorStaticBias simulatorPackageBias = 2
+
+func reassignSimulatorCallable(operation func(float64) float64, selector int) float64 {
+	if selector == 0 {
+		operation = simulatorDecrement
+	} else {
+		operation = simulatorIncrement
+	}
+	return operation(10)
+}
+
+func simulatorDeferredValue(selector int) (result int) {
+	argument := 2
+	defer func(value int) { result += value }(argument)
+	argument = 100
+	if selector == 0 {
+		defer func() { result *= 3 }()
+		result = 1
+		return
+	}
+	result = 4
+	return
+}
+
+func simulatorCallableArrayRoundTrip(values [2]func(float64) float64, selector int) [2]func(float64) float64 {
+	values[1-selector] = values[selector]
+	return values
+}
+
+func simulatorCallableArray(selector int) int {
+	values := [2]func(float64) float64{simulatorIncrement, simulatorDecrement}
+	snapshot := values
+	replacement := simulatorIncrement
+	if selector == 0 {
+		replacement = simulatorDecrement
+	}
+	values[selector] = replacement
+	selected := snapshot[selector]
+	result := int(selected(10))
+	returned := simulatorCallableArrayRoundTrip(values, selector)
+	for index, operation := range returned {
+		returned[index] = simulatorDecrement
+		result += int(operation(float64(index)))
+	}
+	return result
+}
+
+type PackageCallableArrayNote struct {
+	play.Archetype `archetype:"name=PackageCallableArrayNote"`
+	Selector       float64 `archetype:"imported"`
+	Value          float64 `archetype:"memory"`
+}
+
+func (note *PackageCallableArrayNote) Preprocess() {
+	note.Value = simulatorPackageCallables[int(note.Selector)%2](10)
+}
+
+type PackageStaticArrayNote struct {
+	play.Archetype `archetype:"name=PackageStaticArrayNote"`
+	Selector       float64 `archetype:"imported"`
+	Value          float64 `archetype:"memory"`
+}
+
+func (note *PackageStaticArrayNote) Preprocess() {
+	note.Value = simulatorPackageNumbers[int(note.Selector)%len(simulatorPackageNumbers)]
+	point := simulatorPackagePoints[int(note.Selector)%len(simulatorPackagePoints)]
+	note.Value += point.X + point.Y + float64(simulatorStaticBias)
+	for index, value := range simulatorPackageNumbers {
+		note.Value += float64(index) + value
+	}
+}
+
+type RangeNote struct {
+	play.Archetype `archetype:"name=RangeNote"`
+	Input          float64      `archetype:"imported"`
+	Length         float64      `archetype:"memory"`
+	Empty          bool         `archetype:"memory"`
+	Contains       bool         `archetype:"memory"`
+	ContainsRange  bool         `archetype:"memory"`
+	Mid            float64      `archetype:"memory"`
+	Lerped         float64      `archetype:"memory"`
+	Unlerped       float64      `archetype:"memory"`
+	Clamped        float64      `archetype:"memory"`
+	Composite      float64      `archetype:"memory"`
+	EaseOutIn      float64      `archetype:"memory"`
+	Linstep        float64      `archetype:"memory"`
+	Smoothstep     float64      `archetype:"memory"`
+	Smootherstep   float64      `archetype:"memory"`
+	StepStart      float64      `archetype:"memory"`
+	StepEnd        float64      `archetype:"memory"`
+	VectorLerp     sonolus.Vec2 `archetype:"memory"`
+	VectorUnit     sonolus.Vec2 `archetype:"memory"`
+}
+
+func (note *RangeNote) Preprocess() {
+	interval := sonolus.NewRange(-2, 6)
+	note.Length = interval.Length()
+	note.Empty = interval.IsEmpty()
+	note.Contains = interval.Contains(note.Input)
+	note.ContainsRange = interval.ContainsRange(sonolus.NewRange(-1, 5))
+	note.Mid = interval.Mid()
+	note.Lerped = interval.LerpClamped(0.25)
+	note.Unlerped = interval.UnlerpClamped(2)
+	note.Clamped = interval.Clamp(note.Input)
+	note.Composite = interval.Intersect(sonolus.NewRange(0, 9)).Length() + interval.Shrink(1).Length() + interval.Expand(1).Length() + interval.Mul(2).Length() + interval.Div(2).Length()
+	note.EaseOutIn = sonolus.Ease(sonolus.EaseOutIn, sonolus.EaseQuad, 0.25)
+	note.Linstep = sonolus.Linstep(-0.5)
+	note.Smoothstep = sonolus.Smoothstep(0.25)
+	note.Smootherstep = sonolus.Smootherstep(0.25)
+	note.StepStart = sonolus.StepStart(0)
+	note.StepEnd = sonolus.StepEnd(0.999)
+	note.VectorLerp = sonolus.NewVec2(0, 2).LerpClamped(sonolus.NewVec2(2, 4), 0.25)
+	note.VectorUnit = sonolus.UnitVec2(0)
+}
+
+type GeometryNote struct {
+	play.Archetype `archetype:"name=GeometryNote"`
+	Projected      sonolus.Vec2 `archetype:"memory"`
+	Restored       sonolus.Vec2 `archetype:"memory"`
+	Rect           sonolus.Rect `archetype:"memory"`
+	Rotated        sonolus.Quad `archetype:"memory"`
+	Approach       float64      `archetype:"memory"`
+}
+
+func (note *GeometryNote) Preprocess() {
+	point := sonolus.NewVec2(2, 4)
+	transform := sonolus.IdentityTransform2D().PerspectiveY(-0.5, sonolus.NewVec2(0, 1.5))
+	note.Projected = transform.TransformVec(point)
+	invertible := sonolus.IdentityInvertibleTransform2D().PerspectiveY(-0.5, sonolus.NewVec2(0, 1.5))
+	note.Restored = invertible.InverseTransformVec(invertible.TransformVec(point))
+	note.Rect = sonolus.RectFromCenter(sonolus.NewVec2(1, 2), sonolus.NewVec2(4, 6)).Expand(sonolus.NewVec2(1, 2))
+	note.Rotated = sonolus.RectFromCenter(sonolus.NewVec2(1, 2), sonolus.NewVec2(2, 4)).ToQuad().RotateCentered(3.141592653589793)
+	note.Approach = sonolus.PerspectiveApproach(2, 0.5)
+}
 
 func chooseSimulatorCallable(increment bool) func(float64) float64 {
 	if increment {
@@ -487,6 +687,34 @@ type StaticLanguageNote struct {
 	Value          float64 `archetype:"memory"`
 }
 
+type TouchIteratorNote struct {
+	play.Archetype `archetype:"name=TouchIteratorNote"`
+	Sum            float64 `archetype:"memory"`
+}
+
+func (n *TouchIteratorNote) Touch() {
+	n.Sum = 0
+	for index, touch := range play.Touches.Items() {
+		n.Sum += float64(index) + touch.ID + touch.Speed
+	}
+}
+
+type EntityKeyNote struct {
+	play.Archetype `archetype:"name=EntityKeyNote,key=11"`
+	Target         sonolus.EntityRef[sonolus.AnyArchetype] `archetype:"imported,name=target"`
+	Value          float64                                 `archetype:"memory"`
+}
+
+func (n *EntityKeyNote) Preprocess() { n.Value = play.Entity.Key() + n.Target.Key() }
+
+type EntityKeyTarget struct {
+	play.Archetype `archetype:"name=EntityKeyTarget,key=23"`
+}
+
+type EntityKeyDefault struct {
+	play.Archetype `archetype:"name=EntityKeyDefault"`
+}
+
 func (note *StaticLanguageNote) Preprocess() {
 	selector := int(note.Selector) % 2
 	state := methodExpressionState{Value: 4}
@@ -497,6 +725,28 @@ func (note *StaticLanguageNote) Preprocess() {
 		operation = methodExpressionState.Multiply
 	}
 	result := operation(state, 3)
+	reassigned := simulatorIncrement
+	if selector == 0 {
+		reassigned = simulatorDecrement
+		local := simulatorIncrement
+		result += int(local(1))
+	} else {
+		reassigned = simulatorIncrement
+		local := simulatorDecrement
+		result += int(local(1))
+	}
+	result += int(reassigned(10))
+	copied := reassigned
+	if selector == 0 {
+		reassigned = simulatorIncrement
+	} else {
+		reassigned = simulatorDecrement
+	}
+	result += int(copied(20))
+	result += int(reassigned(20))
+	result += int(reassignSimulatorCallable(simulatorDecrement, selector))
+	result += simulatorDeferredValue(selector)
+	result += simulatorCallableArray(selector)
 	result += len("static")
 	result += methodExpressionState.Add(state, 1)
 	converted := methodExpressionOperation(methodExpressionState.Add)
@@ -676,6 +926,20 @@ type NilPointerNote struct {
 	play.Archetype `archetype:"name=NilPointerNote"`
 	Selector       float64 `archetype:"imported,name=selector"`
 	Value          float64 `archetype:"memory"`
+}
+
+type NilCallableNote struct {
+	play.Archetype `archetype:"name=NilCallableNote"`
+	Selector       float64 `archetype:"imported,name=selector"`
+	Value          float64 `archetype:"memory"`
+}
+
+func (note *NilCallableNote) Preprocess() {
+	var callable func() int
+	if note.Selector == 0 {
+		callable = func() int { return 7 }
+	}
+	note.Value = float64(callable()) + 1
 }
 
 func (note *NilPointerNote) Preprocess() {

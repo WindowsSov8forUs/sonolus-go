@@ -30,11 +30,22 @@ type EffectsData struct {
 
 var Effects = &EffectsData{Hit: sonolus.EffectClip("hit")}
 
+var tutorialDurations = [2]float64{1.5, 2.5}
+
 func Preprocess() {
+	skinTransform := tutorial.SkinTransform.Get()
+	tutorial.SkinTransform.Set(skinTransform)
+	particleTransform := tutorial.ParticleTransform.Get()
+	tutorial.ParticleTransform.Set(particleTransform)
+	tutorial.TutorialData.Set(1, tutorial.TutorialData.Get(0))
 	tutorial.TutorialMemory.Set(0, tutorial.TutorialData.Get(0))
 	value := tutorial.TutorialMemory.Get(0)
-	value += tutorial.Time.Now() + tutorial.Time.Delta()
-	value += tutorial.Screen.Rect().Width() + tutorial.SafeArea.Rect().Width()
+	value += tutorial.Time.Now() + tutorial.Time.Delta() + tutorial.Time.Scaled() + tutorial.Time.Previous() + tutorial.Time.OffsetAdjusted()
+	value += tutorial.Time.BeatToBPM(1) + tutorial.Time.BeatToTime(1)
+	value += tutorial.Time.BeatToStartingBeat(1) + tutorial.Time.BeatToStartingTime(1)
+	value += tutorial.Time.TimeToScaledTime(1) + tutorial.Time.TimeToStartingScaledTime(1)
+	value += tutorial.Time.TimeToStartingTime(1) + tutorial.Time.TimeToTimeScale(1)
+	value += tutorial.Screen.Rect().Width() + tutorial.SafeArea.Rect().Width() + tutorial.Audio.Offset()
 	tutorial.Audio.Play(Effects.Hit, 0)
 	tutorial.Audio.PlayScheduled(Effects.Hit, 1, 0)
 	tutorial.UI.SetMenu(tutorial.UI.Menu())
@@ -59,6 +70,7 @@ func Navigate() {
 }
 
 func Update() {
+	tutorial.Debug.Log(tutorialDurations[int(tutorial.Time.Now())%len(tutorialDurations)])
 	tutorial.Instruction.Paint(Icons.Tap, sonolus.NewVec2(0, 0), 1, 0, 0, 1)
 }
 

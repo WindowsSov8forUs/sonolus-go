@@ -562,6 +562,9 @@ var UnevaluatedArrayLength = len([2]int{dynamicInt(), dynamicInt()})
 	if got := staticString(t, structValue.Fields[1].Value); got != "set" {
 		t.Fatalf("Struct.Text = %q", got)
 	}
+	if structValue.Fields[0].Explicit || !structValue.Fields[1].Explicit {
+		t.Fatalf("Struct explicit fields = %#v", structValue.Fields)
+	}
 
 	array := mustEvalBinding(t, tracer, "Array").Value
 	if array.Kind != StaticArray || len(array.Elements) != 4 {
@@ -1088,7 +1091,7 @@ func TestHugeNestedValueIsRejectedWithoutAllocation(t *testing.T) {
 	if _, err := tracer.EvalPackageValue("Huge"); !errors.Is(err, ErrNotStatic) {
 		t.Fatalf("Huge error = %v, want ErrNotStatic", err)
 	}
-	if _, err := tracer.EvalPackageValue("Good"); !errors.Is(err, ErrNotStatic) {
-		t.Fatalf("package preallocation error = %v, want ErrNotStatic", err)
+	if got := staticInt64(t, mustEvalBinding(t, tracer, "Good").Value); got != 1 {
+		t.Fatalf("Good = %d, want 1", got)
 	}
 }

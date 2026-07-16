@@ -47,6 +47,15 @@ type ParticlesData struct {
 
 var Particles = &ParticlesData{Hit: sonolus.ParticleEffect("hit")}
 
+type BucketsData struct {
+	sonolus.BucketsResource
+	Note sonolus.Bucket
+}
+
+var Buckets = &BucketsData{Note: sonolus.JudgmentBucket("#MILLISECONDS")}
+
+var staticSamples = [7]float64{1, 2, 3, 4, 5, 6, 7}
+
 func pair(value float64) (left, right float64) {
 	left = value
 	right = value + 1
@@ -90,12 +99,20 @@ func genericPair[T ~float64](value T) (left, right T) {
 }
 
 func (n *Note) Preprocess() {
+	timing := play.Time.BeatToBPM(1) + play.Time.BeatToTime(1)
+	timing += play.Time.BeatToStartingBeat(1) + play.Time.BeatToStartingTime(1)
+	timing += play.Time.TimeToScaledTime(1) + play.Time.TimeToStartingScaledTime(1)
+	timing += play.Time.TimeToStartingTime(1) + play.Time.TimeToTimeScale(1)
+	Buckets.Note.SetWindow(sonolus.JudgmentWindows{
+		Perfect: sonolus.NewRange(-50, 50), Great: sonolus.NewRange(-100, 100), Good: sonolus.NewRange(-150, 150),
+	})
+	bucketWindow := Buckets.Note.Window()
 	_ = n.Ref.Index
 	for _, sample := range n.Samples {
 		play.Debug.Log(sample)
 	}
 	values := [3]float64{0: 1, 2: 3}
-	sum := float64(len(values) + cap(values))
+	sum := timing + float64(len(values)+cap(values)) + bucketWindow.Perfect.Min
 	target := n.Ref.Get()
 	sum += target.Imported + target.Data + target.Shared
 	target.Shared = sum
@@ -141,6 +158,7 @@ func (n *Note) Preprocess() {
 	}
 	_, _ = rangeIndex, rangeValue
 	sum += [2]float64{9, 10}[int(sum)]
+	sum += staticSamples[int(sum)%len(staticSamples)]
 	holder := struct {
 		Prefix float64
 		Values [2]float64
@@ -184,26 +202,47 @@ func (n *Note) Preprocess() {
 	sum += sonolus.Unlerp(0, 1, 0.5) + sonolus.Remap(0, 1, 2, 3, 0.5)
 	sum += math.Abs(-1) + math.Floor(1.5) + math.Ceil(1.5) + math.Round(1.5) + math.Trunc(1.5) + math.Log(2)
 	sum += math.Sin(1) + math.Cos(1) + math.Tan(1) + math.Asin(0.5) + math.Acos(0.5) + math.Atan(1)
+	sum += math.Sinh(1) + math.Cosh(1) + math.Tanh(1)
 	sum += math.Atan2(1, 2) + math.Min(1, 2) + math.Max(1, 2) + math.Pow(2, 3) + math.Mod(3, 2)
 	sum += math.E + math.Pi + math.Phi + math.Sqrt2 + math.SqrtE + math.SqrtPi + math.SqrtPhi
 	sum += math.Ln2 + math.Log2E + math.Ln10 + math.Log10E
 	_, _ = a, b
 	v := sonolus.NewVec2(a, b).Add(sonolus.NewVec2(1, 2)).Mul(2)
+	_, _, _ = sonolus.UnitVec2(a), v.Lerp(sonolus.NewVec2(2, 3), b), v.LerpClamped(sonolus.NewVec2(2, 3), b)
 	_ = v.Normalize()
 	_, _, _, _ = v.Sub(sonolus.NewVec2(1, 1)), v.Div(2), v.Dot(v), v.MagnitudeSquared()
+	_, _, _ = v.MulVec(v), v.DivVec(v), v.Negate()
 	_, _, _, _ = v.Angle(), v.Orthogonal(), v.NormalizeOrZero(), v.Rotate(0.5)
 	_, _, _ = v.RotateAbout(sonolus.NewVec2(1, 1), 0.5), v.AngleDiff(v), v.SignedAngleDiff(v)
 	r := sonolus.Rect{T: 2, R: 2, B: -2, L: -2}.Translate(v)
 	_, _, _, _, _ = v.Magnitude(), r.Width(), r.Height(), r.Center(), r.Scale(2)
+	_, _, _, _, _, _, _, _ = r.BL(), r.TL(), r.TR(), r.BR(), r.Top(), r.Right(), r.Bottom(), r.Left()
+	_, _ = sonolus.RectFromCenter(v, sonolus.NewVec2(2, 4)), sonolus.RectFromMargin(1, 2, 3, 4)
+	_, _, _, _, _ = r.ScaleVec(v), r.ScaleAbout(v, v), r.ScaleCentered(v), r.Expand(v), r.Shrink(v)
 	_ = r.Contains(v)
 	q := r.ToQuad()
 	_, _, _, _, _ = q.Center(), q.Translate(v), q.Scale(2), q.Rotate(0.5), q.Permute(1)
+	_, _, _, _, _ = q.ScaleVec(v), q.ScaleAbout(v, v), q.ScaleCentered(v), q.RotateAbout(0.5, v), q.RotateCentered(0.5)
 	_, _, _, _, _ = q.Top(), q.Right(), q.Bottom(), q.Left(), q.Contains(v)
-	transform := sonolus.Transform2D{A00: 1, A11: 1}
+	transform := sonolus.IdentityTransform2D()
 	transform = transform.Translate(v).Scale(v).Rotate(0.5).Compose(transform).ComposeBefore(transform)
 	transform = transform.ScaleAbout(v, v).RotateAbout(0.5, v)
-	_, _ = transform.TransformVec(v), transform.TransformQuad(q)
+	transform = transform.ShearX(a).ShearY(b).SimplePerspectiveX(a).SimplePerspectiveY(b)
+	transform = transform.PerspectiveX(a, v).PerspectiveY(b, v)
+	transform = transform.InversePerspectiveX(a, v).InversePerspectiveY(b, v).Normalize()
+	_, _, _ = transform.TransformVec(v), transform.TransformQuad(q), transform.TransformRect(r)
+	invertible := sonolus.IdentityInvertibleTransform2D()
+	invertible = invertible.Translate(v).Scale(v).ScaleAbout(v, v).Rotate(a).RotateAbout(b, v)
+	invertible = invertible.ShearX(a).ShearY(b).SimplePerspectiveX(a).SimplePerspectiveY(b)
+	invertible = invertible.PerspectiveX(a, v).PerspectiveY(b, v).Normalize()
+	invertible = invertible.Compose(invertible).ComposeBefore(invertible)
+	_, _, _, _, _, _ = invertible.TransformVec(v), invertible.InverseTransformVec(v), invertible.TransformQuad(q), invertible.InverseTransformQuad(q), invertible.TransformRect(r), invertible.InverseTransformRect(r)
+	_ = sonolus.PerspectiveApproach(a, b)
 	_ = sonolus.Ease(sonolus.EaseIn, sonolus.EaseSine, 0.5)
+	_ = sonolus.Ease(sonolus.EaseOutIn, sonolus.EaseQuad, 0.5)
+	_, _, _, _, _ = sonolus.Linstep(a), sonolus.Smoothstep(a), sonolus.Smootherstep(a), sonolus.StepStart(a), sonolus.StepEnd(a)
+	_, _ = sonolus.UnlerpClamped(0, 1, a), sonolus.RemapClamped(0, 1, -1, 1, a)
+	_, _, _, _, _ = sonolus.IsPlay(), sonolus.IsWatch(), sonolus.IsPreview(), sonolus.IsTutorial(), sonolus.IsPreprocessing()
 	Assets.Note.Draw(r.ToQuad(), 1, 1)
 	identitySprite(Assets.Note).Draw(q, 1, 1)
 	Assets.Note.DrawCurvedB(r.ToQuad(), v, 8, 1, 1)
@@ -270,6 +309,17 @@ func (n *Note) Preprocess() {
 	}
 	sum += play.Time.Now() + play.Time.Delta() + play.Time.Scaled() + play.Time.Previous()
 	sum += play.Time.OffsetAdjusted() + play.Time.BeatToTime(1) + play.Time.TimeToScaledTime(1)
+	interval := sonolus.NewRange(-2, 6)
+	sum += interval.Length() + interval.Mid()
+	if interval.IsEmpty() || interval.Contains(sum) || interval.ContainsRange(sonolus.NewRange(-1, 5)) {
+		sum += 1
+	}
+	sum += interval.Add(1).Min + interval.Sub(1).Max
+	sum += interval.Mul(2).Length() + interval.Div(2).Length()
+	sum += interval.Intersect(sonolus.NewRange(0, 9)).Length()
+	sum += interval.Shrink(1).Length() + interval.Expand(1).Length()
+	sum += interval.Lerp(0.25) + interval.LerpClamped(0.25)
+	sum += interval.Unlerp(2) + interval.UnlerpClamped(2) + interval.Clamp(sum)
 	sum += play.SafeArea.Rect().Width() + play.Screen.Rect().Width() + play.Audio.Offset()
 	play.Audio.Play(Effects.Hit, 0)
 	play.Audio.PlayScheduled(Effects.Hit, 1, 0)
@@ -279,11 +329,18 @@ func (n *Note) Preprocess() {
 	play.Background.Set(background)
 	touch := play.Touches.Get(0)
 	sum += touch.Speed + float64(play.Touches.Count())
+	for value := range play.Touches.Values() {
+		sum += value.ID
+	}
+	for index, value := range play.Touches.Items() {
+		sum += float64(index) + value.Speed
+	}
 	skinTransform := play.SkinTransform.Get()
 	play.SkinTransform.Set(skinTransform)
 	particleTransform := play.ParticleTransform.Get()
 	play.ParticleTransform.Set(particleTransform)
 	_, _ = play.Entity.Info(), play.Entity.InfoAt(0)
+	sum += float64(play.ArchetypeID[Note]()) + play.ArchetypeKey[Note]()
 	play.Entity.SetDespawn(play.Entity.Despawn())
 	play.Entity.SetResult(play.Entity.Result())
 	archetypeScore := play.Score.Archetype(0)
@@ -299,6 +356,8 @@ func (n *Note) Preprocess() {
 	_, _, _, _ = play.Multiplayer.IsMultiplayer(), play.Environment.Debug(), play.Environment.Multiplayer(), play.Environment.AspectRatio()
 	levelValue := play.LevelMemory.Get(3)
 	play.LevelMemory.Set(4, levelValue)
+	levelData := play.LevelData.Get(3)
+	play.LevelData.Set(4, levelData)
 	play.Streams.Set(0, 1, 2)
 	play.Debug.Log(sum)
 	_, _ = (sonolus.JudgmentWindow{}).Judge(a, b), (sonolus.JudgmentWindows{}).Judge(a, b)

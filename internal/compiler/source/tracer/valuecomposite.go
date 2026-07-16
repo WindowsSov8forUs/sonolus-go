@@ -82,6 +82,7 @@ func (e *staticEvaluator) evalStructComposite(
 			return StaticValue{}, err
 		}
 		result.Fields[fieldIndex].Value = value
+		result.Fields[fieldIndex].Explicit = true
 	}
 	return result, nil
 }

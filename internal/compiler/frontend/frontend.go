@@ -36,6 +36,8 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 	configurationFound := false
 	streamFound := false
 	globalFound := false
+	levelGlobalOffsets := map[string]int{}
+	levelGlobalFields := map[*types.Var]*LevelGlobalFieldDeclaration{}
 	type globalPackage struct {
 		pkg       *packages.Package
 		hasMarker bool
@@ -112,7 +114,35 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 				continue
 			}
 			id, marker := primary.id, primary.tag
-			if id != rootID("Configuration") && id != rootID("StreamResource") && id != markerID(m, "Archetype") && id != markerID(m, "GlobalCallbacks") {
+			if id != rootID("Configuration") && id != rootID("StreamResource") && id != rootID("LevelMemoryResource") && id != rootID("LevelDataResource") && id != markerID(m, "Archetype") && id != markerID(m, "GlobalCallbacks") {
+				continue
+			}
+			if id == rootID("LevelMemoryResource") || id == rootID("LevelDataResource") {
+				kind := "memory"
+				if id == rootID("LevelDataResource") {
+					kind = "data"
+				}
+				storage, allowed := levelGlobalStorage(kind, m)
+				if !allowed {
+					errs = append(errs, fmt.Errorf("%s: level %s globals are not available in %s mode", named.Obj().Name(), kind, m))
+					continue
+				}
+				vars := markerVariables(p, named)
+				if len(vars) != 1 {
+					errs = append(errs, fmt.Errorf("%s: level %s marker requires exactly one singleton variable", named.Obj().Name(), kind))
+					continue
+				}
+				if _, ok := variableInitializer(p, vars[0]); !ok {
+					errs = append(errs, fmt.Errorf("%s: level %s singleton must have one explicit initializer", vars[0].Name(), kind))
+					continue
+				}
+				declaration, globalErrs := parseLevelGlobal(p, named, vars[0], tracer, kind, storage, levelGlobalOffsets[storage])
+				errs = append(errs, globalErrs...)
+				levelGlobalOffsets[storage] += declaration.Size
+				out.LevelGlobals = append(out.LevelGlobals, declaration)
+				for _, field := range declaration.Fields {
+					levelGlobalFields[field.Object] = field
+				}
 				continue
 			}
 			if id == rootID("StreamResource") {
@@ -196,7 +226,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 		globalPackages = append(globalPackages, globalPackage{pkg: p, hasMarker: hasGlobals})
 	}
 	for _, candidate := range globalPackages {
-		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, m, candidate.hasMarker, options.RuntimeChecks)
+		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, levelGlobalFields, m, candidate.hasMarker, options.RuntimeChecks)
 		errs = append(errs, globalErrs...)
 		out.Globals = append(out.Globals, globals...)
 	}
@@ -208,17 +238,33 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 	})
 	errs = append(errs, resolveArchetypeInheritance(out.Archetypes)...)
 	archetypes := make(map[*types.Named]archetypeBinding, len(out.Archetypes))
-	for id, declaration := range out.Archetypes {
+	nextArchetypeID := 0
+	for _, declaration := range out.Archetypes {
+		id := -1
+		if !declaration.Abstract {
+			id = nextArchetypeID
+			nextArchetypeID++
+		}
 		archetypes[declaration.Named] = archetypeBinding{id: id, declaration: declaration}
 	}
 	for _, declaration := range out.Archetypes {
+		if declaration.Abstract {
+			continue
+		}
 		owner := packagesByTypes[declaration.Named.Obj().Pkg()]
 		if owner == nil {
 			errs = append(errs, fmt.Errorf("%s: archetype source package is unavailable", declaration.Name))
 			continue
 		}
-		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, archetypes, m, options.RuntimeChecks)...)
+		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, levelGlobalFields, archetypes, m, options.RuntimeChecks)...)
 	}
+	concrete := out.Archetypes[:0]
+	for _, declaration := range out.Archetypes {
+		if !declaration.Abstract {
+			concrete = append(concrete, declaration)
+		}
+	}
+	out.Archetypes = concrete
 	if len(errs) > 0 {
 		messages := make([]string, len(errs))
 		for i, err := range errs {
@@ -296,7 +342,7 @@ func (p *Parser) GetProject() (*Project, error) {
 		return nil, err
 	}
 	project := &Project{
-		Configuration: &resource.EngineConfiguration{Options: []resource.EngineConfigurationOption{}},
+		Configuration: emptyConfiguration(),
 		Modes:         make(map[mode.Mode]*ModeDeclarations, len(declarations)),
 	}
 	for i, decl := range declarations {
@@ -347,7 +393,7 @@ func validateShared(declarations []*ModeDeclarations) error {
 }
 
 func emptyConfiguration() *resource.EngineConfiguration {
-	return &resource.EngineConfiguration{Options: []resource.EngineConfigurationOption{}}
+	return &resource.EngineConfiguration{Options: []resource.EngineConfigurationOption{}, UI: defaultConfigurationUI()}
 }
 
 func configurationValue(decl *ConfigurationDeclaration) *resource.EngineConfiguration {

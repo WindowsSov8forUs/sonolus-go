@@ -7,8 +7,19 @@ type GlobalCallbacks struct{}
 
 type timeAPI struct{}
 
-func (timeAPI) Now() float64   { return 0 }
-func (timeAPI) Delta() float64 { return 0 }
+func (timeAPI) Now() float64                                   { return 0 }
+func (timeAPI) Delta() float64                                 { return 0 }
+func (timeAPI) Scaled() float64                                { return 0 }
+func (timeAPI) Previous() float64                              { return 0 }
+func (timeAPI) OffsetAdjusted() float64                        { return 0 }
+func (timeAPI) BeatToBPM(beat float64) float64                 { return 0 }
+func (timeAPI) BeatToTime(beat float64) float64                { return 0 }
+func (timeAPI) BeatToStartingBeat(beat float64) float64        { return 0 }
+func (timeAPI) BeatToStartingTime(beat float64) float64        { return 0 }
+func (timeAPI) TimeToScaledTime(value float64) float64         { return 0 }
+func (timeAPI) TimeToStartingScaledTime(value float64) float64 { return 0 }
+func (timeAPI) TimeToStartingTime(value float64) float64       { return 0 }
+func (timeAPI) TimeToTimeScale(value float64) float64          { return 0 }
 
 var Time timeAPI
 
@@ -28,6 +39,7 @@ var Environment environmentAPI
 
 type audioAPI struct{}
 
+func (audioAPI) Offset() float64                                       { return 0 }
 func (audioAPI) Play(clip sonolus.Clip, distance float64)              {}
 func (audioAPI) PlayScheduled(clip sonolus.Clip, at, distance float64) {}
 
@@ -39,6 +51,14 @@ func (backgroundAPI) Get() sonolus.Quad  { return sonolus.Quad{} }
 func (backgroundAPI) Set(q sonolus.Quad) {}
 
 var Background backgroundAPI
+
+type transformAPI struct{}
+
+func (transformAPI) Get() sonolus.Transform2D  { return sonolus.Transform2D{} }
+func (transformAPI) Set(t sonolus.Transform2D) {}
+
+var SkinTransform transformAPI
+var ParticleTransform transformAPI
 
 type navigationAPI struct{}
 type NavigationDirection int
@@ -90,7 +110,10 @@ type dataAPI struct{}
 func (memoryAPI) Get(index int) float64        { return 0 }
 func (memoryAPI) Set(index int, value float64) {}
 func (dataAPI) Get(index int) float64          { return 0 }
+func (dataAPI) Set(index int, value float64)   {}
 
+var LevelData dataAPI
+var LevelMemory memoryAPI
 var TutorialData dataAPI
 var TutorialMemory memoryAPI
 

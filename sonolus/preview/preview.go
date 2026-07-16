@@ -6,6 +6,19 @@ import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 type Archetype struct{}
 type CallbackOrders struct{}
 
+type timeAPI struct{}
+
+func (timeAPI) BeatToBPM(beat float64) float64                 { return 0 }
+func (timeAPI) BeatToTime(beat float64) float64                { return 0 }
+func (timeAPI) BeatToStartingBeat(beat float64) float64        { return 0 }
+func (timeAPI) BeatToStartingTime(beat float64) float64        { return 0 }
+func (timeAPI) TimeToScaledTime(value float64) float64         { return 0 }
+func (timeAPI) TimeToStartingScaledTime(value float64) float64 { return 0 }
+func (timeAPI) TimeToStartingTime(value float64) float64       { return 0 }
+func (timeAPI) TimeToTimeScale(value float64) float64          { return 0 }
+
+var Time timeAPI
+
 type EntityInfo struct{ Index, Archetype float64 }
 type Scroll int
 type CanvasOptions struct {
@@ -54,6 +67,13 @@ func (screenAPI) Rect() sonolus.Rect { return sonolus.Rect{} }
 var Screen screenAPI
 var SafeArea screenAPI
 
+type transformAPI struct{}
+
+func (transformAPI) Get() sonolus.Transform2D  { return sonolus.Transform2D{} }
+func (transformAPI) Set(t sonolus.Transform2D) {}
+
+var SkinTransform transformAPI
+
 type environmentAPI struct{}
 
 func (environmentAPI) Debug() bool          { return false }
@@ -65,6 +85,12 @@ type entityAPI struct{}
 
 func (entityAPI) Info() EntityInfo            { return EntityInfo{} }
 func (entityAPI) InfoAt(index int) EntityInfo { return EntityInfo{} }
+func (entityAPI) Key() float64                { return 0 }
+func ArchetypeID[T any]() int                 { return -1 }
+func ArchetypeKey[T any]() float64            { return -1 }
+func CurrentEntityRef[T any]() sonolus.EntityRef[T] {
+	return sonolus.EntityRef[T]{}
+}
 
 var Entity entityAPI
 

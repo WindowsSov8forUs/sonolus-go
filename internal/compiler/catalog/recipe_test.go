@@ -30,6 +30,18 @@ func TestMemoryReadonlyOracleUsesModeAndCallback(t *testing.T) {
 	if !MemoryReadonly(mode.ModePlay, "updateParallel", "EngineRom") {
 		t.Fatal("EngineRom should be readonly")
 	}
+	if MemoryReadonly(mode.ModePlay, "touch", "LevelMemory") || !MemoryReadonly(mode.ModePlay, "updateParallel", "LevelMemory") {
+		t.Fatal("Play LevelMemory write phases do not match the runtime block contract")
+	}
+	if MemoryReadonly(mode.ModePlay, "preprocess", "LevelData") || !MemoryReadonly(mode.ModePlay, "updateSequential", "LevelData") {
+		t.Fatal("Play LevelData must only be writable in preprocess")
+	}
+	if MemoryReadonly(mode.ModeWatch, "updateSequential", "LevelMemory") || !MemoryReadonly(mode.ModeWatch, "updateParallel", "LevelMemory") {
+		t.Fatal("Watch LevelMemory write phases do not match the runtime block contract")
+	}
+	if MemoryReadonly(mode.ModeTutorial, "preprocess", "TutorialData") || !MemoryReadonly(mode.ModeTutorial, "update", "TutorialData") {
+		t.Fatal("TutorialData must only be writable in preprocess")
+	}
 }
 
 func TestEveryPublicCallableHasExplicitRecipe(t *testing.T) {
@@ -63,8 +75,8 @@ func TestConfigurationConstructorsAreCompileTimeOnly(t *testing.T) {
 	}
 }
 
-func TestResourceMarkersAreCompileTimeOnly(t *testing.T) {
-	for _, name := range []string{"SkinResource", "EffectResource", "ParticleResource", "BucketsResource", "InstructionResource", "InstructionIconResource"} {
+func TestDeclarationMarkersAreCompileTimeOnly(t *testing.T) {
+	for _, name := range []string{"SkinResource", "EffectResource", "ParticleResource", "BucketsResource", "InstructionResource", "InstructionIconResource", "StreamResource", "LevelMemoryResource", "LevelDataResource"} {
 		symbol := byKey["sonolus."+name]
 		if symbol == nil {
 			t.Fatalf("missing catalog symbol sonolus.%s", name)

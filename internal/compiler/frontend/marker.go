@@ -90,11 +90,40 @@ func structMarkers(named *types.Named) []markerField {
 	return result
 }
 
+func promotedLevelGlobalMarker(named *types.Named, seen map[*types.Named]bool) string {
+	if named == nil || seen[named] {
+		return ""
+	}
+	seen[named] = true
+	st, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return ""
+	}
+	for index := 0; index < st.NumFields(); index++ {
+		field := st.Field(index)
+		if !field.Embedded() {
+			continue
+		}
+		id := typeID(field.Type())
+		if id == rootID("LevelMemoryResource") || id == rootID("LevelDataResource") {
+			return id
+		}
+		embedded, ok := namedType(field.Type())
+		if ok {
+			if id := promotedLevelGlobalMarker(embedded, seen); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
 func primaryDeclarationMarker(named *types.Named) (markerField, bool, []error) {
 	var primary []markerField
 	var errs []error
 	for _, candidate := range structMarkers(named) {
-		isPrimary := candidate.id == rootID("Configuration") || candidate.id == rootID("StreamResource")
+		isPrimary := candidate.id == rootID("Configuration") || candidate.id == rootID("StreamResource") ||
+			candidate.id == rootID("LevelMemoryResource") || candidate.id == rootID("LevelDataResource")
 		if _, ok := resourceMarkerKinds[candidate.id]; ok {
 			isPrimary = true
 		}
@@ -125,6 +154,9 @@ func primaryDeclarationMarker(named *types.Named) (markerField, bool, []error) {
 		return markerField{}, false, errs
 	}
 	if len(primary) == 0 {
+		if id := promotedLevelGlobalMarker(named, map[*types.Named]bool{}); id != "" {
+			errs = append(errs, fmt.Errorf("%s: %s must be embedded directly; promoted level global markers are not allowed", named.Obj().Name(), id))
+		}
 		return markerField{}, false, errs
 	}
 	isArchetype := false

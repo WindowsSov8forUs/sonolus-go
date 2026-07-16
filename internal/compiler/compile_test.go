@@ -54,8 +54,17 @@ func TestParseDeclarationsPlay(t *testing.T) {
 		t.Fatalf("unexpected archetypes: %#v", decl.Archetypes)
 	}
 	a := decl.Archetypes[0]
-	if !a.HasInput || len(a.Imports) != 1 || len(a.Exports) != 1 {
+	if !a.HasInput || len(a.Imports) != 8 || len(a.Exports) != 2 {
 		t.Fatalf("unexpected archetype metadata: %#v", a)
+	}
+	wantImports := []resource.EngineArchetypeDataName{"#BEAT", "target.x", "target.y", "path[0].x", "path[0].y", "path[1].x", "path[1].y", "single"}
+	for index, imported := range a.Imports {
+		if imported.Name != wantImports[index] || imported.Index != index {
+			t.Fatalf("import %d = %#v, want name %q index %d", index, imported, wantImports[index], index)
+		}
+	}
+	if !reflect.DeepEqual(a.Exports, []resource.EngineArchetypeDataName{"hit.x", "hit.y"}) {
+		t.Fatalf("exports = %v", a.Exports)
 	}
 	if len(a.Callbacks) != 3 {
 		t.Fatalf("unexpected callbacks: %#v", a.Callbacks)
@@ -90,6 +99,11 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 	if callback.IR == nil || len(callback.IR.Blocks) < 5 {
 		t.Fatalf("callback was not lowered to a loop CFG: %#v", callback.IR)
 	}
+	for _, local := range callback.IR.Locals {
+		if local.Slots == 7 && local.Name == "[7]float64" {
+			t.Fatal("dynamic indexing copied an immutable package array into callback locals")
+		}
+	}
 	foundDraw := false
 	foundCurvedDraw := false
 	foundContainerMemory := false
@@ -106,6 +120,8 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 	foundMemoryArrayRange := false
 	foundLevelMemoryRead := false
 	foundLevelMemoryWrite := false
+	foundLevelBucketRead := false
+	foundLevelBucketWrite := false
 	partialResultZeroes := map[int]bool{}
 	containerSizeZeroed := false
 	rangeLengthSnapshotted := false
@@ -128,6 +144,7 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 				foundUIConfiguration = foundUIConfiguration || place.Storage == "RuntimeUIConfiguration" && place.Offset == 0
 				foundTouchStride = foundTouchStride || place.Storage == "RuntimeTouch" && place.Stride == 15
 				foundLevelMemoryRead = foundLevelMemoryRead || place.Storage == "LevelMemory" && place.Stride == 1
+				foundLevelBucketRead = foundLevelBucketRead || place.Storage == "LevelBucket" && place.Stride == 6
 			}
 		case ir.RuntimeCall:
 			effectfulReturns[value.Function]++
@@ -165,6 +182,9 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 				}
 				if place, ok := store.Place.(ir.MemoryPlace); ok && place.Storage == "LevelMemory" && place.Stride == 1 {
 					foundLevelMemoryWrite = true
+				}
+				if place, ok := store.Place.(ir.MemoryPlace); ok && place.Storage == "LevelBucket" && place.Stride == 6 {
+					foundLevelBucketWrite = true
 				}
 			}
 			if eval, ok := instruction.(ir.Eval); ok {
@@ -217,6 +237,9 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 	if !foundLevelMemoryRead || !foundLevelMemoryWrite {
 		t.Fatalf("LevelMemory facade was not lowered: read=%v write=%v", foundLevelMemoryRead, foundLevelMemoryWrite)
 	}
+	if !foundLevelBucketRead || !foundLevelBucketWrite {
+		t.Fatalf("Bucket window facade was not lowered: read=%v write=%v", foundLevelBucketRead, foundLevelBucketWrite)
+	}
 	if !foundNestedArrayPlace {
 		t.Fatal("dynamic nested array index did not preserve base, length, and stride")
 	}
@@ -229,13 +252,13 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 	if !rangeLengthSnapshotted {
 		t.Fatal("container range length was not snapshotted before the loop")
 	}
-	for _, offset := range []int{0, 1, 3, 4, 5, 7} {
+	for _, offset := range []int{0, 1, 3, 4, 5, 7, 12, 13, 15} {
 		if !transformOffsets[offset] {
 			t.Fatalf("SkinTransform store offsets = %#v; missing %d", transformOffsets, offset)
 		}
 	}
-	if len(transformOffsets) != 6 {
-		t.Fatalf("SkinTransform store offsets = %#v; expected six affine 4x4 offsets", transformOffsets)
+	if len(transformOffsets) != 9 {
+		t.Fatalf("SkinTransform store offsets = %#v; expected nine projective 4x4 offsets", transformOffsets)
 	}
 	if effectfulReturns[resource.RuntimeFunctionPlayLooped] != 2 || effectfulReturns[resource.RuntimeFunctionPlayLoopedScheduled] != 1 || effectfulReturns[resource.RuntimeFunctionSpawnParticleEffect] != 1 {
 		t.Fatalf("each effectful return call must execute once: %#v", effectfulReturns)
@@ -255,11 +278,12 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 	}
 	for _, runtime := range []resource.RuntimeFunction{
 		resource.RuntimeFunctionAbs, resource.RuntimeFunctionFloor, resource.RuntimeFunctionCeil,
-		resource.RuntimeFunctionRound, resource.RuntimeFunctionTrunc, resource.RuntimeFunctionLog,
+		resource.RuntimeFunctionTrunc, resource.RuntimeFunctionLog,
 		resource.RuntimeFunctionSin, resource.RuntimeFunctionCos, resource.RuntimeFunctionTan,
+		resource.RuntimeFunctionSinh, resource.RuntimeFunctionCosh, resource.RuntimeFunctionTanh,
 		resource.RuntimeFunctionArcsin, resource.RuntimeFunctionArccos, resource.RuntimeFunctionArctan,
 		resource.RuntimeFunctionArctan2, resource.RuntimeFunctionMin, resource.RuntimeFunctionMax,
-		resource.RuntimeFunctionPower, resource.RuntimeFunctionMod,
+		resource.RuntimeFunctionPower, resource.RuntimeFunctionRem, resource.RuntimeFunctionSign,
 	} {
 		if len(runtimeCalls[runtime]) == 0 {
 			t.Fatalf("math intrinsic %s was not lowered", runtime)
@@ -402,6 +426,7 @@ func TestArchetypeInheritanceAndReferenceMatching(t *testing.T) {
 		byName[archetype.Name] = archetype
 	}
 	base, derived, grand := byName["Base"], byName["Derived"], byName["GrandDerived"]
+	concrete := byName["ConcreteNote"]
 	if base == nil || derived == nil || derived.Base != base || len(derived.MRO) != 2 {
 		t.Fatalf("unexpected inheritance model: base=%p derived=%+v", base, derived)
 	}
@@ -420,10 +445,27 @@ func TestArchetypeInheritanceAndReferenceMatching(t *testing.T) {
 	if len(grand.Callbacks) != 1 || grand.Callbacks[0].Order != -4 {
 		t.Fatalf("deep callback/order inheritance = %+v", grand.Callbacks)
 	}
+	if byName["AbstractNote"] != nil || concrete == nil || concrete.Base == nil || !concrete.Base.Abstract {
+		t.Fatalf("abstract archetype visibility/inheritance = %+v", declarations.Archetypes)
+	}
+	if len(concrete.Fields) != 2 || len(concrete.Callbacks) != 1 || concrete.Callbacks[0].Name != "preprocess" || concrete.Callbacks[0].Order != -7 || !concrete.HasKey || concrete.Key != 7 {
+		t.Fatalf("abstract archetype layout/callback inheritance = %+v", concrete)
+	}
 	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
 		if _, err := NewCompiler(Options{Optimization: level}, "./testdata/archetypemro").Compile(mode.ModePlay); err != nil {
 			t.Fatalf("level %d: %v", level, err)
 		}
+	}
+}
+
+func TestAbstractArchetypeRejectsRuntimeMetadataAndSpawn(t *testing.T) {
+	_, err := NewCompiler(Options{}, "./testdata/invalidabstractarchetype").Compile(mode.ModePlay)
+	if err == nil || !strings.Contains(err.Error(), "abstract archetype cannot declare a runtime name") || !strings.Contains(err.Error(), "abstract archetype cannot declare hasInput") || !strings.Contains(err.Error(), "abstract archetype cannot declare a key") || !strings.Contains(err.Error(), "archetype key must be a finite number") {
+		t.Fatalf("unexpected abstract metadata error: %v", err)
+	}
+	_, err = NewCompiler(Options{}, "./testdata/invalidabstractspawn").Compile(mode.ModePlay)
+	if err == nil || !strings.Contains(err.Error(), "Spawn argument type") {
+		t.Fatalf("unexpected abstract spawn error: %v", err)
 	}
 }
 
@@ -450,6 +492,93 @@ func TestTypedReplayStreamsRejectLowLevelIDCollision(t *testing.T) {
 	_, err := NewCompiler(Options{}, "./testdata/invalidstreamcollision").Compile(mode.ModePlay)
 	if err == nil || !strings.Contains(err.Error(), "overlaps typed stream IDs 1..1") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTypedLevelGlobalsAllocateAndLowerAcrossModes(t *testing.T) {
+	compiler := NewCompiler(Options{}, "./testdata/levelglobals")
+	artifacts, err := compiler.CompileAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifacts.Play == nil || artifacts.Watch == nil || artifacts.Preview == nil || artifacts.Tutorial == nil {
+		t.Fatal("level global fixture did not compile all modes")
+	}
+
+	playDeclarations, err := parseMode(mode.ModePlay, "./testdata/levelglobals")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(playDeclarations.LevelGlobals) != 4 {
+		t.Fatalf("play level globals = %+v", playDeclarations.LevelGlobals)
+	}
+	byType := map[string]*frontend.LevelGlobalDeclaration{}
+	for _, declaration := range playDeclarations.LevelGlobals {
+		byType[declaration.TypeName] = declaration
+	}
+	input, notes, nested, data := byType["PlayInputMemory"], byType["PlayNoteMemory"], byType["PlayNestedMemory"], byType["PlayComputedData"]
+	if input == nil || input.Offset != 0 || input.Size != 5 || len(input.Fields) != 1 || input.Fields[0].Capacity != 4 {
+		t.Fatalf("input memory layout = %+v", input)
+	}
+	if notes == nil || notes.Offset != 21 || notes.Size != 10 || len(notes.Fields) != 1 || notes.Fields[0].Capacity != 3 || notes.Fields[0].ElementSize != 3 {
+		t.Fatalf("note memory layout = %+v", notes)
+	}
+	if nested == nil || nested.Offset != 5 || nested.Size != 16 || len(nested.Fields) != 1 || len(nested.Fields[0].Fields) != 3 || len(nested.Fields[0].Fields[1].Elements) != 2 || len(nested.Fields[0].Fields[2].Elements) != 2 {
+		t.Fatalf("nested memory layout = %+v", nested)
+	}
+	if data == nil || data.Offset != 0 || data.Size != 32 || len(data.Fields) != 4 || data.Fields[1].Offset != 1 || data.Fields[1].Size != 4 || data.Fields[2].Offset != 5 || data.Fields[2].Size != 9 || data.Fields[3].Offset != 14 || data.Fields[3].Size != 18 {
+		t.Fatalf("computed data layout = %+v", data)
+	}
+
+	archetype := playDeclarations.Archetypes[0]
+	preprocess := inspectFunction(callbackByName(t, archetype.Callbacks, "preprocess"))
+	sequential := inspectFunction(callbackByName(t, archetype.Callbacks, "updateSequential"))
+	parallel := inspectFunction(callbackByName(t, archetype.Callbacks, "updateParallel"))
+	if countMemory(preprocess.stores, "LevelData") == 0 || countMemory(preprocess.stores, "LevelMemory") == 0 {
+		t.Fatalf("preprocess stores = %+v", preprocess.stores)
+	}
+	if countMemory(sequential.stores, "LevelMemory") == 0 {
+		t.Fatalf("updateSequential stores = %+v", sequential.stores)
+	}
+	for _, place := range parallel.loads {
+		if (place.Storage == "LevelData" || place.Storage == "LevelMemory") && place.Write {
+			t.Fatalf("parallel level global load is writable: %+v", place)
+		}
+	}
+
+	for _, currentMode := range []mode.Mode{mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
+		declarations, parseErr := parseMode(currentMode, "./testdata/levelglobals")
+		if parseErr != nil {
+			t.Fatalf("%s: %v", currentMode, parseErr)
+		}
+		if len(declarations.LevelGlobals) != 2 {
+			t.Fatalf("%s level globals = %+v", currentMode, declarations.LevelGlobals)
+		}
+	}
+}
+
+func TestTypedLevelGlobalsRejectInvalidDeclarationsAndWrites(t *testing.T) {
+	_, err := NewCompiler(Options{}, "./testdata/invalidlevelglobals").Compile(mode.ModePlay)
+	for _, message := range []string{
+		"initialize the container with sonolus.NewVarArray(capacity)",
+		"runtime level global fields must have zero initial values",
+		"requires exactly one singleton variable",
+		"promoted level global markers are not allowed",
+		"array elements must use identical container layouts",
+	} {
+		if err == nil || !strings.Contains(err.Error(), message) {
+			t.Fatalf("invalid declarations error %q missing from: %v", message, err)
+		}
+	}
+
+	_, err = NewCompiler(Options{}, "./testdata/invalidlevelglobalpreview").Compile(mode.ModePreview)
+	if err == nil || !strings.Contains(err.Error(), "level memory globals are not available in preview mode") {
+		t.Fatalf("unexpected preview memory error: %v", err)
+	}
+
+	_, err = NewCompiler(Options{}, "./testdata/invalidlevelglobalwrite").Compile(mode.ModePlay)
+	if err == nil || !strings.Contains(err.Error(), "LevelData storage is read-only") {
+		t.Fatalf("unexpected level data write error: %v", err)
 	}
 }
 
@@ -1088,7 +1217,7 @@ func TestParseDeclarationsRejectsWrongModeAPI(t *testing.T) {
 
 func TestParseDeclarationsRejectsWrongCallbackPhase(t *testing.T) {
 	_, err := parseMode(mode.ModePlay, "./testdata/invalidphase")
-	if err == nil || !strings.Contains(err.Error(), "sonolus/play.uiAPI.SetMenu cannot write during updateParallel callback") {
+	if err == nil || !strings.Contains(err.Error(), "sonolus/play.uiAPI.SetMenu cannot write during updateParallel callback") || !strings.Contains(err.Error(), "sonolus.Bucket.SetWindow cannot write during updateParallel callback") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1144,8 +1273,10 @@ func TestParseDeclarationsRejectsInvalidStaticDSL(t *testing.T) {
 	tests := []struct{ pattern, message string }{
 		{"./testdata/invalidintrange", "range is only supported for int values"},
 		{"./testdata/invalidvariadicescape", "variadic helper parameters cannot escape"},
-		{"./testdata/invalidcallablereassign", "initialized callable variables cannot be reassigned"},
-		{"./testdata/invalidcallabledynamic", "cannot be initialized in runtime control flow"},
+		{"./testdata/invalidcallablearray", "package callable arrays are immutable"},
+		{"./testdata/invalidpackagearray", "package static values are immutable in callbacks"},
+		{"./testdata/invalidcurrententityref", "is not a base of current archetype"},
+		{"./testdata/invalidarchetypeid", "is abstract and has no runtime ID"},
 	}
 	for _, test := range tests {
 		t.Run(test.pattern, func(t *testing.T) {
@@ -1157,9 +1288,9 @@ func TestParseDeclarationsRejectsInvalidStaticDSL(t *testing.T) {
 	}
 }
 
-func TestParseDeclarationsRejectsDefer(t *testing.T) {
+func TestParseDeclarationsRejectsRepeatedDefer(t *testing.T) {
 	_, err := parseMode(mode.ModePlay, "./testdata/invaliddefer")
-	if err == nil || !strings.Contains(err.Error(), "unsupported callback statement *ast.DeferStmt") {
+	if err == nil || !strings.Contains(err.Error(), "defer in loops or functions containing goto requires a runtime defer stack") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1178,6 +1309,16 @@ func TestParseDeclarationsConfigurationStaticFields(t *testing.T) {
 	}
 	if len(decl.Configuration.Value.Options) != 3 || decl.Configuration.Value.UI.Scope != "game" {
 		t.Fatalf("unexpected configuration: %#v", decl.Configuration)
+	}
+	ui := decl.Configuration.Value.UI
+	if ui.PrimaryMetric != resource.EngineConfigurationMetricErrorHeatmap || ui.SecondaryMetric != resource.EngineConfigurationMetricGreatGoodMissPercentage || ui.JudgmentErrorStyle != resource.EngineConfigurationJudgmentErrorStyleTriangleRight || ui.JudgmentErrorPlacement != resource.EngineConfigurationJudgmentErrorPlacementLeftRight {
+		t.Fatalf("unexpected configuration UI enums: %#v", ui)
+	}
+	if ui.MenuVisibility.Scale != 0 || ui.MenuVisibility.Alpha != 0 || ui.JudgmentVisibility.Scale != 1 || ui.JudgmentVisibility.Alpha != 1 {
+		t.Fatalf("unexpected explicit/default UI visibility: %#v", ui)
+	}
+	if ui.JudgmentAnimation.Scale.Ease != resource.EngineConfigurationAnimationTweenEaseOutInElastic || ui.JudgmentAnimation.Scale.From != 0 || ui.JudgmentAnimation.Scale.To != 1 || ui.JudgmentAnimation.Scale.Duration != 0.1 || ui.JudgmentAnimation.Alpha.Ease != resource.EngineConfigurationAnimationTweenEaseNone {
+		t.Fatalf("unexpected explicit/default UI animation: %#v", ui)
 	}
 	slider := decl.Configuration.Value.Options[0].(resource.EngineConfigurationSliderOption)
 	if slider.Name != "Speed" || slider.Title != "Speed Option" || slider.Description != "Scroll speed" || !slider.Standard || slider.Scope != "game" || slider.Unit != "#TIMES" {
@@ -1235,6 +1376,7 @@ func TestParseDeclarationsRejectsInvalidConfigurationConstructors(t *testing.T) 
 		{"./testdata/fakeconfigurationconstructor", "must use sonolus.SliderOption"},
 		{"./testdata/missingconfigurationconstructor", "matching sonolus option constructor"},
 		{"./testdata/invalidconfigurationselect", "default must index a non-empty static values list"},
+		{"./testdata/invalidconfigurationselect", "invalid judgment error style \"arrow\""},
 	}
 	for _, test := range tests {
 		t.Run(test.pattern, func(t *testing.T) {
@@ -1333,7 +1475,14 @@ func TestParseDeclarationsRejectsUnknownTags(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid tags to be rejected")
 	}
-	for _, key := range []string{"typo", "unknown", "configuration tags are no longer supported"} {
+	for _, key := range []string{
+		"typo",
+		"unknown",
+		"configuration tags are no longer supported",
+		"default is only valid for single-slot imported fields",
+		`duplicate external field name "value.x"`,
+		`duplicate inherited external field name "point.x"`,
+	} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("error does not mention %q: %v", key, err)
 		}

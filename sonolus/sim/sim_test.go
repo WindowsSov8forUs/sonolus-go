@@ -474,7 +474,7 @@ func TestFiniteVariantsAndContainersMatchAcrossOptimizations(t *testing.T) {
 }
 
 func TestStaticLanguageExtensionsMatchAcrossOptimizations(t *testing.T) {
-	for selector, expected := range []float64{16212, 16241} {
+	for selector, expected := range []float64{16287, 16321} {
 		var reference Result
 		for index, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
 			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
@@ -497,6 +497,193 @@ func TestStaticLanguageExtensionsMatchAcrossOptimizations(t *testing.T) {
 			}
 			if !equalNumber(result.Value, reference.Value) || !equalMemory(result.Memory, reference.Memory) || !reflect.DeepEqual(result.Streams, reference.Streams) || !reflect.DeepEqual(result.Effects, reference.Effects) {
 				t.Fatalf("selector %d optimization %d changed semantics:\nwant %+v\ngot  %+v", selector, optimization, reference, result)
+			}
+		}
+	}
+}
+
+func TestPackageCallableArraysMatchAcrossOptimizations(t *testing.T) {
+	for selector, expected := range []float64{11, 9} {
+		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			if err != nil {
+				t.Fatalf("selector %d optimization %d: %v", selector, optimization, err)
+			}
+			result, err := engine.Run(Request{
+				Mode: ModePlay, Archetype: "PackageCallableArrayNote", Callback: "preprocess",
+				Memory: map[int][]float64{4001: {float64(selector)}},
+			})
+			if err != nil {
+				t.Fatalf("selector %d optimization %d: %v", selector, optimization, err)
+			}
+			if got := result.Memory[4000][0]; got != expected {
+				t.Fatalf("selector %d optimization %d value = %v, want %v", selector, optimization, got, expected)
+			}
+		}
+	}
+}
+
+func TestPackageStaticArraysMatchAcrossOptimizations(t *testing.T) {
+	for selector, expected := range []float64{27, 33, 32} {
+		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			if err != nil {
+				t.Fatalf("selector %d optimization %d: %v", selector, optimization, err)
+			}
+			result, err := engine.Run(Request{
+				Mode: ModePlay, Archetype: "PackageStaticArrayNote", Callback: "preprocess",
+				Memory: map[int][]float64{4001: {float64(selector)}},
+			})
+			if err != nil {
+				t.Fatalf("selector %d optimization %d: %v", selector, optimization, err)
+			}
+			if got := result.Memory[4000][0]; got != expected {
+				t.Fatalf("selector %d optimization %d value = %v, want %v", selector, optimization, got, expected)
+			}
+		}
+	}
+}
+
+func TestRangeOperationsMatchAcrossOptimizations(t *testing.T) {
+	for _, input := range []float64{2, 9} {
+		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			if err != nil {
+				t.Fatalf("input %v optimization %d: %v", input, optimization, err)
+			}
+			result, err := engine.Run(Request{
+				Mode: ModePlay, Archetype: "RangeNote", Callback: "preprocess",
+				Memory: map[int][]float64{4001: {input}},
+			})
+			if err != nil {
+				t.Fatalf("input %v optimization %d: %v", input, optimization, err)
+			}
+			wantContains := 0.0
+			wantClamp := 6.0
+			if input == 2 {
+				wantContains = 1
+				wantClamp = 2
+			}
+			want := []float64{8, 0, wantContains, 1, 2, 0, 0.5, wantClamp, 42, 0.375, 0, 0.15625, 0.103515625, 1, 0, 0.5, 2.5, 1, 0}
+			if got := result.Memory[4000]; !reflect.DeepEqual(got, want) {
+				t.Fatalf("input %v optimization %d range values = %v, want %v", input, optimization, got, want)
+			}
+		}
+	}
+}
+
+func TestProjectiveGeometryMatchesAcrossOptimizations(t *testing.T) {
+	want := []float64{
+		2.0 / 3.0, 5.0 / 6.0,
+		2, 4,
+		7, 4, -3, -2,
+		2, 4, 2, 0, 0, 0, 0, 4,
+		1.0 / 3.0,
+	}
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		result, err := engine.Run(Request{Mode: ModePlay, Archetype: "GeometryNote", Callback: "preprocess"})
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		got := result.Memory[4000]
+		if len(got) != len(want) {
+			t.Fatalf("optimization %d geometry slots = %v, want %v", optimization, got, want)
+		}
+		for index := range want {
+			if math.Abs(got[index]-want[index]) > 1e-9 {
+				t.Fatalf("optimization %d geometry slot %d = %v, want %v", optimization, index, got[index], want[index])
+			}
+		}
+	}
+}
+
+func TestTypedLevelGlobalsMatchAcrossOptimizations(t *testing.T) {
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/levelglobals")
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		preprocessed, err := engine.Run(Request{Mode: ModePlay, Archetype: "GlobalNote", Callback: "preprocess"})
+		if err != nil {
+			t.Fatalf("optimization %d preprocess: %v", optimization, err)
+		}
+		if got := preprocessed.Memory[2001]; len(got) < 5 || got[0] != 2 || got[3] != 3 || got[4] != 4 {
+			t.Fatalf("optimization %d LevelData = %v", optimization, got)
+		}
+		for dynamicIndex := 0; dynamicIndex < 2; dynamicIndex++ {
+			memoryInput := map[int][]float64{}
+			for block, values := range preprocessed.Memory {
+				memoryInput[block] = append([]float64(nil), values...)
+			}
+			memoryInput[1001] = []float64{float64(dynamicIndex)}
+			sequential, runErr := engine.Run(Request{
+				Mode: ModePlay, Archetype: "GlobalNote", Callback: "updateSequential",
+				Memory: memoryInput,
+			})
+			if runErr != nil {
+				t.Fatalf("optimization %d index %d updateSequential: %v", optimization, dynamicIndex, runErr)
+			}
+			memory := sequential.Memory[2000]
+			setOffset := 9 + dynamicIndex*3
+			groupOffset := 15 + dynamicIndex*3
+			if len(memory) < 25 || memory[0] != 1 || memory[1] != 1 || memory[5] != 1 || memory[6] != 1 || memory[setOffset] != 1 || memory[setOffset+1] != 1 || memory[groupOffset] != 1 || memory[groupOffset+1] != 1 || memory[21] != 1 || memory[22] != 1 || memory[23] != 3 || memory[24] != 4 {
+				t.Fatalf("optimization %d index %d LevelMemory = %v", optimization, dynamicIndex, memory)
+			}
+		}
+	}
+}
+
+func TestTouchIteratorMatchesAcrossOptimizations(t *testing.T) {
+	touches := make([]float64, 30)
+	touches[0], touches[13] = 2, 5
+	touches[15], touches[28] = 3, 7
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		result, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "TouchIteratorNote", Callback: "touch",
+			Memory: map[int][]float64{1001: {0, 0, 0, 2}, 1002: touches},
+		})
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		if got := result.Memory[4000][0]; got != 18 {
+			t.Fatalf("optimization %d touch iterator sum = %v, want 18", optimization, got)
+		}
+	}
+}
+
+func TestEntityRefRuntimeKeyMatchesAcrossOptimizations(t *testing.T) {
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		ids := map[string]int{}
+		for id, archetype := range engine.artifacts.Play.Archetypes {
+			ids[string(archetype.Name)] = id
+		}
+		for _, test := range []struct {
+			target string
+			want   float64
+		}{{"EntityKeyTarget", 34}, {"EntityKeyDefault", 10}} {
+			entityInfo := make([]float64, 9)
+			entityInfo[7] = float64(ids[test.target])
+			result, runErr := engine.Run(Request{
+				Mode: ModePlay, Archetype: "EntityKeyNote", Callback: "preprocess",
+				Memory: map[int][]float64{4001: {2}, 4103: entityInfo},
+			})
+			if runErr != nil {
+				t.Fatalf("optimization %d target %s: %v", optimization, test.target, runErr)
+			}
+			if got := result.Memory[4000][0]; got != test.want {
+				t.Fatalf("optimization %d target %s key sum = %v, want %v", optimization, test.target, got, test.want)
 			}
 		}
 	}
@@ -534,6 +721,42 @@ func TestNilPointerDereferenceTerminatesAtEveryCheckLevel(t *testing.T) {
 			}
 		} else if len(terminated.Effects) != 0 {
 			t.Fatalf("checks %d nil dereference effects = %+v", checks, terminated.Effects)
+		}
+	}
+}
+
+func TestNilCallableTerminatesAtEveryCheckLevel(t *testing.T) {
+	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate, RuntimeChecksNotify} {
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../../internal/compiler/testdata/simulator")
+		if err != nil {
+			t.Fatalf("checks %d: %v", checks, err)
+		}
+		valid, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "NilCallableNote", Callback: "preprocess",
+			Memory: map[int][]float64{4001: {0}},
+		})
+		if err != nil {
+			t.Fatalf("checks %d valid callable: %v", checks, err)
+		}
+		if got := valid.Memory[4000][0]; got != 8 {
+			t.Fatalf("checks %d valid callable = %v, want 8", checks, got)
+		}
+		terminated, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "NilCallableNote", Callback: "preprocess",
+			Memory: map[int][]float64{4001: {1}},
+		})
+		if err != nil {
+			t.Fatalf("checks %d nil callable: %v", checks, err)
+		}
+		got := 0.0
+		if values := terminated.Memory[4000]; len(values) != 0 {
+			got = values[0]
+		}
+		if got != 0 {
+			t.Fatalf("checks %d nil callable wrote %v", checks, got)
+		}
+		if checks == RuntimeChecksNotify && len(terminated.Effects) == 0 {
+			t.Fatalf("checks %d nil callable emitted no diagnostic", checks)
 		}
 	}
 }
@@ -612,14 +835,84 @@ func TestIntegerZeroDivisionTerminatesAtEveryCheckLevel(t *testing.T) {
 	}
 }
 
+func TestDynamicRandIntnBoundTerminatesAtEveryCheckLevel(t *testing.T) {
+	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate, RuntimeChecksNotify} {
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../../internal/compiler/testdata/simulator")
+		if err != nil {
+			t.Fatalf("checks %d: %v", checks, err)
+		}
+		result, err := engine.Run(Request{
+			Mode:      ModePlay,
+			Archetype: "RandomBoundNote",
+			Callback:  "preprocess",
+			Memory:    map[int][]float64{4000: {0, 0}},
+		})
+		if err != nil {
+			t.Fatalf("checks %d: %v", checks, err)
+		}
+		if values := result.Memory[4000]; len(values) != 0 && values[0] != 0 {
+			t.Fatalf("checks %d continued after invalid rand.Intn bound: memory=%v", checks, values)
+		}
+		wantEffects := 0
+		if checks == RuntimeChecksNotify {
+			wantEffects = 2
+		}
+		if len(result.Effects) != wantEffects {
+			t.Fatalf("checks %d effects=%+v, want %d", checks, result.Effects, wantEffects)
+		}
+		result, err = engine.Run(Request{
+			Mode:       ModePlay,
+			Archetype:  "RandomBoundNote",
+			Callback:   "preprocess",
+			Memory:     map[int][]float64{4000: {0, 3}},
+			RandomSeed: 7,
+		})
+		if err != nil {
+			t.Fatalf("checks %d positive bound: %v", checks, err)
+		}
+		if got := result.Memory[4000][0]; got < 0 || got >= 3 || got != math.Trunc(got) {
+			t.Fatalf("checks %d rand.Intn(3) = %v", checks, got)
+		}
+		if len(result.Effects) != 1 || result.Effects[0].Function != resource.RuntimeFunctionDebugLog {
+			t.Fatalf("checks %d positive bound effects=%+v", checks, result.Effects)
+		}
+	}
+}
+
+func TestGoMathAndSonolusNumberSemanticsStayDistinct(t *testing.T) {
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		for _, test := range []struct {
+			operation float64
+			want      float64
+		}{{4, -2}, {5, 1}, {6, -2}, {7, -1}} {
+			result, err := engine.Run(Request{
+				Mode:      ModePlay,
+				Archetype: "ArithmeticNote",
+				Callback:  "preprocess",
+				Memory:    map[int][]float64{4001: {1, test.operation}},
+			})
+			if err != nil {
+				t.Fatalf("optimization %d operation %v: %v", optimization, test.operation, err)
+			}
+			if got := result.Memory[4000][0]; got != test.want {
+				t.Fatalf("optimization %d operation %v = %v, want %v", optimization, test.operation, got, test.want)
+			}
+		}
+	}
+}
+
 func TestRuntimeChecksEnabledIsCompileTimeAndUnreachableIsPruned(t *testing.T) {
 	for _, test := range []struct {
 		checks RuntimeChecks
 		want   float64
 	}{
-		{RuntimeChecksNone, 2},
-		{RuntimeChecksTerminate, 1},
-		{RuntimeChecksNotify, 1},
+		{RuntimeChecksNone, 32},
+		{RuntimeChecksTerminate, 31},
+		{RuntimeChecksNotify, 31},
 	} {
 		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: test.checks}, "../../internal/compiler/testdata/simulator")
 		if err != nil {
@@ -635,13 +928,13 @@ func TestRuntimeChecksEnabledIsCompileTimeAndUnreachableIsPruned(t *testing.T) {
 	}
 }
 
-func TestLabeledControlFlowAndFallthroughAcrossOptimizations(t *testing.T) {
+func TestLabeledControlFlowFallthroughAndGotoAcrossOptimizations(t *testing.T) {
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
 		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
 		if err != nil {
 			t.Fatal(err)
 		}
-		for selector, want := range []float64{6, 5, 3} {
+		for selector, want := range []float64{10, 9, 7} {
 			result, err := engine.Run(Request{
 				Mode:      ModePlay,
 				Archetype: "ControlNote",

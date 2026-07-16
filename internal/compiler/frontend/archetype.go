@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	"golang.org/x/tools/go/packages"
 
@@ -32,8 +34,12 @@ func layoutSize(t types.Type) (int, error) {
 		return 2, nil
 	case rootID("Rect"):
 		return 4, nil
-	case rootID("Transform2D"), rootID("JudgmentWindow"), rootID("JudgmentWindows"):
+	case rootID("JudgmentWindow"), rootID("JudgmentWindows"):
 		return 6, nil
+	case rootID("Transform2D"):
+		return 9, nil
+	case rootID("InvertibleTransform2D"):
+		return 18, nil
 	case rootID("Quad"):
 		return 8, nil
 	}
@@ -61,14 +67,96 @@ func layoutSize(t types.Type) (int, error) {
 	return 0, fmt.Errorf("unsupported runtime field type %s", t.String())
 }
 
+func flattenedFieldNames(t types.Type, prefix string) ([]string, error) {
+	if named, ok := namedType(t); ok && (typeID(named) == rootID("Stream") || typeID(named) == rootID("StreamData")) {
+		if named.TypeArgs().Len() != 1 {
+			return nil, fmt.Errorf("stream type requires one type argument")
+		}
+		return flattenedFieldNames(named.TypeArgs().At(0), prefix)
+	}
+	if basic, ok := types.Unalias(t).Underlying().(*types.Basic); ok && basic.Info()&(types.IsBoolean|types.IsInteger|types.IsFloat) != 0 {
+		return []string{prefix}, nil
+	}
+	if strings.HasPrefix(typeID(t), rootID("EntityRef")) {
+		return []string{prefix}, nil
+	}
+	if array, ok := types.Unalias(t).Underlying().(*types.Array); ok {
+		var result []string
+		for index := range int(array.Len()) {
+			names, err := flattenedFieldNames(array.Elem(), fmt.Sprintf("%s[%d]", prefix, index))
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, names...)
+		}
+		return result, nil
+	}
+	if record, ok := types.Unalias(t).Underlying().(*types.Struct); ok {
+		var result []string
+		for index := 0; index < record.NumFields(); index++ {
+			field := record.Field(index)
+			names, err := flattenedFieldNames(field.Type(), prefix+"."+lowerSlotFieldName(field.Name()))
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, names...)
+		}
+		if len(result) == 1 {
+			return []string{prefix}, nil
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("unsupported runtime field type %s", t.String())
+}
+
+func lowerSlotFieldName(name string) string {
+	runes := []rune(name)
+	uppercase := 0
+	for uppercase < len(runes) && unicode.IsUpper(runes[uppercase]) {
+		uppercase++
+	}
+	if uppercase == 0 {
+		return name
+	}
+	if uppercase > 1 && uppercase < len(runes) && unicode.IsLower(runes[uppercase]) {
+		uppercase--
+	}
+	for index := 0; index < uppercase; index++ {
+		runes[index] = unicode.ToLower(runes[index])
+	}
+	return string(runes)
+}
+
 func parseBool(value string) (bool, error) { return strconv.ParseBool(value) }
 
 func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, named *types.Named, m mode.Mode, marker tagValue) (*ArchetypeDeclaration, []error) {
 	var errs []error
-	errs = append(errs, validateTag(named.Obj().Name(), marker, nil, []string{"name", "hasInput"})...)
+	errs = append(errs, validateTag(named.Obj().Name(), marker, []string{"abstract"}, []string{"name", "hasInput", "key"})...)
+	abstract := marker.Flags["abstract"]
 	name := marker.Items["name"]
 	if name == "" {
 		name = named.Obj().Name()
+	}
+	if abstract {
+		if _, exists := marker.Items["name"]; exists {
+			errs = append(errs, fmt.Errorf("%s: abstract archetype cannot declare a runtime name", named.Obj().Name()))
+		}
+		if _, exists := marker.Items["hasInput"]; exists {
+			errs = append(errs, fmt.Errorf("%s: abstract archetype cannot declare hasInput", named.Obj().Name()))
+		}
+		if _, exists := marker.Items["key"]; exists {
+			errs = append(errs, fmt.Errorf("%s: abstract archetype cannot declare a key", named.Obj().Name()))
+		}
+	}
+	key := -1.0
+	keyText, hasKey := marker.Items["key"]
+	if hasKey {
+		parsed, err := strconv.ParseFloat(keyText, 64)
+		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			errs = append(errs, fmt.Errorf("%s: archetype key must be a finite number", named.Obj().Name()))
+		} else {
+			key = parsed
+		}
 	}
 	hasInput := false
 	if raw, ok := marker.Items["hasInput"]; ok {
@@ -79,7 +167,7 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 			hasInput = value
 		}
 	}
-	result := &ArchetypeDeclaration{PackagePath: pkg.PkgPath, TypeName: named.Obj().Name(), Name: name, HasInput: hasInput, Named: named, CallbackOrders: map[string]int{}}
+	result := &ArchetypeDeclaration{PackagePath: pkg.PkgPath, TypeName: named.Obj().Name(), Name: name, Abstract: abstract, Key: key, HasKey: hasKey, HasInput: hasInput, Named: named, CallbackOrders: map[string]int{}}
 	st := named.Underlying().(*types.Struct)
 	offsets := map[string]int{"data": 0, "memory": 0, "shared": 0, "exported": 0}
 	receiverOffset := 0
@@ -188,31 +276,51 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 		if externalName == "" {
 			externalName = field.Name()
 		}
-		if (storage == "imported" || storage == "exported") && external[externalName] {
-			errs = append(errs, fmt.Errorf("%s: duplicate external field name %q", named.Obj().Name(), externalName))
-			continue
-		}
+		externalNames := []string(nil)
 		if storage == "imported" || storage == "exported" {
-			external[externalName] = true
+			externalNames, err = flattenedFieldNames(field.Type(), externalName)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s.%s: %w", named.Obj().Name(), field.Name(), err))
+				continue
+			}
+			duplicate := false
+			for _, name := range externalNames {
+				if external[name] {
+					errs = append(errs, fmt.Errorf("%s: duplicate external field name %q", named.Obj().Name(), name))
+					duplicate = true
+				}
+			}
+			if duplicate {
+				continue
+			}
+			for _, name := range externalNames {
+				external[name] = true
+			}
 		}
 		def := 0.0
 		if raw, ok := tag.Items["default"]; ok {
 			if storage != "imported" {
 				errs = append(errs, fmt.Errorf("%s.%s: default is only valid for imported fields", named.Obj().Name(), field.Name()))
+			} else if size != 1 {
+				errs = append(errs, fmt.Errorf("%s.%s: default is only valid for single-slot imported fields", named.Obj().Name(), field.Name()))
 			} else if value, err := strconv.ParseFloat(raw, 64); err != nil {
 				errs = append(errs, fmt.Errorf("%s.%s: invalid default %q", named.Obj().Name(), field.Name(), raw))
 			} else {
 				def = value
 			}
 		}
-		fd := &FieldDeclaration{GoName: field.Name(), ExternalName: externalName, Storage: storage, Offset: offsets[offsetStorage], Size: size, Default: def, Type: field.Type(), Object: field, ReceiverOffset: receiverOffset, ContainerKind: containerKind, Capacity: capacity, KeySize: keySize, ElementSize: elementSize}
+		fd := &FieldDeclaration{GoName: field.Name(), ExternalName: externalName, ExternalNames: externalNames, Storage: storage, Offset: offsets[offsetStorage], Size: size, Default: def, Type: field.Type(), Object: field, ReceiverOffset: receiverOffset, ContainerKind: containerKind, Capacity: capacity, KeySize: keySize, ElementSize: elementSize}
 		result.Fields = append(result.Fields, fd)
 		receiverOffset += size
 		if storage == "imported" {
-			result.Imports = append(result.Imports, resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(externalName), Index: offsets[offsetStorage], Def: def})
+			for index, name := range externalNames {
+				result.Imports = append(result.Imports, resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(name), Index: offsets[offsetStorage] + index, Def: def})
+			}
 		}
 		if storage == "exported" {
-			result.Exports = append(result.Exports, resource.EngineArchetypeDataName(externalName))
+			for _, name := range externalNames {
+				result.Exports = append(result.Exports, resource.EngineArchetypeDataName(name))
+			}
 		}
 		offsets[offsetStorage] += size
 		capacityLimit := map[string]int{"data": 32, "memory": 64, "shared": 32, "exported": 32}[offsetStorage]
@@ -253,6 +361,9 @@ func resolveArchetypeInheritance(declarations []*ArchetypeDeclaration) []error {
 				return false
 			}
 			declaration.Base = base
+			if !declaration.HasKey && base.HasKey {
+				declaration.Key, declaration.HasKey = base.Key, true
+			}
 			if !inheritArchetypeLayout(declaration, base, &errs) {
 				states[declaration] = 2
 				return false
@@ -287,10 +398,12 @@ func inheritArchetypeLayout(derived, base *ArchetypeDeclaration, errs *[]error) 
 		receiverOffset += field.Size
 		offsets[storage] += field.Size
 		if field.Storage == "imported" || field.Storage == "exported" {
-			if external[field.ExternalName] && !inherited {
-				*errs = append(*errs, fmt.Errorf("%s: duplicate inherited external field name %q", derived.TypeName, field.ExternalName))
+			for _, name := range field.ExternalNames {
+				if external[name] && !inherited {
+					*errs = append(*errs, fmt.Errorf("%s: duplicate inherited external field name %q", derived.TypeName, name))
+				}
+				external[name] = true
 			}
-			external[field.ExternalName] = true
 		}
 	}
 	for _, field := range base.Fields {
@@ -317,10 +430,14 @@ func inheritArchetypeLayout(derived, base *ArchetypeDeclaration, errs *[]error) 
 	derived.Exports = nil
 	for _, field := range fields {
 		if field.Storage == "imported" {
-			derived.Imports = append(derived.Imports, resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(field.ExternalName), Index: field.Offset, Def: field.Default})
+			for index, name := range field.ExternalNames {
+				derived.Imports = append(derived.Imports, resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(name), Index: field.Offset + index, Def: field.Default})
+			}
 		}
 		if field.Storage == "exported" {
-			derived.Exports = append(derived.Exports, resource.EngineArchetypeDataName(field.ExternalName))
+			for _, name := range field.ExternalNames {
+				derived.Exports = append(derived.Exports, resource.EngineArchetypeDataName(name))
+			}
 		}
 	}
 	orders := make(map[string]int, len(base.CallbackOrders)+len(derived.CallbackOrders))
@@ -334,7 +451,7 @@ func inheritArchetypeLayout(derived, base *ArchetypeDeclaration, errs *[]error) 
 	return true
 }
 
-func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, checks RuntimeChecks) []error {
+func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, checks RuntimeChecks) []error {
 	var errs []error
 	methodSet := types.NewMethodSet(types.NewPointer(result.Named))
 	foundOrders := map[string]bool{}
@@ -374,7 +491,7 @@ func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Packag
 		wg.Add(1)
 		go func(i int, job callbackJob) {
 			defer wg.Done()
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, archetypes, m, job.key, checks)
+			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, levelGlobalFields, result, archetypes, m, job.key, checks)
 			callbacks[i] = &CallbackDeclaration{Name: job.key, Order: result.CallbackOrders[job.key], Function: job.fn, Decl: job.decl, IR: bodyIR}
 			jobErrs[i] = lowerErrs
 		}(i, job)

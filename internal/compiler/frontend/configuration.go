@@ -13,11 +13,8 @@ import (
 )
 
 func configurationUI(value source.StaticValue, typ *types.Struct) (resource.EngineConfigurationUI, error) {
-	result := resource.EngineConfigurationUI{}
+	result := defaultConfigurationUI()
 	allowed := func(value string, values ...string) bool {
-		if value == "" {
-			return true
-		}
 		for _, candidate := range values {
 			if value == candidate {
 				return true
@@ -25,51 +22,81 @@ func configurationUI(value source.StaticValue, typ *types.Struct) (resource.Engi
 		}
 		return false
 	}
-	stringValue := func(name string) (string, error) {
+	fieldValue := func(name string) (source.StaticField, bool, error) {
 		for i := 0; i < typ.NumFields(); i++ {
 			if typ.Field(i).Name() == name {
-				field, ok := staticField(value, typ.Field(i))
-				if !ok {
-					return "", fmt.Errorf("missing UI field %s", name)
+				for _, field := range value.Fields {
+					if field.Field == typ.Field(i) || field.Field.Name() == name {
+						return field, true, nil
+					}
 				}
-				text, ok := staticString(field)
-				if !ok {
-					return "", fmt.Errorf("UI field %s must be a static string enum", name)
-				}
-				return text, nil
+				return source.StaticField{}, false, fmt.Errorf("missing UI field %s", name)
 			}
 		}
-		return "", fmt.Errorf("unknown UI field %s", name)
+		return source.StaticField{}, false, fmt.Errorf("unknown UI field %s", name)
 	}
-	numberValue := func(name string) (float64, error) {
-		for i := 0; i < typ.NumFields(); i++ {
-			if typ.Field(i).Name() == name {
-				field, ok := staticField(value, typ.Field(i))
-				if !ok {
-					return 0, fmt.Errorf("missing UI field %s", name)
-				}
-				number, ok := staticNumber(field)
-				if !ok {
-					return 0, fmt.Errorf("UI field %s must be a static number", name)
-				}
-				return number, nil
-			}
+	stringValue := func(name, fallback string) (string, error) {
+		field, _, err := fieldValue(name)
+		if err != nil {
+			return "", err
 		}
-		return 0, fmt.Errorf("unknown UI field %s", name)
+		if !field.Explicit {
+			return fallback, nil
+		}
+		text, ok := staticString(field.Value)
+		if !ok {
+			return "", fmt.Errorf("UI field %s must be a static string enum", name)
+		}
+		return text, nil
 	}
-	visibility := func(name string) (resource.EngineConfigurationVisibility, error) {
+	numberValue := func(name string, fallback float64) (float64, error) {
+		field, _, err := fieldValue(name)
+		if err != nil {
+			return 0, err
+		}
+		if !field.Explicit {
+			return fallback, nil
+		}
+		number, ok := staticNumber(field.Value)
+		if !ok {
+			return 0, fmt.Errorf("UI field %s must be a static number", name)
+		}
+		return number, nil
+	}
+	visibility := func(name string, fallback resource.EngineConfigurationVisibility) (resource.EngineConfigurationVisibility, error) {
 		for i := 0; i < typ.NumFields(); i++ {
 			if typ.Field(i).Name() != name {
 				continue
 			}
-			fieldValue, ok := staticField(value, typ.Field(i))
+			field, ok, err := fieldValue(name)
+			if err != nil {
+				return fallback, err
+			}
+			if !field.Explicit {
+				return fallback, nil
+			}
+			fieldValue := field.Value
 			fieldType, typeOK := types.Unalias(typ.Field(i).Type()).Underlying().(*types.Struct)
 			if !ok || !typeOK {
 				return resource.EngineConfigurationVisibility{}, fmt.Errorf("UI field %s must be static UIVisibility", name)
 			}
-			var out resource.EngineConfigurationVisibility
+			out := fallback
 			for j := 0; j < fieldType.NumFields(); j++ {
-				n, valid := staticNumberField(fieldValue, fieldType.Field(j))
+				field, _, fieldErr := func() (source.StaticField, bool, error) {
+					for _, nested := range fieldValue.Fields {
+						if nested.Field == fieldType.Field(j) || nested.Field.Name() == fieldType.Field(j).Name() {
+							return nested, true, nil
+						}
+					}
+					return source.StaticField{}, false, fmt.Errorf("missing UI field %s.%s", name, fieldType.Field(j).Name())
+				}()
+				if fieldErr != nil {
+					return out, fieldErr
+				}
+				if !field.Explicit {
+					continue
+				}
+				n, valid := staticNumber(field.Value)
 				if !valid {
 					return out, fmt.Errorf("UI field %s.%s must be static", name, fieldType.Field(j).Name())
 				}
@@ -83,37 +110,83 @@ func configurationUI(value source.StaticValue, typ *types.Struct) (resource.Engi
 		}
 		return resource.EngineConfigurationVisibility{}, fmt.Errorf("unknown UI field %s", name)
 	}
-	animation := func(name string) (resource.EngineConfigurationAnimation, error) {
-		var out resource.EngineConfigurationAnimation
+	animation := func(name string, fallback resource.EngineConfigurationAnimation) (resource.EngineConfigurationAnimation, error) {
+		out := fallback
 		for i := 0; i < typ.NumFields(); i++ {
 			if typ.Field(i).Name() != name {
 				continue
 			}
-			animationValue, ok := staticField(value, typ.Field(i))
+			field, ok, err := fieldValue(name)
+			if err != nil {
+				return out, err
+			}
+			if !field.Explicit {
+				return out, nil
+			}
+			animationValue := field.Value
 			animationType, typeOK := types.Unalias(typ.Field(i).Type()).Underlying().(*types.Struct)
 			if !ok || !typeOK {
 				return out, fmt.Errorf("UI field %s must be static UIAnimation", name)
 			}
 			for j := 0; j < animationType.NumFields(); j++ {
 				tweenField := animationType.Field(j)
-				tweenValue, found := staticField(animationValue, tweenField)
-				tweenType, tweenOK := types.Unalias(tweenField.Type()).Underlying().(*types.Struct)
-				if !found || !tweenOK {
+				tweenStatic, found := func() (source.StaticField, bool) {
+					for _, nested := range animationValue.Fields {
+						if nested.Field == tweenField || nested.Field.Name() == tweenField.Name() {
+							return nested, true
+						}
+					}
+					return source.StaticField{}, false
+				}()
+				if !found {
 					return out, fmt.Errorf("UI field %s.%s must be static", name, tweenField.Name())
 				}
-				var tween resource.EngineConfigurationAnimationTween
+				if !tweenStatic.Explicit {
+					continue
+				}
+				tweenValue := tweenStatic.Value
+				tweenType, tweenOK := types.Unalias(tweenField.Type()).Underlying().(*types.Struct)
+				if !tweenOK {
+					return out, fmt.Errorf("UI field %s.%s must be static", name, tweenField.Name())
+				}
+				tween := out.Scale
+				if tweenField.Name() == "Alpha" {
+					tween = out.Alpha
+				}
 				for k := 0; k < tweenType.NumFields(); k++ {
 					f := tweenType.Field(k)
-					v, exists := staticField(tweenValue, f)
+					staticField, exists := func() (source.StaticField, bool) {
+						for _, nested := range tweenValue.Fields {
+							if nested.Field == f || nested.Field.Name() == f.Name() {
+								return nested, true
+							}
+						}
+						return source.StaticField{}, false
+					}()
 					if !exists {
 						return out, fmt.Errorf("UI field %s.%s.%s must be static", name, tweenField.Name(), f.Name())
 					}
+					if !staticField.Explicit {
+						continue
+					}
+					v := staticField.Value
 					if f.Name() == "Ease" {
 						text, valid := staticString(v)
 						if !valid {
 							return out, fmt.Errorf("UI ease must be static")
 						}
-						if !allowed(text, "none", "inSine", "outSine", "inOutSine") {
+						if !allowed(text,
+							"linear", "none",
+							"inSine", "outSine", "inOutSine", "outInSine",
+							"inQuad", "outQuad", "inOutQuad", "outInQuad",
+							"inCubic", "outCubic", "inOutCubic", "outInCubic",
+							"inQuart", "outQuart", "inOutQuart", "outInQuart",
+							"inQuint", "outQuint", "inOutQuint", "outInQuint",
+							"inExpo", "outExpo", "inOutExpo", "outInExpo",
+							"inCirc", "outCirc", "inOutCirc", "outInCirc",
+							"inBack", "outBack", "inOutBack", "outInBack",
+							"inElastic", "outElastic", "inOutElastic", "outInElastic",
+						) {
 							return out, fmt.Errorf("invalid UI ease %q", text)
 						}
 						tween.Ease = resource.EngineConfigurationAnimationTweenEase(text)
@@ -143,60 +216,86 @@ func configurationUI(value source.StaticValue, typ *types.Struct) (resource.Engi
 		return out, fmt.Errorf("unknown UI field %s", name)
 	}
 	var err error
-	if result.Scope, err = stringValue("Scope"); err != nil {
+	if result.Scope, err = stringValue("Scope", result.Scope); err != nil {
 		return result, err
 	}
-	primary, err := stringValue("PrimaryMetric")
+	primary, err := stringValue("PrimaryMetric", string(result.PrimaryMetric))
 	if err != nil {
 		return result, err
 	}
 	result.PrimaryMetric = resource.EngineConfigurationMetric(primary)
-	if !allowed(primary, "arcade", "accuracy", "life") {
+	if !allowed(primary, "arcade", "arcadePercentage", "accuracy", "accuracyPercentage", "life", "perfect", "perfectPercentage", "greatGoodMiss", "greatGoodMissPercentage", "miss", "missPercentage", "errorHeatmap") {
 		return result, fmt.Errorf("invalid primary metric %q", primary)
 	}
-	secondary, err := stringValue("SecondaryMetric")
+	secondary, err := stringValue("SecondaryMetric", string(result.SecondaryMetric))
 	if err != nil {
 		return result, err
 	}
 	result.SecondaryMetric = resource.EngineConfigurationMetric(secondary)
-	if !allowed(secondary, "arcade", "accuracy", "life") {
+	if !allowed(secondary, "arcade", "arcadePercentage", "accuracy", "accuracyPercentage", "life", "perfect", "perfectPercentage", "greatGoodMiss", "greatGoodMissPercentage", "miss", "missPercentage", "errorHeatmap") {
 		return result, fmt.Errorf("invalid secondary metric %q", secondary)
 	}
 	for _, item := range []struct {
 		name   string
 		target *resource.EngineConfigurationVisibility
 	}{{"MenuVisibility", &result.MenuVisibility}, {"JudgmentVisibility", &result.JudgmentVisibility}, {"ComboVisibility", &result.ComboVisibility}, {"PrimaryMetricVisibility", &result.PrimaryMetricVisibility}, {"SecondaryMetricVisibility", &result.SecondaryMetricVisibility}, {"ProgressVisibility", &result.ProgressVisibility}, {"TutorialNavigationVisibility", &result.TutorialNavigationVisibility}, {"TutorialInstructionVisibility", &result.TutorialInstructionVisibility}} {
-		*item.target, err = visibility(item.name)
+		*item.target, err = visibility(item.name, *item.target)
 		if err != nil {
 			return result, err
 		}
 	}
-	result.JudgmentAnimation, err = animation("JudgmentAnimation")
+	result.JudgmentAnimation, err = animation("JudgmentAnimation", result.JudgmentAnimation)
 	if err != nil {
 		return result, err
 	}
-	result.ComboAnimation, err = animation("ComboAnimation")
+	result.ComboAnimation, err = animation("ComboAnimation", result.ComboAnimation)
 	if err != nil {
 		return result, err
 	}
-	style, err := stringValue("JudgmentErrorStyle")
+	style, err := stringValue("JudgmentErrorStyle", string(result.JudgmentErrorStyle))
 	if err != nil {
 		return result, err
 	}
 	result.JudgmentErrorStyle = resource.EngineConfigurationJudgmentErrorStyle(style)
-	if !allowed(style, "none", "plus", "minus", "arrow") {
+	if !allowed(style, "none", "late", "early", "plus", "minus", "arrowUp", "arrowDown", "arrowLeft", "arrowRight", "triangleUp", "triangleDown", "triangleLeft", "triangleRight") {
 		return result, fmt.Errorf("invalid judgment error style %q", style)
 	}
-	placement, err := stringValue("JudgmentErrorPlacement")
+	placement, err := stringValue("JudgmentErrorPlacement", string(result.JudgmentErrorPlacement))
 	if err != nil {
 		return result, err
 	}
 	result.JudgmentErrorPlacement = resource.EngineConfigurationJudgmentErrorPlacement(placement)
-	if !allowed(placement, "top", "bottom") {
+	if !allowed(placement, "left", "right", "leftRight", "top", "bottom", "topBottom", "center") {
 		return result, fmt.Errorf("invalid judgment error placement %q", placement)
 	}
-	result.JudgmentErrorMin, err = numberValue("JudgmentErrorMin")
+	result.JudgmentErrorMin, err = numberValue("JudgmentErrorMin", result.JudgmentErrorMin)
 	return result, err
+}
+
+func defaultConfigurationUI() resource.EngineConfigurationUI {
+	visible := resource.EngineConfigurationVisibility{Scale: 1, Alpha: 1}
+	return resource.EngineConfigurationUI{
+		PrimaryMetric:                 resource.EngineConfigurationMetricArcade,
+		SecondaryMetric:               resource.EngineConfigurationMetricLife,
+		MenuVisibility:                visible,
+		JudgmentVisibility:            visible,
+		ComboVisibility:               visible,
+		PrimaryMetricVisibility:       visible,
+		SecondaryMetricVisibility:     visible,
+		ProgressVisibility:            visible,
+		TutorialNavigationVisibility:  visible,
+		TutorialInstructionVisibility: visible,
+		JudgmentAnimation: resource.EngineConfigurationAnimation{
+			Scale: resource.EngineConfigurationAnimationTween{From: 0, To: 1, Duration: 0.1, Ease: resource.EngineConfigurationAnimationTweenEaseOutCubic},
+			Alpha: resource.EngineConfigurationAnimationTween{From: 1, To: 0, Duration: 0.3, Ease: resource.EngineConfigurationAnimationTweenEaseNone},
+		},
+		ComboAnimation: resource.EngineConfigurationAnimation{
+			Scale: resource.EngineConfigurationAnimationTween{From: 1.2, To: 1, Duration: 0.2, Ease: resource.EngineConfigurationAnimationTweenEaseInCubic},
+			Alpha: resource.EngineConfigurationAnimationTween{From: 1, To: 1, Ease: resource.EngineConfigurationAnimationTweenEaseNone},
+		},
+		JudgmentErrorStyle:     resource.EngineConfigurationJudgmentErrorStyleLate,
+		JudgmentErrorPlacement: resource.EngineConfigurationJudgmentErrorPlacementTop,
+	}
 }
 
 func staticNumberField(value source.StaticValue, field *types.Var) (float64, bool) {
@@ -313,7 +412,7 @@ func optionBase(field *types.Var, value source.StaticValue) (resource.EngineConf
 }
 
 func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source.ASTTracer) (*resource.EngineConfiguration, map[*types.Var]int, map[*types.Var]float64, []error) {
-	cfg := &resource.EngineConfiguration{Options: []resource.EngineConfigurationOption{}}
+	cfg := &resource.EngineConfiguration{Options: []resource.EngineConfigurationOption{}, UI: defaultConfigurationUI()}
 	optionIDs := map[*types.Var]int{}
 	defaults := map[*types.Var]float64{}
 	var errs []error

@@ -8,6 +8,10 @@ type Note struct {
 
 func helper() {}
 
-func (*Note) Preprocess() { defer helper() }
+func (*Note) Preprocess() {
+	for range 2 {
+		defer helper()
+	}
+}
 
 func main() {}

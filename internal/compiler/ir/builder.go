@@ -58,6 +58,26 @@ func (b *Builder) NewLocal(name string, typ Type) Value {
 	return Value{Type: typ, Slots: slots}
 }
 
+func (b *Builder) ReuseLocal(id int, name string, typ Type) Value {
+	if err := validateType(typ); err != nil {
+		b.fail("invalid reused local %q: %v", name, err)
+		return Value{Type: typ}
+	}
+	if id < 0 || id >= len(b.function.Locals) {
+		b.fail("reused local %q has invalid ID %d", name, id)
+		return Value{Type: typ}
+	}
+	if !sameTypeLayout(b.function.Locals[id], typ) {
+		b.fail("reused local %q has type %#v; expected %#v", name, b.function.Locals[id], typ)
+		return Value{Type: typ}
+	}
+	slots := make([]Expr, typ.Slots)
+	for offset := range slots {
+		slots[offset] = Load{Place: LocalPlace{ID: id, Name: name, Offset: offset}}
+	}
+	return Value{Type: typ, Slots: slots}
+}
+
 func (b *Builder) IndexedLocal(base LocalPlace, index Expr, length, stride, offset int) (IndexedLocalPlace, error) {
 	place := IndexedLocalPlace{
 		ID: base.ID, Name: base.Name, Index: index, Base: base.Offset,
