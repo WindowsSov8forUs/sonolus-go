@@ -3,18 +3,26 @@
 package main
 
 import (
+	"math"
+
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
-	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/native"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/watch"
 )
 
 type WatchReplayStreams struct {
 	sonolus.StreamResource
-	Reserved   [100]sonolus.Stream[float64]
-	EmptyLanes [7]sonolus.Stream[float64]
+	Reserved   [99999]sonolus.Stream[float64]
+	EmptyLanes sonolus.Stream[[7]bool]
 }
 
 var Replay = WatchReplayStreams{}
+
+type WatchLayoutData struct {
+	sonolus.LevelDataResource
+	Transform sonolus.Transform2D
+}
+
+var Layout = WatchLayoutData{}
 
 type WatchSkin struct {
 	sonolus.SkinResource
@@ -123,84 +131,253 @@ type WatchStage struct {
 func (*WatchStage) SpawnTime() float64   { return -1e8 }
 func (*WatchStage) DespawnTime() float64 { return 1e8 }
 func (*WatchStage) Preprocess() {
+	Layout.Transform = stageTransform()
+	watch.SkinTransform.Set(Layout.Transform)
 	watch.Score.SetBase(watch.BaseScore{Perfect: 1, Great: 0.5, Good: 0.25})
-	watch.UI.SetMenu(menuLayout())
-	watch.UI.SetJudgment(judgmentLayout())
-	watch.UI.SetComboValue(comboValueLayout())
-	watch.UI.SetComboText(comboTextLayout())
-	watch.UI.SetPrimaryMetricBar(primaryMetricBarLayout())
-	watch.UI.SetPrimaryMetricValue(primaryMetricValueLayout())
-	watch.UI.SetSecondaryMetricBar(secondaryMetricBarLayout())
-	watch.UI.SetSecondaryMetricValue(secondaryMetricValueLayout())
-	watch.UI.SetProgress(progressLayout())
+	window := noteBucketWindowMilliseconds()
+	Buckets.Tap.SetWindow(window)
+	Buckets.HoldHead.SetWindow(window)
+	Buckets.HoldEnd.SetWindow(window)
+	Buckets.HoldTick.SetWindow(window)
+	Buckets.Flick.SetWindow(window)
+	Buckets.DirectionalFlick.SetWindow(window)
+	configureWatchNoteArchetype[WatchTapNote]()
+	configureWatchNoteArchetype[WatchAccentTapNote]()
+	configureWatchNoteArchetype[WatchFlickNote]()
+	configureWatchNoteArchetype[WatchDirectionalFlickNote]()
+	configureWatchNoteArchetype[WatchHoldHeadNote]()
+	configureWatchNoteArchetype[WatchHoldAnchorNote]()
+	configureWatchNoteArchetype[WatchHoldEndNote]()
+	configureWatchNoteArchetype[WatchHoldFlickNote]()
+	configureWatchNoteArchetype[WatchHoldTickNote]()
+	screen := watch.Screen.Rect()
+	menuConfig := watch.UI.MenuConfiguration()
+	comboConfig := watch.UI.ComboConfiguration()
+	primaryConfig := watch.UI.PrimaryMetricConfiguration()
+	secondaryConfig := watch.UI.SecondaryMetricConfiguration()
+	watch.UI.SetMenu(menuLayout(screen, menuConfig))
+	watch.UI.SetJudgment(judgmentLayout(watch.UI.JudgmentConfiguration()))
+	watch.UI.SetComboValue(comboValueLayout(screen, comboConfig))
+	watch.UI.SetComboText(comboTextLayout(screen, comboConfig))
+	watch.UI.SetPrimaryMetricBar(primaryMetricBarLayout(screen, primaryConfig))
+	watch.UI.SetPrimaryMetricValue(primaryMetricValueLayout(screen, primaryConfig))
+	watch.UI.SetSecondaryMetricBar(secondaryMetricBarLayout(screen, secondaryConfig, menuConfig))
+	watch.UI.SetSecondaryMetricValue(secondaryMetricValueLayout(screen, secondaryConfig, menuConfig, primaryConfig))
+	watch.UI.SetProgress(progressLayout(screen, watch.UI.ProgressConfiguration()))
+	if watch.Replay.IsReplay() {
+		for effectTime, lanes := range Replay.EmptyLanes.ItemsFrom(-10) {
+			if Config.SFX {
+				watch.Audio.PlayScheduled(Effects.Stage, effectTime, 0.02)
+			}
+			for lane, active := range lanes {
+				if active {
+					watch.Spawn(WatchScheduledLaneEffect{Time: effectTime, Lane: float64(lane - 3)})
+				}
+			}
+		}
+	}
+}
+
+func configureWatchNoteArchetype[T any]() {
+	archetype := watch.ArchetypeID[T]()
+	missLife := -100.0
+	if watch.ArchetypeKey[T]() == 5 {
+		missLife = -20
+	}
+	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
+	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: missLife})
 }
 func (*WatchStage) UpdateParallel() {
 	drawWatchStage()
-}
-
-func (*WatchStage) UpdateSequential() {
-	if !watch.Replay.IsReplay() || watch.Time.Skip() {
-		return
-	}
-	now := watch.Time.Now()
-	previous := watch.Time.Previous()
-	for lane := -3; lane <= 3; lane++ {
-		stream := Replay.EmptyLanes[lane+3]
-		key := stream.PreviousKey(now)
-		if !stream.Has(key) || key <= previous || key > now || stream.Get(key) == 0 {
-			continue
-		}
-		watch.Spawn(WatchScheduledLaneEffect{Time: key, Lane: float64(lane)})
-	}
 }
 
 type WatchScheduledLaneEffect struct {
 	watch.Archetype `archetype:"name=ScheduledLaneEffect"`
 	Time            float64 `archetype:"memory"`
 	Lane            float64 `archetype:"memory"`
-	Played          bool    `archetype:"memory"`
 }
 
 func (n *WatchScheduledLaneEffect) SpawnTime() float64 {
-	return native.TimeToScaledTime(n.Time)
+	return watch.Time.TimeToScaledTime(n.Time)
 }
 
 func (n *WatchScheduledLaneEffect) DespawnTime() float64 {
-	return native.TimeToScaledTime(n.Time) + 1
+	return watch.Time.TimeToScaledTime(n.Time) + 1
 }
 
 func (n *WatchScheduledLaneEffect) UpdateParallel() {
-	if n.Played || watch.Time.Now() < n.Time {
+	if watch.Time.Previous() >= n.Time || n.Time > watch.Time.Now() {
 		return
-	}
-	n.Played = true
-	if Config.SFX {
-		watch.Audio.Play(Effects.Stage, 0.02)
 	}
 	spawnWatchLaneEffect(n.Lane)
 }
 
 func drawWatchStage() {
-	Skin.StageMiddle.Draw(stageRect().ToQuad(), 5, 1)
 	for lane := -3; lane <= 3; lane++ {
-		Skin.Lane.Draw(laneRect(float64(lane)).ToQuad(), 10, 0.8)
-		Skin.Slot.Draw(noteRect(float64(lane), judgmentLineY).Scale(0.65).ToQuad(), 15, 0.7)
+		Skin.Lane.Draw(laneRect(float64(lane)).ToQuad(), layerLane, 1)
 	}
-	Skin.LeftBorder.Draw(leftBorderRect().ToQuad(), 12, 1)
-	Skin.RightBorder.Draw(rightBorderRect().ToQuad(), 12, 1)
-	Skin.JudgmentLine.Draw(judgmentRect().ToQuad(), 20, 1)
-	Skin.Cover.Draw(stageCoverRect().ToQuad(), 40, 1)
+	Skin.LeftBorder.Draw(leftBorderRect().ToQuad(), layerLane, 1)
+	Skin.RightBorder.Draw(rightBorderRect().ToQuad(), layerLane, 1)
+	Skin.JudgmentLine.Draw(judgmentRect().ToQuad(), layerJudgmentLine, 1)
+}
+
+type WatchBasicNote struct {
+	watch.Archetype  `archetype:"abstract"`
+	Beat             float64                           `archetype:"imported,name=#BEAT"`
+	Lane             float64                           `archetype:"imported,name=lane"`
+	Direction        float64                           `archetype:"imported,name=direction"`
+	Previous         sonolus.EntityRef[WatchBasicNote] `archetype:"imported,name=prev"`
+	Next             sonolus.EntityRef[WatchBasicNote] `archetype:"imported,name=next"`
+	Judgment         sonolus.Judgment                  `archetype:"imported,name=#JUDGMENT"`
+	Accuracy         float64                           `archetype:"imported,name=#ACCURACY"`
+	ReplayEndTime    float64                           `archetype:"imported,name=end_time"`
+	TargetTime       float64                           `archetype:"data"`
+	TargetScaledTime float64                           `archetype:"data"`
+	EndTime          float64                           `archetype:"data"`
+	EndScaledTime    float64                           `archetype:"data"`
+	ReplayEndScaled  float64                           `archetype:"data"`
+	HoldLane         float64                           `archetype:"shared"`
+}
+
+func (n *WatchBasicNote) SpawnTime() float64 { return n.TargetScaledTime - noteTravelTime() }
+func (n *WatchBasicNote) DespawnTime() float64 {
+	if watch.Replay.IsReplay() {
+		return n.ReplayEndScaled
+	}
+	return n.TargetScaledTime
+}
+
+func (n *WatchBasicNote) holdHeadRef() sonolus.EntityRef[WatchHoldHeadNote] {
+	return watchHoldHeadRef(watch.CurrentEntityRef[WatchBasicNote]())
+}
+
+func watchHoldHeadRef(ref sonolus.EntityRef[WatchBasicNote]) sonolus.EntityRef[WatchHoldHeadNote] {
+	for previous := ref.Get().Previous; previous.Index > 0; previous = previous.Get().Previous {
+		ref = previous
+	}
+	return sonolus.EntityRefAs[WatchHoldHeadNote](ref)
+}
+
+func (n *WatchBasicNote) Preprocess() {
+	if Config.Mirror {
+		n.Lane = -n.Lane
+		n.Direction = -n.Direction
+	}
+	n.TargetTime = watch.Time.BeatToTime(n.Beat)
+	n.TargetScaledTime = watch.Time.TimeToScaledTime(n.TargetTime)
+	n.EndTime = watch.Time.BeatToTime(n.endBeat())
+	n.EndScaledTime = watch.Time.TimeToScaledTime(n.EndTime)
+	n.ReplayEndScaled = watch.Time.TimeToScaledTime(n.ReplayEndTime)
+	key := int(watch.Entity.Key())
+	if key == 6 {
+		return
+	}
+	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
+	scheduleWatchSFX(n.Judgment, n.replayEventTime(), key == 2 || key == 3)
+	result := watch.Entity.Result()
+	result.TargetTime = n.TargetTime
+	switch key {
+	case 1:
+		result.Bucket = Buckets.Tap
+	case 2:
+		result.Bucket = Buckets.Flick
+	case 3:
+		result.Bucket = Buckets.DirectionalFlick
+	case 4:
+		result.Bucket = Buckets.HoldHead
+	case 5:
+		result.Bucket = Buckets.HoldTick
+	case 7:
+		result.Bucket = Buckets.HoldEnd
+	}
+	result.BucketValue = n.Accuracy * 1000
+	watch.Entity.SetResult(result)
+	if key == 4 {
+		scheduleWatchHoldSFX(watch.CurrentEntityRef[WatchBasicNote]().Index, n.TargetTime, n.EndTime)
+		watch.Spawn(WatchHoldManager{Head: sonolus.EntityRefAs[WatchHoldHeadNote](watch.CurrentEntityRef[WatchBasicNote]())})
+	}
+}
+
+func (n *WatchBasicNote) Terminate() {
+	key := int(watch.Entity.Key())
+	if key == 6 || watch.Time.Skip() {
+		return
+	}
+	if !Config.NoteEffects || n.Judgment == sonolus.JudgmentMiss {
+		return
+	}
+	switch key {
+	case 1:
+		spawnWatchNoteParticles(n.Lane, Particles.TapLinear, Particles.Tap)
+	case 2:
+		spawnWatchNoteParticles(n.Lane, Particles.FlickLinear, Particles.Flick)
+	case 3:
+		if displayDirection(n.Direction) > 0 {
+			spawnWatchNoteParticles(n.Lane, Particles.RightFlickLinear, Particles.RightFlick)
+		} else {
+			spawnWatchNoteParticles(n.Lane, Particles.LeftFlickLinear, Particles.LeftFlick)
+		}
+	case 4:
+		spawnWatchNoteParticles(n.Lane, Particles.HoldLinear, Particles.Hold)
+	case 5:
+		spawnWatchNoteParticles(n.Lane, Particles.HoldLinear, Particles.Hold)
+	case 7:
+		spawnWatchNoteParticles(n.Lane, Particles.HoldLinear, Particles.Hold)
+	}
+	spawnWatchLaneEffect(n.Lane)
+}
+
+func (n *WatchBasicNote) replayEventTime() float64 {
+	if watch.Replay.IsReplay() {
+		return n.ReplayEndTime
+	}
+	return n.TargetTime
+}
+
+func (n *WatchBasicNote) UpdateParallel() {
+	y := noteY(n.TargetScaledTime, watch.Time.Scaled())
+	switch int(watch.Entity.Key()) {
+	case 1:
+		drawNoteBody(Skin.Note, n.Lane, y)
+	case 2:
+		drawFlickNote(Skin.Flick, Skin.FlickArrow, n.Lane, y, watch.Time.Now())
+	case 3:
+		if displayDirection(n.Direction) > 0 {
+			drawDirectionalFlickNote(Skin.RightFlick, Skin.RightFlickArrow, n.Lane, y, n.Direction, watch.Time.Now())
+		} else {
+			drawDirectionalFlickNote(Skin.LeftFlick, Skin.LeftFlickArrow, n.Lane, y, n.Direction, watch.Time.Now())
+		}
+	case 4:
+		now := watch.Time.Scaled()
+		lane := n.Lane
+		active := !watch.Replay.IsReplay()
+		streamID := watch.CurrentEntityRef[WatchBasicNote]().Index
+		stream := Replay.Reserved[int(streamID)]
+		key := stream.PreviousKey(watch.Time.Now())
+		if watch.Replay.IsReplay() {
+			active = stream.Has(key) && stream.Get(key) != 0
+		}
+		if active && now >= n.TargetScaledTime {
+			lane = n.HoldLane
+		}
+		if y < judgmentLineY {
+			y = judgmentLineY
+		}
+		if active && now >= n.TargetScaledTime {
+			Skin.HoldHead.Draw(noteRect(lane, y).ToQuad(), layerZ(layerNoteHead, lane, 0), 1)
+		} else {
+			drawNoteBody(Skin.HoldHead, lane, y)
+		}
+	case 5:
+		drawNoteBody(Skin.HoldTick, n.Lane, y)
+	case 7:
+		drawNoteBody(Skin.HoldTail, n.Lane, y)
+	}
 }
 
 type WatchTapNote struct {
-	watch.Archetype  `archetype:"name=TapNote"`
-	Beat             float64          `archetype:"imported,name=#BEAT"`
-	Lane             float64          `archetype:"imported,name=lane"`
-	Judgment         sonolus.Judgment `archetype:"imported,name=#JUDGMENT"`
-	Accuracy         float64          `archetype:"imported,name=#ACCURACY"`
-	TargetTime       float64          `archetype:"data"`
-	TargetScaledTime float64          `archetype:"data"`
-	Played           bool             `archetype:"memory"`
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=TapNote,key=1"`
 }
 
 type WatchAccentTapNote struct {
@@ -208,242 +385,71 @@ type WatchAccentTapNote struct {
 	watch.Archetype `archetype:"name=AccentTapNote"`
 }
 
-func (n *WatchTapNote) Preprocess() {
-	n.TargetTime = watch.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
-	scheduleWatchSFX(n.Judgment, n.TargetTime+n.Accuracy, false)
-	archetype := int(watch.Entity.Info().Archetype)
-	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
-	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: -100})
-	result := watch.Entity.Result()
-	result.TargetTime = n.TargetTime
-	result.Bucket = Buckets.Tap
-	result.BucketValue = n.Accuracy * 1000
-	watch.Entity.SetResult(result)
-}
-
-func (n *WatchTapNote) SpawnTime() float64   { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchTapNote) DespawnTime() float64 { return n.TargetScaledTime + 0.5 }
-func (n *WatchTapNote) UpdateSequential() {
-	if watch.Time.Skip() {
-		n.Played = true
-		return
-	}
-	if !n.Played && watch.Time.Now() >= n.TargetTime+n.Accuracy {
-		n.Played = true
-		if Config.NoteEffects && n.Judgment != sonolus.JudgmentMiss {
-			spawnWatchNoteParticles(n.Lane, 1.5, 0.3, Particles.TapLinear, Particles.Tap)
-			spawnWatchLaneEffect(n.Lane)
-		}
-	}
-}
-func (n *WatchTapNote) UpdateParallel() {
-	Skin.Note.Draw(noteRect(n.Lane, noteY(n.TargetScaledTime, watch.Time.Scaled())).ToQuad(), 30, 1)
-}
-
 type WatchFlickNote struct {
-	watch.Archetype  `archetype:"name=FlickNote"`
-	Beat             float64          `archetype:"imported,name=#BEAT"`
-	Lane             float64          `archetype:"imported,name=lane"`
-	Judgment         sonolus.Judgment `archetype:"imported,name=#JUDGMENT"`
-	Accuracy         float64          `archetype:"imported,name=#ACCURACY"`
-	TargetTime       float64          `archetype:"data"`
-	TargetScaledTime float64          `archetype:"data"`
-	Played           bool             `archetype:"memory"`
-}
-
-func (n *WatchFlickNote) Preprocess() {
-	n.TargetTime = watch.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
-	scheduleWatchSFX(n.Judgment, n.TargetTime+n.Accuracy, true)
-	archetype := int(watch.Entity.Info().Archetype)
-	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
-	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: -100})
-	result := watch.Entity.Result()
-	result.TargetTime = n.TargetTime
-	result.Bucket = Buckets.Flick
-	result.BucketValue = n.Accuracy * 1000
-	watch.Entity.SetResult(result)
-}
-
-func (n *WatchFlickNote) SpawnTime() float64   { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchFlickNote) DespawnTime() float64 { return n.TargetScaledTime + 0.5 }
-
-func (n *WatchFlickNote) UpdateSequential() {
-	if watch.Time.Skip() {
-		n.Played = true
-		return
-	}
-	if !n.Played && watch.Time.Now() >= n.TargetTime+n.Accuracy {
-		n.Played = true
-		if Config.NoteEffects && n.Judgment != sonolus.JudgmentMiss {
-			spawnWatchNoteParticles(n.Lane, 1.5, 0.3, Particles.FlickLinear, Particles.Flick)
-			spawnWatchLaneEffect(n.Lane)
-		}
-	}
-}
-
-func (n *WatchFlickNote) UpdateParallel() {
-	y := noteY(n.TargetScaledTime, watch.Time.Scaled())
-	Skin.Flick.Draw(noteRect(n.Lane, y).ToQuad(), 30, 1)
-	Skin.FlickArrow.Draw(noteRect(n.Lane, y).Scale(0.7).ToQuad(), 31, 1)
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=FlickNote,key=2"`
 }
 
 type WatchDirectionalFlickNote struct {
-	watch.Archetype  `archetype:"name=DirectionalFlickNote"`
-	Beat             float64          `archetype:"imported,name=#BEAT"`
-	Lane             float64          `archetype:"imported,name=lane"`
-	Direction        float64          `archetype:"imported,name=direction"`
-	Judgment         sonolus.Judgment `archetype:"imported,name=#JUDGMENT"`
-	Accuracy         float64          `archetype:"imported,name=#ACCURACY"`
-	TargetTime       float64          `archetype:"data"`
-	TargetScaledTime float64          `archetype:"data"`
-	Played           bool             `archetype:"memory"`
-}
-
-func (n *WatchDirectionalFlickNote) Preprocess() {
-	n.TargetTime = watch.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
-	scheduleWatchSFX(n.Judgment, n.TargetTime+n.Accuracy, true)
-	archetype := int(watch.Entity.Info().Archetype)
-	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
-	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: -100})
-	result := watch.Entity.Result()
-	result.TargetTime = n.TargetTime
-	result.Bucket = Buckets.DirectionalFlick
-	result.BucketValue = n.Accuracy * 1000
-	watch.Entity.SetResult(result)
-}
-
-func (n *WatchDirectionalFlickNote) SpawnTime() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchDirectionalFlickNote) DespawnTime() float64 {
-	return n.TargetScaledTime + 0.5
-}
-
-func (n *WatchDirectionalFlickNote) UpdateSequential() {
-	if watch.Time.Skip() {
-		n.Played = true
-		return
-	}
-	if !n.Played && watch.Time.Now() >= n.TargetTime+n.Accuracy {
-		n.Played = true
-		if Config.NoteEffects && n.Judgment != sonolus.JudgmentMiss {
-			if displayDirection(n.Direction) > 0 {
-				spawnWatchNoteParticles(n.Lane, 1.5, 0.3, Particles.RightFlickLinear, Particles.RightFlick)
-			} else {
-				spawnWatchNoteParticles(n.Lane, 1.5, 0.3, Particles.LeftFlickLinear, Particles.LeftFlick)
-			}
-			spawnWatchLaneEffect(n.Lane)
-		}
-	}
-}
-
-func (n *WatchDirectionalFlickNote) UpdateParallel() {
-	y := noteY(n.TargetScaledTime, watch.Time.Scaled())
-	if displayDirection(n.Direction) > 0 {
-		drawDirectionalFlickNote(Skin.RightFlick, Skin.RightFlickArrow, n.Lane, y, n.Direction)
-	} else {
-		drawDirectionalFlickNote(Skin.LeftFlick, Skin.LeftFlickArrow, n.Lane, y, n.Direction)
-	}
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=DirectionalFlickNote,key=3"`
 }
 
 type WatchHoldHeadNote struct {
-	watch.Archetype  `archetype:"name=HoldHeadNote"`
-	Beat             float64                                `archetype:"imported,name=#BEAT"`
-	Lane             float64                                `archetype:"imported,name=lane"`
-	Anchor           sonolus.EntityRef[WatchHoldAnchorNote] `archetype:"imported,name=anchor"`
-	End              sonolus.EntityRef[WatchHoldEndNote]    `archetype:"imported,name=end"`
-	FlickEnd         sonolus.EntityRef[WatchHoldFlickNote]  `archetype:"imported,name=flickEnd"`
-	Judgment         sonolus.Judgment                       `archetype:"imported,name=#JUDGMENT"`
-	Accuracy         float64                                `archetype:"imported,name=#ACCURACY"`
-	TargetTime       float64                                `archetype:"data"`
-	AnchorTime       float64                                `archetype:"data"`
-	EndTime          float64                                `archetype:"data"`
-	TargetScaledTime float64                                `archetype:"data"`
-	AnchorScaledTime float64                                `archetype:"data"`
-	EndScaledTime    float64                                `archetype:"data"`
-	Played           bool                                   `archetype:"memory"`
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=HoldHeadNote,key=4"`
 }
 
-func (n *WatchHoldHeadNote) Preprocess() {
-	n.TargetTime = watch.Time.BeatToTime(n.Beat)
-	n.AnchorTime = watch.Time.BeatToTime(n.Anchor.Get().Beat)
-	n.EndTime = watch.Time.BeatToTime(n.endBeat())
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.AnchorScaledTime = native.TimeToScaledTime(n.AnchorTime)
-	n.EndScaledTime = native.TimeToScaledTime(n.EndTime)
-	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
-	scheduleWatchSFX(n.Judgment, n.TargetTime+n.Accuracy, false)
-	archetype := int(watch.Entity.Info().Archetype)
-	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
-	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: -100})
-	result := watch.Entity.Result()
-	result.TargetTime = n.TargetTime
-	result.Bucket = Buckets.HoldHead
-	result.BucketValue = n.Accuracy * 1000
-	watch.Entity.SetResult(result)
-	scheduleWatchHoldSFX(watch.Entity.Info().Index, n.TargetTime, n.EndTime)
-	watch.Spawn(WatchHoldManager{Head: sonolus.EntityRef[WatchHoldHeadNote]{Index: watch.Entity.Info().Index}})
-}
-
-func (n *WatchHoldHeadNote) SpawnTime() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchHoldHeadNote) DespawnTime() float64 {
-	return n.TargetScaledTime + 0.5
-}
-
-func (n *WatchHoldHeadNote) UpdateSequential() {
-	if watch.Time.Skip() {
-		n.Played = true
-		return
-	}
-	if !n.Played && watch.Time.Now() >= n.TargetTime+n.Accuracy {
-		n.Played = true
-		if Config.NoteEffects && n.Judgment != sonolus.JudgmentMiss {
-			spawnWatchNoteParticles(n.Lane, 1.5, 0.3, Particles.HoldLinear, Particles.Hold)
-			spawnWatchLaneEffect(n.Lane)
+func (n *WatchBasicNote) currentScaledLane(now float64) float64 {
+	previousTime, previousLane := n.TargetScaledTime, n.Lane
+	nextRef := n.Next
+	for nextRef.Index > 0 {
+		next := nextRef.Get()
+		if nextRef.Key() == 6 || next.Next.Index <= 0 {
+			nextTime := watch.Time.TimeToScaledTime(watch.Time.BeatToTime(next.Beat))
+			if now <= nextTime || next.Next.Index <= 0 {
+				return holdLane(now, previousTime, nextTime, previousLane, next.Lane)
+			}
+			previousTime, previousLane = nextTime, next.Lane
 		}
+		nextRef = next.Next
 	}
+	return previousLane
 }
 
-func (n *WatchHoldHeadNote) UpdateParallel() {
-	now := watch.Time.Scaled()
-	startLane := n.Lane
-	startY := noteY(n.TargetScaledTime, now)
-	if startY < judgmentLineY {
-		startY = judgmentLineY
+func (n *WatchBasicNote) currentLane(now float64) float64 {
+	previousTime, previousLane := n.TargetTime, n.Lane
+	nextRef := n.Next
+	for nextRef.Index > 0 {
+		next := nextRef.Get()
+		if nextRef.Key() == 6 || next.Next.Index <= 0 {
+			nextTime := watch.Time.BeatToTime(next.Beat)
+			if now <= nextTime || next.Next.Index <= 0 {
+				return holdLane(now, previousTime, nextTime, previousLane, next.Lane)
+			}
+			previousTime, previousLane = nextTime, next.Lane
+		}
+		nextRef = next.Next
 	}
-	active := !watch.Replay.IsReplay()
-	streamID := watch.Entity.Info().Index
-	stream := Replay.Reserved[int(streamID)]
-	key := stream.PreviousKey(watch.Time.Now())
-	if watch.Replay.IsReplay() {
-		active = stream.Has(key) && stream.Get(key) != 0
-	}
-	if active && now >= n.TargetScaledTime {
-		startLane = n.currentScaledLane(now)
-	}
-	Skin.HoldHead.Draw(noteRect(startLane, startY).ToQuad(), 30, 1)
+	return previousLane
 }
 
-func (n *WatchHoldHeadNote) currentScaledLane(now float64) float64 {
-	return holdChainLane(now, n.TargetScaledTime, n.AnchorScaledTime, n.EndScaledTime, n.Lane, n.Anchor.Get().Lane, n.endLane())
+func (n *WatchBasicNote) endBeat() float64 {
+	beat := n.Beat
+	for nextRef := n.Next; nextRef.Index > 0; {
+		next := nextRef.Get()
+		beat, nextRef = next.Beat, next.Next
+	}
+	return beat
 }
 
-func (n *WatchHoldHeadNote) endBeat() float64 {
-	if n.FlickEnd.Index > 0 {
-		return n.FlickEnd.Get().Beat
+func (n *WatchBasicNote) endLane() float64 {
+	lane := n.Lane
+	for nextRef := n.Next; nextRef.Index > 0; {
+		next := nextRef.Get()
+		lane, nextRef = next.Lane, next.Next
 	}
-	return n.End.Get().Beat
-}
-
-func (n *WatchHoldHeadNote) endLane() float64 {
-	if n.FlickEnd.Index > 0 {
-		return n.FlickEnd.Get().Lane
-	}
-	return n.End.Get().Lane
+	return lane
 }
 
 type WatchHoldManager struct {
@@ -474,16 +480,7 @@ func (n *WatchHoldManager) UpdateParallel() {
 		n.stopEffects()
 		return
 	}
-	lane := holdChainLane(
-		watch.Time.Scaled(),
-		head.TargetScaledTime,
-		head.AnchorScaledTime,
-		head.EndScaledTime,
-		head.Lane,
-		head.Anchor.Get().Lane,
-		head.endLane(),
-	)
-	n.updateEffects(lane)
+	n.updateEffects(head.HoldLane)
 }
 
 func (n *WatchHoldManager) Terminate() { n.stopEffects() }
@@ -492,10 +489,10 @@ func (n *WatchHoldManager) updateEffects(lane float64) {
 	if !Config.NoteEffects {
 		return
 	}
-	quad := noteRect(lane, judgmentLineY).Scale(1.5).ToQuad()
+	quad := noteCircularParticleQuad(Layout.Transform, lane)
 	if !n.ParticleActive {
 		n.ParticleActive = true
-		n.ParticleID = Particles.HoldActive.Spawn(quad, 0.3, true).ID
+		n.ParticleID = Particles.HoldActive.Spawn(quad, 1.5, true).ID
 	} else {
 		sonolus.ParticleHandle{ID: n.ParticleID}.Move(quad)
 	}
@@ -510,175 +507,94 @@ func (n *WatchHoldManager) stopEffects() {
 }
 
 type WatchHoldAnchorNote struct {
-	watch.Archetype `archetype:"name=HoldAnchorNote"`
-	Beat            float64 `archetype:"imported,name=#BEAT"`
-	Lane            float64 `archetype:"imported,name=lane"`
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=HoldAnchorNote,key=6"`
 }
 
 type WatchHoldEndNote struct {
-	watch.Archetype  `archetype:"name=HoldEndNote"`
-	Head             sonolus.EntityRef[WatchHoldHeadNote] `archetype:"imported,name=head"`
-	Beat             float64                              `archetype:"imported,name=#BEAT"`
-	Lane             float64                              `archetype:"imported,name=lane"`
-	Judgment         sonolus.Judgment                     `archetype:"imported,name=#JUDGMENT"`
-	Accuracy         float64                              `archetype:"imported,name=#ACCURACY"`
-	TargetTime       float64                              `archetype:"data"`
-	TargetScaledTime float64                              `archetype:"data"`
-	Played           bool                                 `archetype:"memory"`
-}
-
-func (n *WatchHoldEndNote) Preprocess() {
-	n.TargetTime = watch.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
-	scheduleWatchSFX(n.Judgment, n.TargetTime+n.Accuracy, false)
-	archetype := int(watch.Entity.Info().Archetype)
-	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
-	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: -100})
-	result := watch.Entity.Result()
-	result.TargetTime = n.TargetTime
-	result.Bucket = Buckets.HoldEnd
-	result.BucketValue = n.Accuracy * 1000
-	watch.Entity.SetResult(result)
-}
-func (n *WatchHoldEndNote) SpawnTime() float64   { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchHoldEndNote) DespawnTime() float64 { return n.TargetScaledTime + 0.5 }
-func (n *WatchHoldEndNote) UpdateSequential() {
-	if watch.Time.Skip() {
-		n.Played = true
-		return
-	}
-	if !n.Played && watch.Time.Now() >= n.TargetTime+n.Accuracy {
-		n.Played = true
-		if Config.NoteEffects && n.Judgment != sonolus.JudgmentMiss {
-			spawnWatchNoteParticles(n.Lane, 1.5, 0.3, Particles.HoldLinear, Particles.Hold)
-			spawnWatchLaneEffect(n.Lane)
-		}
-	}
-}
-func (n *WatchHoldEndNote) UpdateParallel() {
-	Skin.HoldTail.Draw(noteRect(n.Lane, noteY(n.TargetScaledTime, watch.Time.Scaled())).ToQuad(), 30, 1)
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=HoldEndNote,key=7"`
 }
 
 type WatchHoldFlickNote struct {
-	watch.Archetype  `archetype:"name=HoldFlickNote"`
-	Head             sonolus.EntityRef[WatchHoldHeadNote] `archetype:"imported,name=head"`
-	Beat             float64                              `archetype:"imported,name=#BEAT"`
-	Lane             float64                              `archetype:"imported,name=lane"`
-	Judgment         sonolus.Judgment                     `archetype:"imported,name=#JUDGMENT"`
-	Accuracy         float64                              `archetype:"imported,name=#ACCURACY"`
-	TargetTime       float64                              `archetype:"data"`
-	TargetScaledTime float64                              `archetype:"data"`
-	Played           bool                                 `archetype:"memory"`
-}
-
-func (n *WatchHoldFlickNote) Preprocess() {
-	n.TargetTime = watch.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
-	scheduleWatchSFX(n.Judgment, n.TargetTime+n.Accuracy, true)
-	archetype := int(watch.Entity.Info().Archetype)
-	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
-	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: -100})
-	result := watch.Entity.Result()
-	result.TargetTime = n.TargetTime
-	result.Bucket = Buckets.Flick
-	result.BucketValue = n.Accuracy * 1000
-	watch.Entity.SetResult(result)
-}
-
-func (n *WatchHoldFlickNote) SpawnTime() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchHoldFlickNote) DespawnTime() float64 {
-	return n.TargetScaledTime + 0.5
-}
-func (n *WatchHoldFlickNote) UpdateSequential() {
-	if watch.Time.Skip() {
-		n.Played = true
-		return
-	}
-	if !n.Played && watch.Time.Now() >= n.TargetTime+n.Accuracy {
-		n.Played = true
-		if Config.NoteEffects && n.Judgment != sonolus.JudgmentMiss {
-			spawnWatchNoteParticles(n.Lane, 1.5, 0.3, Particles.FlickLinear, Particles.Flick)
-			spawnWatchLaneEffect(n.Lane)
-		}
-	}
-}
-func (n *WatchHoldFlickNote) UpdateParallel() {
-	y := noteY(n.TargetScaledTime, watch.Time.Scaled())
-	Skin.Flick.Draw(noteRect(n.Lane, y).ToQuad(), 30, 1)
-	Skin.FlickArrow.Draw(noteRect(n.Lane, y).Scale(0.7).ToQuad(), 31, 1)
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=HoldFlickNote,key=2"`
 }
 
 type WatchHoldConnector struct {
 	watch.Archetype  `archetype:"name=HoldConnector"`
-	Head             sonolus.EntityRef[WatchHoldHeadNote]   `archetype:"imported,name=head"`
-	Anchor           sonolus.EntityRef[WatchHoldAnchorNote] `archetype:"imported,name=anchor"`
-	End              sonolus.EntityRef[WatchHoldEndNote]    `archetype:"imported,name=end"`
-	FlickEnd         sonolus.EntityRef[WatchHoldFlickNote]  `archetype:"imported,name=flickEnd"`
-	Segment          float64                                `archetype:"imported,name=segment"`
-	TargetTime       float64                                `archetype:"data"`
-	EndTime          float64                                `archetype:"data"`
-	TargetScaledTime float64                                `archetype:"data"`
-	EndScaledTime    float64                                `archetype:"data"`
-	FirstLane        float64                                `archetype:"data"`
-	SecondLane       float64                                `archetype:"data"`
+	First            sonolus.EntityRef[WatchBasicNote] `archetype:"imported,name=first"`
+	Second           sonolus.EntityRef[WatchBasicNote] `archetype:"imported,name=second"`
+	TargetTime       float64                           `archetype:"data"`
+	EndTime          float64                           `archetype:"data"`
+	TargetScaledTime float64                           `archetype:"data"`
+	EndScaledTime    float64                           `archetype:"data"`
+	FirstLane        float64                           `archetype:"data"`
+	SecondLane       float64                           `archetype:"data"`
 }
 
 func (n *WatchHoldConnector) Preprocess() {
-	targetBeat := n.Head.Get().Beat
-	endBeat := n.Anchor.Get().Beat
-	n.FirstLane = n.Head.Get().Lane
-	n.SecondLane = n.Anchor.Get().Lane
-	if n.Segment != 0 {
-		targetBeat = n.Anchor.Get().Beat
-		endBeat = n.Head.Get().endBeat()
-		n.FirstLane = n.Anchor.Get().Lane
-		n.SecondLane = n.Head.Get().endLane()
-	}
-	n.TargetTime = watch.Time.BeatToTime(targetBeat)
-	n.EndTime = watch.Time.BeatToTime(endBeat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.EndScaledTime = native.TimeToScaledTime(n.EndTime)
+	first, second := n.First.Get(), n.Second.Get()
+	n.FirstLane, n.SecondLane = first.Lane, second.Lane
+	n.TargetTime = watch.Time.BeatToTime(first.Beat)
+	n.EndTime = watch.Time.BeatToTime(second.Beat)
+	n.TargetScaledTime = watch.Time.TimeToScaledTime(n.TargetTime)
+	n.EndScaledTime = watch.Time.TimeToScaledTime(n.EndTime)
 }
 func (n *WatchHoldConnector) SpawnTime() float64   { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchHoldConnector) DespawnTime() float64 { return n.EndScaledTime + 0.5 }
-func (n *WatchHoldConnector) UpdateParallel() {
-	now := watch.Time.Scaled()
-	startLane := n.FirstLane
-	startY := noteY(n.TargetScaledTime, now)
-	if startY < judgmentLineY {
-		startY = judgmentLineY
-	}
+func (n *WatchHoldConnector) DespawnTime() float64 { return n.EndScaledTime }
+func (n *WatchHoldConnector) UpdateSequential() {
+	first, second := n.First.Get(), n.Second.Get()
+	now := watch.Time.Now()
+	headRef := watchHoldHeadRef(n.First)
+	head := headRef.Get()
 	active := !watch.Replay.IsReplay()
-	stream := Replay.Reserved[int(n.Head.Index)]
-	key := stream.PreviousKey(watch.Time.Now())
+	stream := Replay.Reserved[int(headRef.Index)]
+	key := stream.PreviousKey(now)
 	if watch.Replay.IsReplay() {
 		active = stream.Has(key) && stream.Get(key) != 0
 	}
-	if active && now >= n.TargetScaledTime {
-		startLane = holdLane(now, n.TargetScaledTime, n.EndScaledTime, n.FirstLane, n.SecondLane)
+	if now < first.TargetTime || now >= second.TargetTime || !active {
+		return
 	}
-	endY := noteY(n.EndScaledTime, now)
-	Skin.HoldConnector.Draw(holdConnectorQuad(startLane, n.SecondLane, startY, endY), 25, Config.ConnectorAlpha)
+	head.HoldLane = sonolus.Remap(
+		noteY(first.TargetScaledTime, watch.Time.Scaled()),
+		noteY(second.TargetScaledTime, watch.Time.Scaled()),
+		first.Lane,
+		second.Lane,
+		judgmentLineY,
+	)
+}
+func (n *WatchHoldConnector) UpdateParallel() {
+	first, second := n.First.Get(), n.Second.Get()
+	firstY := noteY(first.TargetScaledTime, watch.Time.Scaled())
+	secondY := noteY(second.TargetScaledTime, watch.Time.Scaled())
+	Skin.HoldConnector.Draw(holdConnectorQuad(first.Lane, second.Lane, firstY, secondY), layerZ(layerConnector, math.Min(first.Lane, second.Lane), math.Min(firstY, secondY)), Config.ConnectorAlpha)
 }
 
 type WatchSimLine struct {
 	watch.Archetype  `archetype:"name=SimLine"`
-	First            sonolus.EntityRef[WatchTapNote] `archetype:"imported,name=first"`
-	Second           sonolus.EntityRef[WatchTapNote] `archetype:"imported,name=second"`
-	TargetTime       float64                         `archetype:"data"`
-	TargetScaledTime float64                         `archetype:"data"`
+	First            sonolus.EntityRef[WatchBasicNote] `archetype:"imported,name=first"`
+	Second           sonolus.EntityRef[WatchBasicNote] `archetype:"imported,name=second"`
+	TargetTime       float64                           `archetype:"data"`
+	TargetScaledTime float64                           `archetype:"data"`
 }
 
 func (n *WatchSimLine) Preprocess() {
 	n.TargetTime = watch.Time.BeatToTime(n.First.Get().Beat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
+	n.TargetScaledTime = watch.Time.TimeToScaledTime(n.TargetTime)
 }
 func (n *WatchSimLine) SpawnTime() float64 {
 	return n.TargetScaledTime - noteTravelTime()
 }
-func (n *WatchSimLine) DespawnTime() float64 { return n.TargetScaledTime + 0.5 }
+func (n *WatchSimLine) DespawnTime() float64 {
+	first, second := n.First.Get(), n.Second.Get()
+	firstTime, secondTime := first.TargetScaledTime, second.TargetScaledTime
+	if watch.Replay.IsReplay() {
+		firstTime, secondTime = first.ReplayEndScaled, second.ReplayEndScaled
+	}
+	return math.Min(firstTime, secondTime)
+}
 func (n *WatchSimLine) UpdateParallel() {
 	if !Config.SimLines {
 		return
@@ -689,77 +605,31 @@ func (n *WatchSimLine) UpdateParallel() {
 		return
 	}
 	y := noteY(n.TargetScaledTime, watch.Time.Scaled())
-	Skin.SimLine.Draw(simLineQuad(n.First.Get().Lane, n.Second.Get().Lane, y), 24, Config.ConnectorAlpha)
+	alpha := Config.SimLineAlpha * noteAlpha(y)
+	if alpha > 0 {
+		Skin.SimLine.Draw(simLineQuad(n.First.Get().Lane, n.Second.Get().Lane, y), layerZ(layerSimLine, math.Min(n.First.Get().Lane, n.Second.Get().Lane), y), alpha)
+	}
 }
 
 type WatchHoldTickNote struct {
-	watch.Archetype  `archetype:"name=HoldTickNote"`
-	Head             sonolus.EntityRef[WatchHoldHeadNote] `archetype:"imported,name=head"`
-	Beat             float64                              `archetype:"imported,name=#BEAT"`
-	Lane             float64                              `archetype:"data"`
-	Judgment         sonolus.Judgment                     `archetype:"imported,name=#JUDGMENT"`
-	Accuracy         float64                              `archetype:"imported,name=#ACCURACY"`
-	TargetTime       float64                              `archetype:"data"`
-	TargetScaledTime float64                              `archetype:"data"`
-	Played           bool                                 `archetype:"memory"`
+	WatchBasicNote  `archetype:"base"`
+	watch.Archetype `archetype:"name=HoldTickNote,key=5"`
 }
 
 func (n *WatchHoldTickNote) Preprocess() {
-	n.Lane = holdChainLane(
-		n.Beat,
-		n.Head.Get().Beat,
-		n.Head.Get().Anchor.Get().Beat,
-		n.Head.Get().endBeat(),
-		n.Head.Get().Lane,
-		n.Head.Get().Anchor.Get().Lane,
-		n.Head.Get().endLane(),
-	)
-	n.TargetTime = watch.Time.BeatToTime(n.Beat)
-	n.TargetScaledTime = native.TimeToScaledTime(n.TargetTime)
-	n.Judgment, n.Accuracy = normalizeWatchResult(n.Judgment, n.Accuracy)
-	scheduleWatchSFX(n.Judgment, n.TargetTime+n.Accuracy, false)
-	archetype := int(watch.Entity.Info().Archetype)
-	watch.Score.SetArchetype(archetype, watch.ArchetypeScore{Multiplier: 1})
-	watch.Life.SetArchetype(archetype, watch.LifeValues{Perfect: 1, Miss: -20})
-	result := watch.Entity.Result()
-	result.TargetTime = n.TargetTime
-	result.Bucket = Buckets.HoldTick
-	result.BucketValue = n.Accuracy * 1000
-	watch.Entity.SetResult(result)
-}
-
-func (n *WatchHoldTickNote) SpawnTime() float64 { return n.TargetScaledTime - noteTravelTime() }
-func (n *WatchHoldTickNote) DespawnTime() float64 {
-	return n.TargetScaledTime + 0.5
-}
-func (n *WatchHoldTickNote) UpdateSequential() {
-	if watch.Time.Skip() {
-		n.Played = true
-		return
-	}
-	if !n.Played && watch.Time.Now() >= n.TargetTime+n.Accuracy {
-		n.Played = true
-		if Config.NoteEffects && n.Judgment != sonolus.JudgmentMiss {
-			spawnWatchNoteParticles(n.Lane, 1.2, 0.2, Particles.HoldLinear, Particles.Hold)
-			spawnWatchLaneEffect(n.Lane)
-		}
-	}
-}
-func (n *WatchHoldTickNote) UpdateParallel() {
-	Skin.HoldTick.Draw(noteRect(n.Lane, noteY(n.TargetScaledTime, watch.Time.Scaled())).Scale(0.7).ToQuad(), 29, 1)
+	n.WatchBasicNote.Preprocess()
+	n.Lane = n.holdHeadRef().Get().currentLane(n.TargetTime)
 }
 
 func spawnWatchLaneEffect(lane float64) {
 	if Config.LaneEffects {
-		Particles.Lane.Spawn(laneRect(lane).ToQuad(), 0.2, false)
+		Particles.Lane.Spawn(laneParticleQuad(Layout.Transform, lane), 0.2, false)
 	}
 }
 
-func spawnWatchNoteParticles(lane, scale, duration float64, linear, circular sonolus.Effect) {
-	particleRect := noteRect(lane, judgmentLineY).Scale(scale)
-	width := particleRect.R - particleRect.L
-	linear.Spawn(sonolus.Rect{T: judgmentLineY + width, R: particleRect.R, B: judgmentLineY, L: particleRect.L}.ToQuad(), duration, false)
-	circular.Spawn(particleRect.ToQuad(), duration, false)
+func spawnWatchNoteParticles(lane float64, linear, circular sonolus.Effect) {
+	linear.Spawn(noteLinearParticleQuad(Layout.Transform, lane), 0.5, false)
+	circular.Spawn(noteCircularParticleQuad(Layout.Transform, lane), 0.5, false)
 }
 
 func normalizeWatchResult(judgment sonolus.Judgment, accuracy float64) (sonolus.Judgment, float64) {

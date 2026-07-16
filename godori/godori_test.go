@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
+	"os"
 	"reflect"
 	"slices"
 	"sync"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/godori/internal/leveldata"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/level"
@@ -80,21 +83,20 @@ func TestGodoriSchema(t *testing.T) {
 	want := &compiler.ProjectSchema{Archetypes: []compiler.ArchetypeSchema{
 		{Name: "#BPM_CHANGE", Fields: []string{"#BEAT", "#BPM"}},
 		{Name: "#TIMESCALE_CHANGE", Fields: []string{"#BEAT", "#TIMESCALE"}},
-		{Name: "AccentTapNote", Fields: []string{"#BEAT", "lane"}},
-		{Name: "DirectionalFlickNote", Fields: []string{"#BEAT", "lane", "direction"}},
-		{Name: "FlickNote", Fields: []string{"#BEAT", "lane"}},
-		{Name: "HoldAnchorNote", Fields: []string{"#BEAT", "lane"}},
-		{Name: "HoldConnector", Fields: []string{"head", "anchor", "end", "flickEnd", "segment"}},
-		{Name: "HoldEndNote", Fields: []string{"head", "#BEAT", "lane"}},
-		{Name: "HoldFlickNote", Fields: []string{"head", "#BEAT", "lane"}},
-		{Name: "HoldHeadNote", Fields: []string{"#BEAT", "lane", "anchor", "end", "flickEnd"}},
+		{Name: "AccentTapNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
+		{Name: "DirectionalFlickNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
+		{Name: "FlickNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
+		{Name: "HoldAnchorNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
+		{Name: "HoldConnector", Fields: []string{"first", "second"}},
+		{Name: "HoldEndNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
+		{Name: "HoldFlickNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
+		{Name: "HoldHeadNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
 		{Name: "HoldManager", Fields: []string{}},
-		{Name: "HoldTickNote", Fields: []string{"head", "#BEAT"}},
-		{Name: "InputManager", Fields: []string{}},
+		{Name: "HoldTickNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
 		{Name: "ScheduledLaneEffect", Fields: []string{}},
 		{Name: "SimLine", Fields: []string{"first", "second"}},
 		{Name: "Stage", Fields: []string{}},
-		{Name: "TapNote", Fields: []string{"#BEAT", "lane"}},
+		{Name: "TapNote", Fields: []string{"end_time", "#BEAT", "lane", "direction", "prev", "next"}},
 	}}
 	if !reflect.DeepEqual(schema, want) {
 		t.Fatalf("schema = %#v, want %#v", schema, want)
@@ -107,7 +109,7 @@ func TestGodoriDevelopmentLevel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if development.File == "" || len(development.Data.Entities) != 33 {
+	if development.File == "" || len(development.Data.Entities) != 42 {
 		t.Fatalf("development level = %#v", development)
 	}
 	if err := level.Validate(development.Data, artifacts); err != nil {
@@ -124,6 +126,20 @@ func TestGodoriDevelopmentLevel(t *testing.T) {
 	assertDevelopmentTimescale(t, development.Data)
 }
 
+func TestGodoriDevelopmentLevelIsGeneratedDeterministically(t *testing.T) {
+	generated, err := leveldata.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkedIn, err := os.ReadFile("dev-level.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(generated, checkedIn) {
+		t.Fatal("dev-level.json is stale; run go generate")
+	}
+}
+
 func TestGodoriPreviewColumnGeometry(t *testing.T) {
 	tests := []struct {
 		time   float64
@@ -131,9 +147,10 @@ func TestGodoriPreviewColumnGeometry(t *testing.T) {
 		y      float64
 	}{
 		{0, 0, previewYMin},
-		{1.5, 0, 0},
-		{3, 1, previewYMin},
-		{11.999, 3, previewYMin + 2.999/3*(previewYMax-previewYMin)},
+		{1, 0, 0},
+		{2, 1, previewYMin},
+		{7.999, 3, previewYMin + 1.999/2*(previewYMax-previewYMin)},
+		{-0.5, 0, previewYMin + 1.5/2*(previewYMax-previewYMin)},
 	}
 	for _, test := range tests {
 		if got := previewColumn(test.time); got != test.column {
@@ -143,37 +160,66 @@ func TestGodoriPreviewColumnGeometry(t *testing.T) {
 			t.Fatalf("previewTimeY(%v) = %v, want %v", test.time, got, test.y)
 		}
 	}
-	if got := previewTimeYInColumn(3, 0); math.Abs(got-previewYMax) > 1e-9 {
+	if got := previewTimeYInColumn(2, 0); math.Abs(got-previewYMax) > 1e-9 {
 		t.Fatalf("column end y = %v, want %v", got, previewYMax)
 	}
-	if got := previewTimeYInColumn(3, 1); math.Abs(got-previewYMin) > 1e-9 {
+	if got := previewTimeYInColumn(2, 1); math.Abs(got-previewYMin) > 1e-9 {
 		t.Fatalf("next column start y = %v, want %v", got, previewYMin)
 	}
-	if got := previewColumnsForDuration(10); got != 4 {
-		t.Fatalf("previewColumnsForDuration(10) = %v, want 4", got)
+	if got := previewColumnsForDuration(10); got != 6 {
+		t.Fatalf("previewColumnsForDuration(10) = %v, want 6", got)
 	}
-	if got := previewColumnWidth * float64(previewColumnsForDuration(10)); got != 32 {
-		t.Fatalf("preview canvas width = %v, want 32", got)
+	if got := previewColumnWidth * float64(previewColumnsForDuration(10)); math.Abs(got-6.024) > 1e-9 {
+		t.Fatalf("preview canvas width = %v, want 6.024", got)
+	}
+}
+
+func TestGodoriNoteAlphaFadesAtLaneBounds(t *testing.T) {
+	if noteFadeProgress(-1) != 0 || noteFadeProgress(laneTopY()) != 0 {
+		t.Fatalf("note fade bounds = (%v, %v)", noteFadeProgress(-1), noteFadeProgress(laneTopY()))
+	}
+	if noteFadeProgress(-1+noteFadeLength) != 1 || noteFadeProgress(laneTopY()-noteFadeLength) != 1 {
+		t.Fatalf("note fade interior = (%v, %v)", noteFadeProgress(-1+noteFadeLength), noteFadeProgress(laneTopY()-noteFadeLength))
+	}
+	if progress := noteFadeProgress(-1 + noteFadeLength/2); progress <= 0 || progress >= 1 {
+		t.Fatalf("note fade progress = %v", progress)
+	}
+}
+
+func TestGodoriLayerAndProjectionGeometry(t *testing.T) {
+	if got := layerZ(layerNote, -2, 3.5); got != 309803.5 {
+		t.Fatalf("note z = %v, want 309803.5", got)
+	}
+	if got := layerZ(layerArrow, 1, -0.25); got != 320099.75 {
+		t.Fatalf("arrow z = %v, want 320099.75", got)
+	}
+	y, scale := stageProjectY(judgmentLineY)
+	if math.Abs(y-judgmentLineScreenY) > 1e-9 || math.Abs(scale-1) > 1e-9 {
+		t.Fatalf("judgment projection = (%v, %v)", y, scale)
+	}
+	farY, farScale := stageProjectY(laneTopY())
+	if farY <= judgmentLineScreenY || farY >= vanishingPointY || farScale <= 0 || farScale >= 1 {
+		t.Fatalf("far projection = (%v, %v)", farY, farScale)
 	}
 }
 
 func TestGodoriSimultaneousHitboxGeometry(t *testing.T) {
 	base := noteHitbox(0, 0)
-	if base.L != -1.25*Config.LaneWidth || base.R != 1.25*Config.LaneWidth {
+	if math.Abs(base.L+1.25*laneWidth()) > 1e-9 || math.Abs(base.R-1.25*laneWidth()) > 1e-9 {
 		t.Fatalf("base hitbox = %#v", base)
 	}
 	right := noteHitbox(1, 0)
 	leftOverlap, rightOverlap := hitboxOverlap(0, 1, base, right)
-	if leftOverlap != 0 || rightOverlap != 1.5*Config.LaneWidth {
+	if math.Abs(leftOverlap) > 1e-9 || math.Abs(rightOverlap-1.5*laneWidth()) > 1e-9 {
 		t.Fatalf("right overlap = (%v, %v)", leftOverlap, rightOverlap)
 	}
 	left := noteHitbox(-1, 0)
 	leftOverlap, rightOverlap = hitboxOverlap(0, -1, base, left)
-	if leftOverlap != 1.5*Config.LaneWidth || rightOverlap != 0 {
+	if math.Abs(leftOverlap-1.5*laneWidth()) > 1e-9 || math.Abs(rightOverlap) > 1e-9 {
 		t.Fatalf("left overlap = (%v, %v)", leftOverlap, rightOverlap)
 	}
 	directional := noteHitbox(0, 2)
-	if directional.L != base.L || directional.R != base.R+2*Config.LaneWidth {
+	if math.Abs(directional.L-base.L) > 1e-9 || math.Abs(directional.R-(base.R+2*laneWidth())) > 1e-9 {
 		t.Fatalf("directional hitbox = %#v", directional)
 	}
 }
@@ -199,6 +245,30 @@ func TestGodoriHoldTickResolution(t *testing.T) {
 				t.Fatalf("holdTickResolution(%v, %v, %v) = (%v, %v), want (%v, %v)", test.best, test.target, test.now, gotTime, gotReady, test.wantTime, test.wantReady)
 			}
 		})
+	}
+}
+
+func TestGodoriTutorialPhaseTiming(t *testing.T) {
+	want := []tutorialPhaseTimeline{
+		{IntroEnd: 1.5, FallEnd: 3, FrozenEnd: 7, Hit: 7, End: 8.5},
+		{IntroEnd: 1.5, FallEnd: 3, FrozenEnd: 9, Hit: 8.5, End: 10.5},
+		{IntroEnd: 1.5, FallEnd: 3, FrozenEnd: 9, Hit: 8.5, End: 10.5},
+		{IntroEnd: 1.5, FallEnd: 3, FrozenEnd: 7, Hit: 7, End: 8.5},
+		{IntroEnd: 1.5, FallEnd: 7, FrozenEnd: 5.5, Hit: 5.5, End: 8.5},
+		{IntroEnd: 1.5, FallEnd: 3, FrozenEnd: 7, Hit: 7, End: 8.5},
+		{IntroEnd: 1.5, FallEnd: 3, FrozenEnd: 9, Hit: 8.5, End: 10.5},
+	}
+	for phase, expected := range want {
+		if got := tutorialTimelineFor(phase); got != expected {
+			t.Fatalf("phase %d timeline = %#v, want %#v", phase, got, expected)
+		}
+	}
+	instant := 7.0
+	if tutorialCrossed(instant, instant+0.1, instant) || tutorialCrossed(instant+0.1, instant+0.2, instant) {
+		t.Fatal("tutorial instant was triggered more than once")
+	}
+	if !tutorialCrossed(instant-0.1, instant, instant) || !tutorialCrossed(instant-0.1, instant+0.1, instant) {
+		t.Fatal("tutorial instant was not triggered when crossed")
 	}
 }
 
@@ -233,12 +303,12 @@ func assertArtifacts(t *testing.T, artifacts *compiler.Artifacts) {
 		t.Fatal("Stage and TapNote must exist in Play, Watch, and Preview")
 	}
 	if playStage.Preprocess == nil || playStage.UpdateSequential == nil || playStage.Touch == nil || playNote.Touch == nil ||
-		watchStage.Preprocess == nil || watchStage.UpdateSequential == nil || watchNote.UpdateSequential == nil || previewNote.Render == nil {
+		watchStage.Preprocess == nil || watchNote.Terminate == nil || previewNote.Render == nil {
 		t.Fatal("gameplay callbacks were omitted")
 	}
 	assertIndex(t, "play Stage preprocess", playStage.Preprocess.Index, len(artifacts.Play.Nodes))
 	assertIndex(t, "play TapNote touch", playNote.Touch.Index, len(artifacts.Play.Nodes))
-	assertIndex(t, "watch TapNote replay", watchNote.UpdateSequential.Index, len(artifacts.Watch.Nodes))
+	assertIndex(t, "watch TapNote replay", watchNote.Terminate.Index, len(artifacts.Watch.Nodes))
 	assertIndex(t, "watch updateSpawn", artifacts.Watch.UpdateSpawn, len(artifacts.Watch.Nodes))
 	assertIndex(t, "preview TapNote render", previewNote.Render.Index, len(artifacts.Preview.Nodes))
 	assertIndex(t, "tutorial preprocess", artifacts.Tutorial.Preprocess, len(artifacts.Tutorial.Nodes))
@@ -268,7 +338,7 @@ func assertArchetypeInventory(t *testing.T, artifacts *compiler.Artifacts) {
 		"#BPM_CHANGE", "#TIMESCALE_CHANGE", "AccentTapNote", "DirectionalFlickNote", "FlickNote", "HoldAnchorNote",
 		"HoldConnector", "HoldEndNote", "HoldFlickNote", "HoldHeadNote", "HoldTickNote", "SimLine", "Stage", "TapNote",
 	}
-	wantPlay := append(slices.Clone(playAndPreview), "HoldManager", "InputManager")
+	wantPlay := append(slices.Clone(playAndPreview), "HoldManager")
 	wantWatch := append(slices.Clone(playAndPreview), "HoldManager", "ScheduledLaneEffect")
 	slices.Sort(wantPlay)
 	slices.Sort(wantWatch)
@@ -288,8 +358,19 @@ func assertStaticResources(t *testing.T, artifacts *compiler.Artifacts) {
 	if artifacts.Configuration.UI.PrimaryMetric != "arcade" || artifacts.Configuration.UI.SecondaryMetric != "life" {
 		t.Fatalf("unexpected UI metrics: %#v", artifacts.Configuration.UI)
 	}
-	if artifacts.Configuration.UI.JudgmentErrorStyle != "plus" || artifacts.Configuration.UI.JudgmentErrorPlacement != "top" || artifacts.Configuration.UI.JudgmentErrorMin != 20 {
+	if artifacts.Configuration.UI.JudgmentErrorStyle != "late" || artifacts.Configuration.UI.JudgmentErrorPlacement != "top" || artifacts.Configuration.UI.JudgmentErrorMin != 20 {
 		t.Fatalf("unexpected judgment error UI: %#v", artifacts.Configuration.UI)
+	}
+	if artifacts.Configuration.UI.MenuVisibility.Scale != 1 || artifacts.Configuration.UI.MenuVisibility.Alpha != 1 || artifacts.Configuration.UI.JudgmentAnimation.Scale.Ease != resource.EngineConfigurationAnimationTweenEaseOutCubic || artifacts.Configuration.UI.ComboAnimation.Scale.Ease != resource.EngineConfigurationAnimationTweenEaseInCubic {
+		t.Fatalf("unexpected default UI configuration: %#v", artifacts.Configuration.UI)
+	}
+	encodedConfiguration, err := json.Marshal(artifacts.Configuration)
+	if err != nil {
+		t.Fatalf("marshal configuration: %v", err)
+	}
+	var decodedConfiguration resource.EngineConfiguration
+	if err := json.Unmarshal(encodedConfiguration, &decodedConfiguration); err != nil {
+		t.Fatalf("configuration does not satisfy core wire schema: %v", err)
 	}
 	if len(artifacts.Play.Skin.Sprites) != 19 || len(artifacts.Play.Effect.Clips) != 8 || len(artifacts.Play.Particle.Effects) != 12 || len(artifacts.Play.Buckets) != 6 {
 		t.Fatalf("unexpected Play resources: skin=%#v effect=%#v particle=%#v buckets=%#v", artifacts.Play.Skin, artifacts.Play.Effect, artifacts.Play.Particle, artifacts.Play.Buckets)
@@ -318,11 +399,14 @@ func assertStaticResources(t *testing.T, artifacts *compiler.Artifacts) {
 		t.Fatalf("unexpected Hold clips: play=%#v watch=%#v", artifacts.Play.Effect.Clips, artifacts.Watch.Effect.Clips)
 	}
 	if len(artifacts.Watch.Skin.Sprites) != 19 || len(artifacts.Watch.Particle.Effects) != 12 || len(artifacts.Watch.Buckets) != 6 ||
-		len(artifacts.Preview.Skin.Sprites) != 21 || len(artifacts.Tutorial.Skin.Sprites) != 18 || len(artifacts.Tutorial.Particle.Effects) != 12 {
+		len(artifacts.Preview.Skin.Sprites) != 22 || len(artifacts.Tutorial.Skin.Sprites) != 18 || len(artifacts.Tutorial.Particle.Effects) != 12 {
 		t.Fatalf("Flick resources are incomplete across modes")
 	}
 	if artifacts.Preview.Skin.Sprites[10].Name != sonolus.StandardSpriteGridNeutral {
 		t.Fatalf("unexpected Preview measure sprite: %#v", artifacts.Preview.Skin.Sprites[10])
+	}
+	if artifacts.Preview.Skin.Sprites[11].Name != sonolus.StandardSpriteGridCyan {
+		t.Fatalf("unexpected Preview time sprite: %#v", artifacts.Preview.Skin.Sprites[11])
 	}
 	if len(artifacts.Tutorial.Effect.Clips) != 8 || len(artifacts.Tutorial.Instruction.Texts) != 6 || len(artifacts.Tutorial.Instruction.Icons) != 1 {
 		t.Fatalf("unexpected Tutorial instructions: %#v", artifacts.Tutorial.Instruction)
@@ -451,7 +535,6 @@ func assertDeclarationContract(t *testing.T, artifacts *compiler.Artifacts) {
 	playAnchor, watchAnchor, previewAnchor := findPlay(artifacts.Play, "HoldAnchorNote"), findWatch(artifacts.Watch, "HoldAnchorNote"), findPreview(artifacts.Preview, "HoldAnchorNote")
 	playEnd, watchEnd, previewEnd := findPlay(artifacts.Play, "HoldEndNote"), findWatch(artifacts.Watch, "HoldEndNote"), findPreview(artifacts.Preview, "HoldEndNote")
 	playManager := findPlay(artifacts.Play, "HoldManager")
-	playInputManager := findPlay(artifacts.Play, "InputManager")
 	watchManager := findWatch(artifacts.Watch, "HoldManager")
 	watchLaneEffect := findWatch(artifacts.Watch, "ScheduledLaneEffect")
 	playConnector := findPlay(artifacts.Play, "HoldConnector")
@@ -467,93 +550,100 @@ func assertDeclarationContract(t *testing.T, artifacts *compiler.Artifacts) {
 		playDirectional == nil || watchDirectional == nil || previewDirectional == nil || playHold == nil || watchHold == nil || previewHold == nil ||
 		playHoldFlick == nil || watchHoldFlick == nil || previewHoldFlick == nil ||
 		playConnector == nil || watchConnector == nil || previewConnector == nil ||
-		playAnchor == nil || watchAnchor == nil || previewAnchor == nil || playEnd == nil || watchEnd == nil || previewEnd == nil || playManager == nil || playInputManager == nil || watchManager == nil ||
+		playAnchor == nil || watchAnchor == nil || previewAnchor == nil || playEnd == nil || watchEnd == nil || previewEnd == nil || playManager == nil || watchManager == nil ||
 		playSim == nil || watchSim == nil || previewSim == nil || playTick == nil || watchTick == nil || previewTick == nil ||
 		playStage == nil || previewStage == nil || watchLaneEffect == nil {
 		t.Fatal("TapNote declaration is missing from one or more modes")
 	}
-	if !playNote.HasInput || !playFlick.HasInput || playStage.HasInput || playNote.Preprocess.Order != -10 ||
-		playStage.UpdateSequential.Order != -20 || playStage.Touch.Order != 20 {
+	if !playNote.HasInput || !playFlick.HasInput || playStage.HasInput || playNote.Preprocess.Order != 0 ||
+		playStage.UpdateSequential.Order != -1 || playStage.Touch.Order != 2 {
 		t.Fatalf("unexpected Play archetype metadata: stage=%#v note=%#v", playStage, playNote)
 	}
-	if got := importNames(playNote.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane"}) {
+	playBasicImports := []resource.EngineArchetypeDataName{"#BEAT", "lane", "direction", "prev", "next"}
+	watchBasicImports := []resource.EngineArchetypeDataName{"#BEAT", "lane", "direction", "prev", "next", "#JUDGMENT", "#ACCURACY", "end_time"}
+	if got := importNames(playNote.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Play TapNote imports = %v", got)
 	}
-	if got := importNames(watchNote.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "#JUDGMENT", "#ACCURACY"}) {
+	if !reflect.DeepEqual(playNote.Exports, []resource.EngineArchetypeDataName{"end_time"}) {
+		t.Fatalf("Play TapNote exports = %v", playNote.Exports)
+	}
+	if got := importNames(watchNote.Imports); !reflect.DeepEqual(got, watchBasicImports) {
 		t.Fatalf("Watch TapNote imports = %v", got)
 	}
-	if got := importNames(previewNote.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane"}) {
+	if got := importNames(previewNote.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Preview TapNote imports = %v", got)
 	}
-	if got := importNames(playFlick.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane"}) {
+	if got := importNames(playFlick.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Play FlickNote imports = %v", got)
 	}
-	if got := importNames(watchFlick.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "#JUDGMENT", "#ACCURACY"}) {
+	if got := importNames(watchFlick.Imports); !reflect.DeepEqual(got, watchBasicImports) {
 		t.Fatalf("Watch FlickNote imports = %v", got)
 	}
-	if got := importNames(previewFlick.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane"}) {
+	if got := importNames(previewFlick.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Preview FlickNote imports = %v", got)
 	}
 	if !playDirectional.HasInput {
 		t.Fatal("Play DirectionalFlickNote must have input")
 	}
-	if got := importNames(playDirectional.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "direction"}) {
+	if got := importNames(playDirectional.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Play DirectionalFlickNote imports = %v", got)
 	}
-	if got := importNames(watchDirectional.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "direction", "#JUDGMENT", "#ACCURACY"}) {
+	if got := importNames(watchDirectional.Imports); !reflect.DeepEqual(got, watchBasicImports) {
 		t.Fatalf("Watch DirectionalFlickNote imports = %v", got)
 	}
-	if got := importNames(previewDirectional.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "direction"}) {
+	if got := importNames(previewDirectional.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Preview DirectionalFlickNote imports = %v", got)
 	}
 	if !playHold.HasInput {
 		t.Fatal("Play HoldNote must have input")
 	}
-	if got := importNames(playHold.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "anchor", "end", "flickEnd"}) {
+	if got := importNames(playHold.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Play HoldHeadNote imports = %v", got)
 	}
-	if got := importNames(watchHold.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "anchor", "end", "flickEnd", "#JUDGMENT", "#ACCURACY"}) {
+	if got := importNames(watchHold.Imports); !reflect.DeepEqual(got, watchBasicImports) {
 		t.Fatalf("Watch HoldHeadNote imports = %v", got)
 	}
-	if got := importNames(previewHold.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"#BEAT", "lane", "anchor", "end", "flickEnd"}) {
+	if got := importNames(previewHold.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Preview HoldHeadNote imports = %v", got)
 	}
 	if !playHoldFlick.HasInput {
 		t.Fatal("Play HoldFlickNote must have input")
 	}
-	if got := importNames(playHoldFlick.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"head", "#BEAT", "lane"}) {
+	if got := importNames(playHoldFlick.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Play HoldFlickNote imports = %v", got)
 	}
-	if got := importNames(watchHoldFlick.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"head", "#BEAT", "lane", "#JUDGMENT", "#ACCURACY"}) {
+	if got := importNames(watchHoldFlick.Imports); !reflect.DeepEqual(got, watchBasicImports) {
 		t.Fatalf("Watch HoldFlickNote imports = %v", got)
 	}
-	if got := importNames(previewHoldFlick.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"head", "#BEAT", "lane"}) {
+	if got := importNames(previewHoldFlick.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Preview HoldFlickNote imports = %v", got)
 	}
-	chainImports := []resource.EngineArchetypeDataName{"#BEAT", "lane"}
 	for _, check := range []struct {
 		name    string
 		imports []resource.EngineDataArchetypeImport
+		want    []resource.EngineArchetypeDataName
 	}{
-		{"Play HoldAnchorNote", playAnchor.Imports}, {"Watch HoldAnchorNote", watchAnchor.Imports}, {"Preview HoldAnchorNote", previewAnchor.Imports},
+		{"Play HoldAnchorNote", playAnchor.Imports, playBasicImports},
+		{"Watch HoldAnchorNote", watchAnchor.Imports, watchBasicImports},
+		{"Preview HoldAnchorNote", previewAnchor.Imports, playBasicImports},
 	} {
-		if got := importNames(check.imports); !reflect.DeepEqual(got, chainImports) {
+		if got := importNames(check.imports); !reflect.DeepEqual(got, check.want) {
 			t.Fatalf("%s imports = %v", check.name, got)
 		}
 	}
 	if !playEnd.HasInput {
 		t.Fatal("Play HoldEndNote must have input")
 	}
-	if got := importNames(playEnd.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"head", "#BEAT", "lane"}) {
+	if got := importNames(playEnd.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Play HoldEndNote imports = %v", got)
 	}
-	if got := importNames(watchEnd.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"head", "#BEAT", "lane", "#JUDGMENT", "#ACCURACY"}) {
+	if got := importNames(watchEnd.Imports); !reflect.DeepEqual(got, watchBasicImports) {
 		t.Fatalf("Watch HoldEndNote imports = %v", got)
 	}
-	if got := importNames(previewEnd.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"head", "#BEAT", "lane"}) {
+	if got := importNames(previewEnd.Imports); !reflect.DeepEqual(got, playBasicImports) {
 		t.Fatalf("Preview HoldEndNote imports = %v", got)
 	}
-	connectorImports := []resource.EngineArchetypeDataName{"head", "anchor", "end", "flickEnd", "segment"}
+	connectorImports := []resource.EngineArchetypeDataName{"first", "second"}
 	if got := importNames(playConnector.Imports); !reflect.DeepEqual(got, connectorImports) {
 		t.Fatalf("Play HoldConnector imports = %v", got)
 	}
@@ -568,9 +658,6 @@ func assertDeclarationContract(t *testing.T, artifacts *compiler.Artifacts) {
 	}
 	if !playManager.HasInput || playManager.Touch == nil || playManager.Touch.Order != 1 {
 		t.Fatalf("unexpected Play HoldManager input metadata: %#v", playManager)
-	}
-	if playInputManager.UpdateSequential == nil || playInputManager.UpdateSequential.Order != 20 {
-		t.Fatalf("unexpected Play InputManager metadata: %#v", playInputManager)
 	}
 	if len(watchManager.Imports) != 0 {
 		t.Fatalf("Watch HoldManager imports = %v", importNames(watchManager.Imports))
@@ -591,14 +678,14 @@ func assertDeclarationContract(t *testing.T, artifacts *compiler.Artifacts) {
 	if got := importNames(previewSim.Imports); !reflect.DeepEqual(got, simImports) {
 		t.Fatalf("Preview SimLine imports = %v", got)
 	}
-	tickImports := []resource.EngineArchetypeDataName{"head", "#BEAT"}
+	tickImports := playBasicImports
 	if got := importNames(playTick.Imports); !reflect.DeepEqual(got, tickImports) {
 		t.Fatalf("Play HoldTickNote imports = %v", got)
 	}
 	if !playTick.HasInput || playTick.Touch == nil {
 		t.Fatalf("unexpected Play HoldTickNote input metadata: %#v", playTick)
 	}
-	if got := importNames(watchTick.Imports); !reflect.DeepEqual(got, []resource.EngineArchetypeDataName{"head", "#BEAT", "#JUDGMENT", "#ACCURACY"}) {
+	if got := importNames(watchTick.Imports); !reflect.DeepEqual(got, watchBasicImports) {
 		t.Fatalf("Watch HoldTickNote imports = %v", got)
 	}
 	if got := importNames(previewTick.Imports); !reflect.DeepEqual(got, tickImports) {
@@ -629,7 +716,6 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	watchEnd := findWatch(artifacts.Watch, "HoldEndNote")
 	previewEnd := findPreview(artifacts.Preview, "HoldEndNote")
 	playManager := findPlay(artifacts.Play, "HoldManager")
-	playInputManager := findPlay(artifacts.Play, "InputManager")
 	watchManager := findWatch(artifacts.Watch, "HoldManager")
 	watchLaneEffect := findWatch(artifacts.Watch, "ScheduledLaneEffect")
 	playConnector := findPlay(artifacts.Play, "HoldConnector")
@@ -643,33 +729,35 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	previewTick := findPreview(artifacts.Preview, "HoldTickNote")
 
 	assertFunctions(t, "play Stage preprocess", artifacts.Play.Nodes, playStage.Preprocess.Index, resource.RuntimeFunctionSet)
-	assertFunctionCount(t, "play Stage preprocess", artifacts.Play.Nodes, playStage.Preprocess.Index, resource.RuntimeFunctionSet, 8)
+	assertFunctionCount(t, "play Stage preprocess", artifacts.Play.Nodes, playStage.Preprocess.Index, resource.RuntimeFunctionSet, 7)
+	assertSetBlock(t, "play Stage skin transform", artifacts.Play.Nodes, playStage.Preprocess.Index, 1003)
+	assertSetBlock(t, "play Stage bucket windows", artifacts.Play.Nodes, playStage.Preprocess.Index, 2003)
 	assertFunctions(t, "play Stage input reset", artifacts.Play.Nodes, playStage.UpdateSequential.Index, resource.RuntimeFunctionSet)
 	assertFunctionCount(t, "play Stage input reset", artifacts.Play.Nodes, playStage.UpdateSequential.Index, resource.RuntimeFunctionSet, 2)
 	assertSetBlock(t, "play Stage claimed touch reset", artifacts.Play.Nodes, playStage.UpdateSequential.Index, 2000)
-	assertFunctions(t, "play Stage input manager spawn", artifacts.Play.Nodes, playStage.Initialize.Index, resource.RuntimeFunctionSpawn)
-	assertFunctions(t, "play InputManager overlap split", artifacts.Play.Nodes, playInputManager.UpdateSequential.Index,
+	assertFunctions(t, "play TapNote overlap split", artifacts.Play.Nodes, playNote.Touch.Index,
 		resource.RuntimeFunctionGetShifted, resource.RuntimeFunctionSetShifted)
 	if optimization != optimize.LevelStandard {
-		assertFunctions(t, "play InputManager timing tolerance", artifacts.Play.Nodes, playInputManager.UpdateSequential.Index,
+		assertFunctions(t, "play TapNote timing tolerance", artifacts.Play.Nodes, playNote.Touch.Index,
 			resource.RuntimeFunctionAbs)
 	}
 	assertFunctions(t, "play Stage empty lane touch", artifacts.Play.Nodes, playStage.Touch.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSet, resource.RuntimeFunctionPlay,
 		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionStreamSet)
 	assertGetBlock(t, "play Stage claimed touch read", artifacts.Play.Nodes, playStage.Touch.Index, 2000)
-	assertSetBlock(t, "play Stage claimed touch write", artifacts.Play.Nodes, playStage.Touch.Index, 2000)
+	assertNoSetBlock(t, "play Stage does not claim empty lane touch", artifacts.Play.Nodes, playStage.Touch.Index, 2000)
 	assertGetBlock(t, "play Stage touch input", artifacts.Play.Nodes, playStage.Touch.Index, 1002)
 	assertFunctions(t, "play Stage render", artifacts.Play.Nodes, playStage.UpdateParallel.Index, resource.RuntimeFunctionDraw)
-	assertFunctionCount(t, "play Stage render", artifacts.Play.Nodes, playStage.UpdateParallel.Index, resource.RuntimeFunctionDraw, 7)
-	assertFunctions(t, "play TapNote preprocess", artifacts.Play.Nodes, playNote.Preprocess.Index, resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSet)
+	assertFunctionCount(t, "play Stage render", artifacts.Play.Nodes, playStage.UpdateParallel.Index, resource.RuntimeFunctionDraw, 4)
+	assertFunctions(t, "play TapNote preprocess", artifacts.Play.Nodes, playNote.Preprocess.Index,
+		resource.RuntimeFunctionNegate, resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSet)
 	assertFunctionCount(t, "play TapNote preprocess", artifacts.Play.Nodes, playNote.Preprocess.Index, resource.RuntimeFunctionSet, 7)
 	if optimization != optimize.LevelStandard {
 		assertFunctions(t, "play TapNote preprocess", artifacts.Play.Nodes, playNote.Preprocess.Index,
 			resource.RuntimeFunctionBeatToTime, resource.RuntimeFunctionTimeToScaledTime)
 	}
 	assertFunctions(t, "play TapNote touch", artifacts.Play.Nodes, playNote.Touch.Index,
-		resource.RuntimeFunctionLessOr, resource.RuntimeFunctionGreaterOr, resource.RuntimeFunctionJudge, resource.RuntimeFunctionNotEqual,
+		resource.RuntimeFunctionLessOr, resource.RuntimeFunctionJudge, resource.RuntimeFunctionNotEqual,
 		resource.RuntimeFunctionPlay, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertFunctionCount(t, "play TapNote touch", artifacts.Play.Nodes, playNote.Touch.Index, resource.RuntimeFunctionSpawnParticleEffect, 3)
 	if optimization == optimize.LevelStandard {
@@ -683,9 +771,13 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertFunctions(t, "play TapNote should spawn", artifacts.Play.Nodes, playNote.ShouldSpawn.Index, resource.RuntimeFunctionDivide, resource.RuntimeFunctionGreaterOr)
 	assertFunctions(t, "play TapNote miss", artifacts.Play.Nodes, playNote.UpdateSequential.Index,
 		resource.RuntimeFunctionAdd, resource.RuntimeFunctionGet, resource.RuntimeFunctionGreater, resource.RuntimeFunctionSet)
-	assertFunctions(t, "play TapNote render", artifacts.Play.Nodes, playNote.UpdateParallel.Index, resource.RuntimeFunctionDivide, resource.RuntimeFunctionDraw)
+	assertNodeValues(t, "play TapNote miss", artifacts.Play.Nodes, playNote.UpdateSequential.Index, 1, 1000)
+	assertFunctions(t, "play TapNote render", artifacts.Play.Nodes, playNote.UpdateParallel.Index,
+		resource.RuntimeFunctionDivide, resource.RuntimeFunctionDraw)
+	assertFunctions(t, "play TapNote replay end export", artifacts.Play.Nodes, playNote.Terminate.Index,
+		resource.RuntimeFunctionExportValue)
 	assertFunctions(t, "play FlickNote touch", artifacts.Play.Nodes, playFlick.Touch.Index,
-		resource.RuntimeFunctionGreaterOr, resource.RuntimeFunctionJudge, resource.RuntimeFunctionPlay,
+		resource.RuntimeFunctionJudge, resource.RuntimeFunctionPlay,
 		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	if optimization == optimize.LevelStandard {
 		assertRuntimeCallFirstValues(t, "play FlickNote judgment SFX", artifacts.Play.Nodes, playFlick.Touch.Index, resource.RuntimeFunctionPlay, []float64{4, 5, 6})
@@ -696,8 +788,11 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	}
 	assertFunctions(t, "play FlickNote spawn order", artifacts.Play.Nodes, playFlick.SpawnOrder.Index, resource.RuntimeFunctionDivide, resource.RuntimeFunctionSubtract)
 	assertFunctions(t, "play FlickNote should spawn", artifacts.Play.Nodes, playFlick.ShouldSpawn.Index, resource.RuntimeFunctionGreaterOr)
-	assertFunctions(t, "play FlickNote miss", artifacts.Play.Nodes, playFlick.UpdateSequential.Index, resource.RuntimeFunctionGreater, resource.RuntimeFunctionSet)
-	assertFunctions(t, "play FlickNote render", artifacts.Play.Nodes, playFlick.UpdateParallel.Index, resource.RuntimeFunctionDraw)
+	assertFunctions(t, "play FlickNote deferred judgment", artifacts.Play.Nodes, playFlick.UpdateSequential.Index,
+		resource.RuntimeFunctionGreater, resource.RuntimeFunctionJudge, resource.RuntimeFunctionSet)
+	assertNodeValues(t, "play FlickNote miss", artifacts.Play.Nodes, playFlick.UpdateSequential.Index, 1, 1000)
+	assertFunctions(t, "play FlickNote render", artifacts.Play.Nodes, playFlick.UpdateParallel.Index,
+		resource.RuntimeFunctionRem, resource.RuntimeFunctionEaseOutQuad, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "play DirectionalFlickNote touch", artifacts.Play.Nodes, playDirectional.Touch.Index,
 		resource.RuntimeFunctionMultiply, resource.RuntimeFunctionGreater, resource.RuntimeFunctionJudge,
 		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
@@ -713,12 +808,13 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 			resource.RuntimeFunctionAbs)
 	}
 	assertFunctions(t, "play HoldNote touch", artifacts.Play.Nodes, playHold.Touch.Index,
-		resource.RuntimeFunctionLessOr, resource.RuntimeFunctionGreaterOr, resource.RuntimeFunctionPlay,
+		resource.RuntimeFunctionLessOr, resource.RuntimeFunctionPlay,
 		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionStreamSet, resource.RuntimeFunctionSet)
 	assertFunctions(t, "play HoldNote initialize", artifacts.Play.Nodes, playHold.Initialize.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawn)
 	assertFunctions(t, "play HoldNote update", artifacts.Play.Nodes, playHold.UpdateSequential.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionGreater, resource.RuntimeFunctionSet)
+	assertSetBlock(t, "play HoldNote active touch claim", artifacts.Play.Nodes, playHold.UpdateSequential.Index, 2000)
 	assertFunctions(t, "play HoldManager update", artifacts.Play.Nodes, playManager.UpdateParallel.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionPlayLooped, resource.RuntimeFunctionSpawnParticleEffect,
 		resource.RuntimeFunctionMoveParticleEffect, resource.RuntimeFunctionDestroyParticleEffect,
@@ -731,6 +827,7 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionGetShifted, resource.RuntimeFunctionStreamSet, resource.RuntimeFunctionSet)
 	assertGetBlock(t, "play HoldManager touch input", artifacts.Play.Nodes, playManager.Touch.Index, 1002)
 	assertSetBlock(t, "play HoldManager referenced shared write", artifacts.Play.Nodes, playManager.Touch.Index, 4102)
+	assertNoSetBlock(t, "play HoldManager does not recapture touch", artifacts.Play.Nodes, playManager.Touch.Index, 2000)
 	assertFunctions(t, "play HoldNote render", artifacts.Play.Nodes, playHold.UpdateParallel.Index,
 		resource.RuntimeFunctionDraw, resource.RuntimeFunctionIf)
 	assertFunctions(t, "play HoldEndNote render", artifacts.Play.Nodes, playEnd.UpdateParallel.Index, resource.RuntimeFunctionDraw)
@@ -743,10 +840,11 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertFunctions(t, "play HoldEndNote update", artifacts.Play.Nodes, playEnd.UpdateSequential.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionLessOr, resource.RuntimeFunctionStreamSet, resource.RuntimeFunctionSet)
 	assertFunctions(t, "play HoldEndNote touch", artifacts.Play.Nodes, playEnd.Touch.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionGetShifted, resource.RuntimeFunctionLessOr, resource.RuntimeFunctionGreaterOr,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionGetShifted, resource.RuntimeFunctionLessOr,
 		resource.RuntimeFunctionJudge, resource.RuntimeFunctionStreamSet, resource.RuntimeFunctionSpawnParticleEffect,
 		resource.RuntimeFunctionSet)
 	assertGetBlock(t, "play HoldEndNote claimed touch read", artifacts.Play.Nodes, playEnd.Touch.Index, 2000)
+	assertSetBlock(t, "play HoldEndNote claimed touch write", artifacts.Play.Nodes, playEnd.Touch.Index, 2000)
 	assertGetBlock(t, "play HoldEndNote referenced head", artifacts.Play.Nodes, playEnd.Touch.Index, 4102)
 	assertFunctions(t, "play HoldFlickNote preprocess", artifacts.Play.Nodes, playHoldFlick.Preprocess.Index,
 		resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSet)
@@ -754,45 +852,53 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 		resource.RuntimeFunctionJudge, resource.RuntimeFunctionPlay, resource.RuntimeFunctionStreamSet,
 		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertFunctions(t, "play HoldFlickNote touch", artifacts.Play.Nodes, playHoldFlick.Touch.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionGetShifted, resource.RuntimeFunctionGreaterOr,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionGetShifted,
 		resource.RuntimeFunctionJudge, resource.RuntimeFunctionPlay, resource.RuntimeFunctionStreamSet,
 		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertGetBlock(t, "play HoldFlickNote referenced head", artifacts.Play.Nodes, playHoldFlick.Touch.Index, 4102)
 	assertGetBlock(t, "play HoldFlickNote touch input", artifacts.Play.Nodes, playHoldFlick.Touch.Index, 1002)
+	assertSetBlock(t, "play HoldFlickNote claimed touch write", artifacts.Play.Nodes, playHoldFlick.Touch.Index, 2000)
 	assertFunctions(t, "play HoldFlickNote render", artifacts.Play.Nodes, playHoldFlick.UpdateParallel.Index, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "play HoldConnector render", artifacts.Play.Nodes, playConnector.UpdateParallel.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionDraw, resource.RuntimeFunctionSet)
 	assertGetBlock(t, "play HoldConnector referenced data", artifacts.Play.Nodes, playConnector.Preprocess.Index, 4101)
-	assertGetBlock(t, "play HoldConnector referenced shared", artifacts.Play.Nodes, playConnector.UpdateParallel.Index, 4102)
+	assertFunctions(t, "play HoldConnector lane tracking", artifacts.Play.Nodes, playConnector.UpdateSequential.Index,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionRemap, resource.RuntimeFunctionSet)
+	assertGetBlock(t, "play HoldConnector referenced data", artifacts.Play.Nodes, playConnector.UpdateSequential.Index, 4101)
+	assertSetBlock(t, "play HoldConnector shared lane write", artifacts.Play.Nodes, playConnector.UpdateSequential.Index, 4102)
 	assertFunctions(t, "play SimLine render", artifacts.Play.Nodes, playSim.UpdateParallel.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionEqual, resource.RuntimeFunctionDraw, resource.RuntimeFunctionSet)
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionEqual, resource.RuntimeFunctionMultiply,
+		resource.RuntimeFunctionEaseOutQuad, resource.RuntimeFunctionDraw, resource.RuntimeFunctionSet)
 	assertGetBlock(t, "play SimLine referenced data", artifacts.Play.Nodes, playSim.UpdateParallel.Index, 4101)
 	assertGetBlock(t, "play HoldTick referenced hold", artifacts.Play.Nodes, playTick.Preprocess.Index, 4101)
 	assertFunctions(t, "play HoldTickNote update", artifacts.Play.Nodes, playTick.UpdateSequential.Index,
 		resource.RuntimeFunctionGreater, resource.RuntimeFunctionJudge, resource.RuntimeFunctionPlay,
 		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
+	assertSetBlock(t, "play HoldTick active touch claim", artifacts.Play.Nodes, playTick.UpdateSequential.Index, 2000)
 	assertFunctions(t, "play HoldTickNote touch", artifacts.Play.Nodes, playTick.Touch.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionGetShifted,
 		resource.RuntimeFunctionJudge, resource.RuntimeFunctionPlay, resource.RuntimeFunctionSpawnParticleEffect,
 		resource.RuntimeFunctionSet)
 	assertGetBlock(t, "play HoldTick active touch", artifacts.Play.Nodes, playTick.Touch.Index, 4102)
 	assertGetBlock(t, "play HoldTick touch input", artifacts.Play.Nodes, playTick.Touch.Index, 1002)
+	assertSetBlock(t, "play HoldTick claimed touch write", artifacts.Play.Nodes, playTick.Touch.Index, 2000)
 	assertFunctions(t, "play HoldTickNote render", artifacts.Play.Nodes, playTick.UpdateParallel.Index, resource.RuntimeFunctionDraw)
 
 	assertFunctions(t, "watch TapNote preprocess", artifacts.Watch.Nodes, watchNote.Preprocess.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSet)
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionNegate, resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSet)
 	assertGetBlock(t, "watch TapNote replay mode", artifacts.Watch.Nodes, watchNote.Preprocess.Index, 1000)
 	assertFunctionCount(t, "watch TapNote preprocess", artifacts.Watch.Nodes, watchNote.Preprocess.Index, resource.RuntimeFunctionSet, 7)
 	if optimization == optimize.LevelStandard {
 		assertRuntimeCallFirstValues(t, "watch TapNote judgment SFX", artifacts.Watch.Nodes, watchNote.Preprocess.Index, resource.RuntimeFunctionPlayScheduled, []float64{1, 2, 3})
 	}
 	assertFunctions(t, "watch Stage preprocess", artifacts.Watch.Nodes, watchStage.Preprocess.Index, resource.RuntimeFunctionSet)
-	assertFunctionCount(t, "watch Stage preprocess", artifacts.Watch.Nodes, watchStage.Preprocess.Index, resource.RuntimeFunctionSet, 9)
-	assertFunctions(t, "watch Stage empty lane replay", artifacts.Watch.Nodes, watchStage.UpdateSequential.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawn,
-		resource.RuntimeFunctionStreamHas, resource.RuntimeFunctionStreamGetPreviousKey, resource.RuntimeFunctionStreamGetValue)
-	assertGetBlock(t, "watch Stage replay environment", artifacts.Watch.Nodes, watchStage.UpdateSequential.Index, 1000)
-	assertGetBlock(t, "watch Stage update state", artifacts.Watch.Nodes, watchStage.UpdateSequential.Index, 1001)
+	assertFunctionCount(t, "watch Stage preprocess", artifacts.Watch.Nodes, watchStage.Preprocess.Index, resource.RuntimeFunctionSet, 8)
+	assertSetBlock(t, "watch Stage skin transform", artifacts.Watch.Nodes, watchStage.Preprocess.Index, 1002)
+	assertSetBlock(t, "watch Stage bucket windows", artifacts.Watch.Nodes, watchStage.Preprocess.Index, 2003)
+	assertFunctions(t, "watch Stage empty lane replay", artifacts.Watch.Nodes, watchStage.Preprocess.Index,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSpawn,
+		resource.RuntimeFunctionStreamHas, resource.RuntimeFunctionStreamGetNextKey, resource.RuntimeFunctionStreamGetValue)
+	assertGetBlock(t, "watch Stage replay environment", artifacts.Watch.Nodes, watchStage.Preprocess.Index, 1000)
 	if optimization != optimize.LevelStandard {
 		assertFunctions(t, "watch ScheduledLaneEffect spawn time", artifacts.Watch.Nodes, watchLaneEffect.SpawnTime.Index,
 			resource.RuntimeFunctionTimeToScaledTime)
@@ -802,30 +908,36 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertFunctions(t, "watch ScheduledLaneEffect despawn time", artifacts.Watch.Nodes, watchLaneEffect.DespawnTime.Index,
 		resource.RuntimeFunctionAdd)
 	assertFunctions(t, "watch ScheduledLaneEffect update", artifacts.Watch.Nodes, watchLaneEffect.UpdateParallel.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionLess, resource.RuntimeFunctionPlay,
-		resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionGreater, resource.RuntimeFunctionGreaterOr,
+		resource.RuntimeFunctionSpawnParticleEffect)
+	assertNoFunctions(t, "watch ScheduledLaneEffect does not play unscheduled SFX", artifacts.Watch.Nodes, watchLaneEffect.UpdateParallel.Index,
+		resource.RuntimeFunctionPlay)
 	if optimization != optimize.LevelStandard {
 		assertFunctions(t, "watch TapNote preprocess", artifacts.Watch.Nodes, watchNote.Preprocess.Index,
 			resource.RuntimeFunctionBeatToTime, resource.RuntimeFunctionTimeToScaledTime)
 	}
-	assertFunctions(t, "watch TapNote replay", artifacts.Watch.Nodes, watchNote.UpdateSequential.Index,
-		resource.RuntimeFunctionNotEqual, resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
-	assertGetBlock(t, "watch TapNote skip state", artifacts.Watch.Nodes, watchNote.UpdateSequential.Index, 1001)
-	assertFunctionCount(t, "watch TapNote replay", artifacts.Watch.Nodes, watchNote.UpdateSequential.Index, resource.RuntimeFunctionSpawnParticleEffect, 3)
+	assertFunctions(t, "watch TapNote replay", artifacts.Watch.Nodes, watchNote.Terminate.Index,
+		resource.RuntimeFunctionEqual, resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
+	assertGetBlock(t, "watch TapNote skip state", artifacts.Watch.Nodes, watchNote.Terminate.Index, 1001)
+	assertFunctionCount(t, "watch TapNote replay", artifacts.Watch.Nodes, watchNote.Terminate.Index, resource.RuntimeFunctionSpawnParticleEffect, 3)
 	assertFunctions(t, "watch TapNote spawn time", artifacts.Watch.Nodes, watchNote.SpawnTime.Index, resource.RuntimeFunctionDivide, resource.RuntimeFunctionSubtract)
-	assertFunctions(t, "watch TapNote despawn time", artifacts.Watch.Nodes, watchNote.DespawnTime.Index, resource.RuntimeFunctionAdd)
-	assertFunctions(t, "watch TapNote render", artifacts.Watch.Nodes, watchNote.UpdateParallel.Index, resource.RuntimeFunctionDivide, resource.RuntimeFunctionDraw)
+	assertFunctions(t, "watch TapNote despawn time", artifacts.Watch.Nodes, watchNote.DespawnTime.Index,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionIf)
+	assertFunctions(t, "watch TapNote render", artifacts.Watch.Nodes, watchNote.UpdateParallel.Index,
+		resource.RuntimeFunctionDivide, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "watch update spawn", artifacts.Watch.Nodes, artifacts.Watch.UpdateSpawn, resource.RuntimeFunctionGet)
-	assertFunctions(t, "watch FlickNote replay", artifacts.Watch.Nodes, watchFlick.UpdateSequential.Index,
+	assertFunctions(t, "watch FlickNote replay", artifacts.Watch.Nodes, watchFlick.Terminate.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertFunctions(t, "watch FlickNote preprocess", artifacts.Watch.Nodes, watchFlick.Preprocess.Index, resource.RuntimeFunctionSet)
 	if optimization == optimize.LevelStandard {
 		assertRuntimeCallFirstValues(t, "watch FlickNote judgment SFX", artifacts.Watch.Nodes, watchFlick.Preprocess.Index, resource.RuntimeFunctionPlayScheduled, []float64{4, 5, 6})
 	}
 	assertFunctions(t, "watch FlickNote spawn time", artifacts.Watch.Nodes, watchFlick.SpawnTime.Index, resource.RuntimeFunctionDivide, resource.RuntimeFunctionSubtract)
-	assertFunctions(t, "watch FlickNote despawn time", artifacts.Watch.Nodes, watchFlick.DespawnTime.Index, resource.RuntimeFunctionAdd)
-	assertFunctions(t, "watch FlickNote render", artifacts.Watch.Nodes, watchFlick.UpdateParallel.Index, resource.RuntimeFunctionDraw)
-	assertFunctions(t, "watch DirectionalFlickNote replay", artifacts.Watch.Nodes, watchDirectional.UpdateSequential.Index,
+	assertFunctions(t, "watch FlickNote despawn time", artifacts.Watch.Nodes, watchFlick.DespawnTime.Index,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionIf)
+	assertFunctions(t, "watch FlickNote render", artifacts.Watch.Nodes, watchFlick.UpdateParallel.Index,
+		resource.RuntimeFunctionRem, resource.RuntimeFunctionEaseOutQuad, resource.RuntimeFunctionDraw)
+	assertFunctions(t, "watch DirectionalFlickNote replay", artifacts.Watch.Nodes, watchDirectional.Terminate.Index,
 		resource.RuntimeFunctionGreater, resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	if optimization == optimize.LevelStandard {
 		assertRuntimeCallFirstValues(t, "watch DirectionalFlickNote judgment SFX", artifacts.Watch.Nodes, watchDirectional.Preprocess.Index, resource.RuntimeFunctionPlayScheduled, []float64{4, 5, 6})
@@ -836,7 +948,7 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 		assertFunctions(t, "watch DirectionalFlickNote arrow count", artifacts.Watch.Nodes, watchDirectional.UpdateParallel.Index,
 			resource.RuntimeFunctionAbs)
 	}
-	assertFunctions(t, "watch HoldNote replay", artifacts.Watch.Nodes, watchHold.UpdateSequential.Index,
+	assertFunctions(t, "watch HoldNote replay", artifacts.Watch.Nodes, watchHold.Terminate.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertFunctions(t, "watch HoldNote preprocess", artifacts.Watch.Nodes, watchHold.Preprocess.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawn, resource.RuntimeFunctionSet,
@@ -855,6 +967,7 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertNoFunctions(t, "watch HoldManager update", artifacts.Watch.Nodes, watchManager.UpdateParallel.Index,
 		resource.RuntimeFunctionPlayLooped, resource.RuntimeFunctionStopLooped)
 	assertGetBlock(t, "watch HoldManager referenced data", artifacts.Watch.Nodes, watchManager.UpdateParallel.Index, 4101)
+	assertGetBlock(t, "watch HoldManager referenced shared", artifacts.Watch.Nodes, watchManager.UpdateParallel.Index, 4102)
 	assertFunctions(t, "watch HoldManager terminate", artifacts.Watch.Nodes, watchManager.Terminate.Index,
 		resource.RuntimeFunctionDestroyParticleEffect, resource.RuntimeFunctionSet)
 	assertNoFunctions(t, "watch HoldManager terminate", artifacts.Watch.Nodes, watchManager.Terminate.Index,
@@ -862,32 +975,42 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertFunctions(t, "watch HoldEndNote render", artifacts.Watch.Nodes, watchEnd.UpdateParallel.Index, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "watch HoldEndNote preprocess", artifacts.Watch.Nodes, watchEnd.Preprocess.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSet)
-	assertFunctions(t, "watch HoldEndNote replay", artifacts.Watch.Nodes, watchEnd.UpdateSequential.Index,
+	assertFunctions(t, "watch HoldEndNote replay", artifacts.Watch.Nodes, watchEnd.Terminate.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertFunctions(t, "watch HoldFlickNote preprocess", artifacts.Watch.Nodes, watchHoldFlick.Preprocess.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionPlayScheduled, resource.RuntimeFunctionSet)
-	assertFunctions(t, "watch HoldFlickNote replay", artifacts.Watch.Nodes, watchHoldFlick.UpdateSequential.Index,
+	assertFunctions(t, "watch HoldFlickNote replay", artifacts.Watch.Nodes, watchHoldFlick.Terminate.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertFunctions(t, "watch HoldFlickNote render", artifacts.Watch.Nodes, watchHoldFlick.UpdateParallel.Index, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "watch HoldConnector render", artifacts.Watch.Nodes, watchConnector.UpdateParallel.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionStreamHas, resource.RuntimeFunctionStreamGetPreviousKey,
-		resource.RuntimeFunctionStreamGetValue, resource.RuntimeFunctionDraw)
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionDraw)
 	assertGetBlock(t, "watch HoldConnector referenced data", artifacts.Watch.Nodes, watchConnector.Preprocess.Index, 4101)
+	assertFunctions(t, "watch HoldConnector lane tracking", artifacts.Watch.Nodes, watchConnector.UpdateSequential.Index,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionStreamHas, resource.RuntimeFunctionStreamGetPreviousKey,
+		resource.RuntimeFunctionStreamGetValue, resource.RuntimeFunctionRemap, resource.RuntimeFunctionSet)
+	assertGetBlock(t, "watch HoldConnector referenced data", artifacts.Watch.Nodes, watchConnector.UpdateSequential.Index, 4101)
+	assertSetBlock(t, "watch HoldConnector shared lane write", artifacts.Watch.Nodes, watchConnector.UpdateSequential.Index, 4102)
+	assertFunctions(t, "watch SimLine despawn", artifacts.Watch.Nodes, watchSim.DespawnTime.Index,
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionIf, resource.RuntimeFunctionMin)
 	assertFunctions(t, "watch SimLine render", artifacts.Watch.Nodes, watchSim.UpdateParallel.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionEqual, resource.RuntimeFunctionDraw)
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionEqual, resource.RuntimeFunctionMultiply,
+		resource.RuntimeFunctionEaseOutQuad, resource.RuntimeFunctionDraw)
 	assertGetBlock(t, "watch SimLine referenced data", artifacts.Watch.Nodes, watchSim.UpdateParallel.Index, 4101)
 	assertGetBlock(t, "watch HoldTick referenced hold", artifacts.Watch.Nodes, watchTick.Preprocess.Index, 4101)
-	assertFunctions(t, "watch HoldTickNote replay", artifacts.Watch.Nodes, watchTick.UpdateSequential.Index,
+	assertFunctions(t, "watch HoldTickNote replay", artifacts.Watch.Nodes, watchTick.Terminate.Index,
 		resource.RuntimeFunctionGet, resource.RuntimeFunctionSpawnParticleEffect, resource.RuntimeFunctionSet)
 	assertFunctions(t, "watch HoldTickNote render", artifacts.Watch.Nodes, watchTick.UpdateParallel.Index, resource.RuntimeFunctionDraw)
 
 	assertFunctions(t, "preview BPM render", artifacts.Preview.Nodes, previewBPM.Render.Index, resource.RuntimeFunctionDraw, resource.RuntimeFunctionPrint)
 	assertFunctions(t, "preview Timescale render", artifacts.Preview.Nodes, previewTimescale.Render.Index, resource.RuntimeFunctionDraw, resource.RuntimeFunctionPrint)
-	assertFunctions(t, "preview BPM columns", artifacts.Preview.Nodes, previewBPM.Render.Index, resource.RuntimeFunctionMod)
+	assertAnyFunction(t, "preview BPM columns", artifacts.Preview.Nodes, previewBPM.Render.Index,
+		resource.RuntimeFunctionRem, resource.RuntimeFunctionSetRem)
 	assertFunctions(t, "preview TapNote render", artifacts.Preview.Nodes, previewNote.Render.Index,
-		resource.RuntimeFunctionMod, resource.RuntimeFunctionDraw)
+		resource.RuntimeFunctionDraw)
+	assertAnyFunction(t, "preview TapNote columns", artifacts.Preview.Nodes, previewNote.Render.Index,
+		resource.RuntimeFunctionRem, resource.RuntimeFunctionSetRem)
 	assertFunctions(t, "preview TapNote duration", artifacts.Preview.Nodes, previewNote.Preprocess.Index,
-		resource.RuntimeFunctionGet, resource.RuntimeFunctionGreater, resource.RuntimeFunctionSet)
+		resource.RuntimeFunctionGet, resource.RuntimeFunctionGreater, resource.RuntimeFunctionNegate, resource.RuntimeFunctionSet)
 	assertGetBlock(t, "preview TapNote duration read", artifacts.Preview.Nodes, previewNote.Preprocess.Index, 2000)
 	assertSetBlock(t, "preview TapNote duration write", artifacts.Preview.Nodes, previewNote.Preprocess.Index, 2000)
 	assertFunctions(t, "preview Stage preprocess", artifacts.Preview.Nodes, previewStage.Preprocess.Index, resource.RuntimeFunctionSet)
@@ -895,16 +1018,18 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertSetBlock(t, "preview Stage canvas", artifacts.Preview.Nodes, previewStage.Preprocess.Index, 1001)
 	assertGetBlock(t, "preview Stage duration", artifacts.Preview.Nodes, previewStage.Preprocess.Index, 2000)
 	assertSetBlock(t, "preview Stage columns", artifacts.Preview.Nodes, previewStage.Preprocess.Index, 2000)
-	assertFunctions(t, "preview Stage render", artifacts.Preview.Nodes, previewStage.Render.Index,
-		resource.RuntimeFunctionMod, resource.RuntimeFunctionDraw)
+	assertFunctions(t, "preview Stage render", artifacts.Preview.Nodes, previewStage.Render.Index, resource.RuntimeFunctionDraw)
+	assertAnyFunction(t, "preview Stage columns", artifacts.Preview.Nodes, previewStage.Render.Index,
+		resource.RuntimeFunctionRem, resource.RuntimeFunctionSetRem)
 	assertGetBlock(t, "preview Stage screen", artifacts.Preview.Nodes, previewStage.Render.Index, 1000)
 	if optimization != optimize.LevelStandard {
-		assertFunctions(t, "preview Stage measure timing", artifacts.Preview.Nodes, previewStage.Render.Index, resource.RuntimeFunctionBeatToTime)
-		assertFunctions(t, "preview BPM column index", artifacts.Preview.Nodes, previewBPM.Render.Index, resource.RuntimeFunctionFloor)
-		assertFunctions(t, "preview TapNote column index", artifacts.Preview.Nodes, previewNote.Render.Index, resource.RuntimeFunctionFloor)
-		assertFunctions(t, "preview Stage column index", artifacts.Preview.Nodes, previewStage.Render.Index, resource.RuntimeFunctionFloor)
+		assertFunctions(t, "preview BPM measure timing", artifacts.Preview.Nodes, previewBPM.Render.Index,
+			resource.RuntimeFunctionBeatToStartingBeat, resource.RuntimeFunctionBeatToTime)
+		assertFunctions(t, "preview BPM column index", artifacts.Preview.Nodes, previewBPM.Render.Index, resource.RuntimeFunctionTrunc)
+		assertFunctions(t, "preview TapNote column index", artifacts.Preview.Nodes, previewNote.Render.Index, resource.RuntimeFunctionTrunc)
+		assertFunctions(t, "preview Stage column index", artifacts.Preview.Nodes, previewStage.Render.Index, resource.RuntimeFunctionTrunc)
 	}
-	assertFunctionCount(t, "preview Stage render", artifacts.Preview.Nodes, previewStage.Render.Index, resource.RuntimeFunctionDraw, 7)
+	assertFunctionCount(t, "preview Stage render", artifacts.Preview.Nodes, previewStage.Render.Index, resource.RuntimeFunctionDraw, 5)
 	assertFunctions(t, "preview FlickNote render", artifacts.Preview.Nodes, previewFlick.Render.Index, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "preview DirectionalFlickNote render", artifacts.Preview.Nodes, previewDirectional.Render.Index,
 		resource.RuntimeFunctionGreater, resource.RuntimeFunctionDraw)
@@ -917,10 +1042,10 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertFunctions(t, "preview HoldFlickNote render", artifacts.Preview.Nodes, previewHoldFlick.Render.Index, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "preview HoldConnector render", artifacts.Preview.Nodes, previewConnector.Render.Index, resource.RuntimeFunctionDraw)
 	assertFunctions(t, "preview HoldConnector columns", artifacts.Preview.Nodes, previewConnector.Render.Index,
-		resource.RuntimeFunctionMin, resource.RuntimeFunctionMax)
+		resource.RuntimeFunctionMin)
 	if optimization != optimize.LevelStandard {
 		assertFunctions(t, "preview HoldConnector column index", artifacts.Preview.Nodes, previewConnector.Render.Index,
-			resource.RuntimeFunctionFloor)
+			resource.RuntimeFunctionTrunc)
 	}
 	assertGetBlock(t, "preview HoldConnector referenced data", artifacts.Preview.Nodes, previewConnector.Render.Index, 4100)
 	assertFunctions(t, "preview SimLine render", artifacts.Preview.Nodes, previewSim.Render.Index, resource.RuntimeFunctionDraw)
@@ -929,7 +1054,7 @@ func assertRuntimeContract(t *testing.T, artifacts *compiler.Artifacts, optimiza
 	assertFunctions(t, "preview HoldTickNote render", artifacts.Preview.Nodes, previewTick.Render.Index, resource.RuntimeFunctionDraw)
 
 	assertFunctions(t, "tutorial preprocess", artifacts.Tutorial.Nodes, artifacts.Tutorial.Preprocess, resource.RuntimeFunctionSet)
-	assertFunctionCount(t, "tutorial preprocess", artifacts.Tutorial.Nodes, artifacts.Tutorial.Preprocess, resource.RuntimeFunctionSet, 6)
+	assertFunctionCount(t, "tutorial preprocess", artifacts.Tutorial.Nodes, artifacts.Tutorial.Preprocess, resource.RuntimeFunctionSet, 8)
 	assertFunctions(t, "tutorial navigate", artifacts.Tutorial.Nodes, artifacts.Tutorial.Navigate, resource.RuntimeFunctionSet)
 	assertFunctions(t, "tutorial update", artifacts.Tutorial.Nodes, artifacts.Tutorial.Update,
 		resource.RuntimeFunctionEqual, resource.RuntimeFunctionDivide, resource.RuntimeFunctionDraw, resource.RuntimeFunctionPaint,
@@ -989,6 +1114,34 @@ func assertFunctions(t *testing.T, name string, nodes []resource.EngineDataNode,
 			t.Fatalf("%s does not contain %s; functions=%v", name, function, functions)
 		}
 	}
+}
+
+func assertAnyFunction(t *testing.T, name string, nodes []resource.EngineDataNode, root int, alternatives ...resource.RuntimeFunction) {
+	t.Helper()
+	functions := map[resource.RuntimeFunction]bool{}
+	visited := map[int]bool{}
+	var visit func(int)
+	visit = func(index int) {
+		if index < 0 || index >= len(nodes) || visited[index] {
+			return
+		}
+		visited[index] = true
+		function, ok := nodes[index].(resource.EngineDataFunctionNode)
+		if !ok {
+			return
+		}
+		functions[function.Func] = true
+		for _, argument := range function.Args {
+			visit(argument)
+		}
+	}
+	visit(root)
+	for _, function := range alternatives {
+		if functions[function] {
+			return
+		}
+	}
+	t.Fatalf("%s does not contain any of %v; functions=%v", name, alternatives, functions)
 }
 
 func assertNoFunctions(t *testing.T, name string, nodes []resource.EngineDataNode, root int, forbidden ...resource.RuntimeFunction) {
@@ -1093,6 +1246,33 @@ func assertRuntimeCallFirstValues(t *testing.T, name string, nodes []resource.En
 	}
 }
 
+func assertNodeValues(t *testing.T, name string, nodes []resource.EngineDataNode, root int, want ...float64) {
+	t.Helper()
+	values := map[float64]bool{}
+	visited := map[int]bool{}
+	var visit func(int)
+	visit = func(index int) {
+		if index < 0 || index >= len(nodes) || visited[index] {
+			return
+		}
+		visited[index] = true
+		switch node := nodes[index].(type) {
+		case resource.EngineDataValueNode:
+			values[node.Value] = true
+		case resource.EngineDataFunctionNode:
+			for _, argument := range node.Args {
+				visit(argument)
+			}
+		}
+	}
+	visit(root)
+	for _, value := range want {
+		if !values[value] {
+			t.Fatalf("%s does not contain value %v: %v", name, value, values)
+		}
+	}
+}
+
 func assertGetBlock(t *testing.T, name string, nodes []resource.EngineDataNode, root int, block float64) {
 	t.Helper()
 	visited := map[int]bool{}
@@ -1153,6 +1333,31 @@ func assertSetBlock(t *testing.T, name string, nodes []resource.EngineDataNode, 
 	if !visit(root) {
 		t.Fatalf("%s does not write memory block %v", name, block)
 	}
+}
+
+func assertNoSetBlock(t *testing.T, name string, nodes []resource.EngineDataNode, root int, block float64) {
+	t.Helper()
+	visited := map[int]bool{}
+	var visit func(int)
+	visit = func(index int) {
+		if index < 0 || index >= len(nodes) || visited[index] {
+			return
+		}
+		visited[index] = true
+		function, ok := nodes[index].(resource.EngineDataFunctionNode)
+		if !ok {
+			return
+		}
+		if function.Func == resource.RuntimeFunctionSet && len(function.Args) > 0 {
+			if value, ok := nodes[function.Args[0]].(resource.EngineDataValueNode); ok && value.Value == block {
+				t.Fatalf("%s contains Set for block %v", name, block)
+			}
+		}
+		for _, argument := range function.Args {
+			visit(argument)
+		}
+	}
+	visit(root)
 }
 
 func assertDevelopmentChart(t *testing.T, data *resource.LevelData) {
@@ -1244,17 +1449,19 @@ func assertDevelopmentDirectionalFlick(t *testing.T, data *resource.LevelData) {
 func assertDevelopmentHold(t *testing.T, data *resource.LevelData) {
 	t.Helper()
 	type expectedEntity struct {
-		archetype                   resource.EngineArchetypeName
-		beat, lane                  float64
-		head, anchor, end, flickEnd string
+		archetype  resource.EngineArchetypeName
+		beat, lane float64
+		head, prev string
+		next       string
 	}
 	want := map[string]expectedEntity{
-		"hold-head-1":   {"HoldHeadNote", 16, -2, "", "hold-anchor-1", "hold-end-1", ""},
-		"hold-anchor-1": {"HoldAnchorNote", 18, 1, "", "", "", ""},
-		"hold-end-1":    {"HoldEndNote", 20, 2, "hold-head-1", "", "", ""},
-		"hold-head-2":   {"HoldHeadNote", 22, 3, "", "hold-anchor-2", "", "hold-flick-2"},
-		"hold-anchor-2": {"HoldAnchorNote", 23, -1, "", "", "", ""},
-		"hold-flick-2":  {"HoldFlickNote", 24, -3, "hold-head-2", "", "", ""},
+		"hold-head-1":    {"HoldHeadNote", 16, -2, "", "", "hold-tick-early-1"},
+		"hold-anchor-1":  {"HoldAnchorNote", 18, 1, "", "hold-tick-middle-1", "hold-anchor-1b"},
+		"hold-anchor-1b": {"HoldAnchorNote", 19, -1, "", "hold-anchor-1", "hold-tick-2"},
+		"hold-end-1":     {"HoldEndNote", 20, 2, "", "hold-tick-late-1", ""},
+		"hold-head-2":    {"HoldHeadNote", 22, 3, "", "", "hold-anchor-2"},
+		"hold-anchor-2":  {"HoldAnchorNote", 23, -1, "", "hold-head-2", "hold-tick-3"},
+		"hold-flick-2":   {"HoldFlickNote", 24, -3, "", "hold-tick-3", ""},
 	}
 	found := map[string]bool{}
 	for _, entity := range data.Entities {
@@ -1266,8 +1473,7 @@ func assertDevelopmentHold(t *testing.T, data *resource.LevelData) {
 		lane, laneOK := entityValue(entity, "lane")
 		refs := entityRefs(entity)
 		if entity.Archetype != expected.archetype || !beatOK || !laneOK || beat != expected.beat || lane != expected.lane ||
-			refs["head"] != expected.head || refs["anchor"] != expected.anchor || refs["end"] != expected.end ||
-			refs["flickEnd"] != expected.flickEnd {
+			refs["head"] != expected.head || refs["prev"] != expected.prev || refs["next"] != expected.next {
 			t.Fatalf("unexpected Hold chain entity: %#v", entity)
 		}
 		found[entity.Name] = true
@@ -1279,30 +1485,33 @@ func assertDevelopmentHold(t *testing.T, data *resource.LevelData) {
 
 func assertDevelopmentHoldConnector(t *testing.T, data *resource.LevelData) {
 	t.Helper()
-	segments := map[string]map[float64]bool{}
+	want := map[string]map[resource.EngineArchetypeDataName]string{
+		"hold-1-connector-a": {"first": "hold-head-1", "second": "hold-tick-early-1"},
+		"hold-1-connector-b": {"first": "hold-tick-early-1", "second": "hold-tick-1"},
+		"hold-1-connector-c": {"first": "hold-tick-1", "second": "hold-tick-middle-1"},
+		"hold-1-connector-d": {"first": "hold-tick-middle-1", "second": "hold-anchor-1"},
+		"hold-1-connector-e": {"first": "hold-anchor-1", "second": "hold-anchor-1b"},
+		"hold-1-connector-f": {"first": "hold-anchor-1b", "second": "hold-tick-2"},
+		"hold-1-connector-g": {"first": "hold-tick-2", "second": "hold-tick-late-1"},
+		"hold-1-connector-h": {"first": "hold-tick-late-1", "second": "hold-end-1"},
+		"hold-2-connector-a": {"first": "hold-head-2", "second": "hold-anchor-2"},
+		"hold-2-connector-b": {"first": "hold-anchor-2", "second": "hold-tick-3"},
+		"hold-2-connector-c": {"first": "hold-tick-3", "second": "hold-flick-2"},
+	}
+	found := map[string]bool{}
 	for _, entity := range data.Entities {
 		if entity.Archetype != "HoldConnector" {
 			continue
 		}
 		refs := entityRefs(entity)
-		segment, segmentOK := entityValue(entity, "segment")
-		head := refs["head"]
-		chain := ""
-		if head == "hold-head-1" && refs["anchor"] == "hold-anchor-1" && refs["end"] == "hold-end-1" {
-			chain = "hold-1"
-		} else if head == "hold-head-2" && refs["anchor"] == "hold-anchor-2" && refs["flickEnd"] == "hold-flick-2" {
-			chain = "hold-2"
-		}
-		if !segmentOK || segment != 0 && segment != 1 || chain == "" {
+		expected, ok := want[entity.Name]
+		if !ok || !reflect.DeepEqual(refs, expected) {
 			t.Fatalf("unexpected HoldConnector fixture: %#v", entity)
 		}
-		if segments[chain] == nil {
-			segments[chain] = map[float64]bool{}
-		}
-		segments[chain][segment] = true
+		found[entity.Name] = true
 	}
-	if !segments["hold-1"][0] || !segments["hold-1"][1] || !segments["hold-2"][0] || !segments["hold-2"][1] {
-		t.Fatalf("development chart HoldConnector segments = %v", segments)
+	if len(found) != len(want) {
+		t.Fatalf("development chart HoldConnector segments = %v, want %v", found, want)
 	}
 }
 
@@ -1321,6 +1530,7 @@ func assertDevelopmentSimLine(t *testing.T, data *resource.LevelData) {
 	want := map[string]map[resource.EngineArchetypeDataName]string{
 		"sim-1": {"first": "tap-3-chord", "second": "tap-3-center"},
 		"sim-2": {"first": "tap-3-center", "second": "tap-3"},
+		"sim-3": {"first": "directional-flick-left", "second": "directional-flick-right"},
 	}
 	found := map[string]bool{}
 	for _, entity := range data.Entities {
@@ -1345,27 +1555,32 @@ func assertDevelopmentSimLine(t *testing.T, data *resource.LevelData) {
 
 func assertDevelopmentHoldTick(t *testing.T, data *resource.LevelData) {
 	t.Helper()
-	beats := map[float64]string{}
+	want := map[string]struct {
+		beat       float64
+		prev, next string
+	}{
+		"hold-tick-early-1":  {16.5, "hold-head-1", "hold-tick-1"},
+		"hold-tick-1":        {17, "hold-tick-early-1", "hold-tick-middle-1"},
+		"hold-tick-middle-1": {17.5, "hold-tick-1", "hold-anchor-1"},
+		"hold-tick-2":        {19, "hold-anchor-1b", "hold-tick-late-1"},
+		"hold-tick-late-1":   {19.5, "hold-tick-2", "hold-end-1"},
+		"hold-tick-3":        {23.5, "hold-anchor-2", "hold-flick-2"},
+	}
+	found := map[string]bool{}
 	for _, entity := range data.Entities {
 		if entity.Archetype != "HoldTickNote" {
 			continue
 		}
 		beat, beatOK := entityValue(entity, "#BEAT")
-		head := ""
-		for _, item := range entity.Data {
-			if ref, ok := item.(resource.LevelDataEntityRefData); ok && ref.Name == "head" {
-				head = ref.Ref
-			}
-		}
-		if !beatOK || beat != 16.5 && beat != 17 && beat != 17.5 && beat != 19 && beat != 19.5 && beat != 23.5 ||
-			beat != 23.5 && head != "hold-head-1" || beat == 23.5 && head != "hold-head-2" {
+		expected, ok := want[entity.Name]
+		refs := entityRefs(entity)
+		if !ok || !beatOK || beat != expected.beat || refs["prev"] != expected.prev || refs["next"] != expected.next {
 			t.Fatalf("unexpected HoldTickNote fixture: %#v", entity)
 		}
-		beats[beat] = head
+		found[entity.Name] = true
 	}
-	if beats[16.5] != "hold-head-1" || beats[17] != "hold-head-1" || beats[17.5] != "hold-head-1" ||
-		beats[19] != "hold-head-1" || beats[19.5] != "hold-head-1" || beats[23.5] != "hold-head-2" {
-		t.Fatalf("development chart HoldTick beats = %v", beats)
+	if len(found) != len(want) {
+		t.Fatalf("development chart HoldTick chain = %v, want %v", found, want)
 	}
 }
 
@@ -1410,8 +1625,8 @@ func assertDevelopmentBPM(t *testing.T, data *resource.LevelData) {
 	chartDuration := 12.0/120*60 + (24.0-12)/180*60
 	columnCount := previewColumnsForDuration(chartDuration)
 	canvasDuration := previewColumnSeconds * float64(columnCount)
-	if columnCount != 4 {
-		t.Fatalf("development chart column count = %d, want 4", columnCount)
+	if columnCount != 6 {
+		t.Fatalf("development chart column count = %d, want 6", columnCount)
 	}
 	if chartDuration > canvasDuration {
 		t.Fatalf("development chart duration %v exceeds preview canvas duration %v", chartDuration, canvasDuration)
