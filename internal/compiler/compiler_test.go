@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"math"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,62 @@ func TestCompilerBuildsCumulativeSnapshotAndReturnsClone(t *testing.T) {
 	}
 	if watch.Play == nil || watch.Watch == nil || watch.Play.Skin.Sprites[0].Name != "play.sprite" {
 		t.Fatalf("cumulative clone was corrupted: %#v", watch)
+	}
+}
+
+func TestCompilerSchemaUsesDeclarationsWithoutLoweringCallbacks(t *testing.T) {
+	compiler := NewCompiler(Options{}, "./testdata/invalidcallabledynamic")
+	schema, err := compiler.Schema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(schema.Archetypes) != 1 || schema.Archetypes[0].Name != "Note" || len(schema.Archetypes[0].Fields) != 0 {
+		t.Fatalf("schema = %#v", schema)
+	}
+	if _, err := compiler.Compile(mode.ModePlay); err == nil {
+		t.Fatal("callback lowering unexpectedly succeeded")
+	}
+	// A caller cannot mutate the cached schema.
+	schema.Archetypes[0].Name = "mutated"
+	again, err := compiler.Schema()
+	if err != nil || again.Archetypes[0].Name != "Note" {
+		t.Fatalf("cached schema was mutated: %#v, %v", again, err)
+	}
+}
+
+func TestCompilerSchemaMatchesDeclarationFields(t *testing.T) {
+	compiler := NewCompiler(Options{}, "./testdata/declarations")
+	schema, err := compiler.Schema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(schema.Archetypes) != 1 || schema.Archetypes[0].Name != "TapNote" {
+		t.Fatalf("schema = %#v", schema)
+	}
+	want := []string{"hitTime", "#BEAT"}
+	if !reflect.DeepEqual(schema.Archetypes[0].Fields, want) {
+		t.Fatalf("fields = %v, want %v", schema.Archetypes[0].Fields, want)
+	}
+}
+
+func TestCompilerSchemaRejectsInvalidArchetypeDeclarations(t *testing.T) {
+	compiler := NewCompiler(Options{}, "./testdata/invalid")
+	if _, err := compiler.Schema(); err == nil || !strings.Contains(err.Error(), "unknown archetype tag") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCompilerCompileAfterSchemaDoesNotReturnIncompleteArtifacts(t *testing.T) {
+	compiler := NewCompiler(Options{Optimization: optimize.LevelMinimal}, "./testdata/declarations")
+	if _, err := compiler.Schema(); err != nil {
+		t.Fatal(err)
+	}
+	artifacts, err := compiler.Compile(mode.ModePlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifacts.Play == nil || len(artifacts.Play.Archetypes) != 1 {
+		t.Fatalf("artifacts = %#v", artifacts)
 	}
 }
 

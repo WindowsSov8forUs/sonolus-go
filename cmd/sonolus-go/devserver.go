@@ -12,11 +12,14 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/build"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
+	developmentserver "github.com/WindowsSov8forUs/sonolus-go/internal/devserver"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/level"
 )
 
 type devServerState struct {
 	artifacts *compiler.Artifacts
 	rom       []byte
+	handler   http.Handler
 }
 
 type devServer struct {
@@ -47,11 +50,40 @@ func (s *devServer) recompile() error {
 	if err := s.watchFiles(engineCompiler.SourceFiles()); err != nil {
 		return err
 	}
+	development, err := level.LoadDevelopment(s.patterns...)
+	if err != nil {
+		return err
+	}
+	if err := level.Validate(development.Data, artifacts); err != nil {
+		return err
+	}
+	levelData, err := level.Package(development.Data)
+	if err != nil {
+		return fmt.Errorf("package development level: %w", err)
+	}
+	handler, err := developmentserver.New(s.name, artifacts, packaged, levelData)
+	if err != nil {
+		return err
+	}
+	if err := s.watchFiles(development.Files); err != nil {
+		return err
+	}
 	s.mu.Lock()
-	s.state = devServerState{artifacts: artifacts, rom: packaged.ROM}
+	s.state = devServerState{artifacts: artifacts, rom: packaged.ROM, handler: handler}
 	s.mu.Unlock()
 	slog.Info("[dev] recompiled", "nodes", len(artifacts.Play.Nodes), "archetypes", len(artifacts.Play.Archetypes), "options", len(artifacts.Configuration.Options))
 	return nil
+}
+
+func (s *devServer) serveSonolus(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	handler := s.state.handler
+	s.mu.RUnlock()
+	if handler == nil {
+		http.Error(w, "development server is not ready", http.StatusServiceUnavailable)
+		return
+	}
+	handler.ServeHTTP(w, r)
 }
 
 func (s *devServer) watchFiles(files []string) error {
@@ -127,8 +159,15 @@ func serveGzip(w http.ResponseWriter, data any) {
 	}
 }
 
-func runDevServer(patterns []string, explicitName, addr string, optimization int, romPath string, stats bool) error {
-	name, err := resolveEngineName(patterns, explicitName)
+func runDevServer(patterns []string, outputName, addr string, optimization int, romPath string, stats bool) error {
+	targets, err := compiler.DiscoverTargets(compiler.ModePlay, patterns...)
+	if err != nil {
+		return err
+	}
+	if len(targets) != 1 {
+		return fmt.Errorf("dev requires exactly one engine, but package patterns matched %d", len(targets))
+	}
+	named, err := nameTargets(targets, outputName)
 	if err != nil {
 		return err
 	}
@@ -145,7 +184,7 @@ func runDevServer(patterns []string, explicitName, addr string, optimization int
 		return fmt.Errorf("fsnotify: %w", err)
 	}
 	defer watcher.Close()
-	srv := &devServer{patterns: append([]string(nil), patterns...), name: name, fallback: fallback, stats: stats, level: level, watcher: watcher, watched: map[string]bool{}}
+	srv := &devServer{patterns: []string{named[0].target.PackagePath}, name: named[0].name, fallback: fallback, stats: stats, level: level, watcher: watcher, watched: map[string]bool{}}
 	if err := srv.recompile(); err != nil {
 		return err
 	}
@@ -158,6 +197,7 @@ func runDevServer(patterns []string, explicitName, addr string, optimization int
 	mux.HandleFunc("/sonolus/engine/preview-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Preview }))
 	mux.HandleFunc("/sonolus/engine/tutorial-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Tutorial }))
 	mux.HandleFunc("/sonolus/engine/rom", srv.serveROM)
+	mux.HandleFunc("/", srv.serveSonolus)
 
 	go func() {
 		for {

@@ -809,14 +809,59 @@ func TestParseDeclarationsConfigurationStaticFields(t *testing.T) {
 	if len(decl.Configuration.Value.Options) != 3 || decl.Configuration.Value.UI.Scope != "game" {
 		t.Fatalf("unexpected configuration: %#v", decl.Configuration)
 	}
+	slider := decl.Configuration.Value.Options[0].(resource.EngineConfigurationSliderOption)
+	if slider.Name != "Speed" || slider.Title != "Speed Option" || slider.Description != "Scroll speed" || !slider.Standard || slider.Scope != "game" || slider.Unit != "#TIMES" {
+		t.Fatalf("unexpected slider metadata: %#v", slider)
+	}
 	if got := decl.Configuration.Value.ReplayFallbackOptionNames; len(got) != 2 || got[0] != "Speed" || got[1] != "Lane" {
 		t.Fatalf("unexpected replay fallback: %#v", got)
 	}
 }
 
+func TestParseDeclarationsConfigurationStaticAlias(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/configurationalias")
+	if err != nil {
+		t.Fatal(err)
+	}
+	option := decl.Configuration.Value.Options[0].(resource.EngineConfigurationSliderOption)
+	if option.Name != "Speed" || option.Def != 1 {
+		t.Fatalf("unexpected aliased option: %#v", option)
+	}
+}
+
+func TestParseDeclarationsRejectsInvalidConfigurationConstructors(t *testing.T) {
+	tests := []struct{ pattern, message string }{
+		{"./testdata/fakeconfigurationconstructor", "must use sonolus.SliderOption"},
+		{"./testdata/missingconfigurationconstructor", "matching sonolus option constructor"},
+		{"./testdata/invalidconfigurationselect", "default must index a non-empty static values list"},
+	}
+	for _, test := range tests {
+		t.Run(test.pattern, func(t *testing.T) {
+			_, err := parseMode(mode.ModePlay, test.pattern)
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestParseDeclarationsRejectsLegacyConfigurationTag(t *testing.T) {
 	_, err := parseMode(mode.ModePlay, "./testdata/legacyconfiguration")
-	if err == nil || !strings.Contains(err.Error(), "use the configuration struct tag instead of sonolus") {
+	if err == nil || !strings.Contains(err.Error(), "struct tags are no longer supported") || !strings.Contains(err.Error(), "sonolus.SliderOption(sonolus.SliderOptionConfig") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsLegacyArchetypeTags(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/legacyarchetypetag")
+	if err == nil || !strings.Contains(err.Error(), "sonolus struct tags are no longer supported for archetypes") || !strings.Contains(err.Error(), `archetype:"memory"`) || !strings.Contains(err.Error(), "main.go:") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsArchetypeTagOutsideArchetype(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidarchetypetagnonarchetype")
+	if err == nil || !strings.Contains(err.Error(), "archetype struct tags are only valid on archetype declarations") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -839,6 +884,25 @@ func TestParseDeclarationsRejectsFakeResourceConstructor(t *testing.T) {
 	_, err := parseMode(mode.ModePlay, "./testdata/fakeresourceconstructor")
 	if err == nil || !strings.Contains(err.Error(), "use sonolus.SkinSprite") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDeclarationsRejectsInvalidResourceMarkers(t *testing.T) {
+	tests := []struct{ pattern, message string }{
+		{"./testdata/legacyresourcedirective", "//sonolus:resource is no longer supported"},
+		{"./testdata/invalidresourcemode", `invalid skin render mode "invalid"`},
+		{"./testdata/multipleresourcesingletons", "resource marker requires exactly one singleton variable"},
+		{"./testdata/multipleresourcemarkers", "exactly one resource marker is required"},
+		{"./testdata/indirectresourcemarker", "resource marker must be embedded directly"},
+		{"./testdata/fakeresourcemarker", "resource marker must be the exact sonolus.SkinResource type"},
+	}
+	for _, test := range tests {
+		t.Run(test.pattern, func(t *testing.T) {
+			_, err := parseMode(mode.ModePlay, test.pattern)
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 
@@ -868,7 +932,7 @@ func TestParseDeclarationsRejectsUnknownTags(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid tags to be rejected")
 	}
-	for _, key := range []string{"typo", "unknown", "mystery"} {
+	for _, key := range []string{"typo", "unknown", "configuration tags are no longer supported"} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("error does not mention %q: %v", key, err)
 		}

@@ -7,15 +7,17 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/preview"
 )
 
-//sonolus:resource skin lightweight
-type SkinData struct{ Note sonolus.Sprite }
+type SkinData struct {
+	sonolus.SkinResource
+	Note sonolus.Sprite
+}
 
-//sonolus:resource skin lightweight
-var Skin = &SkinData{Note: sonolus.SkinSprite("note")}
+var Skin = &SkinData{
+	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeLightweight}, Note: sonolus.SkinSprite("note")}
 
 type Note struct {
-	preview.Archetype `sonolus:"name=Note"`
-	Beat              float64 `sonolus:"imported,name=#BEAT"`
+	preview.Archetype `archetype:"name=Note"`
+	Beat              float64 `archetype:"imported,name=#BEAT"`
 }
 
 func (*Note) Render() {}

@@ -7,20 +7,20 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/tutorial"
 )
 
-//sonolus:resource instruction
 type InstructionData struct {
+	sonolus.InstructionResource
+
 	Tap sonolus.Text
 }
 
-//sonolus:resource instruction
 var Instructions = &InstructionData{Tap: sonolus.InstructionText("#TAP")}
 
-//sonolus:resource instructionIcon
 type InstructionIconData struct {
+	sonolus.InstructionIconResource
+
 	Tap sonolus.Icon
 }
 
-//sonolus:resource instructionIcon
 var InstructionIcons = &InstructionIconData{Tap: sonolus.InstructionIcon("#HAND")}
 
 type Globals struct{ tutorial.GlobalCallbacks }

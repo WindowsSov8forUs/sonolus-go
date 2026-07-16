@@ -2,18 +2,15 @@ package frontend
 
 import (
 	"fmt"
+	"go/constant"
 	"go/types"
-	"strconv"
-	"strings"
+	"math"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core"
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/catalog"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
 )
-
-func parseOptionBase(field *types.Var, tag tagValue) resource.EngineConfigurationOptionBase {
-	return resource.EngineConfigurationOptionBase{Name: core.Text(staticName(tag, field.Name())), Description: tag.Items["description"], Scope: tag.Items["scope"], Standard: tag.Flags["standard"], Advanced: tag.Flags["advanced"]}
-}
 
 func configurationUI(value source.StaticValue, typ *types.Struct) (resource.EngineConfigurationUI, error) {
 	result := resource.EngineConfigurationUI{}
@@ -210,45 +207,142 @@ func staticNumberField(value source.StaticValue, field *types.Var) (float64, boo
 	return staticNumber(item)
 }
 
+func staticBool(value source.StaticValue) (bool, bool) {
+	value = dereferenceStatic(value)
+	if value.Kind != source.StaticConstant || value.Exact == nil || value.Exact.Kind() != constant.Bool {
+		return false, false
+	}
+	return constant.BoolVal(value.Exact), true
+}
+
+func staticInt(value source.StaticValue) (int, bool) {
+	value = dereferenceStatic(value)
+	if value.Kind != source.StaticConstant || value.Exact == nil || value.Exact.Kind() != constant.Int {
+		return 0, false
+	}
+	n, exact := constant.Int64Val(value.Exact)
+	return int(n), exact && int64(int(n)) == n
+}
+
+func staticStructFieldByName(value source.StaticValue, name string) (source.StaticValue, bool) {
+	value = dereferenceStatic(value)
+	if value.Kind != source.StaticStruct {
+		return source.StaticValue{}, false
+	}
+	for _, item := range value.Fields {
+		if item.Field.Name() == name {
+			return item.Value, true
+		}
+	}
+	return source.StaticValue{}, false
+}
+
+func staticStringConfig(value source.StaticValue, name string) (string, bool) {
+	field, ok := staticStructFieldByName(value, name)
+	if !ok {
+		return "", false
+	}
+	return staticString(field)
+}
+
+func staticBoolConfig(value source.StaticValue, name string) (bool, bool) {
+	field, ok := staticStructFieldByName(value, name)
+	if !ok {
+		return false, false
+	}
+	return staticBool(field)
+}
+
+func staticNumberConfig(value source.StaticValue, name string) (float64, bool) {
+	field, ok := staticStructFieldByName(value, name)
+	if !ok {
+		return 0, false
+	}
+	return staticNumber(field)
+}
+
+func staticIntConfig(value source.StaticValue, name string) (int, bool) {
+	field, ok := staticStructFieldByName(value, name)
+	if !ok {
+		return 0, false
+	}
+	return staticInt(field)
+}
+
+func optionCall(value source.StaticValue, field *types.Var) (*source.StaticCall, source.StaticValue, error) {
+	value = dereferenceStatic(value)
+	if value.Kind != source.StaticFunctionCall || value.Call == nil || value.Call.Object == nil || value.Call.Receiver != nil || len(value.Call.Args) != 1 {
+		return nil, source.StaticValue{}, fmt.Errorf("configuration.%s: initialize the field with the matching sonolus option constructor", field.Name())
+	}
+	call := value.Call
+	symbol, ok := catalog.LookupObject(call.Object)
+	want := map[string]string{"float64": "SliderOption", "bool": "ToggleOption", "int": "SelectOption"}[field.Type().String()]
+	if !ok || symbol.Package != "sonolus" || symbol.Kind != catalog.KindFunction || symbol.Name != want {
+		return nil, source.StaticValue{}, fmt.Errorf("%s: configuration.%s must use sonolus.%s", call.Pos, field.Name(), want)
+	}
+	if call.Signature == nil || call.Signature.Results().Len() != 1 || !types.Identical(call.Signature.Results().At(0).Type(), field.Type()) {
+		return nil, source.StaticValue{}, fmt.Errorf("%s: configuration.%s constructor has an invalid result type", call.Pos, field.Name())
+	}
+	config := call.Args[0]
+	if typeID(config.Type) != rootID(want+"Config") {
+		return nil, source.StaticValue{}, fmt.Errorf("%s: configuration.%s constructor requires sonolus.%sConfig", call.Pos, field.Name(), want)
+	}
+	if err := pureStaticError(config, "configuration option constructor argument"); err != nil {
+		return nil, source.StaticValue{}, err
+	}
+	return call, config, nil
+}
+
+func optionBase(field *types.Var, value source.StaticValue) (resource.EngineConfigurationOptionBase, error) {
+	name, nameOK := staticStringConfig(value, "Name")
+	title, titleOK := staticStringConfig(value, "Title")
+	description, descriptionOK := staticStringConfig(value, "Description")
+	standard, standardOK := staticBoolConfig(value, "Standard")
+	advanced, advancedOK := staticBoolConfig(value, "Advanced")
+	scope, scopeOK := staticStringConfig(value, "Scope")
+	if !nameOK || !titleOK || !descriptionOK || !standardOK || !advancedOK || !scopeOK {
+		return resource.EngineConfigurationOptionBase{}, fmt.Errorf("configuration.%s: option metadata must be static", field.Name())
+	}
+	if name == "" {
+		name = field.Name()
+	}
+	return resource.EngineConfigurationOptionBase{
+		Name: core.Text(name), Title: core.Text(title), Description: description,
+		Standard: standard, Advanced: advanced, Scope: scope,
+	}, nil
+}
+
 func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source.ASTTracer) (*resource.EngineConfiguration, []error) {
 	cfg := &resource.EngineConfiguration{Options: []resource.EngineConfigurationOption{}}
 	var errs []error
 	st := named.Underlying().(*types.Struct)
 	binding, evalErr := tracer.EvalObject(singleton)
 	if evalErr != nil {
-		errs = append(errs, fmt.Errorf("%s: configuration singleton must be statically evaluable: %w", singleton.Name(), evalErr))
+		return cfg, []error{fmt.Errorf("%s: configuration singleton must be statically evaluable: %w", singleton.Name(), evalErr)}
 	}
 	configurationValue := binding.Value
 	externalNames := map[string]bool{}
+	uiFields, fallbackFields := 0, 0
 	for i := 0; i < st.NumFields(); i++ {
 		field := st.Field(i)
 		if field.Embedded() {
+			if typeID(field.Type()) != rootID("Configuration") {
+				errs = append(errs, fmt.Errorf("configuration.%s: only sonolus.Configuration may be embedded", field.Name()))
+			}
 			continue
 		}
 		if _, legacy := sonolusTag(st.Tag(i)); legacy {
-			errs = append(errs, fmt.Errorf("configuration.%s: use the configuration struct tag instead of sonolus", field.Name()))
+			errs = append(errs, fmt.Errorf("configuration.%s: struct tags are no longer supported; use a constructor such as sonolus.SliderOption(sonolus.SliderOptionConfig{...})", field.Name()))
 			continue
 		}
-		tag, ok := configurationTag(st.Tag(i))
-		if !ok {
+		if _, legacy := configurationTag(st.Tag(i)); legacy {
+			errs = append(errs, fmt.Errorf("configuration.%s: configuration tags are no longer supported; use a constructor such as sonolus.SliderOption(sonolus.SliderOptionConfig{...})", field.Name()))
 			continue
 		}
-		errs = append(errs, validateTag("configuration."+field.Name(), tag,
-			[]string{"slider", "toggle", "select", "standard", "advanced", "ui", "replayFallback"},
-			[]string{"name", "description", "scope", "def", "min", "max", "step", "unit", "values"})...)
-		kinds := 0
-		for _, kind := range []string{"slider", "toggle", "select", "ui", "replayFallback"} {
-			if tag.Flags[kind] {
-				kinds++
-			}
-		}
-		if kinds != 1 {
-			errs = append(errs, fmt.Errorf("configuration.%s: exactly one field kind is required", field.Name()))
-			continue
-		}
-		if tag.Flags["ui"] {
-			if typeID(field.Type()) != rootID("UIConfig") {
-				errs = append(errs, fmt.Errorf("configuration.%s: ui field must be sonolus.UIConfig", field.Name()))
+		if typeID(field.Type()) == rootID("UIConfig") {
+			uiFields++
+			if uiFields > 1 {
+				errs = append(errs, fmt.Errorf("configuration.%s: only one sonolus.UIConfig field is allowed", field.Name()))
 				continue
 			}
 			value, found := staticField(configurationValue, field)
@@ -269,7 +363,12 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 			}
 			continue
 		}
-		if tag.Flags["replayFallback"] {
+		if slice, ok := types.Unalias(field.Type()).(*types.Slice); ok && types.Identical(slice.Elem(), types.Typ[types.String]) {
+			fallbackFields++
+			if fallbackFields > 1 {
+				errs = append(errs, fmt.Errorf("configuration.%s: only one []string replay fallback field is allowed", field.Name()))
+				continue
+			}
 			value, found := staticField(configurationValue, field)
 			if !found {
 				errs = append(errs, fmt.Errorf("configuration.%s: replay fallback value is not static", field.Name()))
@@ -300,67 +399,78 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 			}
 			continue
 		}
-		base := parseOptionBase(field, tag)
+		if !types.Identical(field.Type(), types.Typ[types.Float64]) && !types.Identical(field.Type(), types.Typ[types.Bool]) && !types.Identical(field.Type(), types.Typ[types.Int]) {
+			errs = append(errs, fmt.Errorf("configuration.%s: unsupported field type %s", field.Name(), field.Type()))
+			continue
+		}
+		value, found := staticField(configurationValue, field)
+		if !found {
+			errs = append(errs, fmt.Errorf("configuration.%s: option initializer is not static", field.Name()))
+			continue
+		}
+		call, optionConfig, err := optionCall(value, field)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		base, err := optionBase(field, optionConfig)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", call.Pos, err))
+			continue
+		}
 		if externalNames[string(base.Name)] {
 			errs = append(errs, fmt.Errorf("configuration.%s: duplicate option name %q", field.Name(), base.Name))
 		} else {
 			externalNames[string(base.Name)] = true
 		}
-		parseFloat := func(key string) float64 {
-			value, err := strconv.ParseFloat(tag.Items[key], 64)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("configuration.%s: invalid %s", field.Name(), key))
-				return 0
+		switch field.Type() {
+		case types.Typ[types.Float64]:
+			def, defOK := staticNumberConfig(optionConfig, "Default")
+			min, minOK := staticNumberConfig(optionConfig, "Min")
+			max, maxOK := staticNumberConfig(optionConfig, "Max")
+			step, stepOK := staticNumberConfig(optionConfig, "Step")
+			unit, unitOK := staticStringConfig(optionConfig, "Unit")
+			if !defOK || !minOK || !maxOK || !stepOK || !unitOK || math.IsNaN(def) || math.IsInf(def, 0) || math.IsNaN(min) || math.IsInf(min, 0) || math.IsNaN(max) || math.IsInf(max, 0) || math.IsNaN(step) || math.IsInf(step, 0) {
+				errs = append(errs, fmt.Errorf("%s: configuration.%s slider values must be finite static numbers", call.Pos, field.Name()))
+				continue
 			}
-			return value
-		}
-		switch {
-		case tag.Flags["slider"]:
-			if !types.Identical(field.Type(), types.Typ[types.Float64]) {
-				errs = append(errs, fmt.Errorf("configuration.%s: slider field must be float64", field.Name()))
-			}
-			def, min, max, step := parseFloat("def"), parseFloat("min"), parseFloat("max"), parseFloat("step")
 			if min > max || def < min || def > max || step <= 0 {
-				errs = append(errs, fmt.Errorf("configuration.%s: require min <= def <= max and step > 0", field.Name()))
+				errs = append(errs, fmt.Errorf("%s: configuration.%s requires min <= default <= max and step > 0", call.Pos, field.Name()))
+				continue
 			}
-			cfg.Options = append(cfg.Options, resource.EngineConfigurationSliderOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSlider, Def: def, Min: min, Max: max, Step: step, Unit: core.Text(tag.Items["unit"])})
-		case tag.Flags["toggle"]:
-			if !types.Identical(field.Type(), types.Typ[types.Bool]) {
-				errs = append(errs, fmt.Errorf("configuration.%s: toggle field must be bool", field.Name()))
-			}
-			def, parseErr := strconv.ParseBool(tag.Items["def"])
-			if parseErr != nil {
-				errs = append(errs, fmt.Errorf("configuration.%s: invalid def", field.Name()))
+			cfg.Options = append(cfg.Options, resource.EngineConfigurationSliderOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSlider, Def: def, Min: min, Max: max, Step: step, Unit: core.Text(unit)})
+		case types.Typ[types.Bool]:
+			def, ok := staticBoolConfig(optionConfig, "Default")
+			if !ok {
+				errs = append(errs, fmt.Errorf("%s: configuration.%s default must be a static bool", call.Pos, field.Name()))
+				continue
 			}
 			n := 0
 			if def {
 				n = 1
 			}
 			cfg.Options = append(cfg.Options, resource.EngineConfigurationToggleOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeToggle, Def: n})
-		case tag.Flags["select"]:
-			if !types.Identical(field.Type(), types.Typ[types.Int]) {
-				errs = append(errs, fmt.Errorf("configuration.%s: select field must be int", field.Name()))
-			}
-			def, err := strconv.Atoi(tag.Items["def"])
-			if err != nil {
-				errs = append(errs, fmt.Errorf("configuration.%s: invalid def", field.Name()))
-			}
-			raw := tag.Items["values"]
+		case types.Typ[types.Int]:
+			def, defOK := staticIntConfig(optionConfig, "Default")
+			raw, valuesOK := staticStructFieldByName(optionConfig, "Values")
+			elements, valuesOK := staticElements(raw)
 			var values []core.Text
-			if raw != "" {
-				for _, v := range strings.Split(raw, "|") {
-					if v == "" {
-						errs = append(errs, fmt.Errorf("configuration.%s: select values must be non-empty", field.Name()))
+			if valuesOK {
+				for _, element := range elements {
+					text, ok := staticString(element)
+					if !ok || text == "" {
+						errs = append(errs, fmt.Errorf("%s: configuration.%s select values must be non-empty static strings", call.Pos, field.Name()))
+						valuesOK = false
+						continue
 					}
-					values = append(values, core.Text(v))
+					values = append(values, core.Text(text))
 				}
 			}
-			if len(values) == 0 || def < 0 || def >= len(values) {
-				errs = append(errs, fmt.Errorf("configuration.%s: select def must index a non-empty values list", field.Name()))
+			if !defOK || !valuesOK || len(values) == 0 || def < 0 || def >= len(values) {
+				errs = append(errs, fmt.Errorf("%s: configuration.%s default must index a non-empty static values list", call.Pos, field.Name()))
+				continue
 			}
 			cfg.Options = append(cfg.Options, resource.EngineConfigurationSelectOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSelect, Def: def, Values: values})
-		default:
-			errs = append(errs, fmt.Errorf("configuration.%s: missing option kind", field.Name()))
 		}
 	}
 	for _, fallback := range cfg.ReplayFallbackOptionNames {

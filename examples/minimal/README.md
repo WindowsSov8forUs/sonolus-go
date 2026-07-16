@@ -6,7 +6,7 @@
 在仓库根目录执行：
 
 ```bash
-go run ./cmd/sonolus-go build -name minimal -m all ./examples/minimal
+go run ./cmd/sonolus-go build -o minimal -m all ./examples/minimal
 ```
 
 编译产物默认写入 `dist/minimal`。

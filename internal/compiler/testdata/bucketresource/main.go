@@ -2,24 +2,24 @@ package main
 
 import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 
-//sonolus:resource skin
 type SkinData struct {
+	sonolus.SkinResource
+
 	Note     sonolus.Sprite
 	Fallback sonolus.Sprite
 }
 
-//sonolus:resource skin
 var Skin = &SkinData{
 	Note:     sonolus.SkinSprite("note"),
 	Fallback: sonolus.SkinSprite("fallback"),
 }
 
-//sonolus:resource buckets
 type BucketData struct {
+	sonolus.BucketsResource
+
 	Tap sonolus.Bucket
 }
 
-//sonolus:resource buckets
 var Buckets = &BucketData{
 	Tap: sonolus.JudgmentBucket(
 		"#MILLISECONDS",

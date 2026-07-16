@@ -11,10 +11,21 @@ package patterns
     -> optimize.Optimizer
     -> backend
     -> compiler.Artifacts
-    -> build 或 pack
+    -> build
+
+development LevelFile
+    -> level loader (play/watch/preview)
+    -> archetype/import validation
+    -> Sonolus dev server
 ```
 
 根调度器是 `internal/compiler.Compiler`。CLI 只依赖该根包门面，不直接调用 frontend、IR 或 backend。
+
+CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
+
+开发 LevelData 是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析共享 embed 声明并对三种普通关卡模式校验；`internal/devserver` 将成功的引擎与关卡快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
+
+`list` 使用独立的 declaration-only frontend 路径读取 Play、Watch、Preview archetype 字段，不 lower callback。字段来源 Contract 同时供 Py 兼容 schema 投影和 Development Level 的逐模式 imports 校验使用。
 
 ## Compiler 快照
 
@@ -120,4 +131,4 @@ type Artifacts struct {
 }
 ```
 
-`internal/build` 将存在的模式产物 gzip 后原子写入目录。`internal/pack` 要求完整四模式 artifacts，生成 `sonolus-pack-go` 输入树并交给 packer。
+`internal/build` 将存在的模式产物 gzip 后原子写入目录。

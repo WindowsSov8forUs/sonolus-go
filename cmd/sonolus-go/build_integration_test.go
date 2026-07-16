@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
@@ -26,9 +27,16 @@ func publicConformancePattern() string {
 	return filepath.Join("..", "..", "examples", "conformance")
 }
 
+func compilerFixturePattern(name string) string {
+	return filepath.Join("..", "..", "internal", "compiler", "testdata", name)
+}
+
 func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 	out := t.TempDir()
-	if err := cmdBuild([]string{publicConformancePattern()}, "conformance", out, "all", 0, "", true); err != nil {
+	previousRoot := engineOutputRoot
+	engineOutputRoot = out
+	t.Cleanup(func() { engineOutputRoot = previousRoot })
+	if err := cmdBuild([]string{publicConformancePattern()}, "conformance", "all", 0, "", true); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(out, "conformance")
@@ -36,6 +44,9 @@ func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("missing %s: %v", name, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "LevelData")); !os.IsNotExist(err) {
+		t.Fatalf("build unexpectedly wrote LevelData: %v", err)
 	}
 	play, err := codec.Decompress[resource.EnginePlayData](mustRead(t, filepath.Join(dir, build.FilePlayData)))
 	if err != nil || len(play.Skin.Sprites) == 0 {
@@ -54,39 +65,142 @@ func TestBuildCompilesPublicConformanceExample(t *testing.T) {
 	}
 }
 
-func TestPackCompilesPublicConformanceExample(t *testing.T) {
-	out := t.TempDir()
-	if err := runCLI([]string{
-		"pack", "-name", "conformance", "-author", "sonolus-go", "-o", out, "-O", "2",
-		publicConformancePattern(),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := os.ReadDir(filepath.Join(out, "conformance-pack"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("pack output is empty")
-	}
-}
-
 func TestBuildRejectsInvalidOptimization(t *testing.T) {
-	err := cmdBuild([]string{fixturePattern()}, "fixture", t.TempDir(), "play", 3, "", false)
+	err := cmdBuild([]string{fixturePattern()}, "fixture", "play", 3, "", false)
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
-func TestResolveEngineName(t *testing.T) {
-	if _, err := resolveEngineName([]string{"./..."}, ""); err == nil {
-		t.Fatal("wildcard pattern did not require -name")
+func TestVetCompilesWithoutWritingArtifacts(t *testing.T) {
+	root := t.TempDir()
+	previousRoot := engineOutputRoot
+	engineOutputRoot = filepath.Join(root, "dist")
+	t.Cleanup(func() { engineOutputRoot = previousRoot })
+	sentinel := filepath.Join(engineOutputRoot, "sentinel")
+	if err := os.MkdirAll(engineOutputRoot, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if got, err := resolveEngineName([]string{fixturePattern()}, ""); err != nil || got != "multimode" {
-		t.Fatalf("name=%q err=%v", got, err)
+	if err := os.WriteFile(sentinel, []byte("unchanged"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if got, err := resolveEngineName([]string{"a", "b"}, "explicit"); err != nil || got != "explicit" {
-		t.Fatalf("explicit name=%q err=%v", got, err)
+
+	if err := cmdVet([]string{publicConformancePattern()}, "all", 0, "", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, sentinel)); got != "unchanged" {
+		t.Fatalf("sentinel = %q", got)
+	}
+	entries, err := os.ReadDir(engineOutputRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "sentinel" {
+		t.Fatalf("vet modified output directory: %v", entries)
+	}
+}
+
+func TestVetSupportsMultipleEnginesAndSingleMode(t *testing.T) {
+	pattern := filepath.Join("..", "..", "examples", "...")
+	if err := cmdVet([]string{pattern}, "play", 1, "", false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVetSupportsStandardOptimization(t *testing.T) {
+	if err := cmdVet([]string{publicConformancePattern()}, "play", 2, "", false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVetReportsTargetCompilationFailure(t *testing.T) {
+	err := cmdVet([]string{compilerFixturePattern("invalid")}, "play", 0, "", false)
+	if err == nil {
+		t.Fatal("invalid engine passed vet")
+	}
+	if !strings.Contains(err.Error(), "internal/compiler/testdata/invalid") {
+		t.Fatalf("error lacks target package: %v", err)
+	}
+}
+
+func TestVetValidatesFallbackROM(t *testing.T) {
+	rom := filepath.Join(t.TempDir(), "rom")
+	if err := os.WriteFile(rom, []byte{1, 2, 3}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := cmdVet([]string{publicConformancePattern()}, "play", 0, rom, false)
+	if err == nil || !strings.Contains(err.Error(), "length 3 is not divisible by 4") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestVetDoesNotParseDevelopmentLevel(t *testing.T) {
+	pattern := "." + string(os.PathSeparator) + filepath.Join("testdata", "checklevel")
+	if err := cmdVet([]string{pattern}, "all", 0, "", false); err != nil {
+		t.Fatalf("vet parsed invalid development LevelData: %v", err)
+	}
+}
+
+func TestListWritesStableSchemaJSONWithoutArtifacts(t *testing.T) {
+	root := t.TempDir()
+	previousRoot := engineOutputRoot
+	engineOutputRoot = filepath.Join(root, "dist")
+	t.Cleanup(func() { engineOutputRoot = previousRoot })
+	var first, second bytes.Buffer
+	if err := cmdList([]string{publicConformancePattern()}, &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdList([]string{publicConformancePattern()}, &second); err != nil {
+		t.Fatal(err)
+	}
+	if first.String() != second.String() {
+		t.Fatalf("list output is not deterministic:\n%s\n%s", first.String(), second.String())
+	}
+	want := "{\n  \"archetypes\": [\n    {\n      \"name\": \"ConformanceNote\",\n      \"fields\": [\n        \"result\",\n        \"#BEAT\"\n      ]\n    }\n  ]\n}\n"
+	if first.String() != want {
+		t.Fatalf("list output:\n%s\nwant:\n%s", first.String(), want)
+	}
+	if _, err := os.Stat(engineOutputRoot); !os.IsNotExist(err) {
+		t.Fatalf("list unexpectedly created output directory: %v", err)
+	}
+}
+
+func TestListRequiresExactlyOneEngine(t *testing.T) {
+	var out bytes.Buffer
+	pattern := filepath.Join("..", "..", "examples", "...")
+	err := cmdList([]string{pattern}, &out)
+	if err == nil || !strings.Contains(err.Error(), "list requires exactly one engine") {
+		t.Fatalf("error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("list wrote partial output: %q", out.String())
+	}
+}
+
+func TestNameTargets(t *testing.T) {
+	targets := []compiler.Target{
+		{PackagePath: "example.com/first/cmd/engine", ModulePath: "example.com/first"},
+		{PackagePath: "example.com/second/cmd/engine", ModulePath: "example.com/second"},
+	}
+	named, err := nameTargets(targets, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if named[0].name != "first" || named[1].name != "second" {
+		t.Fatalf("names = %q, %q", named[0].name, named[1].name)
+	}
+	if _, err := nameTargets(targets, "combined"); err == nil || !strings.Contains(err.Error(), "-o requires exactly one engine") {
+		t.Fatalf("multi-engine -o error = %v", err)
+	}
+	if got, err := nameTargets(targets[:1], "custom"); err != nil || got[0].name != "custom" {
+		t.Fatalf("custom name = %#v, err = %v", got, err)
+	}
+	duplicate := []compiler.Target{
+		{PackagePath: "example.com/shared/a", ModulePath: "example.com/shared"},
+		{PackagePath: "example.com/shared/b", ModulePath: "example.com/shared"},
+	}
+	if _, err := nameTargets(duplicate, ""); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("duplicate module name error = %v", err)
 	}
 }
 
@@ -107,6 +221,7 @@ func TestDevServerRecompileIsAtomic(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/sonolus/engines/info", srv.serveInfo)
 	mux.HandleFunc("/sonolus/engine/play-data", srv.servePayload(func(a *compiler.Artifacts) any { return a.Play }))
+	mux.HandleFunc("/", srv.serveSonolus)
 	server := httptest.NewServer(mux)
 	defer server.Close()
 	response, err := http.Get(server.URL + "/sonolus/engines/info")
@@ -120,6 +235,22 @@ func TestDevServerRecompileIsAtomic(t *testing.T) {
 	}
 	if info["engine"] != "conformance" {
 		t.Fatalf("info = %#v", info)
+	}
+	response, err = http.Get(server.URL + "/sonolus/info")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("Sonolus info status = %d", response.StatusCode)
+	}
+	response, err = http.Get(server.URL + "/sonolus/levels/list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("Sonolus level list status = %d", response.StatusCode)
 	}
 }
 

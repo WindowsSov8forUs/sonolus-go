@@ -330,6 +330,8 @@ func LookupRecipe(symbol *Symbol) Recipe {
 		switch symbol.Name {
 		case "SkinSprite", "EffectClip", "ParticleEffect", "InstructionText", "InstructionIcon", "JudgmentBucket", "JudgmentBucketSprite", "JudgmentBucketSpriteWithFallback":
 			return Recipe{Kind: RecipeCompileTime, Reason: "resource constructor"}
+		case "SliderOption", "ToggleOption", "SelectOption":
+			return Recipe{Kind: RecipeCompileTime, Reason: "configuration constructor"}
 		}
 	}
 	return Recipe{Kind: RecipeForbidden, Reason: "callback lowering recipe has not been defined"}

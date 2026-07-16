@@ -6,8 +6,8 @@ import (
 )
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
-	Values         sonolus.VarArray[float64] `sonolus:"memory"`
+	play.Archetype `archetype:"name=Note"`
+	Values         sonolus.VarArray[float64] `archetype:"memory"`
 }
 
 func (*Note) Preprocess() {}

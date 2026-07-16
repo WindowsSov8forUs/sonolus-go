@@ -6,7 +6,7 @@ import (
 )
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
+	play.Archetype `archetype:"name=Note"`
 }
 
 func (*Note) UpdateParallel() {

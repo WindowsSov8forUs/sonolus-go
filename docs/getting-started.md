@@ -28,10 +28,12 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 
 type GameConfiguration struct {
 	sonolus.Configuration
-	Speed float64 `configuration:"slider,name=Speed,def=1,min=0.5,max=2,step=0.1"`
+	Speed float64
 }
 
-var Configuration GameConfiguration
+var Configuration = GameConfiguration{Speed: sonolus.SliderOption(sonolus.SliderOptionConfig{
+	Name: "Speed", Default: 1, Min: 0.5, Max: 2, Step: 0.1,
+})}
 var ROM = sonolus.ROMValues{}
 
 func main() {}
@@ -53,23 +55,24 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/play"
 )
 
-//sonolus:resource skin standard
 type SkinData struct {
+	sonolus.SkinResource
+
 	Note sonolus.Sprite
 }
 
-//sonolus:resource skin standard
 var Skin = &SkinData{
+	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeStandard},
 	Note: sonolus.SkinSprite("#NOTE_HEAD_CYAN"),
 }
 
 type TapNote struct {
-	play.Archetype      `sonolus:"name=TapNote,hasInput=true"`
-	play.CallbackOrders `sonolus:"preprocess=-10"`
+	play.Archetype      `archetype:"name=TapNote,hasInput=true"`
+	play.CallbackOrders `archetype:"preprocess=-10"`
 
-	Beat float64 `sonolus:"imported,name=#BEAT,default=0"`
-	X    float64 `sonolus:"memory"`
-	Hit  float64 `sonolus:"exported,name=hitTime"`
+	Beat float64 `archetype:"imported,name=#BEAT,default=0"`
+	X    float64 `archetype:"memory"`
+	Hit  float64 `archetype:"exported,name=hitTime"`
 }
 
 func (n *TapNote) Preprocess() {
@@ -85,13 +88,13 @@ func (*TapNote) ShouldSpawn() bool { return true }
 
 ```go
 // Play
-type Note struct { play.Archetype `sonolus:"name=Note"` }
+type Note struct { play.Archetype `archetype:"name=Note"` }
 
 // Watch
-type Note struct { watch.Archetype `sonolus:"name=Note"` }
+type Note struct { watch.Archetype `archetype:"name=Note"` }
 
 // Preview
-type Note struct { preview.Archetype `sonolus:"name=Note"` }
+type Note struct { preview.Archetype `archetype:"name=Note"` }
 ```
 
 Tutorial 没有 archetype，使用全局 callback marker：
@@ -118,7 +121,7 @@ Watch 的可选全局 callback 使用 `watch.GlobalCallbacks`，并可定义 `fu
 在 `sonolus-go` 仓库外使用已安装的可执行文件：
 
 ```bash
-sonolus-go build -name example -m all .
+sonolus-go build -m all .
 ```
 
 输出目录默认为 `dist/example`，包含：
@@ -136,11 +139,38 @@ EngineTutorialData
 
 ## 开发服务器
 
-```bash
-sonolus-go serve -name example .
+可选地在共享文件中声明一个开发关卡：
+
+```go
+import _ "embed"
+
+//sonolus:level
+//go:embed dev-level.json
+var DevelopmentLevel sonolus.LevelFile
 ```
 
-开发服务器直接在内存中保存 compiler artifacts，监听 Go 源文件和 embed 文件并自动重编译。重编译失败时继续提供上一次成功快照。
+`dev-level.json` 使用 Sonolus LevelData schema：
+
+```json
+{
+  "bgmOffset": 0,
+  "entities": [
+    {
+      "name": "note-0",
+      "archetype": "Note",
+      "data": [{ "name": "#BEAT", "value": 1 }]
+    }
+  ]
+}
+```
+
+同一文件必须对 Play、Watch 和 Preview 可见。实体 archetype 和每个 data name 必须存在于三个模式对应的声明中；实体引用必须指向同一关卡内的命名实体。未声明时使用空开发关卡。
+
+```bash
+sonolus-go dev .
+```
+
+开发服务器提供完整 Sonolus 路由和内置开发资源，可由客户端直接打开 `Dev Level`。它监听 Go 源文件和 embed 文件并自动重编译；重编译失败时继续提供上一次成功快照。开发关卡只供 `dev` 使用，不会写入 `build` 产物。
 
 ## 下一步
 

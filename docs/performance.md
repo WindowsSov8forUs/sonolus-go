@@ -57,9 +57,9 @@ Backend 在模式范围共享 node pool，子节点优先写入并按值或 `Run
 
 ## 开发服务器
 
-`serve` 监听 Compiler 成功快照中的 Go 文件和 embed 文件。每次变化创建新 Compiler，避免把不同源码版本混入同一快照；编译失败时保留上一次成功 artifacts。
+`dev` 监听 Compiler 成功快照中的 Go 文件和 embed 文件。每次变化创建新 Compiler，避免把不同源码版本混入同一快照；编译失败时保留上一次成功 artifacts。
 
-大型项目中频繁保存多个文件可能触发连续编译。当前 watcher 不承诺 debounce，因此批量修改时可先使用编辑器的原子保存策略，或在完成一组修改后再启动 `serve`。
+大型项目中频繁保存多个文件可能触发连续编译。当前 watcher 不承诺 debounce，因此批量修改时可先使用编辑器的原子保存策略，或在完成一组修改后再启动 `dev`。
 
 ## 基准与回归
 

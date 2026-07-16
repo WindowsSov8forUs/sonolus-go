@@ -1,6 +1,6 @@
 # sonolus-go
 
-`sonolus-go` 是使用 Go 编写 Sonolus 引擎的编译工具链。它将受支持的 Go DSL 编译为 Play、Watch、Preview 和 Tutorial EngineData，并可生成引擎目录或 Sonolus pack。
+`sonolus-go` 是使用 Go 编写 Sonolus 引擎的编译工具链。它将受支持的 Go DSL 编译为 Play、Watch、Preview 和 Tutorial EngineData，并生成可供后续工具消费的引擎目录。
 
 ## 下载与安装
 
@@ -33,34 +33,36 @@ sonolus-go version
 编译全部四种模式：
 
 ```bash
-sonolus-go build -name my-engine -m all ./engine
+sonolus-go build -m all ./engine
 ```
 
 只编译 Play：
 
 ```bash
-sonolus-go build -name my-engine -m play ./engine
+sonolus-go build -o my-engine -m play ./engine
+```
+
+检查引擎能否完整编译但不生成产物：
+
+```bash
+sonolus-go vet ./engine
+```
+
+输出供关卡工具使用的 archetype 字段 schema：
+
+```bash
+sonolus-go list ./engine
 ```
 
 启动带源码监听和自动重编译的开发服务器：
 
 ```bash
-sonolus-go serve -name my-engine ./engine
+sonolus-go dev ./engine
 ```
 
-生成 pack：
+`dev` 提供可由 Sonolus 客户端直接打开的 Dev Level。可选的嵌入式开发 LevelData 声明见[快速开始](docs/getting-started.md#开发服务器)。
 
-```bash
-sonolus-go pack -name my-engine -author "YourName" ./engine
-```
-
-打包 level JSON：
-
-```bash
-sonolus-go level ./level.json
-```
-
-命令输入直接使用 Go package patterns。单个明确目录可以省略 `-name`；多个 pattern、import pattern 或 wildcard 需要显式指定。完整参数见[命令行参考](docs/cli.md)。
+命令输入直接使用 Go package patterns。未指定 `-o` 时可一次编译多个引擎，各引擎名称取其 module path 的最后一段；指定 `-o` 时只允许匹配一个引擎。产物固定写入 `dist/<name>`。完整参数见[命令行参考](docs/cli.md)。
 
 ## 文档
 

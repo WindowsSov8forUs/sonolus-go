@@ -85,7 +85,7 @@ func bucketSprite(out *ModeDeclarations, pkg *packages.Package, expr ast.Expr) (
 	return result, nil
 }
 
-func addBucketResource(out *ModeDeclarations, spec resourceDirectiveSpec) []error {
+func addBucketResource(out *ModeDeclarations, spec resourceDeclarationSpec) []error {
 	literal, ok := unwrapResourceLiteral(spec.initializer)
 	if !ok {
 		return []error{fmt.Errorf("%s: buckets resource value must be a struct literal or pointer to one", spec.pos)}
@@ -108,6 +108,9 @@ func addBucketResource(out *ModeDeclarations, spec resourceDirectiveSpec) []erro
 	var errs []error
 	for index := 0; index < st.NumFields(); index++ {
 		field := st.Field(index)
+		if field == spec.marker {
+			continue
+		}
 		if field.Embedded() || typeID(field.Type()) != rootID("Bucket") {
 			errs = append(errs, fmt.Errorf("%s.%s: buckets resource fields must be sonolus.Bucket", spec.named.Obj().Name(), field.Name()))
 			continue

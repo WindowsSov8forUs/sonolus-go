@@ -70,13 +70,8 @@ func TestLevel_MalformedJSON(t *testing.T) {
 }
 
 func TestLevel_MissingFields(t *testing.T) {
-	// Missing "entities" key defaults to empty.
-	data, err := CompileLevel(`{"bgmOffset": 0}`)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(data.Entities) != 0 {
-		t.Errorf("expected 0 entities for missing key, got %d", len(data.Entities))
+	if _, err := CompileLevel(`{"bgmOffset": 0}`); err == nil {
+		t.Fatal("expected missing entities error")
 	}
 }
 

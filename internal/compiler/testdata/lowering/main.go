@@ -9,38 +9,41 @@ import (
 )
 
 type Note struct {
-	play.Archetype `sonolus:"name=Note"`
-	Ref            sonolus.EntityRef[Spawned]     `sonolus:"imported"`
-	Samples        [2]float64                     `sonolus:"memory"`
-	History        sonolus.VarArray[float64]      `sonolus:"memory,cap=4"`
-	Points         sonolus.VarArray[sonolus.Vec2] `sonolus:"memory,cap=2"`
+	play.Archetype `archetype:"name=Note"`
+	Ref            sonolus.EntityRef[Spawned]     `archetype:"imported"`
+	Samples        [2]float64                     `archetype:"memory"`
+	History        sonolus.VarArray[float64]      `archetype:"memory,cap=4"`
+	Points         sonolus.VarArray[sonolus.Vec2] `archetype:"memory,cap=2"`
 }
 
 type Spawned struct {
-	play.Archetype `sonolus:"name=Spawned"`
-	Imported       float64 `sonolus:"imported"`
-	Data           float64 `sonolus:"data"`
-	Value          float64 `sonolus:"memory"`
-	Shared         float64 `sonolus:"shared"`
-	Exported       float64 `sonolus:"exported"`
+	play.Archetype `archetype:"name=Spawned"`
+	Imported       float64 `archetype:"imported"`
+	Data           float64 `archetype:"data"`
+	Value          float64 `archetype:"memory"`
+	Shared         float64 `archetype:"shared"`
+	Exported       float64 `archetype:"exported"`
 }
 
-//sonolus:resource skin
-type Skin struct{ Note sonolus.Sprite }
+type Skin struct {
+	sonolus.SkinResource
+	Note sonolus.Sprite
+}
 
-//sonolus:resource skin
 var Assets = &Skin{Note: sonolus.SkinSprite("note")}
 
-//sonolus:resource effect
-type EffectsData struct{ Hit sonolus.Clip }
+type EffectsData struct {
+	sonolus.EffectResource
+	Hit sonolus.Clip
+}
 
-//sonolus:resource effect
 var Effects = &EffectsData{Hit: sonolus.EffectClip("hit")}
 
-//sonolus:resource particle
-type ParticlesData struct{ Hit sonolus.Effect }
+type ParticlesData struct {
+	sonolus.ParticleResource
+	Hit sonolus.Effect
+}
 
-//sonolus:resource particle
 var Particles = &ParticlesData{Hit: sonolus.ParticleEffect("hit")}
 
 func pair(value float64) (left, right float64) {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,16 +105,49 @@ func TestParseOptLevel(t *testing.T) {
 }
 
 func TestRunCLIParsesSubcommandFlags(t *testing.T) {
-	err := runCLI([]string{"build", "-name", "fixture", "-O", "3", "./testdata/multimode"})
+	err := runCLI([]string{"build", "-o", "fixture", "-O", "3", "./testdata/multimode"})
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestRunCLILevelRequiresChart(t *testing.T) {
-	err := runCLI([]string{"level", "-o", t.TempDir()})
-	if err == nil || !strings.Contains(err.Error(), "exactly one chart path") {
-		t.Fatalf("unexpected error: %v", err)
+func TestRunCLIDevCommand(t *testing.T) {
+	err := runCLI([]string{"dev", "-unknown"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -unknown") {
+		t.Fatalf("dev command was not parsed: %v", err)
+	}
+
+	err = runCLI([]string{"serve"})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "serve"`) {
+		t.Fatalf("legacy serve command remains available: %v", err)
+	}
+}
+
+func TestRunCLIVetCommand(t *testing.T) {
+	err := runCLI([]string{"vet", "-m", "invalid"})
+	if err == nil || !strings.Contains(err.Error(), "unknown mode: invalid") {
+		t.Fatalf("vet command was not parsed: %v", err)
+	}
+
+	err = runCLI([]string{"vet", "-unknown"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -unknown") {
+		t.Fatalf("vet flags were not parsed: %v", err)
+	}
+}
+
+func TestRunCLIListCommandRejectsFlags(t *testing.T) {
+	err := runCLI([]string{"list", "-m", "play"})
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -m") {
+		t.Fatalf("list unexpectedly accepted flags: %v", err)
+	}
+}
+
+func TestRunCLIRejectsLegacyCheckAndSchemaCommands(t *testing.T) {
+	for _, command := range []string{"check", "schema"} {
+		err := runCLI([]string{command})
+		if err == nil || !strings.Contains(err.Error(), `unknown command "`+command+`"`) {
+			t.Errorf("legacy command %q remains available: %v", command, err)
+		}
 	}
 }
 
@@ -133,21 +165,6 @@ func TestCompilerMode(t *testing.T) {
 	for _, tt := range tests {
 		if got := tt.mode.CompilerMode(); got != tt.want {
 			t.Errorf("CompilerMode() = %v, want %v", got, tt.want)
-		}
-	}
-}
-
-func TestEngineNameFromPath(t *testing.T) {
-	tests := []struct{ path, want string }{
-		{"engines/my-engine.go", "my-engine"},
-		{"engine.go", "engine"},
-		{filepath.Join("a", "b", "c.go"), "c"},
-		{"no-ext", "no-ext"},
-		{"/absolute/path/to/test.go", "test"},
-	}
-	for _, tt := range tests {
-		if got := engineNameFromPath(tt.path); got != tt.want {
-			t.Errorf("engineNameFromPath(%q) = %q, want %q", tt.path, got, tt.want)
 		}
 	}
 }

@@ -87,7 +87,6 @@ release:
     ### 用法
 
     ```bash
-    sonolus-go build -name my-engine -m all ./engine
-    sonolus-go serve -name my-engine ./engine
-    sonolus-go pack -name my-engine -o dist ./engine
+    sonolus-go build -o my-engine -m all ./engine
+    sonolus-go serve -o my-engine ./engine
     ```

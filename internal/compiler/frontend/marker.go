@@ -3,6 +3,7 @@ package frontend
 import (
 	"fmt"
 	"go/types"
+	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/mode"
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler/source"
@@ -13,6 +14,10 @@ type tagValue = compilerTag.Value
 
 func sonolusTag(tag string) (tagValue, bool) {
 	return compilerTag.Parse(tag, "sonolus")
+}
+
+func archetypeTag(tag string) (tagValue, bool) {
+	return compilerTag.Parse(tag, "archetype")
 }
 
 func configurationTag(tag string) (tagValue, bool) {
@@ -49,6 +54,15 @@ func markerID(m mode.Mode, name string) string {
 
 func rootID(name string) string { return source.SonolusPkgPath() + "." + name }
 
+var resourceMarkerKinds = map[string]string{
+	rootID("SkinResource"):            "Skin",
+	rootID("EffectResource"):          "Effect",
+	rootID("ParticleResource"):        "Particle",
+	rootID("BucketsResource"):         "Buckets",
+	rootID("InstructionResource"):     "Instruction",
+	rootID("InstructionIconResource"): "InstructionIcon",
+}
+
 type markerField struct {
 	id    string
 	tag   tagValue
@@ -70,8 +84,63 @@ func structMarkers(named *types.Named) []markerField {
 		if id == "" {
 			continue
 		}
-		tag, _ := sonolusTag(st.Tag(i))
+		tag, _ := archetypeTag(st.Tag(i))
 		result = append(result, markerField{id: id, tag: tag, field: field})
 	}
 	return result
+}
+
+func primaryDeclarationMarker(named *types.Named) (markerField, bool, []error) {
+	var primary []markerField
+	var errs []error
+	for _, candidate := range structMarkers(named) {
+		isPrimary := candidate.id == rootID("Configuration")
+		if _, ok := resourceMarkerKinds[candidate.id]; ok {
+			isPrimary = true
+		}
+		isCallbackOrders := false
+		for _, candidateMode := range orderedModes {
+			if candidate.id == markerID(candidateMode, "Archetype") || candidate.id == markerID(candidateMode, "GlobalCallbacks") {
+				isPrimary = true
+			}
+			if candidate.id == markerID(candidateMode, "CallbackOrders") {
+				isCallbackOrders = true
+			}
+		}
+		if isPrimary {
+			primary = append(primary, candidate)
+			continue
+		}
+		separator := strings.LastIndex(candidate.id, ".")
+		candidatePackage := ""
+		if separator >= 0 {
+			candidatePackage = candidate.id[:separator]
+		}
+		if source.IsSonolusPkgPath(candidatePackage) && (len(candidate.tag.Flags) != 0 || len(candidate.tag.Items) != 0) && !isCallbackOrders {
+			errs = append(errs, fmt.Errorf("%s.%s: unknown Sonolus declaration marker %s", named.Obj().Name(), candidate.field.Name(), candidate.id))
+		}
+	}
+	if len(primary) > 1 {
+		errs = append(errs, fmt.Errorf("%s: multiple declaration markers are not allowed", named.Obj().Name()))
+		return markerField{}, false, errs
+	}
+	if len(primary) == 0 {
+		return markerField{}, false, errs
+	}
+	isArchetype := false
+	for _, candidateMode := range orderedModes {
+		if primary[0].id == markerID(candidateMode, "Archetype") {
+			isArchetype = true
+			break
+		}
+	}
+	if !isArchetype {
+		st := named.Underlying().(*types.Struct)
+		for i := 0; i < st.NumFields(); i++ {
+			if _, ok := archetypeTag(st.Tag(i)); ok {
+				errs = append(errs, fmt.Errorf("%s.%s: archetype struct tags are only valid on archetype declarations", named.Obj().Name(), st.Field(i).Name()))
+			}
+		}
+	}
+	return primary[0], true, errs
 }

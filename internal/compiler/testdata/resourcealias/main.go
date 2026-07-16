@@ -4,12 +4,12 @@ import "github.com/WindowsSov8forUs/sonolus-go/sonolus"
 
 const spriteName = "custom.alias"
 
-//sonolus:resource skin
-type SkinData struct{ Note sonolus.Sprite }
+type SkinData struct {
+	sonolus.SkinResource
+	Note sonolus.Sprite
+}
 
-var skinValue = &SkinData{Note: sonolus.SkinSprite(spriteName)}
-
-//sonolus:resource skin
-var Skin = skinValue
+var note = sonolus.SkinSprite(spriteName)
+var Skin = &SkinData{Note: note}
 
 func main() {}

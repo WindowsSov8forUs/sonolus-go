@@ -3,8 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"github.com/WindowsSov8forUs/sonolus-go/internal/compiler"
@@ -77,39 +76,45 @@ func (m Mode) CompilerMode() compiler.Mode {
 	}
 }
 
-// engineNameFromPath extracts the engine name from an engine source file path
-// or directory path. For files, it strips the extension; for directories, it
-// uses the directory base name.
-// e.g. "engines/my-engine.go" → "my-engine", "engines/my-engine/" → "my-engine"
-func engineNameFromPath(srcPath string) string {
-	if absolute, err := filepath.Abs(srcPath); err == nil {
-		srcPath = absolute
+// engineNameFromModule derives the engine name from the module path.
+func engineNameFromModule(modulePath string) (string, error) {
+	name := path.Base(strings.TrimSuffix(modulePath, "/"))
+	if name == "" || name == "." || name == "/" {
+		return "", fmt.Errorf("cannot derive engine name from module path %q", modulePath)
 	}
-	base := filepath.Base(srcPath)
-	ext := filepath.Ext(base)
-	if ext == ".go" {
-		return base[:len(base)-len(ext)]
-	}
-	// Directory or other: use the base name directly.
-	return base
+	return name, nil
 }
 
-func resolveEngineName(patterns []string, explicit string) (string, error) {
-	if explicit != "" {
-		return explicit, nil
+type namedTarget struct {
+	target compiler.Target
+	name   string
+}
+
+func nameTargets(targets []compiler.Target, outputName string) ([]namedTarget, error) {
+	if outputName != "" && len(targets) != 1 {
+		return nil, fmt.Errorf("-o requires exactly one engine, but package patterns matched %d", len(targets))
 	}
-	if len(patterns) != 1 {
-		return "", fmt.Errorf("-name is required when compiling multiple package patterns")
+	result := make([]namedTarget, 0, len(targets))
+	seen := make(map[string]string, len(targets))
+	for _, target := range targets {
+		name := outputName
+		if name == "" {
+			var err error
+			name, err = engineNameFromModule(target.ModulePath)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if strings.ContainsAny(name, `/\\`) || name == "." || name == ".." {
+			return nil, fmt.Errorf("invalid engine output name %q", name)
+		}
+		if previous, ok := seen[name]; ok {
+			return nil, fmt.Errorf("engine name %q is ambiguous for packages %q and %q; use separate invocations with -o", name, previous, target.PackagePath)
+		}
+		seen[name] = target.PackagePath
+		result = append(result, namedTarget{target: target, name: name})
 	}
-	pattern := patterns[0]
-	if strings.ContainsAny(pattern, "*?[") || strings.HasSuffix(pattern, "...") {
-		return "", fmt.Errorf("-name is required for wildcard package pattern %q", pattern)
-	}
-	info, err := os.Stat(pattern)
-	if err != nil || !info.IsDir() {
-		return "", fmt.Errorf("-name is required when %q is not an unambiguous directory pattern", pattern)
-	}
-	return engineNameFromPath(pattern), nil
+	return result, nil
 }
 
 // parseOptLevel converts a CLI -O flag value to an optimizer level.

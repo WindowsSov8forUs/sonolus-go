@@ -37,8 +37,7 @@ func runCLI(args []string) error {
 	switch command {
 	case "build":
 		flags := commandFlags(command)
-		name := flags.String("name", "", "engine name (required for ambiguous package patterns)")
-		out := flags.String("o", "dist", "output directory")
+		out := flags.String("o", "", "output engine name (requires exactly one engine)")
 		mode := flags.String("m", "all", "engine mode: play, watch, preview, tutorial, all")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
@@ -46,40 +45,34 @@ func runCLI(args []string) error {
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdBuild(flags.Args(), *name, *out, *mode, *optimization, *rom, *stats)
-	case "serve":
+		return cmdBuild(flags.Args(), *out, *mode, *optimization, *rom, *stats)
+	case "vet":
 		flags := commandFlags(command)
-		name := flags.String("name", "", "engine name (required for ambiguous package patterns)")
-		addr := flags.String("addr", ":8080", "server listen address")
+		mode := flags.String("m", "all", "engine mode: play, watch, preview, tutorial, all")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
 		stats := flags.Bool("stats", false, "print compilation timing")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdServe(flags.Args(), *name, *addr, *optimization, *rom, *stats)
-	case "pack":
+		return cmdVet(flags.Args(), *mode, *optimization, *rom, *stats)
+	case "list":
 		flags := commandFlags(command)
-		name := flags.String("name", "", "engine name (required for ambiguous package patterns)")
-		author := flags.String("author", "sonolus-go", "engine author")
-		out := flags.String("o", "dist", "output directory")
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		return cmdList(flags.Args(), os.Stdout)
+	case "dev":
+		flags := commandFlags(command)
+		out := flags.String("o", "", "development engine name")
+		addr := flags.String("addr", ":8080", "development server listen address")
 		optimization := flags.Int("O", 2, "optimization level: 0=minimal, 1=fast, 2=standard")
 		rom := flags.String("rom", "", "path to raw float32 ROM file (optional)")
 		stats := flags.Bool("stats", false, "print compilation timing")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
-		return cmdPack(flags.Args(), *name, *author, *out, *optimization, *rom, *stats)
-	case "level":
-		flags := commandFlags(command)
-		out := flags.String("o", "dist", "output directory")
-		if err := flags.Parse(args); err != nil {
-			return err
-		}
-		if flags.NArg() != 1 {
-			return fmt.Errorf("level requires exactly one chart path")
-		}
-		return cmdLevel(flags.Arg(0), *out)
+		return cmdDev(flags.Args(), *out, *addr, *optimization, *rom, *stats)
 	default:
 		usage()
 		return fmt.Errorf("unknown command %q", command)
@@ -93,10 +86,10 @@ func commandFlags(command string) *flag.FlagSet {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: sonolus-go build [-name <name>] [-o <out-dir>] [-m <mode>] [-O 0|1|2] <package-pattern>...")
-	fmt.Fprintln(os.Stderr, "       sonolus-go serve [-name <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
-	fmt.Fprintln(os.Stderr, "       sonolus-go level [-o <out-dir>] <chart.json>")
-	fmt.Fprintln(os.Stderr, "       sonolus-go pack  [-name <name>] [-author <name>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "usage: sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "       sonolus-go vet [-m <mode>] [-O 0|1|2] [-rom <file>] [-stats] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "       sonolus-go list <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "       sonolus-go dev [-o <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "  build modes: play, watch, preview, tutorial, all (default)")
 	fmt.Fprintln(os.Stderr, "  opt levels:  0=minimal, 1=fast, 2=standard (default)")
 }

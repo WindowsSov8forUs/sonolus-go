@@ -7,34 +7,39 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/sonolus/tutorial"
 )
 
-//sonolus:resource skin
-type SkinData struct{ Note sonolus.Sprite }
+type SkinData struct {
+	sonolus.SkinResource
+	Note sonolus.Sprite
+}
 
-//sonolus:resource skin
 var Skin = &SkinData{Note: sonolus.SkinSprite("note")}
 
-//sonolus:resource effect
-type EffectData struct{ Hit sonolus.Clip }
+type EffectData struct {
+	sonolus.EffectResource
+	Hit sonolus.Clip
+}
 
-//sonolus:resource effect
 var Effects = &EffectData{Hit: sonolus.EffectClip("hit")}
 
-//sonolus:resource particle
-type ParticleData struct{ Hit sonolus.Effect }
+type ParticleData struct {
+	sonolus.ParticleResource
+	Hit sonolus.Effect
+}
 
-//sonolus:resource particle
 var Particles = &ParticleData{Hit: sonolus.ParticleEffect("hit")}
 
-//sonolus:resource instruction
-type TextData struct{ Tap sonolus.Text }
+type TextData struct {
+	sonolus.InstructionResource
+	Tap sonolus.Text
+}
 
-//sonolus:resource instruction
 var Texts = &TextData{Tap: sonolus.InstructionText("Tap")}
 
-//sonolus:resource instructionIcon
-type IconData struct{ Tap sonolus.Icon }
+type IconData struct {
+	sonolus.InstructionIconResource
+	Tap sonolus.Icon
+}
 
-//sonolus:resource instructionIcon
 var Icons = &IconData{Tap: sonolus.InstructionIcon("#HAND")}
 
 type Globals struct{ tutorial.GlobalCallbacks }
