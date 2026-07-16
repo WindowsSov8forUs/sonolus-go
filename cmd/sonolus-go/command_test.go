@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -109,10 +110,48 @@ func TestParseOptLevel(t *testing.T) {
 	}
 }
 
+func TestParseRuntimeChecks(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want compiler.RuntimeChecks
+	}{
+		{"none", compiler.RuntimeChecksNone},
+		{"terminate", compiler.RuntimeChecksTerminate},
+		{"notify", compiler.RuntimeChecksNotify},
+	} {
+		got, err := parseRuntimeChecks(test.name)
+		if err != nil || got != test.want {
+			t.Errorf("parseRuntimeChecks(%q) = %v, %v", test.name, got, err)
+		}
+	}
+	if _, err := parseRuntimeChecks("invalid"); err == nil {
+		t.Fatal("invalid runtime checks level was accepted")
+	}
+}
+
 func TestRunCLIParsesSubcommandFlags(t *testing.T) {
 	err := runCLI([]string{"build", "-o", "fixture", "-O", "3", "./testdata/multimode"})
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCLIRejectsInvalidRuntimeChecks(t *testing.T) {
+	err := runCLI([]string{"vet", "-runtime-checks", "invalid", "./testdata/multimode"})
+	if err == nil || !strings.Contains(err.Error(), "invalid runtime checks") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDevConsoleDecodesCurrentSnapshot(t *testing.T) {
+	server := &devServer{state: devServerState{artifacts: &compiler.Artifacts{Diagnostics: map[int]string{42: "meaning"}}}}
+	var output bytes.Buffer
+	runDevConsole(strings.NewReader("help\ndecode 42\ndecode 7\n"), &output, server)
+	text := output.String()
+	for _, expected := range []string{"commands: decode <code>, help", "42: meaning", "unknown diagnostic code 7"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("console output %q does not contain %q", text, expected)
+		}
 	}
 }
 

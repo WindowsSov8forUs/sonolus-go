@@ -41,7 +41,7 @@ func TestBuildCompilesGodori(t *testing.T) {
 	previousRoot := engineOutputRoot
 	engineOutputRoot = out
 	t.Cleanup(func() { engineOutputRoot = previousRoot })
-	if err := cmdBuild([]string{godoriPattern()}, "godori", "all", 0, "", true); err != nil {
+	if err := cmdBuild([]string{godoriPattern()}, "godori", "all", 0, "", "none", true); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(out, "godori")
@@ -71,7 +71,7 @@ func TestBuildCompilesGodori(t *testing.T) {
 }
 
 func TestBuildRejectsInvalidOptimization(t *testing.T) {
-	err := cmdBuild([]string{fixturePattern()}, "fixture", "play", 3, "", false)
+	err := cmdBuild([]string{fixturePattern()}, "fixture", "play", 3, "", "none", false)
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("error = %v", err)
 	}
@@ -90,7 +90,7 @@ func TestVetCompilesWithoutWritingArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := cmdVet([]string{publicConformancePattern()}, "all", 0, "", true); err != nil {
+	if err := cmdVet([]string{publicConformancePattern()}, "all", 0, "", "none", true); err != nil {
 		t.Fatal(err)
 	}
 	if got := string(mustRead(t, sentinel)); got != "unchanged" {
@@ -106,19 +106,19 @@ func TestVetCompilesWithoutWritingArtifacts(t *testing.T) {
 }
 
 func TestVetSupportsMultipleEnginesAndSingleMode(t *testing.T) {
-	if err := cmdVet([]string{godoriPattern(), publicConformancePattern()}, "play", 1, "", false); err != nil {
+	if err := cmdVet([]string{godoriPattern(), publicConformancePattern()}, "play", 1, "", "none", false); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestVetSupportsStandardOptimization(t *testing.T) {
-	if err := cmdVet([]string{publicConformancePattern()}, "play", 2, "", false); err != nil {
+	if err := cmdVet([]string{publicConformancePattern()}, "play", 2, "", "none", false); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestVetReportsTargetCompilationFailure(t *testing.T) {
-	err := cmdVet([]string{compilerFixturePattern("invalid")}, "play", 0, "", false)
+	err := cmdVet([]string{compilerFixturePattern("invalid")}, "play", 0, "", "none", false)
 	if err == nil {
 		t.Fatal("invalid engine passed vet")
 	}
@@ -132,7 +132,7 @@ func TestVetValidatesFallbackROM(t *testing.T) {
 	if err := os.WriteFile(rom, []byte{1, 2, 3}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := cmdVet([]string{publicConformancePattern()}, "play", 0, rom, false)
+	err := cmdVet([]string{publicConformancePattern()}, "play", 0, rom, "none", false)
 	if err == nil || !strings.Contains(err.Error(), "length 3 is not divisible by 4") {
 		t.Fatalf("error = %v", err)
 	}
@@ -140,7 +140,7 @@ func TestVetValidatesFallbackROM(t *testing.T) {
 
 func TestVetDoesNotParseDevelopmentLevel(t *testing.T) {
 	pattern := "." + string(os.PathSeparator) + filepath.Join("testdata", "checklevel")
-	if err := cmdVet([]string{pattern}, "all", 0, "", false); err != nil {
+	if err := cmdVet([]string{pattern}, "all", 0, "", "none", false); err != nil {
 		t.Fatalf("vet parsed invalid development LevelData: %v", err)
 	}
 }
@@ -160,7 +160,127 @@ func TestListWritesStableSchemaJSONWithoutArtifacts(t *testing.T) {
 	if first.String() != second.String() {
 		t.Fatalf("list output is not deterministic:\n%s\n%s", first.String(), second.String())
 	}
-	want := "{\n  \"archetypes\": [\n    {\n      \"name\": \"#BPM_CHANGE\",\n      \"fields\": [\n        \"#BEAT\",\n        \"#BPM\"\n      ]\n    },\n    {\n      \"name\": \"Stage\",\n      \"fields\": []\n    },\n    {\n      \"name\": \"TapNote\",\n      \"fields\": [\n        \"#BEAT\",\n        \"lane\"\n      ]\n    }\n  ]\n}\n"
+	want := `{
+  "archetypes": [
+    {
+      "name": "#BPM_CHANGE",
+      "fields": [
+        "#BEAT",
+        "#BPM"
+      ]
+    },
+    {
+      "name": "#TIMESCALE_CHANGE",
+      "fields": [
+        "#BEAT",
+        "#TIMESCALE"
+      ]
+    },
+    {
+      "name": "AccentTapNote",
+      "fields": [
+        "#BEAT",
+        "lane"
+      ]
+    },
+    {
+      "name": "DirectionalFlickNote",
+      "fields": [
+        "#BEAT",
+        "lane",
+        "direction"
+      ]
+    },
+    {
+      "name": "FlickNote",
+      "fields": [
+        "#BEAT",
+        "lane"
+      ]
+    },
+    {
+      "name": "HoldAnchorNote",
+      "fields": [
+        "#BEAT",
+        "lane"
+      ]
+    },
+    {
+      "name": "HoldConnector",
+      "fields": [
+        "head",
+        "anchor",
+        "end",
+        "flickEnd",
+        "segment"
+      ]
+    },
+    {
+      "name": "HoldEndNote",
+      "fields": [
+        "head",
+        "#BEAT",
+        "lane"
+      ]
+    },
+    {
+      "name": "HoldFlickNote",
+      "fields": [
+        "head",
+        "#BEAT",
+        "lane"
+      ]
+    },
+    {
+      "name": "HoldHeadNote",
+      "fields": [
+        "#BEAT",
+        "lane",
+        "anchor",
+        "end",
+        "flickEnd"
+      ]
+    },
+    {
+      "name": "HoldManager",
+      "fields": []
+    },
+    {
+      "name": "HoldTickNote",
+      "fields": [
+        "head",
+        "#BEAT"
+      ]
+    },
+    {
+      "name": "InputManager",
+      "fields": []
+    },
+    {
+      "name": "ScheduledLaneEffect",
+      "fields": []
+    },
+    {
+      "name": "SimLine",
+      "fields": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "name": "Stage",
+      "fields": []
+    },
+    {
+      "name": "TapNote",
+      "fields": [
+        "#BEAT",
+        "lane"
+      ]
+    }
+  ]
+}
+`
 	if first.String() != want {
 		t.Fatalf("list output:\n%s\nwant:\n%s", first.String(), want)
 	}

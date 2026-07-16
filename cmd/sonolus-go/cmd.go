@@ -14,14 +14,32 @@ import (
 var engineOutputRoot = "dist"
 
 type compilationRequest struct {
-	mode         Mode
-	optimization compiler.OptimizationLevel
-	fallbackROM  []byte
-	targets      []compiler.Target
+	mode          Mode
+	optimization  compiler.OptimizationLevel
+	fallbackROM   []byte
+	targets       []compiler.Target
+	runtimeChecks compiler.RuntimeChecks
 }
 
-func prepareCompilation(patterns []string, modeFlag string, optFlag int, romFlag string) (*compilationRequest, error) {
+func parseRuntimeChecks(value string) (compiler.RuntimeChecks, error) {
+	switch value {
+	case "none":
+		return compiler.RuntimeChecksNone, nil
+	case "terminate":
+		return compiler.RuntimeChecksTerminate, nil
+	case "notify":
+		return compiler.RuntimeChecksNotify, nil
+	default:
+		return 0, fmt.Errorf("invalid runtime checks %q; expected none, terminate, or notify", value)
+	}
+}
+
+func prepareCompilation(patterns []string, modeFlag string, optFlag int, romFlag, checksFlag string) (*compilationRequest, error) {
 	selected, err := ParseMode(modeFlag)
+	if err != nil {
+		return nil, err
+	}
+	checks, err := parseRuntimeChecks(checksFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -37,11 +55,11 @@ func prepareCompilation(patterns []string, modeFlag string, optFlag int, romFlag
 	if err != nil {
 		return nil, err
 	}
-	return &compilationRequest{mode: selected, optimization: optimization, fallbackROM: fallback, targets: targets}, nil
+	return &compilationRequest{mode: selected, optimization: optimization, fallbackROM: fallback, targets: targets, runtimeChecks: checks}, nil
 }
 
 func compileTarget(request *compilationRequest, target compiler.Target) (*compiler.Compiler, *compiler.Artifacts, error) {
-	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: request.optimization, FallbackROM: request.fallbackROM}, target.PackagePath)
+	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: request.optimization, FallbackROM: request.fallbackROM, RuntimeChecks: request.runtimeChecks}, target.PackagePath)
 	var (
 		artifacts *compiler.Artifacts
 		err       error
@@ -57,8 +75,8 @@ func compileTarget(request *compilationRequest, target compiler.Target) (*compil
 	return engineCompiler, artifacts, nil
 }
 
-func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
-	request, err := prepareCompilation(patterns, modeFlag, optFlag, romFlag)
+func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFlag, checksFlag string, statsFlag bool) error {
+	request, err := prepareCompilation(patterns, modeFlag, optFlag, romFlag, checksFlag)
 	if err != nil {
 		return err
 	}
@@ -100,8 +118,8 @@ func cmdBuild(patterns []string, outputName, modeFlag string, optFlag int, romFl
 	return nil
 }
 
-func cmdVet(patterns []string, modeFlag string, optFlag int, romFlag string, statsFlag bool) error {
-	request, err := prepareCompilation(patterns, modeFlag, optFlag, romFlag)
+func cmdVet(patterns []string, modeFlag string, optFlag int, romFlag, checksFlag string, statsFlag bool) error {
+	request, err := prepareCompilation(patterns, modeFlag, optFlag, romFlag, checksFlag)
 	if err != nil {
 		return err
 	}
@@ -149,6 +167,6 @@ func cmdList(patterns []string, out io.Writer) error {
 	return nil
 }
 
-func cmdDev(patterns []string, outputName, addr string, optimization int, romPath string, stats bool) error {
-	return runDevServer(patterns, outputName, addr, optimization, romPath, stats)
+func cmdDev(patterns []string, outputName, addr string, optimization int, romPath, checks string, stats bool) error {
+	return runDevServer(patterns, outputName, addr, optimization, romPath, checks, stats)
 }

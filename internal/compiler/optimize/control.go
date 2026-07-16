@@ -62,12 +62,13 @@ func prunePhiArguments(function *ir.Function) {
 }
 
 func terminatorHasTarget(terminator ir.Terminator, target int) bool {
-	for _, candidate := range terminatorTargets(terminator) {
+	found := false
+	forEachTerminatorTarget(terminator, func(candidate int) {
 		if candidate == target {
-			return true
+			found = true
 		}
-	}
-	return false
+	})
+	return found
 }
 
 type RemoveUnreachable struct{}
@@ -87,22 +88,26 @@ func (RenumberBlocks) Run(_ Context, function *ir.Function) error {
 }
 
 func normalizeReachable(function *ir.Function) error {
-	seen := map[int]bool{}
-	var postorder []*ir.Block
+	seen := make([]bool, len(function.Blocks))
+	postorder := make([]*ir.Block, 0, len(function.Blocks))
 	var visit func(int) error
 	visit = func(id int) error {
-		if seen[id] {
-			return nil
-		}
 		if id < 0 || id >= len(function.Blocks) || function.Blocks[id] == nil {
 			return fmt.Errorf("block target %d does not exist", id)
 		}
+		if seen[id] {
+			return nil
+		}
 		seen[id] = true
 		block := function.Blocks[id]
-		for _, target := range terminatorTargets(block.Terminator) {
-			if err := visit(target); err != nil {
-				return err
+		var targetErr error
+		forEachTerminatorTarget(block.Terminator, func(target int) {
+			if targetErr == nil {
+				targetErr = visit(target)
 			}
+		})
+		if targetErr != nil {
+			return targetErr
 		}
 		postorder = append(postorder, block)
 		return nil
@@ -113,12 +118,15 @@ func normalizeReachable(function *ir.Function) error {
 	for left, right := 0, len(postorder)-1; left < right; left, right = left+1, right-1 {
 		postorder[left], postorder[right] = postorder[right], postorder[left]
 	}
-	ids := make(map[int]int, len(postorder))
+	ids := make([]int, len(function.Blocks))
+	for index := range ids {
+		ids[index] = -1
+	}
 	for id, block := range postorder {
 		ids[block.ID] = id
 	}
-	entry, ok := ids[function.Entry]
-	if !ok {
+	entry := ids[function.Entry]
+	if entry < 0 {
 		return fmt.Errorf("entry block %d is unreachable", function.Entry)
 	}
 	for id, block := range postorder {
@@ -129,11 +137,10 @@ func normalizeReachable(function *ir.Function) error {
 		block.ID = id
 		block.Terminator = terminator
 		for phiIndex := range block.Phis {
-			original := append([]ir.PhiArg(nil), block.Phis[phiIndex].Args...)
 			args := block.Phis[phiIndex].Args[:0]
-			for _, arg := range original {
-				predecessor, ok := ids[arg.Predecessor]
-				if !ok {
+			for _, arg := range block.Phis[phiIndex].Args {
+				predecessor := ids[arg.Predecessor]
+				if predecessor < 0 {
 					continue
 				}
 				arg.Predecessor = predecessor
@@ -150,30 +157,44 @@ func normalizeReachable(function *ir.Function) error {
 	return nil
 }
 
-func terminatorTargets(terminator ir.Terminator) []int {
+func forEachTerminatorTarget(terminator ir.Terminator, visit func(int)) {
 	switch terminator := terminator.(type) {
 	case ir.Jump:
-		return []int{terminator.Target}
+		visit(terminator.Target)
 	case ir.Branch:
-		return []int{terminator.True, terminator.False}
-	case ir.Switch:
-		result := []int{terminator.Default}
-		for _, item := range terminator.Cases {
-			result = append(result, item.Target)
+		visit(terminator.True)
+		if terminator.False != terminator.True {
+			visit(terminator.False)
 		}
-		return result
-	default:
-		return nil
+	case ir.Switch:
+		visit(terminator.Default)
+		for index, item := range terminator.Cases {
+			if item.Target == terminator.Default {
+				continue
+			}
+			duplicate := false
+			for previous := 0; previous < index; previous++ {
+				duplicate = duplicate || terminator.Cases[previous].Target == item.Target
+			}
+			if !duplicate {
+				visit(item.Target)
+			}
+		}
 	}
 }
 
-func remapTerminator(terminator ir.Terminator, ids map[int]int) (ir.Terminator, error) {
+func terminatorTargetCount(terminator ir.Terminator) int {
+	count := 0
+	forEachTerminatorTarget(terminator, func(int) { count++ })
+	return count
+}
+
+func remapTerminator(terminator ir.Terminator, ids []int) (ir.Terminator, error) {
 	target := func(old int) (int, error) {
-		id, ok := ids[old]
-		if !ok {
+		if old < 0 || old >= len(ids) || ids[old] < 0 {
 			return 0, fmt.Errorf("reachable terminator targets removed block %d", old)
 		}
-		return id, nil
+		return ids[old], nil
 	}
 	switch terminator := terminator.(type) {
 	case ir.Jump:
@@ -191,15 +212,15 @@ func remapTerminator(terminator ir.Terminator, ids map[int]int) (ir.Terminator, 
 		if err != nil {
 			return nil, err
 		}
-		cases := make([]ir.SwitchCase, len(terminator.Cases))
 		for i, item := range terminator.Cases {
 			caseTarget, err := target(item.Target)
 			if err != nil {
 				return nil, err
 			}
-			cases[i] = ir.SwitchCase{Value: item.Value, Target: caseTarget}
+			terminator.Cases[i].Target = caseTarget
 		}
-		return ir.Switch{Value: terminator.Value, Cases: cases, Default: defaultTarget}, nil
+		terminator.Default = defaultTarget
+		return terminator, nil
 	default:
 		return terminator, nil
 	}

@@ -3,6 +3,8 @@
 // implementations intentionally return zero values.
 package sonolus
 
+import "iter"
+
 type Vec2 struct{ X, Y float64 }
 
 func NewVec2(x, y float64) Vec2                       { return Vec2{X: x, Y: y} }
@@ -65,6 +67,69 @@ func (w JudgmentWindow) Judge(actual, target float64) Judgment  { return Judgmen
 func (w JudgmentWindows) Judge(actual, target float64) Judgment { return JudgmentMiss }
 
 type EntityRef[T any] struct{ Index float64 }
+
+type AnyArchetype struct{}
+
+func (r EntityRef[T]) Get() *T          { return nil }
+func (r EntityRef[T]) GetUnchecked() *T { return nil }
+
+func EntityRefAs[T, U any](ref EntityRef[U]) EntityRef[T] { return EntityRef[T]{Index: ref.Index} }
+func EntityRefMatches[T, U any](ref EntityRef[U], strict bool) bool {
+	return false
+}
+func EntityRefGetAs[T, U any](ref EntityRef[U]) *T { return nil }
+
+func Assert(condition bool, message string)       {}
+func Require(condition bool, message string)      {}
+func StaticAssert(condition bool, message string) {}
+func RuntimeChecksEnabled() bool                  { return true }
+func Unreachable(message string)                  { panic(message) }
+func Terminate(message string)                    { panic(message) }
+func Notify(message string)                       {}
+
+func Zero[T any]() (value T) { return value }
+func SlotsOf[T any]() int    { return 0 }
+
+type StreamResource struct{}
+type Stream[T any] struct{}
+type StreamData[T any] struct{}
+
+func (Stream[T]) Set(key float64, value T)        {}
+func (Stream[T]) Has(key float64) bool            { return false }
+func (Stream[T]) PreviousKey(key float64) float64 { return 0 }
+func (Stream[T]) NextKey(key float64) float64     { return 0 }
+func (Stream[T]) Get(key float64) (value T)       { return value }
+func (Stream[T]) PreviousKeyOrDefault(key, fallback float64) float64 {
+	return fallback
+}
+func (Stream[T]) NextKeyOrDefault(key, fallback float64) float64 { return fallback }
+func (Stream[T]) HasPreviousKey(key float64) bool                { return false }
+func (Stream[T]) HasNextKey(key float64) bool                    { return false }
+func (Stream[T]) PreviousKeyInclusive(key float64) float64       { return key }
+func (Stream[T]) NextKeyInclusive(key float64) float64           { return key }
+func (Stream[T]) GetPrevious(key float64) (value T)              { return value }
+func (Stream[T]) GetNext(key float64) (value T)                  { return value }
+func (Stream[T]) GetPreviousInclusive(key float64) (value T)     { return value }
+func (Stream[T]) GetNextInclusive(key float64) (value T)         { return value }
+func (Stream[T]) ItemsFrom(start float64) iter.Seq2[float64, T]  { return nil }
+func (Stream[T]) ItemsFromDescending(start float64) iter.Seq2[float64, T] {
+	return nil
+}
+func (Stream[T]) ItemsSincePreviousFrame() iter.Seq2[float64, T] { return nil }
+func (Stream[T]) KeysFrom(start float64) iter.Seq[float64]       { return nil }
+func (Stream[T]) KeysFromDescending(start float64) iter.Seq[float64] {
+	return nil
+}
+func (Stream[T]) KeysSincePreviousFrame() iter.Seq[float64] { return nil }
+func (Stream[T]) ValuesFrom(start float64) iter.Seq[T]      { return nil }
+func (Stream[T]) ValuesFromDescending(start float64) iter.Seq[T] {
+	return nil
+}
+func (Stream[T]) ValuesSincePreviousFrame() iter.Seq[T] { return nil }
+
+func (StreamData[T]) Set(value T)    {}
+func (StreamData[T]) Get() (value T) { return value }
+
 type Pair[A, B any] struct {
 	First  A
 	Second B

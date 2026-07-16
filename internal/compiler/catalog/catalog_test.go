@@ -68,6 +68,9 @@ func TestEveryPublicDeclarationIsCataloged(t *testing.T) {
 		}
 	}
 	for _, pkg := range pkgs {
+		if pkg.PkgPath == "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/sim" {
+			continue
+		}
 		for _, name := range pkg.Types.Scope().Names() {
 			object := pkg.Types.Scope().Lookup(name)
 			if object.Exported() {

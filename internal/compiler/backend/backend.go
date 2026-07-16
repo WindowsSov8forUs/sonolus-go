@@ -16,6 +16,7 @@ type Artifacts struct {
 	Watch         *resource.EngineWatchData
 	Preview       *resource.EnginePreviewData
 	Tutorial      *resource.EngineTutorialData
+	Diagnostics   map[int]string
 }
 
 func Compile(project *frontend.Project) (*Artifacts, error) {
@@ -25,7 +26,7 @@ func Compile(project *frontend.Project) (*Artifacts, error) {
 	if len(project.ROM)%4 != 0 {
 		return nil, fmt.Errorf("backend: ROM length %d is not divisible by 4", len(project.ROM))
 	}
-	result := &Artifacts{Configuration: project.Configuration, ROM: buildROM(project.ROM)}
+	result := &Artifacts{Configuration: project.Configuration, ROM: buildROM(project.ROM), Diagnostics: map[int]string{}}
 	for _, m := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
 		declarations := project.Modes[m]
 		if declarations == nil {
@@ -44,6 +45,27 @@ func Compile(project *frontend.Project) (*Artifacts, error) {
 		}
 		if err != nil {
 			return nil, fmt.Errorf("backend: compile %s mode: %w", m, err)
+		}
+	}
+	for _, m := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
+		declarations := project.Modes[m]
+		if declarations == nil {
+			continue
+		}
+		callbacks := append([]*frontend.CallbackDeclaration(nil), declarations.Globals...)
+		for _, archetype := range declarations.Archetypes {
+			callbacks = append(callbacks, archetype.Callbacks...)
+		}
+		for _, callback := range callbacks {
+			if callback == nil || callback.IR == nil {
+				continue
+			}
+			for code, message := range callback.IR.Diagnostics {
+				if previous, exists := result.Diagnostics[code]; exists && previous != message {
+					return nil, fmt.Errorf("backend: runtime diagnostic code %d collision", code)
+				}
+				result.Diagnostics[code] = message
+			}
 		}
 	}
 	return result, nil

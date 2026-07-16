@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -29,13 +34,14 @@ type devServer struct {
 	fallback []byte
 	stats    bool
 	level    compiler.OptimizationLevel
+	checks   compiler.RuntimeChecks
 	watcher  *fsnotify.Watcher
 	watched  map[string]bool
 	state    devServerState
 }
 
 func (s *devServer) recompile() error {
-	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: s.level, FallbackROM: s.fallback}, s.patterns...)
+	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: s.level, FallbackROM: s.fallback, RuntimeChecks: s.checks}, s.patterns...)
 	artifacts, err := engineCompiler.CompileAll()
 	if s.stats {
 		printCompileStats(engineCompiler.Stats())
@@ -159,7 +165,7 @@ func serveGzip(w http.ResponseWriter, data any) {
 	}
 }
 
-func runDevServer(patterns []string, outputName, addr string, optimization int, romPath string, stats bool) error {
+func runDevServer(patterns []string, outputName, addr string, optimization int, romPath, checksFlag string, stats bool) error {
 	targets, err := compiler.DiscoverTargets(compiler.ModePlay, patterns...)
 	if err != nil {
 		return err
@@ -179,12 +185,16 @@ func runDevServer(patterns []string, outputName, addr string, optimization int, 
 	if err != nil {
 		return err
 	}
+	checks, err := parseRuntimeChecks(checksFlag)
+	if err != nil {
+		return err
+	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("fsnotify: %w", err)
 	}
 	defer watcher.Close()
-	srv := &devServer{patterns: []string{named[0].target.PackagePath}, name: named[0].name, fallback: fallback, stats: stats, level: level, watcher: watcher, watched: map[string]bool{}}
+	srv := &devServer{patterns: []string{named[0].target.PackagePath}, name: named[0].name, fallback: fallback, stats: stats, level: level, checks: checks, watcher: watcher, watched: map[string]bool{}}
 	if err := srv.recompile(); err != nil {
 		return err
 	}
@@ -219,6 +229,42 @@ func runDevServer(patterns []string, outputName, addr string, optimization int, 
 			}
 		}
 	}()
+	go runDevConsole(os.Stdin, os.Stdout, srv)
 	slog.Info("[dev] serving", "address", addr)
 	return http.ListenAndServe(addr, mux)
+}
+
+func runDevConsole(input io.Reader, output io.Writer, server *devServer) {
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "help" {
+			fmt.Fprintln(output, "commands: decode <code>, help")
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) != 2 || parts[0] != "decode" {
+			if line != "" {
+				fmt.Fprintln(output, "unknown command; type help")
+			}
+			continue
+		}
+		code, err := strconv.Atoi(parts[1])
+		if err != nil {
+			fmt.Fprintf(output, "invalid diagnostic code %q\n", parts[1])
+			continue
+		}
+		server.mu.RLock()
+		artifacts := server.state.artifacts
+		message, exists := "", false
+		if artifacts != nil {
+			message, exists = artifacts.Diagnostics[code]
+		}
+		server.mu.RUnlock()
+		if !exists {
+			fmt.Fprintf(output, "unknown diagnostic code %d\n", code)
+			continue
+		}
+		fmt.Fprintf(output, "%d: %s\n", code, message)
+	}
 }

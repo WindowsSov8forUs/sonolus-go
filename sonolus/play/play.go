@@ -186,6 +186,15 @@ func (streamsAPI) Set(id, key, value float64) {}
 
 var Streams streamsAPI
 
+// LevelMemory exposes Play level memory slots for engine-wide coordination.
+// Engines are responsible for assigning stable, non-overlapping indexes.
+type levelMemoryAPI struct{}
+
+func (levelMemoryAPI) Get(index int) float64        { return 0 }
+func (levelMemoryAPI) Set(index int, value float64) {}
+
+var LevelMemory levelMemoryAPI
+
 type debugAPI struct{}
 
 func (debugAPI) Log(value float64) {}

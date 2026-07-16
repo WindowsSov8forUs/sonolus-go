@@ -9,30 +9,69 @@ import (
 type GodoriConfiguration struct {
 	sonolus.Configuration
 
-	NoteSpeed float64
-	NoteSize  float64
-	LaneWidth float64
-	Effects   bool
-	UI        sonolus.UIConfig
+	Speed          float64
+	NoteSpeed      float64
+	NoteSize       float64
+	LaneWidth      float64
+	LaneLength     float64
+	ConnectorAlpha float64
+	NoteEffects    bool
+	LaneEffects    bool
+	SimLines       bool
+	SimLineAlpha   float64
+	SFX            bool
+	AutoSFX        bool
+	Mirror         bool
+	UI             sonolus.UIConfig
 }
 
 var Config = GodoriConfiguration{
+	Speed: sonolus.SliderOption(sonolus.SliderOptionConfig{
+		Name: "#SPEED", Standard: true, Default: 1, Min: 0.5, Max: 2, Step: 0.05, Unit: "#PERCENTAGE",
+	}),
 	NoteSpeed: sonolus.SliderOption(sonolus.SliderOptionConfig{
-		Name: "Note Speed", Default: 10, Min: 5, Max: 20, Step: 0.5, Scope: "godori",
+		Name: "#NOTE_SPEED", Default: 10, Min: 1, Max: 20, Step: 0.05, Scope: "godori",
 	}),
 	NoteSize: sonolus.SliderOption(sonolus.SliderOptionConfig{
-		Name: "Note Size", Default: 1, Min: 0.5, Max: 1.5, Step: 0.05, Scope: "godori",
+		Name: "#NOTE_SIZE", Default: 1, Min: 0.1, Max: 2, Step: 0.05, Unit: "#PERCENTAGE", Scope: "godori",
 	}),
 	LaneWidth: sonolus.SliderOption(sonolus.SliderOptionConfig{
-		Name: "Lane Width", Default: 1, Min: 0.75, Max: 1.25, Step: 0.05, Scope: "godori",
+		Name: "#LANE_SIZE", Default: 1, Min: 0.1, Max: 1.5, Step: 0.05, Unit: "#PERCENTAGE", Scope: "godori",
 	}),
-	Effects: sonolus.ToggleOption(sonolus.ToggleOptionConfig{
-		Name: "Effects", Default: true, Scope: "godori",
+	LaneLength: sonolus.SliderOption(sonolus.SliderOptionConfig{
+		Name: "Lane Length", Default: 0.8, Min: 0.1, Max: 1, Step: 0.05, Unit: "#PERCENTAGE", Scope: "godori",
+	}),
+	ConnectorAlpha: sonolus.SliderOption(sonolus.SliderOptionConfig{
+		Name: "#CONNECTOR_ALPHA", Default: 0.8, Min: 0.1, Max: 1, Step: 0.05, Unit: "#PERCENTAGE", Scope: "godori",
+	}),
+	NoteEffects: sonolus.ToggleOption(sonolus.ToggleOptionConfig{
+		Name: "#NOTE_EFFECT", Default: true, Scope: "godori",
+	}),
+	LaneEffects: sonolus.ToggleOption(sonolus.ToggleOptionConfig{
+		Name: "#LANE_EFFECT", Default: true, Scope: "godori",
+	}),
+	SimLines: sonolus.ToggleOption(sonolus.ToggleOptionConfig{
+		Name: "#SIMLINE", Default: true, Scope: "godori",
+	}),
+	SimLineAlpha: sonolus.SliderOption(sonolus.SliderOptionConfig{
+		Name: "#SIMLINE_ALPHA", Default: 0.5, Min: 0.1, Max: 1, Step: 0.05, Unit: "#PERCENTAGE", Scope: "godori",
+	}),
+	SFX: sonolus.ToggleOption(sonolus.ToggleOptionConfig{
+		Name: "#EFFECT", Default: true, Scope: "godori",
+	}),
+	AutoSFX: sonolus.ToggleOption(sonolus.ToggleOptionConfig{
+		Name: "#EFFECT_AUTO", Default: false, Scope: "godori",
+	}),
+	Mirror: sonolus.ToggleOption(sonolus.ToggleOptionConfig{
+		Name: "#MIRROR", Default: false, Scope: "godori",
 	}),
 	UI: sonolus.UIConfig{
-		Scope:           "godori",
-		PrimaryMetric:   sonolus.UIMetricArcade,
-		SecondaryMetric: sonolus.UIMetricLife,
+		Scope:                  "godori",
+		PrimaryMetric:          sonolus.UIMetricArcade,
+		SecondaryMetric:        sonolus.UIMetricLife,
+		JudgmentErrorStyle:     sonolus.UIJudgmentErrorPlus,
+		JudgmentErrorPlacement: sonolus.UIJudgmentErrorTop,
+		JudgmentErrorMin:       20,
 	},
 }
 

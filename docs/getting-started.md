@@ -174,8 +174,8 @@ sonolus-go dev .
 
 ## 下一步
 
-- 仓库中的 [`godori/`](../godori/) 是可直接编译和游玩的 Tap-only 四模式引擎，并由端到端测试持续验证。可从 [`play.go`](../godori/play.go)、[`watch.go`](../godori/watch.go)、[`preview.go`](../godori/preview.go) 和 [`tutorial.go`](../godori/tutorial.go) 查看各模式实现。
-- `godori` 参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 中 pydori 的整体设计，以当前 Go DSL 独立重写。它只实现 Stage 与 TapNote，不包含 Hold、Flick、StreamGroup 或发布级关卡构造系统。
+- 仓库中的 [`godori/`](../godori/) 是可直接编译和游玩的四模式引擎，并由端到端测试持续验证。可从 [`play.go`](../godori/play.go)、[`watch.go`](../godori/watch.go)、[`preview.go`](../godori/preview.go) 和 [`tutorial.go`](../godori/tutorial.go) 查看各模式实现。
+- `godori` 参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 中 pydori 的整体设计，以当前 Go DSL 独立重写。当前覆盖 Tap、Flick、Directional Flick、普通与 Flick 终点 Hold 链、同时押宽 hitbox 切分、SimLine、BPM/Timescale、Play/Watch stream、Watch replay Hold 分段音效、组合 judgment bucket、动态效果 archetype、Preview 与 Tutorial；它仍是编译器验收工程，不是 pydori 的逐功能移植。
 - 泛型 helper、闭包、variadic helper、整数 range 和静态 callable 等 DSL 边界由内部 conformance fixture 覆盖，不作为公开引擎示例。
 - 在 [DSL 参考](dsl-reference.md) 中查看资源、字段 storage 和 callback 表。
 - 在 [命令行](cli.md) 中查看 package pattern、ROM fallback 和优化等级。

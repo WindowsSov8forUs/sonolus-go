@@ -42,6 +42,11 @@ sonolus-go build -stats -O 2 -m all ./engine
 - 不要为了抽象而复制大型 aggregate。
 - 对高频 callback，减少重复 semantic memory 读写和资源操作。
 - 使用静态可确定的定长数组和 catalog 容器，避免无法编译的动态结构。
+- `VarArray.SortFunc` 使用稳定插入排序；近似有序的小型固定容量集合成本较低，但 comparator 仍会严格按实际比较次数执行，不应包含可省略的副作用。
+- `VarArray.Extend` 会先将 sequence 物化到临时 backing，容量检查成功后才写 receiver；这保证失败原子性，但峰值 Temporary Memory 会包含缓冲区。
+- linked entity sort 使用稳定 bottom-up merge sort，仅改写 next/previous 链接；输入必须无环，比较器与 accessor 的调用次数随链长增长。
+
+Standard 在单个 callback 内复用 IR validator scratch，并以无分配 visitor 遍历 SCCP/CFG target；reachable block remap 使用密集 ID 表且原地更新 Phi/Switch。所有 scratch 都限定在一次 `Optimize` 调用，不跨 callback 或 goroutine 共享。
 
 ## Temporary Memory
 
@@ -58,6 +63,8 @@ Backend 在模式范围共享 node pool，子节点优先写入并按值或 `Run
 ## 开发服务器
 
 `dev` 监听 Compiler 成功快照中的 Go 文件和 embed 文件。每次变化创建新 Compiler，避免把不同源码版本混入同一快照；编译失败时保留上一次成功 artifacts。
+
+分阶段性能可运行 `go test ./internal/compiler -run '^$' -bench BenchmarkCompilerStages -benchmem -benchtime=1x`。`internal/compiler/testdata/optimize/benchmark_compare.ps1` 会逐个 benchmark、逐次启动独立进程采样五次并输出中位数 JSON，避免高内存 CompileAll 干扰其他阶段；可用 `-Baseline` 比较时间与 allocation，输出只写入显式 `-Output` 路径，不修改 tracked golden。
 
 大型项目中频繁保存多个文件可能触发连续编译。当前 watcher 不承诺 debounce，因此批量修改时可先使用编辑器的原子保存策略，或在完成一组修改后再启动 `dev`。
 

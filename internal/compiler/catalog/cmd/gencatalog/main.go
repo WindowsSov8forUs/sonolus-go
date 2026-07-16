@@ -34,6 +34,10 @@ func semantic(item entry) entry {
 		return item
 	}
 	name := item.name
+	if item.pkg == "sonolus" && (name == "Terminate" || name == "Notify") {
+		item.effect = "EffectWrite"
+		return item
+	}
 	pure := (item.pkg == "sonolus" && item.kind == "KindFunction") || strings.HasPrefix(name, "New") || strings.HasPrefix(name, "From")
 	if pure || strings.HasPrefix(name, "Skin") || strings.HasPrefix(name, "EffectClip") || strings.HasPrefix(name, "ParticleEffect") || strings.HasPrefix(name, "Instruction") || strings.HasPrefix(name, "JudgmentBucket") {
 		item.effect = "EffectPure"
@@ -378,12 +382,48 @@ func main() {
 		out.WriteString("},\n")
 	}
 	out.WriteString("}\n")
+	out.WriteString("\nvar RuntimeFunctions = []resource.RuntimeFunction{\n")
+	seenRuntime := map[string]bool{}
+	for _, item := range entries {
+		if item.runtime == "" || seenRuntime[item.runtime] {
+			continue
+		}
+		seenRuntime[item.runtime] = true
+		fmt.Fprintf(&out, "resource.RuntimeFunction(%q),\n", item.runtime)
+	}
+	out.WriteString("}\n")
 	out.WriteString("\nvar RuntimeSignatures = map[resource.RuntimeFunction]RuntimeSignature{\n")
 	for _, item := range entries {
 		if !item.hasRuntimeSignature {
 			continue
 		}
 		fmt.Fprintf(&out, "resource.RuntimeFunction(%q): {MinArgs:%d, MaxArgs:%d, ResultSlots:%d},\n", item.runtime, item.minArgs, item.maxArgs, item.resultSlots)
+	}
+	out.WriteString("}\n")
+	out.WriteString("\nvar RuntimeSimulations = map[resource.RuntimeFunction]RuntimeSimulation{\n")
+	signatures := map[string]entry{}
+	for _, item := range entries {
+		if item.runtime != "" && item.hasRuntimeSignature {
+			signatures[item.runtime] = item
+		}
+	}
+	seenRuntime = map[string]bool{}
+	for _, item := range entries {
+		if item.runtime == "" || seenRuntime[item.runtime] {
+			continue
+		}
+		seenRuntime[item.runtime] = true
+		class, strategy, special := simulationPolicy(item.runtime, item.effect)
+		effect := simulationEffect(class, item.effect)
+		signature, exists := signatures[item.runtime]
+		minArgs, maxArgs, resultSlots := 0, 0, 0
+		if exists {
+			minArgs, maxArgs, resultSlots = signature.minArgs, signature.maxArgs, signature.resultSlots
+		} else {
+			minArgs, maxArgs, resultSlots = internalSimulationSignature(item.runtime)
+		}
+		shape := simulationShape(item.runtime)
+		fmt.Fprintf(&out, "resource.RuntimeFunction(%q): {Class:%s, Signature:RuntimeSignature{MinArgs:%d, MaxArgs:%d, ResultSlots:%d}, Effect:%s, Strategy:%q, SpecialShape:%t, Shape:%q, Arguments:%q},\n", item.runtime, class, minArgs, maxArgs, resultSlots, effect, strategy, special, shape, simulationArguments(item.runtime))
 	}
 	out.WriteString("}\n")
 	formatted, err := format.Source([]byte(out.String()))
@@ -414,6 +454,119 @@ func main() {
 	standardFormatted, err := format.Source([]byte(standardSource))
 	must(err)
 	must(os.WriteFile(filepath.Join(root, "sonolus", "standard_names_generated.go"), standardFormatted, 0o644))
+}
+
+func simulationEffect(class, declared string) string {
+	switch class {
+	case "SimulationPure", "SimulationRandom", "SimulationHandler":
+		return "EffectPure"
+	case "SimulationControl", "SimulationEffect":
+		return "EffectWrite"
+	default:
+		return declared
+	}
+}
+
+func simulationShape(name string) string {
+	switch name {
+	case "Execute", "Execute0", "And", "Or":
+		return "variadic"
+	case "If":
+		return "if"
+	case "Switch":
+		return "switch"
+	case "SwitchWithDefault":
+		return "switch-default"
+	case "SwitchInteger":
+		return "switch-integer"
+	case "SwitchIntegerWithDefault":
+		return "switch-integer-default"
+	case "JumpLoop":
+		return "jump-loop"
+	case "Block":
+		return "block"
+	case "Break", "While", "DoWhile":
+		return "binary-control"
+	default:
+		return ""
+	}
+}
+
+func simulationArguments(name string) string {
+	switch name {
+	case "Get", "Set", "IncrementPost", "IncrementPre", "DecrementPost", "DecrementPre",
+		"SetAdd", "SetSubtract", "SetMultiply", "SetDivide", "SetMod", "SetRem", "SetPower":
+		return "memory"
+	case "GetPointed", "SetPointed", "IncrementPostPointed", "IncrementPrePointed", "DecrementPostPointed", "DecrementPrePointed",
+		"SetAddPointed", "SetSubtractPointed", "SetMultiplyPointed", "SetDividePointed", "SetModPointed", "SetRemPointed", "SetPowerPointed":
+		return "pointed-memory"
+	case "GetShifted", "SetShifted", "IncrementPostShifted", "IncrementPreShifted", "DecrementPostShifted", "DecrementPreShifted",
+		"SetAddShifted", "SetSubtractShifted", "SetMultiplyShifted", "SetDivideShifted", "SetModShifted", "SetRemShifted", "SetPowerShifted":
+		return "shifted-memory"
+	case "Copy":
+		return "copy"
+	case "StreamSet", "StreamHas", "StreamGetValue", "StreamGetPreviousKey", "StreamGetNextKey":
+		return "stream"
+	case "RandomInteger":
+		return "integer-range"
+	default:
+		return ""
+	}
+}
+
+func simulationPolicy(name, effect string) (class, strategy string, special bool) {
+	control := map[string]bool{
+		"Execute": true, "Execute0": true, "If": true, "Switch": true, "SwitchWithDefault": true,
+		"SwitchInteger": true, "SwitchIntegerWithDefault": true, "JumpLoop": true, "Block": true,
+		"Break": true, "And": true, "Or": true, "While": true, "DoWhile": true,
+	}
+	memory := map[string]bool{
+		"Get": true, "GetPointed": true, "GetShifted": true, "Set": true, "SetPointed": true, "SetShifted": true, "Copy": true,
+		"SetAdd": true, "SetSubtract": true, "SetMultiply": true, "SetDivide": true, "SetMod": true, "SetRem": true, "SetPower": true,
+		"SetAddPointed": true, "SetSubtractPointed": true, "SetMultiplyPointed": true, "SetDividePointed": true, "SetModPointed": true, "SetRemPointed": true, "SetPowerPointed": true,
+		"SetAddShifted": true, "SetSubtractShifted": true, "SetMultiplyShifted": true, "SetDivideShifted": true, "SetModShifted": true, "SetRemShifted": true, "SetPowerShifted": true,
+		"IncrementPost": true, "IncrementPostPointed": true, "IncrementPostShifted": true, "IncrementPre": true, "IncrementPrePointed": true, "IncrementPreShifted": true,
+		"DecrementPost": true, "DecrementPostPointed": true, "DecrementPostShifted": true, "DecrementPre": true, "DecrementPrePointed": true, "DecrementPreShifted": true,
+		"StackInit": true, "StackPush": true, "StackPop": true, "StackGrow": true, "StackEnter": true, "StackLeave": true,
+		"StackGet": true, "StackSet": true, "StackGetFrame": true, "StackSetFrame": true, "StackGetPointer": true, "StackSetPointer": true, "StackGetFramePointer": true, "StackSetFramePointer": true,
+		"StreamSet": true, "StreamHas": true, "StreamGetValue": true, "StreamGetPreviousKey": true, "StreamGetNextKey": true,
+	}
+	pure := map[string]bool{
+		"Abs": true, "Add": true, "Arccos": true, "Arcsin": true, "Arctan": true, "Arctan2": true, "Ceil": true,
+		"Clamp": true, "Cos": true, "Cosh": true, "Degree": true, "Divide": true, "Equal": true, "Exp": true,
+		"Floor": true, "Frac": true, "Greater": true, "GreaterOr": true, "Lerp": true, "LerpClamped": true,
+		"Less": true, "LessOr": true, "Log": true, "Max": true, "Min": true, "Mod": true, "Multiply": true,
+		"Negate": true, "Not": true, "NotEqual": true, "Power": true, "Radian": true, "Rem": true, "Remap": true,
+		"RemapClamped": true, "Round": true, "Sign": true, "Sin": true, "Sinh": true, "Sqrt": true, "Subtract": true,
+		"Tan": true, "Tanh": true, "Trunc": true, "Unlerp": true, "UnlerpClamped": true,
+	}
+	switch {
+	case control[name]:
+		return "SimulationControl", "builtin", true
+	case memory[name]:
+		return "SimulationMemory", "builtin", false
+	case name == "Random" || name == "RandomInteger":
+		return "SimulationRandom", "builtin", false
+	case pure[name] || strings.HasPrefix(name, "Ease"):
+		return "SimulationPure", "builtin", false
+	case effect == "EffectWrite":
+		return "SimulationEffect", "effect", false
+	default:
+		return "SimulationHandler", "handler-required", false
+	}
+}
+
+func internalSimulationSignature(name string) (minArgs, maxArgs, resultSlots int) {
+	switch name {
+	case "And", "Or":
+		return 0, -1, 1
+	case "If":
+		return 3, 3, 1
+	case "Subtract":
+		return 2, 2, 1
+	default:
+		return 0, 0, 0
+	}
 }
 
 func quoteList(values []string) []string {

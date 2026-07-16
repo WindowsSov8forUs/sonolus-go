@@ -6,6 +6,9 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"math"
+	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -19,27 +22,356 @@ import (
 )
 
 type lowerValue struct {
-	type_     types.Type
-	slots     []ir.Expr
-	places    []ir.Place
-	container *containerValue
-	variadic  *variadicValue
+	type_            types.Type
+	slots            []ir.Expr
+	places           []ir.Place
+	container        *containerValue
+	variadic         *variadicValue
+	entity           *entityReferenceValue
+	entityField      bool
+	callable         *staticCallable
+	stream           *streamValue
+	pointer          *pointerValue
+	pointerLoad      *pointerLoad
+	nilPointer       bool
+	interface_       *interfaceValue
+	containerVariant *finiteVariant[lowerValue]
+}
+
+type finiteVariant[T any] struct {
+	alternatives []T
+	tag          lowerValue
+}
+
+func newFiniteVariant[T any](l *lowerer, name string, node ast.Node) finiteVariant[T] {
+	tag := l.allocZeroed(name, types.Typ[types.Int], node)
+	l.store(tag, scalarValue(ir.Const{Value: -1}, types.Typ[types.Int]), node)
+	return finiteVariant[T]{tag: tag}
+}
+
+func (variant *finiteVariant[T]) add(value T, equal func(T, T) bool) (int, bool) {
+	for index, candidate := range variant.alternatives {
+		if equal(candidate, value) {
+			return index, true
+		}
+	}
+	if len(variant.alternatives) >= 256 {
+		return -1, false
+	}
+	variant.alternatives = append(variant.alternatives, value)
+	return len(variant.alternatives) - 1, true
+}
+
+func indexedCallableVariant(l *lowerer, callables []*staticCallable, tag lowerValue, node ast.Node) *staticCallable {
+	if len(callables) > 256 {
+		l.errorAt(node, "finite callable variant exceeds 256 alternatives")
+		return &staticCallable{finiteVariant: finiteVariant[*staticCallable]{tag: tag}}
+	}
+	return &staticCallable{finiteVariant: finiteVariant[*staticCallable]{
+		alternatives: append([]*staticCallable(nil), callables...),
+		tag:          tag,
+	}}
+}
+
+type interfaceValue struct {
+	finiteVariant[lowerValue]
+}
+
+type pointerValue struct {
+	finiteVariant[[]ir.Place]
+}
+
+type pointerLoad struct {
+	pointer     *pointerValue
+	offset      int
+	size        int
+	index       ir.Expr
+	arrayLength int
+	stride      int
+}
+
+func (l *lowerer) mergePointerValue(destination lowerValue, source lowerValue, node ast.Node) lowerValue {
+	if destination.pointer == nil {
+		variant := newFiniteVariant[[]ir.Place](l, "pointer.variant", node)
+		index, ok := variant.add(append([]ir.Place(nil), destination.places...), samePlaces)
+		if !ok {
+			l.errorAt(node, "finite pointer variant exceeds 256 alternatives")
+			return destination
+		}
+		l.store(variant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		destination.pointer = &pointerValue{finiteVariant: variant}
+		destination.places = nil
+	}
+	if source.pointer == destination.pointer {
+		return destination
+	}
+	addAlternative := func(places []ir.Place) int {
+		for index, candidate := range destination.pointer.alternatives {
+			if samePlaces(candidate, places) {
+				return index
+			}
+		}
+		index, ok := destination.pointer.add(append([]ir.Place(nil), places...), samePlaces)
+		if !ok {
+			l.errorAt(node, "finite pointer variant exceeds 256 alternatives")
+		}
+		return index
+	}
+	if source.pointer == nil {
+		index := addAlternative(source.places)
+		l.store(destination.pointer.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		return destination
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(source.pointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(source.pointer.tag.slots[0], cases, invalid)
+	for index, places := range source.pointer.alternatives {
+		l.setCurrent(blocks[index])
+		mapped := addAlternative(places)
+		l.store(destination.pointer.tag, scalarValue(ir.Const{Value: float64(mapped)}, types.Typ[types.Int]), node)
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return destination
+}
+
+func (l *lowerer) newPointerCell(name string, pointerType types.Type, node ast.Node) lowerValue {
+	variant := newFiniteVariant[[]ir.Place](l, name+".tag", node)
+	return lowerValue{type_: pointerType, pointer: &pointerValue{finiteVariant: variant}}
+}
+
+func (l *lowerer) copyPointerValue(name string, source lowerValue, node ast.Node) lowerValue {
+	destination := l.newPointerCell(name, source.type_, node)
+	if !isStaticPointer(source) {
+		l.errorAt(node, "pointer local requires a finite static target set")
+		return destination
+	}
+	return l.mergePointerValue(destination, source, node)
+}
+
+func (l *lowerer) newInterfaceValue(name string, interfaceType types.Type, node ast.Node) lowerValue {
+	variant := newFiniteVariant[lowerValue](l, name+".tag", node)
+	return lowerValue{type_: interfaceType, interface_: &interfaceValue{finiteVariant: variant}}
+}
+
+func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.Node) lowerValue {
+	if destination.interface_ == nil {
+		destination = l.newInterfaceValue("interface", destination.type_, node)
+	}
+	variant := destination.interface_
+	storeConcrete := func(value lowerValue) {
+		if value.type_ == nil || isInterfaceType(value.type_) || value.callable != nil || value.pointer != nil || value.entity != nil || isContainerValue(value) || l.containsEntityView(value.type_) {
+			l.errorAt(node, "finite static interface requires a non-escaping concrete runtime value")
+			return
+		}
+		index := -1
+		for candidate, payload := range variant.alternatives {
+			if payload.type_ != nil && types.Identical(payload.type_, value.type_) {
+				index = candidate
+				break
+			}
+		}
+		if index < 0 {
+			payload := l.allocZeroed("interface.value", value.type_, node)
+			var ok bool
+			index, ok = variant.add(payload, func(left, right lowerValue) bool {
+				return left.type_ != nil && right.type_ != nil && types.Identical(left.type_, right.type_)
+			})
+			if !ok {
+				l.errorAt(node, "finite static interface exceeds 256 concrete alternatives")
+				return
+			}
+		}
+		payload := variant.alternatives[index]
+		l.store(payload, value, node)
+		l.store(variant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+	}
+	if source.interface_ == nil {
+		storeConcrete(source)
+		return destination
+	}
+	sourceVariant := source.interface_
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(sourceVariant.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(sourceVariant.tag.slots[0], cases, invalid)
+	for index, alternative := range sourceVariant.alternatives {
+		l.setCurrent(blocks[index])
+		storeConcrete(alternative)
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return destination
+}
+
+type streamValue struct {
+	kind       string
+	valueSlots int
+	base       ir.Expr
+	width      int
+	length     int
+}
+
+type entityReferenceValue struct {
+	binding archetypeBinding
 }
 
 type variadicValue struct {
-	element  types.Type
-	elements []lowerValue
+	element   types.Type
+	elements  []lowerValue
+	callables []*staticCallable
 }
 
 type staticCallable struct {
-	function *types.Func
-	literal  *ast.FuncLit
-	pkg      *packages.Package
+	finiteVariant[*staticCallable]
+	identity        string
+	function        *types.Func
+	interfaceMethod *types.Func
+	literal         *ast.FuncLit
+	pkg             *packages.Package
+	receiver        *callArgument
+	captures        map[types.Object]lowerValue
+	callables       map[types.Object]*staticCallable
+	substitutions   map[*types.TypeParam]types.Type
+	yield           *rangeYield
+	iterator        *containerIterator
+	streamIter      *streamIterator
+	resultType      types.Type
+	intrinsic       func(*ast.CallExpr, []callArgument) lowerValue
+}
+
+type containerIterator struct {
+	receiver lowerValue
+	offsets  []int
+	types    []types.Type
+	index    bool
+	desc     bool
+}
+
+type streamIterator struct {
+	receiver lowerValue
+	kind     string
+	start    ir.Expr
+	desc     bool
+	frame    bool
+}
+
+type rangeYield struct {
+	statement *ast.RangeStmt
+	owner     *lowerFrame
+	active    lowerValue
+	label     string
 }
 
 type callArgument struct {
 	value    lowerValue
 	callable *staticCallable
+}
+
+func scalarValue(expr ir.Expr, t types.Type) lowerValue {
+	return lowerValue{type_: t, slots: []ir.Expr{expr}}
+}
+
+func streamLeafType(t types.Type) (*types.Named, int, bool) {
+	length := 1
+	outer := true
+	for {
+		if array, ok := types.Unalias(t).Underlying().(*types.Array); ok {
+			if outer {
+				length = int(array.Len())
+				outer = false
+			}
+			t = array.Elem()
+			continue
+		}
+		named, ok := namedType(t)
+		if !ok || (typeID(named) != rootID("Stream") && typeID(named) != rootID("StreamData")) {
+			return nil, 0, false
+		}
+		return named, length, true
+	}
+}
+
+func streamHandleSlots(l *lowerer, node ast.Node, base ir.Expr, width int) []ir.Expr {
+	result := make([]ir.Expr, width)
+	for offset := range result {
+		result[offset] = base
+		if offset != 0 {
+			result[offset] = l.pure(resource.RuntimeFunctionAdd, node, base, ir.Const{Value: float64(offset)})
+		}
+	}
+	return result
+}
+
+func indexedStreamValue(l *lowerer, node ast.Node, stream *streamValue, element types.Type, offset ir.Expr) *streamValue {
+	base := stream.base
+	if constant, ok := offset.(ir.Const); !ok || constant.Value != 0 {
+		base = l.pure(resource.RuntimeFunctionAdd, node, base, offset)
+	}
+	length := 1
+	if array, ok := types.Unalias(element).Underlying().(*types.Array); ok {
+		length = int(array.Len())
+	}
+	return &streamValue{kind: stream.kind, valueSlots: stream.valueSlots, base: base, width: stream.width / stream.length, length: length}
+}
+
+func lowerStreamValue(l *lowerer, node ast.Node, t types.Type, stream *streamValue) lowerValue {
+	value := lowerValue{type_: t, stream: stream}
+	if stream.length == 1 {
+		value.slots = streamHandleSlots(l, node, stream.base, stream.width)
+	}
+	return value
+}
+
+type recursiveCallKey struct {
+	target any
+	args   string
+}
+
+func (l *lowerer) callTypeArgument(call *ast.CallExpr, index int) (types.Type, bool) {
+	var expressions []ast.Expr
+	switch function := call.Fun.(type) {
+	case *ast.IndexExpr:
+		expressions = []ast.Expr{function.Index}
+	case *ast.IndexListExpr:
+		expressions = function.Indices
+	}
+	if index < 0 || index >= len(expressions) {
+		return nil, false
+	}
+	value := l.resolveType(l.pkg.TypesInfo.TypeOf(expressions[index]))
+	return value, value != nil
+}
+
+func staticCallFingerprint(args []callArgument) (string, bool) {
+	var result strings.Builder
+	for _, argument := range args {
+		if argument.callable != nil || isContainerValue(argument.value) || argument.value.entity != nil || argument.value.variadic != nil {
+			return "", false
+		}
+		for _, slot := range argument.value.slots {
+			constant, ok := slot.(ir.Const)
+			if !ok {
+				return "", false
+			}
+			fmt.Fprintf(&result, "%016x,", math.Float64bits(constant.Value))
+		}
+		result.WriteByte(';')
+	}
+	return result.String(), true
 }
 
 type containerValue struct {
@@ -52,6 +384,7 @@ type containerValue struct {
 	dataLocal     *ir.LocalPlace
 	memoryStorage string
 	memoryBase    int
+	memoryEntity  ir.Expr
 	memoryRead    bool
 	memoryWrite   bool
 }
@@ -67,40 +400,88 @@ type inlineCallSite struct {
 }
 
 type lowerFrame struct {
-	vars        map[types.Object]lowerValue
-	callables   map[types.Object]*staticCallable
-	results     map[types.Object]bool
-	result      lowerValue
-	returnBlock *ir.Block
+	vars            map[types.Object]lowerValue
+	callables       map[types.Object]*staticCallable
+	results         map[types.Object]bool
+	result          lowerValue
+	callableResult  *staticCallable
+	interfaceResult bool
+	returnBlock     *ir.Block
+}
+
+type returnRedirect struct {
+	owner *lowerFrame
+	depth int
+}
+
+type labeledTargets struct {
+	breakTarget    *ir.Block
+	continueTarget *ir.Block
 }
 
 type lowerer struct {
-	mode            mode.Mode
-	phase           string
-	packages        map[*types.Package]*packages.Package
-	pkg             *packages.Package
-	builder         *ir.Builder
-	frames          []*lowerFrame
-	callStack       map[any]bool
-	resourceIDs     map[*types.Var][]int
-	configuration   *ConfigurationDeclaration
-	archetypeFields map[*types.Var]*FieldDeclaration
-	archetypes      map[*types.Named]archetypeBinding
-	breaks          []*ir.Block
-	continues       []*ir.Block
-	inlineCalls     []inlineCallSite
-	dynamicDepth    int
-	errs            []error
+	mode              mode.Mode
+	phase             string
+	packages          map[*types.Package]*packages.Package
+	pkg               *packages.Package
+	builder           *ir.Builder
+	frames            []*lowerFrame
+	callStack         map[any]bool
+	resourceIDs       map[*types.Var][]int
+	streamSize        int
+	configuration     *ConfigurationDeclaration
+	archetypeFields   map[*types.Var]*FieldDeclaration
+	archetypes        map[*types.Named]archetypeBinding
+	breaks            []*ir.Block
+	continues         []*ir.Block
+	labels            map[string]labeledTargets
+	fallthroughs      []*ir.Block
+	inlineCalls       []inlineCallSite
+	returnFrames      []returnRedirect
+	typeSubstitutions []map[*types.TypeParam]types.Type
+	dynamicDepth      int
+	checks            RuntimeChecks
+	errs              []error
+}
+
+func (l *lowerer) pushLabel(name string, breakTarget, continueTarget *ir.Block) func() {
+	if name == "" {
+		return func() {}
+	}
+	if l.labels == nil {
+		l.labels = map[string]labeledTargets{}
+	}
+	previous, existed := l.labels[name]
+	l.labels[name] = labeledTargets{breakTarget: breakTarget, continueTarget: continueTarget}
+	return func() {
+		if existed {
+			l.labels[name] = previous
+		} else {
+			delete(l.labels, name)
+		}
+	}
 }
 
 func sourcePos(pkg *packages.Package, pos token.Pos) ir.SourcePos {
 	p := pkg.Fset.Position(pos)
-	return ir.SourcePos{File: p.Filename, Line: p.Line, Column: p.Column}
+	return ir.SourcePos{File: canonicalSourceFile(pkg, p.Filename), Line: p.Line, Column: p.Column}
+}
+
+func canonicalSourceFile(pkg *packages.Package, filename string) string {
+	file := filepath.ToSlash(filename)
+	if pkg == nil || pkg.Module == nil || pkg.Module.Dir == "" {
+		return file
+	}
+	relative, err := filepath.Rel(pkg.Module.Dir, filename)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return file
+	}
+	return filepath.ToSlash(relative)
 }
 
 func (l *lowerer) errorAt(node ast.Node, format string, args ...any) {
 	p := l.pkg.Fset.Position(node.Pos())
-	message := fmt.Sprintf("%s: callback %s", p, l.builder.Function().Name)
+	message := fmt.Sprintf("%s:%d:%d: callback %s", canonicalSourceFile(l.pkg, p.Filename), p.Line, p.Column, l.builder.Function().Name)
 	for i := len(l.inlineCalls) - 1; i >= 0; i-- {
 		call := l.inlineCalls[i]
 		message += fmt.Sprintf(": inlined from %s:%d:%d (%s)", call.pos.File, call.pos.Line, call.pos.Column, call.function)
@@ -127,6 +508,10 @@ func irTypeOf(t types.Type) ir.Type {
 		return ir.Type{Name: "void"}
 	}
 	t = types.Unalias(t)
+	if named, ok := namedType(t); ok && (typeID(named) == rootID("Stream") || typeID(named) == rootID("StreamData")) && named.TypeArgs().Len() == 1 {
+		value := irTypeOf(named.TypeArgs().At(0))
+		return ir.Type{Name: t.String(), Slots: value.Slots, Fields: value.Fields}
+	}
 	if pointer, ok := t.(*types.Pointer); ok {
 		return irTypeOf(pointer.Elem())
 	}
@@ -159,6 +544,260 @@ func irTypeOf(t types.Type) ir.Type {
 		return out
 	}
 	return ir.Type{Name: t.String(), Slots: 1}
+}
+
+func (l *lowerer) runtimeTypeOf(t types.Type) ir.Type {
+	var build func(types.Type) ir.Type
+	build = func(value types.Type) ir.Type {
+		value = l.resolveType(value)
+		value = types.Unalias(value)
+		if _, pointer := value.(*types.Pointer); pointer {
+			if _, exists := l.entityBinding(value); exists {
+				return entityViewType(value)
+			}
+		}
+		if array, ok := value.Underlying().(*types.Array); ok {
+			element := build(array.Elem())
+			return ir.Type{Name: value.String(), Slots: int(array.Len()) * element.Slots}
+		}
+		if structure, ok := value.Underlying().(*types.Struct); ok && l.containsEntityView(value) {
+			result := ir.Type{Name: value.String()}
+			for index := 0; index < structure.NumFields(); index++ {
+				fieldType := build(structure.Field(index).Type())
+				result.Fields = append(result.Fields, ir.Field{Name: structure.Field(index).Name(), Offset: result.Slots, Type: fieldType})
+				result.Slots += fieldType.Slots
+			}
+			return result
+		}
+		return irTypeOf(value)
+	}
+	return build(t)
+}
+
+func (l *lowerer) resolveType(t types.Type) types.Type {
+	if t == nil {
+		return nil
+	}
+	value := types.Unalias(t)
+	if parameter, ok := value.(*types.TypeParam); ok {
+		for index := len(l.typeSubstitutions) - 1; index >= 0; index-- {
+			if replacement := l.typeSubstitutions[index][parameter]; replacement != nil {
+				return l.resolveType(replacement)
+			}
+		}
+		return value
+	}
+	switch typed := value.(type) {
+	case *types.Pointer:
+		element := l.resolveType(typed.Elem())
+		if types.Identical(element, typed.Elem()) {
+			return typed
+		}
+		return types.NewPointer(element)
+	case *types.Array:
+		element := l.resolveType(typed.Elem())
+		if types.Identical(element, typed.Elem()) {
+			return typed
+		}
+		return types.NewArray(element, typed.Len())
+	case *types.Slice:
+		element := l.resolveType(typed.Elem())
+		if types.Identical(element, typed.Elem()) {
+			return typed
+		}
+		return types.NewSlice(element)
+	case *types.Map:
+		key, element := l.resolveType(typed.Key()), l.resolveType(typed.Elem())
+		if types.Identical(key, typed.Key()) && types.Identical(element, typed.Elem()) {
+			return typed
+		}
+		return types.NewMap(key, element)
+	case *types.Chan:
+		element := l.resolveType(typed.Elem())
+		if types.Identical(element, typed.Elem()) {
+			return typed
+		}
+		return types.NewChan(typed.Dir(), element)
+	case *types.Named:
+		if typed.TypeArgs().Len() == 0 {
+			return typed
+		}
+		arguments := make([]types.Type, typed.TypeArgs().Len())
+		changed := false
+		for index := range arguments {
+			arguments[index] = l.resolveType(typed.TypeArgs().At(index))
+			changed = changed || !types.Identical(arguments[index], typed.TypeArgs().At(index))
+		}
+		if !changed {
+			return typed
+		}
+		instance, err := types.Instantiate(nil, typed.Origin(), arguments, true)
+		if err != nil {
+			return typed
+		}
+		return instance
+	case *types.Struct:
+		fields := make([]*types.Var, typed.NumFields())
+		tags := make([]string, typed.NumFields())
+		changed := false
+		for index := range fields {
+			field := typed.Field(index)
+			fieldType := l.resolveType(field.Type())
+			fields[index] = types.NewField(field.Pos(), field.Pkg(), field.Name(), fieldType, field.Embedded())
+			tags[index] = typed.Tag(index)
+			changed = changed || !types.Identical(fieldType, field.Type())
+		}
+		if changed {
+			return types.NewStruct(fields, tags)
+		}
+	}
+	return value
+}
+
+func (l *lowerer) collectTypeSubstitutions(pattern, actual types.Type, substitutions map[*types.TypeParam]types.Type) {
+	if pattern == nil || actual == nil {
+		return
+	}
+	pattern = types.Unalias(pattern)
+	actual = l.resolveType(actual)
+	actual = types.Unalias(actual)
+	if parameter, ok := pattern.(*types.TypeParam); ok {
+		if existing := substitutions[parameter]; existing == nil || types.Identical(existing, actual) {
+			substitutions[parameter] = actual
+		}
+		return
+	}
+	switch pattern := pattern.(type) {
+	case *types.Pointer:
+		if actual, ok := actual.(*types.Pointer); ok {
+			l.collectTypeSubstitutions(pattern.Elem(), actual.Elem(), substitutions)
+		}
+	case *types.Array:
+		if actual, ok := actual.Underlying().(*types.Array); ok && pattern.Len() == actual.Len() {
+			l.collectTypeSubstitutions(pattern.Elem(), actual.Elem(), substitutions)
+		}
+	case *types.Slice:
+		if actual, ok := actual.Underlying().(*types.Slice); ok {
+			l.collectTypeSubstitutions(pattern.Elem(), actual.Elem(), substitutions)
+		}
+	case *types.Map:
+		if actual, ok := actual.Underlying().(*types.Map); ok {
+			l.collectTypeSubstitutions(pattern.Key(), actual.Key(), substitutions)
+			l.collectTypeSubstitutions(pattern.Elem(), actual.Elem(), substitutions)
+		}
+	case *types.Named:
+		actualNamed, ok := actual.(*types.Named)
+		if !ok || pattern.Origin() != actualNamed.Origin() || pattern.TypeArgs().Len() != actualNamed.TypeArgs().Len() {
+			return
+		}
+		for index := 0; index < pattern.TypeArgs().Len(); index++ {
+			l.collectTypeSubstitutions(pattern.TypeArgs().At(index), actualNamed.TypeArgs().At(index), substitutions)
+		}
+	case *types.Struct:
+		actualStruct, ok := actual.Underlying().(*types.Struct)
+		if !ok || pattern.NumFields() != actualStruct.NumFields() {
+			return
+		}
+		for index := 0; index < pattern.NumFields(); index++ {
+			l.collectTypeSubstitutions(pattern.Field(index).Type(), actualStruct.Field(index).Type(), substitutions)
+		}
+	}
+}
+
+func (l *lowerer) inferCallTypeSubstitutions(signature, callSignature *types.Signature, args []callArgument) map[*types.TypeParam]types.Type {
+	substitutions := map[*types.TypeParam]types.Type{}
+	argument := 0
+	if signature.Recv() != nil && len(args) != 0 {
+		l.collectTypeSubstitutions(signature.Recv().Type(), args[0].value.type_, substitutions)
+		argument++
+	}
+	for index := 0; index < signature.Params().Len() && argument < len(args); index++ {
+		parameter := signature.Params().At(index).Type()
+		if signature.Variadic() && index == signature.Params().Len()-1 {
+			slice, _ := types.Unalias(parameter).Underlying().(*types.Slice)
+			for ; argument < len(args); argument++ {
+				if args[argument].value.type_ != nil {
+					l.collectTypeSubstitutions(slice.Elem(), args[argument].value.type_, substitutions)
+				}
+			}
+			break
+		}
+		if args[argument].value.type_ != nil {
+			l.collectTypeSubstitutions(parameter, args[argument].value.type_, substitutions)
+		}
+		argument++
+	}
+	if callSignature != nil {
+		offset := 0
+		if signature.Recv() != nil && callSignature.Params().Len() == signature.Params().Len()+1 {
+			l.collectTypeSubstitutions(signature.Recv().Type(), callSignature.Params().At(0).Type(), substitutions)
+			offset = 1
+		}
+		for index := 0; index < signature.Params().Len() && index+offset < callSignature.Params().Len(); index++ {
+			l.collectTypeSubstitutions(signature.Params().At(index).Type(), callSignature.Params().At(index+offset).Type(), substitutions)
+		}
+		for index := 0; index < signature.Results().Len() && index < callSignature.Results().Len(); index++ {
+			l.collectTypeSubstitutions(signature.Results().At(index).Type(), callSignature.Results().At(index).Type(), substitutions)
+		}
+	}
+	return substitutions
+}
+
+func callableInstance(pkg *packages.Package, expression ast.Expr) (types.Instance, bool) {
+	switch expression := expression.(type) {
+	case *ast.ParenExpr:
+		return callableInstance(pkg, expression.X)
+	case *ast.IndexExpr:
+		return callableInstance(pkg, expression.X)
+	case *ast.IndexListExpr:
+		return callableInstance(pkg, expression.X)
+	case *ast.Ident:
+		instance, ok := pkg.TypesInfo.Instances[expression]
+		return instance, ok
+	case *ast.SelectorExpr:
+		instance, ok := pkg.TypesInfo.Instances[expression.Sel]
+		return instance, ok
+	default:
+		return types.Instance{}, false
+	}
+}
+
+func (l *lowerer) containsEntityView(t types.Type) bool {
+	var inspect func(types.Type, map[types.Type]bool) bool
+	inspect = func(value types.Type, visiting map[types.Type]bool) bool {
+		value = types.Unalias(value)
+		if _, pointer := value.(*types.Pointer); pointer {
+			_, exists := l.entityBinding(value)
+			return exists
+		}
+		if visiting[value] {
+			return false
+		}
+		visiting[value] = true
+		defer delete(visiting, value)
+		switch underlying := value.Underlying().(type) {
+		case *types.Array:
+			return inspect(underlying.Elem(), visiting)
+		case *types.Struct:
+			for index := 0; index < underlying.NumFields(); index++ {
+				if inspect(underlying.Field(index).Type(), visiting) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return inspect(t, map[types.Type]bool{})
+}
+
+func (l *lowerer) zeroRuntimeValue(t types.Type) lowerValue {
+	t = l.resolveType(t)
+	typ := l.runtimeTypeOf(t)
+	slots := make([]ir.Expr, typ.Slots)
+	for index := range slots {
+		slots[index] = ir.Const{}
+	}
+	return lowerValue{type_: t, slots: slots}
 }
 
 func zeroValue(t types.Type) lowerValue {
@@ -232,14 +871,68 @@ func constantExpr(value constant.Value) (ir.Expr, bool) {
 }
 
 func (l *lowerer) alloc(name string, t types.Type) lowerValue {
-	typ := irTypeOf(t)
+	t = l.resolveType(t)
+	typ := l.runtimeTypeOf(t)
 	value := l.builder.NewLocal(name, typ)
 	return lowerValue{type_: t, slots: value.Slots, places: ir.Places(value)}
 }
 
+func entityViewType(t types.Type) ir.Type {
+	return ir.Type{Name: "entity-view:" + t.String(), Slots: 1}
+}
+
+func (l *lowerer) allocEntityView(name string, value lowerValue, node ast.Node) lowerValue {
+	if value.entity == nil || len(value.slots) != 1 {
+		l.errorAt(node, "EntityRef.Get view requires exactly one entity index slot")
+		return lowerValue{}
+	}
+	typ := entityViewType(value.type_)
+	local := l.builder.NewLocal(name, typ)
+	result := lowerValue{
+		type_: value.type_, slots: local.Slots, places: ir.Places(local),
+		entity: &entityReferenceValue{binding: value.entity.binding},
+	}
+	if err := l.builder.Store(result.places, ir.Value{Type: typ, Slots: value.slots}, sourcePos(l.pkg, node.Pos())); err != nil {
+		l.errorAt(node, "%v", err)
+	}
+	return result
+}
+
+func (l *lowerer) newEntityViewLocal(name string, t types.Type, binding archetypeBinding) lowerValue {
+	typ := entityViewType(t)
+	local := l.builder.NewLocal(name, typ)
+	return lowerValue{
+		type_: t, slots: local.Slots, places: ir.Places(local),
+		entity: &entityReferenceValue{binding: binding},
+	}
+}
+
+func (l *lowerer) entityBinding(t types.Type) (archetypeBinding, bool) {
+	named, ok := namedType(t)
+	if !ok {
+		return archetypeBinding{}, false
+	}
+	binding, exists := l.archetypes[named]
+	return binding, exists
+}
+
+func (l *lowerer) storeEntityView(dst, src lowerValue, node ast.Node) {
+	if dst.entity == nil || src.entity == nil || len(dst.places) != 1 || len(src.slots) != 1 {
+		l.errorAt(node, "EntityRef.Get view assignment requires one local entity index")
+		return
+	}
+	if dst.entity.binding.declaration != src.entity.binding.declaration {
+		l.errorAt(node, "EntityRef.Get view assignment cannot change target archetype from %s to %s", dst.entity.binding.declaration.Name, src.entity.binding.declaration.Name)
+		return
+	}
+	if err := l.builder.Store(dst.places, ir.Value{Type: entityViewType(dst.type_), Slots: src.slots}, sourcePos(l.pkg, node.Pos())); err != nil {
+		l.errorAt(node, "%v", err)
+	}
+}
+
 func (l *lowerer) allocZeroed(name string, t types.Type, node ast.Node) lowerValue {
 	value := l.alloc(name, t)
-	l.store(value, zeroValue(t), node)
+	l.store(value, l.zeroRuntimeValue(t), node)
 	return value
 }
 
@@ -276,6 +969,93 @@ func (l *lowerer) lookupCallable(obj types.Object) (*staticCallable, bool) {
 	return nil, false
 }
 
+func (l *lowerer) captureBindings() (map[types.Object]lowerValue, map[types.Object]*staticCallable) {
+	values := map[types.Object]lowerValue{}
+	callables := map[types.Object]*staticCallable{}
+	for _, frame := range l.frames {
+		for object, value := range frame.vars {
+			if value.container != nil && value.containerVariant != nil {
+				value.container = nil
+				value.slots = nil
+				value.places = nil
+			}
+			values[object] = value
+		}
+		for object, callable := range frame.callables {
+			callables[object] = callable
+		}
+	}
+	return values, callables
+}
+
+func (l *lowerer) captureTypeSubstitutions() map[*types.TypeParam]types.Type {
+	result := map[*types.TypeParam]types.Type{}
+	for _, substitutions := range l.typeSubstitutions {
+		for parameter, replacement := range substitutions {
+			result[parameter] = l.resolveType(replacement)
+		}
+	}
+	return result
+}
+
+func (l *lowerer) callableTypeSubstitutions(fn *types.Func, expression ast.Expr) map[*types.TypeParam]types.Type {
+	result := l.captureTypeSubstitutions()
+	instance, exists := callableInstance(l.pkg, expression)
+	if !exists {
+		return result
+	}
+	signature := fn.Origin().Type().(*types.Signature)
+	for index := 0; index < signature.TypeParams().Len() && index < instance.TypeArgs.Len(); index++ {
+		result[signature.TypeParams().At(index)] = l.resolveType(instance.TypeArgs.At(index))
+	}
+	return result
+}
+
+func cloneValueBindings(values map[types.Object]lowerValue) map[types.Object]lowerValue {
+	result := make(map[types.Object]lowerValue, len(values))
+	for object, value := range values {
+		result[object] = value
+	}
+	return result
+}
+
+func cloneCallableBindings(values map[types.Object]*staticCallable) map[types.Object]*staticCallable {
+	result := make(map[types.Object]*staticCallable, len(values))
+	for object, value := range values {
+		result[object] = value
+	}
+	return result
+}
+
+func sameCallable(left, right *staticCallable) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	if left == right {
+		return true
+	}
+	if left.identity != "" || right.identity != "" {
+		return left.identity == right.identity && reflect.DeepEqual(left.receiver, right.receiver) && reflect.DeepEqual(left.captures, right.captures)
+	}
+	if left.intrinsic != nil || right.intrinsic != nil {
+		return false
+	}
+	return left.function == right.function && left.literal == right.literal && left.yield == right.yield && reflect.DeepEqual(left.receiver, right.receiver) && reflect.DeepEqual(left.captures, right.captures) && sameTypeSubstitutions(left.substitutions, right.substitutions)
+}
+
+func sameTypeSubstitutions(left, right map[*types.TypeParam]types.Type) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for parameter, leftType := range left {
+		rightType := right[parameter]
+		if rightType == nil || !types.Identical(leftType, rightType) {
+			return false
+		}
+	}
+	return true
+}
+
 func (l *lowerer) rebind(obj types.Object, v lowerValue) {
 	for i := len(l.frames) - 1; i >= 0; i-- {
 		if _, ok := l.frames[i].vars[obj]; ok {
@@ -290,11 +1070,50 @@ func (l *lowerer) rebind(obj types.Object, v lowerValue) {
 }
 
 func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, node ast.Node) {
-	if _, pointer := types.Unalias(obj.Type()).(*types.Pointer); pointer || value.container != nil || value.variadic != nil {
+	parameterType := l.resolveType(obj.Type())
+	if value.entity != nil {
+		l.bind(obj, l.allocEntityView(name, value, node))
+		return
+	}
+	if _, typeParameter := types.Unalias(obj.Type()).(*types.TypeParam); typeParameter {
+		value = l.materialize(name, value, node)
 		l.bind(obj, value)
 		return
 	}
-	local := l.alloc(name, obj.Type())
+	if _, interfaceType := types.Unalias(parameterType).Underlying().(*types.Interface); interfaceType {
+		if value.interface_ == nil {
+			value = l.storeInterfaceValue(l.newInterfaceValue(name, parameterType, node), value, node)
+		}
+		value.type_ = parameterType
+		l.bind(obj, value)
+		return
+	}
+	if _, pointer := types.Unalias(parameterType).(*types.Pointer); pointer {
+		value.type_ = parameterType
+		l.bind(obj, l.copyPointerValue(name, value, node))
+		return
+	}
+	if isContainerValue(value) {
+		l.bind(obj, l.copyContainerValue(name, value, node))
+		return
+	}
+	if value.variadic != nil || value.interface_ != nil {
+		l.bind(obj, value)
+		return
+	}
+	allConstant := len(value.slots) != 0
+	for _, slot := range value.slots {
+		if _, ok := slot.(ir.Const); !ok {
+			allConstant = false
+			break
+		}
+	}
+	if allConstant {
+		value.type_ = parameterType
+		l.bind(obj, value)
+		return
+	}
+	local := l.alloc(name, parameterType)
 	l.store(local, value, node)
 	l.bind(obj, local)
 }
@@ -316,6 +1135,10 @@ func (l *lowerer) lookup(obj types.Object) (lowerValue, bool) {
 }
 
 func (l *lowerer) store(dst, src lowerValue, node ast.Node) {
+	if dst.pointerLoad != nil {
+		l.storePointerLoad(dst.pointerLoad, src, node)
+		return
+	}
 	if len(dst.places) != len(src.slots) {
 		l.errorAt(node, "assignment layout mismatch: %d places for %d slots", len(dst.places), len(src.slots))
 		return
@@ -326,21 +1149,370 @@ func (l *lowerer) store(dst, src lowerValue, node ast.Node) {
 			return
 		}
 	}
-	if err := l.builder.Store(dst.places, ir.Value{Type: irTypeOf(src.type_), Slots: src.slots}, sourcePos(l.pkg, node.Pos())); err != nil {
+	valueType := l.runtimeTypeOf(src.type_)
+	if src.entity != nil {
+		valueType = entityViewType(src.type_)
+	}
+	if err := l.builder.Store(dst.places, ir.Value{Type: valueType, Slots: src.slots}, sourcePos(l.pkg, node.Pos())); err != nil {
 		l.errorAt(node, "%v", err)
 	}
+}
+
+func (l *lowerer) storePointerLoad(load *pointerLoad, src lowerValue, node ast.Node) {
+	if load == nil || load.pointer == nil || len(load.pointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic pointer store has no target tag")
+		return
+	}
+	if len(src.slots) != load.size {
+		l.errorAt(node, "dynamic pointer store layout mismatch: %d slots for %d target slots", len(src.slots), load.size)
+		return
+	}
+	src = l.materialize("pointer.store", src, node)
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(load.pointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(load.pointer.tag.slots[0], cases, invalid)
+	for index, target := range load.pointer.alternatives {
+		l.setCurrent(blocks[index])
+		if target == nil {
+			l.terminateRuntime(node, "nil pointer dereference")
+			continue
+		}
+		places := target
+		if load.index != nil {
+			if load.offset < 0 || load.offset+load.arrayLength*load.stride > len(target) {
+				l.errorAt(node, "dynamic pointer target %d has invalid indexed layout", index)
+				places = nil
+			} else {
+				places = make([]ir.Place, load.size)
+				for slot := range places {
+					places[slot] = l.dynamicArrayPlace(target[load.offset], load.index, load.arrayLength, load.stride, slot, node)
+				}
+			}
+		}
+		if load.index == nil && load.offset+load.size > len(target) {
+			l.errorAt(node, "dynamic pointer target %d has invalid layout", index)
+		} else {
+			if load.index == nil {
+				places = target[load.offset : load.offset+load.size]
+			}
+			if len(places) != 0 {
+				if err := l.builder.Store(places, ir.Value{Type: l.runtimeTypeOf(src.type_), Slots: src.slots}, sourcePos(l.pkg, node.Pos())); err != nil {
+					l.errorAt(node, "%v", err)
+				}
+			}
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+}
+
+func (l *lowerer) addressPointerLoad(load *pointerLoad, pointerType types.Type, node ast.Node) lowerValue {
+	if load == nil || load.pointer == nil || len(load.pointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic pointer address has no target tag")
+		return zeroValue(pointerType)
+	}
+	alternatives := make([][]ir.Place, len(load.pointer.alternatives))
+	for index, target := range load.pointer.alternatives {
+		if target == nil {
+			continue
+		}
+		if load.index == nil {
+			if load.offset < 0 || load.offset+load.size > len(target) {
+				l.errorAt(node, "dynamic pointer target %d has invalid address layout", index)
+				continue
+			}
+			alternatives[index] = append([]ir.Place(nil), target[load.offset:load.offset+load.size]...)
+			continue
+		}
+		if load.offset < 0 || load.offset+load.arrayLength*load.stride > len(target) {
+			l.errorAt(node, "dynamic pointer target %d has invalid indexed address layout", index)
+			continue
+		}
+		places := make([]ir.Place, load.size)
+		for slot := range places {
+			places[slot] = l.dynamicArrayPlace(target[load.offset], load.index, load.arrayLength, load.stride, slot, node)
+		}
+		alternatives[index] = places
+	}
+	return lowerValue{
+		type_: pointerType,
+		pointer: &pointerValue{finiteVariant: finiteVariant[[]ir.Place]{
+			alternatives: alternatives,
+			tag:          load.pointer.tag,
+		}},
+	}
+}
+
+func (l *lowerer) loadPointerIndex(value lowerValue, pointer *types.Pointer, array *types.Array, index lowerValue, node ast.Node) lowerValue {
+	if value.pointer == nil || len(value.pointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic pointer has no target tag")
+		return zeroValue(array.Elem())
+	}
+	index = l.materialize("pointer.index", index, node)
+	condition := l.pure(resource.RuntimeFunctionAnd, node,
+		l.pure(resource.RuntimeFunctionGreaterOr, node, index.slots[0], ir.Const{}),
+		l.pure(resource.RuntimeFunctionLess, node, index.slots[0], ir.Const{Value: float64(array.Len())}))
+	l.guard(node, condition)
+	stride := l.runtimeTypeOf(types.NewArray(array.Elem(), 1)).Slots
+	result := l.allocZeroed("pointer.index.load", array.Elem(), node)
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(value.pointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for alternative := range blocks {
+		blocks[alternative] = l.newBlock()
+		cases[alternative] = ir.SwitchCase{Value: float64(alternative), Target: blocks[alternative].ID}
+	}
+	_ = l.builder.Switch(value.pointer.tag.slots[0], cases, invalid)
+	for alternative, target := range value.pointer.alternatives {
+		l.setCurrent(blocks[alternative])
+		if target == nil {
+			l.terminateRuntime(node, "nil pointer dereference")
+			continue
+		}
+		if len(target) != int(array.Len())*stride {
+			l.errorAt(node, "dynamic pointer target %d has %d slots; expected %d", alternative, len(target), int(array.Len())*stride)
+		} else {
+			slots := make([]ir.Expr, stride)
+			for slot := range slots {
+				place := l.dynamicArrayPlace(target[0], index.slots[0], int(array.Len()), stride, slot, node)
+				slots[slot] = ir.Load{Place: place}
+			}
+			if err := l.builder.Store(result.places, ir.Value{Type: l.runtimeTypeOf(array.Elem()), Slots: slots}, sourcePos(l.pkg, node.Pos())); err != nil {
+				l.errorAt(node, "%v", err)
+			}
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	result.type_ = array.Elem()
+	result.pointerLoad = &pointerLoad{pointer: value.pointer, size: stride, index: index.slots[0], arrayLength: int(array.Len()), stride: stride}
+	_ = pointer
+	return result
+}
+
+func (l *lowerer) loadPointerArrayIndex(base lowerValue, array *types.Array, index lowerValue, node ast.Node) lowerValue {
+	load := base.pointerLoad
+	if load == nil || load.pointer == nil || len(load.pointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic pointer array has no target tag")
+		return zeroValue(array.Elem())
+	}
+	index = l.materialize("pointer.index", index, node)
+	condition := l.pure(resource.RuntimeFunctionAnd, node,
+		l.pure(resource.RuntimeFunctionGreaterOr, node, index.slots[0], ir.Const{}),
+		l.pure(resource.RuntimeFunctionLess, node, index.slots[0], ir.Const{Value: float64(array.Len())}))
+	l.guard(node, condition)
+	stride := l.runtimeTypeOf(types.NewArray(array.Elem(), 1)).Slots
+	result := l.allocZeroed("pointer.index.load", array.Elem(), node)
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(load.pointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for alternative := range blocks {
+		blocks[alternative] = l.newBlock()
+		cases[alternative] = ir.SwitchCase{Value: float64(alternative), Target: blocks[alternative].ID}
+	}
+	_ = l.builder.Switch(load.pointer.tag.slots[0], cases, invalid)
+	for alternative, target := range load.pointer.alternatives {
+		l.setCurrent(blocks[alternative])
+		if target == nil {
+			l.terminateRuntime(node, "nil pointer dereference")
+			continue
+		}
+		if load.offset < 0 || load.offset+int(array.Len())*stride > len(target) {
+			l.errorAt(node, "dynamic pointer target %d has invalid array layout", alternative)
+		} else {
+			slots := make([]ir.Expr, stride)
+			for slot := range slots {
+				place := l.dynamicArrayPlace(target[load.offset], index.slots[0], int(array.Len()), stride, slot, node)
+				slots[slot] = ir.Load{Place: place}
+			}
+			if err := l.builder.Store(result.places, ir.Value{Type: l.runtimeTypeOf(array.Elem()), Slots: slots}, sourcePos(l.pkg, node.Pos())); err != nil {
+				l.errorAt(node, "%v", err)
+			}
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	result.type_ = array.Elem()
+	result.pointerLoad = &pointerLoad{pointer: load.pointer, offset: load.offset, size: stride, index: index.slots[0], arrayLength: int(array.Len()), stride: stride}
+	return result
+}
+
+func (l *lowerer) loadPointer(value lowerValue, pointer *types.Pointer, node ast.Node) lowerValue {
+	if value.pointer == nil || len(value.pointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic pointer has no target tag")
+		return zeroValue(pointer.Elem())
+	}
+	result := l.allocZeroed("pointer.load", pointer.Elem(), node)
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(value.pointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(value.pointer.tag.slots[0], cases, invalid)
+	for index, target := range value.pointer.alternatives {
+		l.setCurrent(blocks[index])
+		if target == nil {
+			l.terminateRuntime(node, "nil pointer dereference")
+			continue
+		}
+		if len(target) != len(result.places) {
+			l.errorAt(node, "dynamic pointer target %d has %d slots; expected %d", index, len(target), len(result.places))
+		} else {
+			slots := make([]ir.Expr, len(target))
+			for slot, place := range target {
+				slots[slot] = ir.Load{Place: place}
+			}
+			if err := l.builder.Store(result.places, ir.Value{Type: l.runtimeTypeOf(pointer.Elem()), Slots: slots}, sourcePos(l.pkg, node.Pos())); err != nil {
+				l.errorAt(node, "%v", err)
+			}
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	result.type_ = pointer.Elem()
+	result.pointerLoad = &pointerLoad{pointer: value.pointer, size: len(result.slots)}
+	return result
 }
 
 var binaryRuntime = map[token.Token]resource.RuntimeFunction{
 	token.ADD: resource.RuntimeFunctionAdd, token.SUB: resource.RuntimeFunctionSubtract,
 	token.MUL: resource.RuntimeFunctionMultiply, token.QUO: resource.RuntimeFunctionDivide,
-	token.REM: resource.RuntimeFunctionMod, token.EQL: resource.RuntimeFunctionEqual,
+	token.REM: resource.RuntimeFunctionRem, token.EQL: resource.RuntimeFunctionEqual,
 	token.NEQ: resource.RuntimeFunctionNotEqual, token.LSS: resource.RuntimeFunctionLess,
 	token.LEQ: resource.RuntimeFunctionLessOr, token.GTR: resource.RuntimeFunctionGreater,
 	token.GEQ: resource.RuntimeFunctionGreaterOr,
 }
 
+func runtimeBasicKind(t types.Type) (types.BasicKind, bool) {
+	if t == nil {
+		return types.Invalid, false
+	}
+	basic, ok := types.Unalias(t).Underlying().(*types.Basic)
+	if !ok {
+		return types.Invalid, false
+	}
+	switch basic.Kind() {
+	case types.Bool, types.Int, types.Float64:
+		return basic.Kind(), true
+	default:
+		return basic.Kind(), false
+	}
+}
+
+func isPointerType(t types.Type) bool {
+	_, ok := types.Unalias(t).(*types.Pointer)
+	return ok
+}
+
+func isInterfaceType(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	if _, typeParameter := types.Unalias(t).(*types.TypeParam); typeParameter {
+		return false
+	}
+	_, ok := types.Unalias(t).Underlying().(*types.Interface)
+	return ok
+}
+
+func isStaticPointer(value lowerValue) bool {
+	return value.entity == nil && (value.nilPointer || isPointerType(value.type_) && (value.pointer != nil || len(value.places) != 0 && len(value.places) == len(value.slots)))
+}
+
+func samePlaces(left, right []ir.Place) bool {
+	return reflect.DeepEqual(left, right)
+}
+
+func constantBool(pkg *packages.Package, expression ast.Expr) (bool, bool) {
+	typed, ok := pkg.TypesInfo.Types[expression]
+	if !ok || typed.Value == nil || typed.Value.Kind() != constant.Bool {
+		return false, false
+	}
+	return constant.BoolVal(typed.Value), true
+}
+
+func foldBinaryConstants(op token.Token, left, right float64, resultType types.Type) (float64, bool) {
+	switch op {
+	case token.ADD:
+		return left + right, true
+	case token.SUB:
+		return left - right, true
+	case token.MUL:
+		return left * right, true
+	case token.QUO:
+		if right == 0 {
+			return 0, false
+		}
+		result := left / right
+		if kind, ok := runtimeBasicKind(resultType); ok && kind == types.Int {
+			result = math.Trunc(result)
+		}
+		return result, true
+	case token.REM:
+		if right == 0 {
+			return 0, false
+		}
+		return math.Mod(left, right), true
+	case token.EQL:
+		if left == right {
+			return 1, true
+		}
+		return 0, true
+	case token.NEQ:
+		if left != right {
+			return 1, true
+		}
+		return 0, true
+	case token.LSS:
+		if left < right {
+			return 1, true
+		}
+		return 0, true
+	case token.LEQ:
+		if left <= right {
+			return 1, true
+		}
+		return 0, true
+	case token.GTR:
+		if left > right {
+			return 1, true
+		}
+		return 0, true
+	case token.GEQ:
+		if left >= right {
+			return 1, true
+		}
+		return 0, true
+	default:
+		return 0, false
+	}
+}
+
 func (l *lowerer) expr(expr ast.Expr) lowerValue {
+	_, isCall := expr.(*ast.CallExpr)
+	if typed, ok := l.pkg.TypesInfo.Types[expr]; ok && typed.Value != nil && !isCall {
+		value, representable := constantExpr(typed.Value)
+		if !representable {
+			l.errorAt(expr, "constant is not representable at runtime")
+			return lowerValue{}
+		}
+		return lowerValue{type_: typed.Type, slots: []ir.Expr{value}}
+	}
 	switch n := expr.(type) {
 	case *ast.ParenExpr:
 		return l.expr(n.X)
@@ -353,6 +1525,9 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		}
 		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{expr}}
 	case *ast.Ident:
+		if n.Name == "nil" {
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), nilPointer: true}
+		}
 		obj := l.pkg.TypesInfo.ObjectOf(n)
 		if v, ok := l.lookup(obj); ok {
 			return v
@@ -368,10 +1543,21 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		l.errorAt(n, "unsupported identifier %s", n.Name)
 	case *ast.StarExpr:
 		v := l.expr(n.X)
+		if v.entity != nil {
+			l.errorAt(n, "EntityRef.Get views cannot be explicitly dereferenced")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
 		pointer, ok := types.Unalias(v.type_).(*types.Pointer)
 		if !ok {
 			l.errorAt(n, "dereference operand is not a pointer")
 			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		if v.nilPointer {
+			l.terminateRuntime(n, "nil pointer dereference")
+			return zeroValue(pointer.Elem())
+		}
+		if v.pointer != nil {
+			return l.loadPointer(v, pointer, n)
 		}
 		if len(v.places) != len(v.slots) {
 			l.errorAt(n, "pointer alias has %d places for %d slots", len(v.places), len(v.slots))
@@ -381,12 +1567,28 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		return v
 	case *ast.UnaryExpr:
 		v := l.expr(n.X)
+		if v.entity != nil {
+			l.errorAt(n, "EntityRef.Get views cannot be addressed or used with unary operators")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
 		if n.Op == token.AND {
+			if l.containsEntityView(v.type_) {
+				l.errorAt(n, "aggregates containing EntityRef.Get views cannot be addressed")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			if v.entityField {
+				l.errorAt(n, "EntityRef.Get fields cannot be addressed")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			if v.pointerLoad != nil {
+				return l.addressPointerLoad(v.pointerLoad, l.pkg.TypesInfo.TypeOf(n), n)
+			}
 			v = l.materializeAddressable("address", v, n.X)
 			if len(v.places) != len(v.slots) || len(v.places) == 0 {
 				l.errorAt(n, "address operand is not representable as a DSL place")
 				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 			}
+			v = l.freezePointerValue(v, n)
 			v.type_ = l.pkg.TypesInfo.TypeOf(n)
 			return v
 		}
@@ -409,17 +1611,80 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		if n.Op == token.LAND || n.Op == token.LOR {
 			return l.shortCircuit(n)
 		}
-		a, b := l.expr(n.X), l.expr(n.Y)
+		a := l.expr(n.X)
+		if a.entity != nil {
+			a = l.allocEntityView("binary.left.entity", a, n.X)
+		} else {
+			a = l.materialize("binary.left", a, n.X)
+		}
+		b := l.expr(n.Y)
+		if b.entity != nil {
+			b = l.allocEntityView("binary.right.entity", b, n.Y)
+		} else {
+			b = l.materialize("binary.right", b, n.Y)
+		}
+		if (n.Op == token.EQL || n.Op == token.NEQ) && isStaticPointer(a) && isStaticPointer(b) {
+			equal := l.pointerEqual(a, b, n)
+			if n.Op == token.NEQ {
+				equal = l.pure(resource.RuntimeFunctionNot, n, equal)
+			}
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{equal}}
+		}
+		if a.entity != nil && b.entity != nil && (n.Op == token.EQL || n.Op == token.NEQ) {
+			if a.entity.binding.declaration != b.entity.binding.declaration {
+				l.errorAt(n, "EntityRef.Get view comparison requires the same target archetype")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			op := binaryRuntime[n.Op]
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{ir.RuntimeCall{Function: op, Args: []ir.Expr{a.slots[0], b.slots[0]}, Result: irTypeOf(l.pkg.TypesInfo.TypeOf(n)), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}}}
+		}
+		if a.entity != nil || b.entity != nil {
+			l.errorAt(n, "EntityRef.Get views cannot be compared or used with binary operators")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		if len(a.slots) == 1 && len(b.slots) == 1 {
+			left, leftConstant := a.slots[0].(ir.Const)
+			right, rightConstant := b.slots[0].(ir.Const)
+			if leftConstant && rightConstant {
+				if value, folded := foldBinaryConstants(n.Op, left.Value, right.Value, l.pkg.TypesInfo.TypeOf(n)); folded {
+					return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{ir.Const{Value: value}}}
+				}
+			}
+		}
+		if (n.Op == token.EQL || n.Op == token.NEQ) && len(a.slots) == len(b.slots) && len(a.slots) != 1 && types.Comparable(a.type_) && types.Comparable(b.type_) {
+			equal := ir.Expr(ir.Const{Value: 1})
+			for i := range a.slots {
+				slotEqual := l.pure(resource.RuntimeFunctionEqual, n, a.slots[i], b.slots[i])
+				equal = l.pure(resource.RuntimeFunctionAnd, n, equal, slotEqual)
+			}
+			if n.Op == token.NEQ {
+				equal = l.pure(resource.RuntimeFunctionNot, n, equal)
+			}
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{equal}}
+		}
 		op, ok := binaryRuntime[n.Op]
 		if !ok || len(a.slots) != 1 || len(b.slots) != 1 {
 			l.errorAt(n, "unsupported binary operation %s", n.Op)
 			return lowerValue{}
 		}
-		resultType := l.pkg.TypesInfo.TypeOf(n)
-		if irTypeOf(resultType).Slots != 1 && len(a.slots) == 1 {
+		resultType := l.resolveType(l.pkg.TypesInfo.TypeOf(n))
+		_, resultTypeParameter := types.Unalias(resultType).(*types.TypeParam)
+		if (resultTypeParameter || irTypeOf(resultType).Slots != 1) && len(a.slots) == 1 {
 			resultType = a.type_
 		}
-		return lowerValue{type_: resultType, slots: []ir.Expr{ir.RuntimeCall{Function: op, Args: []ir.Expr{a.slots[0], b.slots[0]}, Result: irTypeOf(resultType), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}}}
+		if (n.Op == token.QUO || n.Op == token.REM) && !l.requireIntegerDivisor(n, b.slots[0], resultType, n.Op) {
+			return zeroValue(resultType)
+		}
+		result := ir.Expr(ir.RuntimeCall{Function: op, Args: []ir.Expr{a.slots[0], b.slots[0]}, Result: irTypeOf(resultType), Pure: true, Pos: sourcePos(l.pkg, n.Pos())})
+		if n.Op == token.QUO {
+			if kind, supported := runtimeBasicKind(resultType); !supported {
+				l.errorAt(n, "runtime arithmetic does not support %s", resultType)
+				return zeroValue(resultType)
+			} else if kind == types.Int {
+				result = ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{result}, Result: irTypeOf(resultType), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
+			}
+		}
+		return lowerValue{type_: resultType, slots: []ir.Expr{result}}
 	case *ast.CompositeLit:
 		return l.composite(n)
 	case *ast.SelectorExpr:
@@ -455,14 +1720,25 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				}
 			}
 			if ids, exists := l.resourceIDs[field]; exists {
-				slots := make([]ir.Expr, len(ids))
-				for i, id := range ids {
-					slots[i] = ir.Const{Value: float64(id)}
+				value := lowerValue{type_: l.pkg.TypesInfo.TypeOf(n)}
+				if named, length, ok := streamLeafType(field.Type()); ok {
+					value.stream = &streamValue{kind: typeID(named), valueSlots: irTypeOf(named.TypeArgs().At(0)).Slots, base: ir.Const{Value: float64(ids[0])}, width: len(ids), length: length}
+					if length == 1 {
+						value.slots = streamHandleSlots(l, n, value.stream.base, value.stream.width)
+					}
+				} else {
+					value.slots = make([]ir.Expr, len(ids))
+					for i, id := range ids {
+						value.slots[i] = ir.Const{Value: float64(id)}
+					}
 				}
-				return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: slots}
+				return value
+			}
+			base := l.expr(n.X)
+			if base.entity != nil {
+				return l.entityReferenceField(n, field, base)
 			}
 			if declaration, exists := l.archetypeFields[field]; exists {
-				base := l.expr(n.X)
 				start, size := declaration.ReceiverOffset, declaration.Size
 				if start+size > len(base.slots) {
 					l.errorAt(n, "archetype field layout exceeds receiver")
@@ -477,86 +1753,294 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				}
 				return value
 			}
-		}
-		base := l.expr(n.X)
-		if pointer, ok := types.Unalias(base.type_).(*types.Pointer); ok {
-			base.type_ = pointer.Elem()
-		}
-		offset := 0
-		st, _ := types.Unalias(base.type_).Underlying().(*types.Struct)
-		for _, index := range sel.Index() {
-			for i := 0; i < index; i++ {
-				offset += irTypeOf(st.Field(i).Type()).Slots
+			if pointer, ok := types.Unalias(base.type_).(*types.Pointer); ok {
+				if base.pointer != nil {
+					base = l.loadPointer(base, pointer, n.X)
+				} else {
+					base.type_ = pointer.Elem()
+				}
 			}
-			base.type_ = st.Field(index).Type()
-			st, _ = types.Unalias(base.type_).Underlying().(*types.Struct)
+			offset := 0
+			st, _ := types.Unalias(base.type_).Underlying().(*types.Struct)
+			for _, index := range sel.Index() {
+				if st == nil || index < 0 || index >= st.NumFields() {
+					l.errorAt(n, "selector %s cannot be derived from runtime type %s", n.Sel.Name, base.type_)
+					return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+				}
+				for i := 0; i < index; i++ {
+					offset += l.runtimeTypeOf(st.Field(i).Type()).Slots
+				}
+				base.type_ = st.Field(index).Type()
+				st, _ = types.Unalias(base.type_).Underlying().(*types.Struct)
+			}
+			size := l.runtimeTypeOf(base.type_).Slots
+			if offset < 0 || offset+size > len(base.slots) {
+				l.errorAt(n, "selector %s layout %d:%d exceeds %s runtime slots %d", n.Sel.Name, offset, size, base.type_, len(base.slots))
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			base.slots = base.slots[offset : offset+size]
+			if base.places != nil {
+				base.places = base.places[offset : offset+size]
+			}
+			if base.pointerLoad != nil {
+				load := *base.pointerLoad
+				load.offset += offset
+				load.size = size
+				base.pointerLoad = &load
+			}
+			base.entity = nil
+			if binding, exists := l.entityBinding(base.type_); exists {
+				base.entity = &entityReferenceValue{binding: binding}
+			}
+			return base
 		}
-		size := irTypeOf(base.type_).Slots
-		base.slots = base.slots[offset : offset+size]
-		if base.places != nil {
-			base.places = base.places[offset : offset+size]
-		}
-		return base
+		l.errorAt(n, "unsupported selector %s", n.Sel.Name)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 	case *ast.IndexExpr:
 		base, index := l.expr(n.X), l.expr(n.Index)
 		if base.variadic != nil {
 			return l.indexVariadic(n, base, index)
+		}
+		if pointer, ok := types.Unalias(base.type_).(*types.Pointer); ok {
+			if array, isArray := types.Unalias(pointer.Elem()).Underlying().(*types.Array); isArray {
+				if base.pointer != nil {
+					if len(index.slots) != 1 {
+						l.errorAt(n, "array index must be scalar")
+						return zeroValue(array.Elem())
+					}
+					return l.loadPointerIndex(base, pointer, array, index, n)
+				} else {
+					base.type_ = pointer.Elem()
+				}
+			}
 		}
 		arr, ok := types.Unalias(base.type_).Underlying().(*types.Array)
 		if !ok || len(index.slots) != 1 {
 			l.errorAt(n, "only array indexing is supported")
 			return lowerValue{}
 		}
+		handleSize := l.runtimeTypeOf(types.NewArray(arr.Elem(), 1)).Slots
+		if base.stream != nil {
+			handleSize = base.stream.width / base.stream.length
+		}
 		if c, ok := index.slots[0].(ir.Const); ok {
-			size := irTypeOf(arr.Elem()).Slots
+			size := handleSize
 			start := int(c.Value) * size
-			if start < 0 || start+size > len(base.slots) {
+			if start < 0 || int(c.Value) >= int(arr.Len()) {
 				l.errorAt(n, "array index is out of bounds")
 				return lowerValue{}
 			}
-			v := lowerValue{type_: arr.Elem(), slots: base.slots[start : start+size]}
+			if base.stream != nil {
+				stream := indexedStreamValue(l, n, base.stream, arr.Elem(), ir.Const{Value: float64(start)})
+				return lowerStreamValue(l, n, arr.Elem(), stream)
+			}
+			v := lowerValue{type_: arr.Elem(), slots: base.slots[start : start+size], entityField: base.entityField, stream: base.stream}
 			if base.places != nil {
 				v.places = base.places[start : start+size]
 			}
+			if base.pointerLoad != nil {
+				load := *base.pointerLoad
+				load.offset += start
+				load.size = size
+				v.pointerLoad = &load
+			}
+			if binding, exists := l.entityBinding(arr.Elem()); exists {
+				v.entity = &entityReferenceValue{binding: binding}
+			}
 			return v
+		}
+		if base.stream != nil {
+			index = l.materialize("stream.index", index, n.Index)
+			inBounds := l.pure(resource.RuntimeFunctionAnd, n,
+				l.pure(resource.RuntimeFunctionGreaterOr, n, index.slots[0], ir.Const{}),
+				l.pure(resource.RuntimeFunctionLess, n, index.slots[0], ir.Const{Value: float64(arr.Len())}))
+			l.guard(n, inBounds)
+			offset := l.pure(resource.RuntimeFunctionMultiply, n, index.slots[0], ir.Const{Value: float64(handleSize)})
+			stream := indexedStreamValue(l, n, base.stream, arr.Elem(), offset)
+			return lowerStreamValue(l, n, arr.Elem(), stream)
+		}
+		if base.pointerLoad != nil {
+			return l.loadPointerArrayIndex(base, arr, index, n)
 		}
 		index = l.materialize("array.index", index, n.Index)
 		if len(base.places) != len(base.slots) || len(base.places) == 0 {
 			base = l.materializeAddressable("array.index", base, n.X)
 		}
-		first, ok := base.places[0].(ir.LocalPlace)
-		if !ok {
-			l.errorAt(n.Index, "dynamic indexing is only supported for local arrays")
-			return lowerValue{}
-		}
 		inBounds := l.pure(resource.RuntimeFunctionAnd, n,
 			l.pure(resource.RuntimeFunctionGreaterOr, n, index.slots[0], ir.Const{}),
 			l.pure(resource.RuntimeFunctionLess, n, index.slots[0], ir.Const{Value: float64(arr.Len())}))
 		l.guard(n, inBounds)
-		size := irTypeOf(arr.Elem()).Slots
-		v := lowerValue{type_: arr.Elem(), slots: make([]ir.Expr, size), places: make([]ir.Place, size)}
+		size := l.runtimeTypeOf(types.NewArray(arr.Elem(), 1)).Slots
+		v := lowerValue{type_: arr.Elem(), slots: make([]ir.Expr, size), places: make([]ir.Place, size), entityField: base.entityField}
 		for offset := 0; offset < size; offset++ {
-			place := l.indexedLocal(first, index.slots[0], int(arr.Len()), size, offset, n)
+			place := l.dynamicArrayPlace(base.places[0], index.slots[0], int(arr.Len()), size, offset, n)
+			if place == nil {
+				return zeroValue(arr.Elem())
+			}
 			v.places[offset], v.slots[offset] = place, ir.Load{Place: place}
 		}
+		if binding, exists := l.entityBinding(arr.Elem()); exists {
+			v.entity = &entityReferenceValue{binding: binding}
+		}
 		return v
+	case *ast.TypeAssertExpr:
+		if n.Type == nil {
+			l.errorAt(n, "type assertions are only valid in a static type switch")
+			return lowerValue{}
+		}
+		value := l.expr(n.X)
+		target := l.resolveType(l.pkg.TypesInfo.TypeOf(n.Type))
+		if value.interface_ != nil {
+			result, ok := l.interfaceAssertion(n, value, target, false)
+			_ = ok
+			return result
+		}
+		if value.type_ == nil || target == nil || (!types.AssignableTo(value.type_, target) && !types.Identical(value.type_, target)) {
+			l.errorAt(n, "static type assertion from %s to %s cannot succeed", value.type_, target)
+			return zeroValue(target)
+		}
+		value.type_ = target
+		return value
 	case *ast.CallExpr:
 		return l.call(n)
 	}
 	return zeroValue(l.pkg.TypesInfo.TypeOf(expr))
 }
 
+func (l *lowerer) interfaceAssertion(node ast.Node, value lowerValue, target types.Type, commaOK bool) (lowerValue, lowerValue) {
+	variant := value.interface_
+	result := l.allocZeroed("interface.assert.value", target, node)
+	ok := l.allocZeroed("interface.assert.ok", types.Typ[types.Bool], node)
+	var matches ir.Expr = ir.Const{}
+	matching := make([]bool, len(variant.alternatives))
+	for index, alternative := range variant.alternatives {
+		if types.AssignableTo(alternative.type_, target) || types.Identical(alternative.type_, target) {
+			matching[index] = true
+			matches = l.pure(resource.RuntimeFunctionOr, node, matches, l.pure(resource.RuntimeFunctionEqual, node, variant.tag.slots[0], ir.Const{Value: float64(index)}))
+		}
+	}
+	if !commaOK {
+		l.guardWith(node, matches, "static interface type assertion failed", true)
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(variant.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(variant.tag.slots[0], cases, invalid)
+	for index, alternative := range variant.alternatives {
+		l.setCurrent(blocks[index])
+		if matching[index] {
+			l.store(result, alternative, node)
+			l.store(ok, scalarValue(ir.Const{Value: 1}, types.Typ[types.Bool]), node)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return result, ok
+}
+
+func (l *lowerer) requireIntegerDivisor(node ast.Node, divisor ir.Expr, resultType types.Type, operation token.Token) bool {
+	kind, supported := runtimeBasicKind(resultType)
+	if !supported {
+		l.errorAt(node, "runtime arithmetic does not support %s", resultType)
+		return false
+	}
+	if kind != types.Int {
+		return true
+	}
+	message := "integer division by zero"
+	if operation == token.REM || operation == token.REM_ASSIGN {
+		message = "integer remainder by zero"
+	}
+	l.guardWith(node, l.pure(resource.RuntimeFunctionNotEqual, node, divisor, ir.Const{}), message, true)
+	return true
+}
+
+func (l *lowerer) pointerEqual(left, right lowerValue, node ast.Node) ir.Expr {
+	leftTargets, rightTargets := [][]ir.Place{left.places}, [][]ir.Place{right.places}
+	var leftTag, rightTag ir.Expr
+	if left.pointer != nil {
+		leftTargets = left.pointer.alternatives
+		leftTag = left.pointer.tag.slots[0]
+	}
+	if right.pointer != nil {
+		rightTargets = right.pointer.alternatives
+		rightTag = right.pointer.tag.slots[0]
+	}
+	result := ir.Expr(ir.Const{})
+	for leftIndex, leftPlaces := range leftTargets {
+		for rightIndex, rightPlaces := range rightTargets {
+			if !samePlaces(leftPlaces, rightPlaces) {
+				continue
+			}
+			condition := ir.Expr(ir.Const{Value: 1})
+			if leftTag != nil {
+				condition = l.pure(resource.RuntimeFunctionAnd, node, condition, l.pure(resource.RuntimeFunctionEqual, node, leftTag, ir.Const{Value: float64(leftIndex)}))
+			}
+			if rightTag != nil {
+				condition = l.pure(resource.RuntimeFunctionAnd, node, condition, l.pure(resource.RuntimeFunctionEqual, node, rightTag, ir.Const{Value: float64(rightIndex)}))
+			}
+			result = l.pure(resource.RuntimeFunctionOr, node, result, condition)
+		}
+	}
+	return result
+}
+
+func (l *lowerer) dynamicArrayPlace(base ir.Place, index ir.Expr, length, stride, offset int, node ast.Node) ir.Place {
+	scale := func(value ir.Expr, factor int) ir.Expr {
+		if factor == 1 {
+			return value
+		}
+		return l.pure(resource.RuntimeFunctionMultiply, node, value, ir.Const{Value: float64(factor)})
+	}
+	add := func(values ...ir.Expr) ir.Expr {
+		filtered := make([]ir.Expr, 0, len(values))
+		for _, value := range values {
+			if constant, ok := value.(ir.Const); ok && constant.Value == 0 {
+				continue
+			}
+			filtered = append(filtered, value)
+		}
+		if len(filtered) == 0 {
+			return ir.Const{}
+		}
+		if len(filtered) == 1 {
+			return filtered[0]
+		}
+		return l.pure(resource.RuntimeFunctionAdd, node, filtered...)
+	}
+	switch place := base.(type) {
+	case ir.LocalPlace:
+		return l.indexedLocal(place, index, length, stride, offset, node)
+	case ir.IndexedLocalPlace:
+		combined := add(scale(place.Index, place.Stride), scale(index, stride), ir.Const{Value: float64(place.Offset + offset)})
+		localSlots := l.builder.Function().Locals[place.ID].Slots
+		return l.indexedLocal(ir.LocalPlace{ID: place.ID, Name: place.Name, Offset: place.Base}, combined, localSlots-place.Base, 1, 0, node)
+	case ir.MemoryPlace:
+		combined := add(scale(place.Index, place.Stride), scale(index, stride))
+		return l.memory(place.Storage, combined, 1, place.Offset+offset, place.Read, place.Write, node)
+	default:
+		l.errorAt(node, "dynamic array index does not support place %T", base)
+		return nil
+	}
+}
+
 func (l *lowerer) composite(n *ast.CompositeLit) lowerValue {
-	t := l.pkg.TypesInfo.TypeOf(n)
+	t := l.resolveType(l.pkg.TypesInfo.TypeOf(n))
 	if kind := containsResourceHandle(t); kind != "" {
 		l.errorAt(n, "%s resource handle aggregates can only come from declared resource fields", kind)
 		return zeroValue(t)
 	}
-	out := zeroValue(t)
+	out := l.zeroRuntimeValue(t)
 	if st, ok := types.Unalias(t).Underlying().(*types.Struct); ok {
 		values := make([]lowerValue, st.NumFields())
 		for i := range values {
-			values[i] = zeroValue(st.Field(i).Type())
+			values[i] = l.zeroRuntimeValue(st.Field(i).Type())
 		}
 		pos := 0
 		for _, elt := range n.Elts {
@@ -564,12 +2048,32 @@ func (l *lowerer) composite(n *ast.CompositeLit) lowerValue {
 				name := kv.Key.(*ast.Ident).Name
 				for i := 0; i < st.NumFields(); i++ {
 					if st.Field(i).Name() == name {
-						values[i] = l.materialize("literal.field", l.expr(kv.Value), kv.Value)
+						value := l.expr(kv.Value)
+						if value.entity != nil {
+							binding, allowed := l.entityBinding(st.Field(i).Type())
+							if !allowed || binding.declaration != value.entity.binding.declaration {
+								l.errorAt(kv.Value, "EntityRef.Get view struct field must keep one static archetype target")
+								break
+							}
+							values[i] = value
+						} else {
+							values[i] = l.materialize("literal.field", value, kv.Value)
+						}
 						break
 					}
 				}
 			} else if pos < len(values) {
-				values[pos] = l.materialize("literal.field", l.expr(elt), elt)
+				value := l.expr(elt)
+				if value.entity != nil {
+					binding, allowed := l.entityBinding(st.Field(pos).Type())
+					if !allowed || binding.declaration != value.entity.binding.declaration {
+						l.errorAt(elt, "EntityRef.Get view struct field must keep one static archetype target")
+					} else {
+						values[pos] = value
+					}
+				} else {
+					values[pos] = l.materialize("literal.field", value, elt)
+				}
 				pos++
 			}
 		}
@@ -580,7 +2084,7 @@ func (l *lowerer) composite(n *ast.CompositeLit) lowerValue {
 		return out
 	}
 	if array, ok := types.Unalias(t).Underlying().(*types.Array); ok {
-		elementSlots := irTypeOf(array.Elem()).Slots
+		elementSlots := l.runtimeTypeOf(types.NewArray(array.Elem(), 1)).Slots
 		index := 0
 		for _, elt := range n.Elts {
 			valueExpr := elt
@@ -598,7 +2102,16 @@ func (l *lowerer) composite(n *ast.CompositeLit) lowerValue {
 				index = int(index64)
 				valueExpr = kv.Value
 			}
-			value := l.materialize("literal.element", l.expr(valueExpr), valueExpr)
+			value := l.expr(valueExpr)
+			if value.entity != nil {
+				binding, allowed := l.entityBinding(array.Elem())
+				if !allowed || binding.declaration != value.entity.binding.declaration {
+					l.errorAt(valueExpr, "EntityRef.Get view array element must keep one static archetype target")
+					index++
+					continue
+				}
+			}
+			value = l.materialize("literal.element", value, valueExpr)
 			start := index * elementSlots
 			if start < 0 || start+elementSlots > len(out.slots) || len(value.slots) != elementSlots {
 				l.errorAt(valueExpr, "array literal element layout is invalid")
@@ -619,6 +2132,27 @@ func (l *lowerer) indexVariadic(n *ast.IndexExpr, base, index lowerValue) lowerV
 		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 	}
 	elements := base.variadic.elements
+	if isFunctionType(base.variadic.element) {
+		callables := base.variadic.callables
+		if constantIndex, ok := index.slots[0].(ir.Const); ok {
+			i := int(constantIndex.Value)
+			if float64(i) != constantIndex.Value || i < 0 || i >= len(callables) {
+				l.errorAt(n.Index, "variadic index is out of bounds")
+				return lowerValue{}
+			}
+			return lowerValue{type_: base.variadic.element, callable: callables[i]}
+		}
+		if len(callables) == 0 {
+			l.errorAt(n.Index, "cannot dynamically index an empty variadic parameter")
+			return lowerValue{}
+		}
+		index = l.materialize("variadic.callable.index", index, n.Index)
+		inBounds := l.pure(resource.RuntimeFunctionAnd, n,
+			l.pure(resource.RuntimeFunctionGreaterOr, n, index.slots[0], ir.Const{}),
+			l.pure(resource.RuntimeFunctionLess, n, index.slots[0], ir.Const{Value: float64(len(callables))}))
+		l.guard(n, inBounds)
+		return lowerValue{type_: base.variadic.element, callable: indexedCallableVariant(l, callables, index, n)}
+	}
 	if constantIndex, ok := index.slots[0].(ir.Const); ok {
 		i := int(constantIndex.Value)
 		if float64(i) != constantIndex.Value || i < 0 || i >= len(elements) {
@@ -659,6 +2193,16 @@ func (l *lowerer) indexVariadic(n *ast.IndexExpr, base, index lowerValue) lowerV
 }
 
 func (l *lowerer) shortCircuit(n *ast.BinaryExpr) lowerValue {
+	if left, ok := constantBool(l.pkg, n.X); ok {
+		if (n.Op == token.LAND && !left) || (n.Op == token.LOR && left) {
+			value := 0.0
+			if left {
+				value = 1
+			}
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{ir.Const{Value: value}}}
+		}
+		return l.expr(n.Y)
+	}
 	result := l.alloc("shortcircuit", l.pkg.TypesInfo.TypeOf(n))
 	left := l.materialize("shortcircuit.left", l.expr(n.X), n.X)
 	rightBlock, shortBlock, merge := l.newBlock(), l.newBlock(), l.newBlock()
@@ -694,17 +2238,160 @@ func (l *lowerer) staticCallable(expr ast.Expr) (*staticCallable, bool) {
 		expr = paren.X
 	}
 	if literal, ok := expr.(*ast.FuncLit); ok {
-		return &staticCallable{literal: literal, pkg: l.pkg}, true
+		captures, callables := l.captureBindings()
+		return &staticCallable{literal: literal, pkg: l.pkg, captures: captures, callables: callables, substitutions: l.captureTypeSubstitutions()}, true
+	}
+	if selector, ok := expr.(*ast.SelectorExpr); ok {
+		if selection := l.pkg.TypesInfo.Selections[selector]; selection != nil && selection.Kind() == types.MethodExpr {
+			fn, _ := selection.Obj().(*types.Func)
+			if fn == nil {
+				return nil, false
+			}
+			if symbol, exists := catalog.LookupObject(fn); exists {
+				return l.catalogCallable(symbol, nil), true
+			}
+			callable := &staticCallable{function: fn, pkg: l.packages[fn.Pkg()], substitutions: l.callableTypeSubstitutions(fn, selector)}
+			if signature, ok := fn.Type().(*types.Signature); ok && signature.Recv() != nil {
+				if _, interfaceReceiver := types.Unalias(signature.Recv().Type()).Underlying().(*types.Interface); interfaceReceiver {
+					callable.interfaceMethod = fn
+				}
+			}
+			return callable, true
+		} else if selection != nil && selection.Kind() == types.MethodVal {
+			fn, _ := selection.Obj().(*types.Func)
+			if fn == nil {
+				return nil, false
+			}
+			receiverValue := l.callReceiver(selector, fn)
+			if isContainerValue(receiverValue) {
+				receiverValue = l.copyContainerValue("bound.container", receiverValue, selector)
+			} else if isStaticPointer(receiverValue) {
+				receiverValue = l.copyPointerValue("bound.pointer", receiverValue, selector)
+			}
+			if symbol, exists := catalog.LookupObject(fn); exists {
+				return l.catalogCallable(symbol, &receiverValue), true
+			}
+			receiver := callArgument{value: receiverValue}
+			return &staticCallable{function: fn, pkg: l.packages[fn.Pkg()], receiver: &receiver, substitutions: l.callableTypeSubstitutions(fn, selector)}, true
+		}
+	}
+	if call, ok := expr.(*ast.CallExpr); ok {
+		value := l.call(call)
+		if value.callable != nil {
+			return value.callable, true
+		}
+		return nil, false
 	}
 	object := calledObject(l.pkg, expr)
 	if callable, ok := l.lookupCallable(object); ok {
 		return callable, true
 	}
+	if variable, ok := object.(*types.Var); ok && variable.Pkg() != nil && isFunctionType(variable.Type()) {
+		owner := l.packages[variable.Pkg()]
+		if owner == nil {
+			return nil, false
+		}
+		initializer, exists := variableInitializer(owner, variable)
+		if !exists {
+			return nil, false
+		}
+		previous := l.pkg
+		l.pkg = owner
+		callable, resolved := l.staticCallable(initializer)
+		l.pkg = previous
+		return callable, resolved
+	}
 	fn, ok := object.(*types.Func)
 	if !ok || fn.Pkg() == nil || fn.Type().(*types.Signature).Recv() != nil {
 		return nil, false
 	}
-	return &staticCallable{function: fn, pkg: l.packages[fn.Pkg()]}, true
+	if symbol, exists := catalog.LookupObject(fn); exists {
+		recipe := catalog.LookupRecipe(symbol)
+		if supportsRecipe(recipe) && recipe.Kind != catalog.RecipeCompileTime && recipe.Kind != catalog.RecipeForbidden {
+			return l.catalogCallable(symbol, nil), true
+		}
+	}
+	if symbol, exists := intrinsic.LookupObject(fn); exists && symbol.Kind == intrinsic.RuntimeFunction {
+		return &staticCallable{identity: symbol.Package + "." + symbol.Name, intrinsic: func(call *ast.CallExpr, args []callArgument) lowerValue {
+			values := make([]lowerValue, len(args))
+			for index, argument := range args {
+				if argument.callable != nil {
+					l.errorAt(call, "intrinsic function value does not accept callable arguments")
+					return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+				}
+				values[index] = argument.value
+			}
+			return l.runtimeCall(call, symbol.Runtime, true, symbol.Prefix, values)
+		}}, true
+	}
+	return &staticCallable{function: fn, pkg: l.packages[fn.Pkg()], substitutions: l.callableTypeSubstitutions(fn, expr)}, true
+}
+
+func (l *lowerer) catalogCallable(symbol *catalog.Symbol, receiver *lowerValue) *staticCallable {
+	return &staticCallable{identity: symbol.Key(), intrinsic: func(call *ast.CallExpr, args []callArgument) lowerValue {
+		if symbol.Internal {
+			l.errorAt(call, "Sonolus API %s is not part of the public callback catalog", symbol.Key())
+			return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+		}
+		if !catalog.AllowsMode(symbol, string(l.mode)) {
+			l.errorAt(call, "Sonolus API %s is not available in %s mode", symbol.Key(), l.mode)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+		}
+		if !catalog.AllowsPhase(symbol, l.phase) {
+			l.errorAt(call, "Sonolus API %s cannot write during %s callback", symbol.Key(), l.phase)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+		}
+		actualReceiver := receiver
+		if actualReceiver == nil && symbol.Receiver != "" {
+			if len(args) == 0 || args[0].callable != nil {
+				l.errorAt(call, "Sonolus method expression %s requires an explicit receiver", symbol.Key())
+				return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+			}
+			value := args[0].value
+			actualReceiver = &value
+			args = args[1:]
+		}
+		if actualReceiver != nil && isContainerValue(*actualReceiver) {
+			switch symbol.Key() {
+			case "sonolus.VarArray.SortFunc":
+				if len(args) != 1 || args[0].callable == nil {
+					l.errorAt(call, "VarArray.SortFunc method value requires one static comparator")
+					return lowerValue{}
+				}
+				return l.dispatchContainerValue(call, *actualReceiver, func(alternative lowerValue) lowerValue {
+					return l.sortContainerValue(call, alternative, args[0].callable)
+				})
+			case "sonolus.VarArray.IndexMinFunc", "sonolus.VarArray.IndexMaxFunc", "sonolus.VarArray.MinFunc", "sonolus.VarArray.MaxFunc":
+				if len(args) != 1 || args[0].callable == nil {
+					l.errorAt(call, "VarArray.%s method value requires one static comparator", symbol.Name)
+					return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+				}
+				return l.dispatchContainerValue(call, *actualReceiver, func(alternative lowerValue) lowerValue {
+					return l.extremeContainerValue(call, alternative, args[0].callable, symbol.Name)
+				})
+			case "sonolus.VarArray.Extend":
+				if len(args) != 1 || args[0].callable == nil {
+					l.errorAt(call, "VarArray.Extend method value requires one static sequence")
+					return lowerValue{}
+				}
+				return l.dispatchContainerValue(call, *actualReceiver, func(alternative lowerValue) lowerValue {
+					return l.extendContainerValue(call, alternative, args[0].callable)
+				})
+			}
+		}
+		values := make([]lowerValue, 0, len(args)+1)
+		if actualReceiver != nil {
+			values = append(values, *actualReceiver)
+		}
+		for _, argument := range args {
+			if argument.callable != nil {
+				l.errorAt(call, "Sonolus API %s does not accept a callable argument through this method value", symbol.Key())
+				return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+			}
+			values = append(values, argument.value)
+		}
+		return l.lowerCatalogRecipe(call, symbol, values)
+	}}
 }
 
 func (l *lowerer) userCallArguments(call *ast.CallExpr, receiver []callArgument) []callArgument {
@@ -716,8 +2403,12 @@ func (l *lowerer) userCallArguments(call *ast.CallExpr, receiver []callArgument)
 				l.errorAt(argument, "ellipsis expansion requires a variadic helper parameter")
 				continue
 			}
-			for _, element := range value.variadic.elements {
-				args = append(args, callArgument{value: l.materialize("call.arg", element, argument)})
+			for index, element := range value.variadic.elements {
+				if isFunctionType(value.variadic.element) {
+					args = append(args, callArgument{callable: value.variadic.callables[index]})
+				} else {
+					args = append(args, callArgument{value: l.materialize("call.arg", element, argument)})
+				}
 			}
 			continue
 		}
@@ -736,12 +2427,56 @@ func (l *lowerer) userCallArguments(call *ast.CallExpr, receiver []callArgument)
 }
 
 func (l *lowerer) call(n *ast.CallExpr) lowerValue {
+	if typed := l.pkg.TypesInfo.Types[n]; typed.Value != nil {
+		if value, representable := constantExpr(typed.Value); representable {
+			return lowerValue{type_: l.resolveType(typed.Type), slots: []ir.Expr{value}}
+		}
+	}
 	if tv := l.pkg.TypesInfo.Types[n.Fun]; tv.IsType() {
+		if typed := l.pkg.TypesInfo.Types[n]; typed.Value != nil {
+			value, representable := constantExpr(typed.Value)
+			if !representable {
+				l.errorAt(n, "constant conversion is not representable at runtime")
+				return lowerValue{}
+			}
+			return lowerValue{type_: typed.Type, slots: []ir.Expr{value}}
+		}
+		target := l.resolveType(l.pkg.TypesInfo.TypeOf(n))
+		if isFunctionType(target) {
+			callable, ok := l.staticCallable(n.Args[0])
+			if !ok {
+				l.errorAt(n, "function conversion to %s requires a statically known callable target", target)
+				return lowerValue{type_: target}
+			}
+			return lowerValue{type_: target, callable: callable}
+		}
 		value := l.expr(n.Args[0])
-		target := l.pkg.TypesInfo.TypeOf(n)
-		if len(value.slots) != irTypeOf(target).Slots {
+		if value.entity != nil || l.containsEntityView(value.type_) {
+			l.errorAt(n, "EntityRef.Get views cannot be converted or stored in interfaces")
+			return zeroValue(target)
+		}
+		if _, interfaceTarget := types.Unalias(target).Underlying().(*types.Interface); interfaceTarget {
+			return value
+		}
+		if value.nilPointer && isPointerType(target) {
+			value.type_ = target
+			return value
+		}
+		if len(value.slots) != l.runtimeTypeOf(target).Slots {
 			l.errorAt(n, "conversion from %s to %s changes runtime layout", value.type_, target)
 			return zeroValue(target)
+		}
+		targetKind, targetSupported := runtimeBasicKind(target)
+		sourceKind, sourceSupported := runtimeBasicKind(value.type_)
+		_, sourceTypeParameter := types.Unalias(value.type_).(*types.TypeParam)
+		if targetKind != types.Invalid || sourceKind != types.Invalid || sourceTypeParameter {
+			if !targetSupported || (!sourceSupported && !sourceTypeParameter) {
+				l.errorAt(n, "runtime conversion from %s to %s is not supported", value.type_, target)
+				return zeroValue(target)
+			}
+			if targetKind == types.Int && (sourceKind == types.Float64 || sourceTypeParameter) {
+				value.slots[0] = ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{value.slots[0]}, Result: irTypeOf(target), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
+			}
 		}
 		value.type_ = target
 		return value
@@ -755,7 +2490,20 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 		break
 	}
 	if literal, ok := funExpr.(*ast.FuncLit); ok {
-		return l.inlineStaticCallable(n, &staticCallable{literal: literal, pkg: l.pkg}, l.userCallArguments(n, nil))
+		captures, callables := l.captureBindings()
+		return l.inlineStaticCallable(n, &staticCallable{literal: literal, pkg: l.pkg, captures: captures, callables: callables, substitutions: l.captureTypeSubstitutions()}, l.userCallArguments(n, nil))
+	}
+	if selector, ok := funExpr.(*ast.SelectorExpr); ok {
+		if selection := l.pkg.TypesInfo.Selections[selector]; selection != nil && selection.Kind() == types.MethodExpr {
+			if callable, resolved := l.staticCallable(selector); resolved {
+				return l.inlineStaticCallable(n, callable, l.userCallArguments(n, nil))
+			}
+		}
+	}
+	if _, directFunction := calledObject(l.pkg, funExpr).(*types.Func); !directFunction {
+		if callable, ok := l.staticCallable(funExpr); ok && callable != nil {
+			return l.inlineStaticCallable(n, callable, l.userCallArguments(n, nil))
+		}
 	}
 	if object := calledObject(l.pkg, n.Fun); object != nil {
 		if _, function := object.(*types.Func); !function {
@@ -777,6 +2525,28 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 		}
 		l.errorAt(n, "callback call target must be a statically declared function")
 		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	var devirtualizedReceiver *lowerValue
+	if selector, ok := n.Fun.(*ast.SelectorExpr); ok {
+		if signature, ok := fn.Type().(*types.Signature); ok && signature.Recv() != nil {
+			if _, interfaceReceiver := types.Unalias(signature.Recv().Type()).Underlying().(*types.Interface); interfaceReceiver {
+				value := l.materialize("interface.receiver", l.expr(selector.X), selector.X)
+				if value.interface_ != nil {
+					return l.inlineInterfaceMethodAlternatives(n, fn, value, l.userCallArguments(n, nil))
+				}
+				if value.type_ != nil && !isInterfaceType(value.type_) {
+					methodSet := types.NewMethodSet(value.type_)
+					for index := 0; index < methodSet.Len(); index++ {
+						method, _ := methodSet.At(index).Obj().(*types.Func)
+						if method != nil && method.Name() == fn.Name() {
+							fn = method
+							devirtualizedReceiver = &value
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 	if symbol, ok := catalog.LookupObject(fn); ok {
 		if symbol.Internal {
@@ -801,6 +2571,113 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 			l.setCurrent(l.newBlock())
 			return lowerValue{}
 		}
+		switch symbol.Key() {
+		case "sonolus.Zero":
+			target, exists := l.callTypeArgument(n, 0)
+			if !exists {
+				l.errorAt(n, "Zero requires a concrete type argument")
+				return lowerValue{}
+			}
+			if isPointerType(target) {
+				return lowerValue{type_: target, nilPointer: true}
+			}
+			if isFunctionType(target) || isInterfaceType(target) || isContainerType(target) || l.isCompileTimeOnlyValueType(target) || containsResourceHandle(target) != "" {
+				l.errorAt(n, "Zero does not support compile-time-only type %s", target)
+				return lowerValue{type_: target}
+			}
+			return l.zeroRuntimeValue(target)
+		case "sonolus.SlotsOf":
+			target, exists := l.callTypeArgument(n, 0)
+			if !exists {
+				l.errorAt(n, "SlotsOf requires a concrete type argument")
+				return lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{}}}
+			}
+			slots, err := layoutSize(target)
+			if err != nil {
+				l.errorAt(n, "SlotsOf[%s]: %v", target, err)
+				return lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{}}}
+			}
+			return lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: float64(slots)}}}
+		case "sonolus.RuntimeChecksEnabled":
+			if len(n.Args) != 0 {
+				l.errorAt(n, "RuntimeChecksEnabled does not accept arguments")
+			}
+			enabled := 0.0
+			if l.checks != RuntimeChecksNone {
+				enabled = 1
+			}
+			return lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{ir.Const{Value: enabled}}}
+		case "sonolus.Unreachable":
+			if len(n.Args) != 1 {
+				l.errorAt(n, "Unreachable requires one message")
+				return lowerValue{}
+			}
+			messageValue := l.pkg.TypesInfo.Types[n.Args[0]].Value
+			if messageValue == nil || messageValue.Kind() != constant.String {
+				l.errorAt(n.Args[0], "Unreachable message must be a compile-time string")
+				return lowerValue{}
+			}
+			l.errorAt(n, "%s", constant.StringVal(messageValue))
+			return lowerValue{}
+		case "sonolus.Terminate", "sonolus.Notify":
+			if len(n.Args) != 1 {
+				l.errorAt(n, "%s requires one message", symbol.Name)
+				return lowerValue{}
+			}
+			messageValue := l.pkg.TypesInfo.Types[n.Args[0]].Value
+			if messageValue == nil || messageValue.Kind() != constant.String {
+				l.errorAt(n.Args[0], "%s message must be a compile-time string", symbol.Name)
+				return lowerValue{}
+			}
+			message := constant.StringVal(messageValue)
+			if symbol.Name == "Notify" {
+				l.notifyRuntime(n, message)
+			} else {
+				l.terminateRuntime(n, message)
+			}
+			return lowerValue{}
+		case "sonolus.Assert", "sonolus.Require", "sonolus.StaticAssert":
+			if len(n.Args) != 2 {
+				l.errorAt(n, "%s requires condition and message", symbol.Name)
+				return lowerValue{}
+			}
+			messageValue := l.pkg.TypesInfo.Types[n.Args[1]].Value
+			if messageValue == nil || messageValue.Kind() != constant.String {
+				l.errorAt(n.Args[1], "%s message must be a compile-time string", symbol.Name)
+				return lowerValue{}
+			}
+			condition := l.expr(n.Args[0])
+			if len(condition.slots) != 1 {
+				l.errorAt(n.Args[0], "%s condition must be scalar", symbol.Name)
+				return lowerValue{}
+			}
+			message := constant.StringVal(messageValue)
+			if symbol.Name == "StaticAssert" {
+				value, ok := condition.slots[0].(ir.Const)
+				if !ok {
+					l.errorAt(n.Args[0], "StaticAssert condition must be a compile-time constant")
+				} else if value.Value == 0 {
+					l.errorAt(n, "%s", message)
+				}
+				return lowerValue{}
+			}
+			if value, ok := condition.slots[0].(ir.Const); ok {
+				if value.Value == 0 {
+					l.terminateRuntime(n, message)
+				}
+				return lowerValue{}
+			}
+			l.guardWith(n, condition.slots[0], message, symbol.Name == "Require")
+			return lowerValue{}
+		case "sonolus.VarArray.SortFunc":
+			return l.sortContainerCall(n, fn)
+		case "sonolus.VarArray.IndexMinFunc", "sonolus.VarArray.IndexMaxFunc", "sonolus.VarArray.MinFunc", "sonolus.VarArray.MaxFunc":
+			return l.extremeContainerCall(n, fn, symbol.Name)
+		case "sonolus.VarArray.Extend":
+			return l.extendContainerCall(n, fn)
+		case "sonolus.SortLinkedEntities", "sonolus.SortDoublyLinkedEntities":
+			return l.sortLinkedEntitiesCall(n, symbol.Name == "SortDoublyLinkedEntities")
+		}
 	}
 	_, catalogFunction := catalog.LookupObject(fn)
 	_, intrinsicFunction := intrinsic.LookupObject(fn)
@@ -811,7 +2688,11 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 		}
 		receiver := make([]callArgument, 0, 1)
 		if sel, ok := n.Fun.(*ast.SelectorExpr); ok && l.pkg.TypesInfo.Selections[sel] != nil && !l.isFacadeReceiver(sel.X) {
-			receiver = append(receiver, callArgument{value: l.callReceiver(sel, fn)})
+			if devirtualizedReceiver != nil {
+				receiver = append(receiver, callArgument{value: *devirtualizedReceiver})
+			} else {
+				receiver = append(receiver, callArgument{value: l.callReceiver(sel, fn)})
+			}
 		}
 		return l.inlineCallArguments(n, fn, l.userCallArguments(n, receiver))
 	}
@@ -825,28 +2706,7 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 		args = append(args, l.materialize("call.arg", l.expr(arg), arg))
 	}
 	if symbol, ok := catalog.LookupObject(fn); ok {
-		recipe := catalog.LookupRecipe(symbol)
-		if !supportsRecipe(recipe) {
-			l.errorAt(n, "Sonolus API %s references unimplemented %s recipe %q", symbol.Key(), recipe.Kind, recipe.Operation)
-			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
-		}
-		if recipe.Kind == catalog.RecipeAggregate {
-			return l.aggregateCall(n, recipe.Operation, args)
-		}
-		if recipe.Kind == catalog.RecipeResource {
-			return l.resourceCall(n, recipe.Operation, args)
-		}
-		if recipe.Kind == catalog.RecipeContainer {
-			return l.containerCall(n, recipe.Operation, args)
-		}
-		if recipe.Kind == catalog.RecipeMemory {
-			return l.memoryCall(n, recipe, args)
-		}
-		if recipe.Kind != catalog.RecipeRuntime {
-			l.errorAt(n, "Sonolus API %s cannot be lowered in callbacks: %s", symbol.Key(), recipe.Reason)
-			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
-		}
-		return l.runtimeCall(n, recipe.Runtime, symbol.Effect != catalog.EffectWrite, recipe.Prefix, args)
+		return l.lowerCatalogRecipe(n, symbol, args)
 	}
 	if symbol, ok := intrinsic.LookupObject(fn); ok {
 		if symbol.Kind != intrinsic.RuntimeFunction {
@@ -864,9 +2724,88 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 	return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 }
 
+func (l *lowerer) lowerCatalogRecipe(n *ast.CallExpr, symbol *catalog.Symbol, args []lowerValue) lowerValue {
+	recipe := catalog.LookupRecipe(symbol)
+	if recipe.Kind != catalog.RecipeContainer {
+		for _, arg := range args {
+			if arg.entity != nil {
+				l.errorAt(n, "EntityRef.Get views can only be passed to inlined user helpers or local catalog containers")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+		}
+	}
+	if !supportsRecipe(recipe) {
+		l.errorAt(n, "Sonolus API %s references unimplemented %s recipe %q", symbol.Key(), recipe.Kind, recipe.Operation)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	switch recipe.Kind {
+	case catalog.RecipeAggregate:
+		return l.aggregateCall(n, recipe.Operation, args)
+	case catalog.RecipeResource:
+		return l.resourceCall(n, recipe.Operation, args)
+	case catalog.RecipeContainer:
+		return l.containerCall(n, recipe.Operation, args)
+	case catalog.RecipeMemory:
+		return l.memoryCall(n, recipe, args)
+	case catalog.RecipeRuntime:
+		return l.runtimeCall(n, recipe.Runtime, symbol.Effect != catalog.EffectWrite, recipe.Prefix, args)
+	default:
+		l.errorAt(n, "Sonolus API %s cannot be lowered in callbacks: %s", symbol.Key(), recipe.Reason)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+}
+
+func (l *lowerer) inlineInterfaceMethodAlternatives(call *ast.CallExpr, method *types.Func, value lowerValue, args []callArgument) lowerValue {
+	variant := value.interface_
+	if variant == nil || len(variant.tag.slots) != 1 || len(variant.alternatives) == 0 {
+		l.errorAt(call, "static interface variant has no alternatives")
+		return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+	}
+	resultType := l.pkg.TypesInfo.TypeOf(call)
+	var result lowerValue
+	if resultType != nil && l.runtimeTypeOf(resultType).Slots != 0 {
+		result = l.allocZeroed("interface.call.result", resultType, call)
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(variant.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(variant.tag.slots[0], cases, invalid)
+	for index, alternative := range variant.alternatives {
+		l.setCurrent(blocks[index])
+		methodSet := types.NewMethodSet(alternative.type_)
+		var concrete *types.Func
+		for methodIndex := 0; methodIndex < methodSet.Len(); methodIndex++ {
+			candidate, _ := methodSet.At(methodIndex).Obj().(*types.Func)
+			if candidate != nil && candidate.Name() == method.Name() {
+				concrete = candidate
+				break
+			}
+		}
+		if concrete == nil {
+			l.errorAt(call, "concrete type %s does not implement interface method %s", alternative.type_, method.Name())
+			l.jump(merge)
+			continue
+		}
+		arguments := append([]callArgument{{value: alternative}}, args...)
+		returned := l.inlineCallArguments(call, concrete, arguments)
+		if resultType != nil && len(result.places) != 0 {
+			l.store(result, returned, call)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return result
+}
+
 func (l *lowerer) callReceiver(selector *ast.SelectorExpr, fn *types.Func) lowerValue {
 	receiver := l.expr(selector.X)
-	if receiver.container != nil {
+	if isContainerValue(receiver) || receiver.stream != nil {
 		return receiver
 	}
 	signature, _ := fn.Type().(*types.Signature)
@@ -890,6 +2829,49 @@ func (l *lowerer) callReceiver(selector *ast.SelectorExpr, fn *types.Func) lower
 }
 
 func (l *lowerer) builtinCall(n *ast.CallExpr, builtin *types.Builtin) lowerValue {
+	if builtin.Name() == "new" {
+		if len(n.Args) != 1 {
+			l.errorAt(n, "Go builtin new requires one type argument")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		pointer, ok := types.Unalias(l.resolveType(l.pkg.TypesInfo.TypeOf(n))).(*types.Pointer)
+		if !ok {
+			l.errorAt(n, "Go builtin new result is not a pointer")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		element := pointer.Elem()
+		if isPointerType(element) || isFunctionType(element) || isInterfaceType(element) || isContainerType(element) || l.isCompileTimeOnlyValueType(element) || l.containsEntityView(element) || containsResourceHandle(element) != "" {
+			l.errorAt(n, "Go builtin new does not support compile-time-only element type %s", element)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		value := l.allocZeroed("new", element, n)
+		if len(value.places) == 0 {
+			l.errorAt(n, "Go builtin new requires a non-empty runtime layout")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		value.type_ = l.pkg.TypesInfo.TypeOf(n)
+		return l.freezePointerValue(value, n)
+	}
+	if builtin.Name() == "min" || builtin.Name() == "max" {
+		if len(n.Args) == 0 {
+			l.errorAt(n, "Go builtin %s requires at least one argument", builtin.Name())
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		values := make([]ir.Expr, 0, len(n.Args))
+		for _, argument := range n.Args {
+			value := l.materialize("builtin.arg", l.expr(argument), argument)
+			if len(value.slots) != 1 {
+				l.errorAt(argument, "Go builtin %s only supports scalar numeric arguments", builtin.Name())
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			values = append(values, value.slots[0])
+		}
+		function := resource.RuntimeFunctionMin
+		if builtin.Name() == "max" {
+			function = resource.RuntimeFunctionMax
+		}
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{l.pure(function, n, values...)}}
+	}
 	if builtin.Name() != "len" && builtin.Name() != "cap" {
 		l.errorAt(n, "Go builtin %s is not supported by the frozen callback subset", builtin.Name())
 		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
@@ -908,20 +2890,26 @@ func (l *lowerer) builtinCall(n *ast.CallExpr, builtin *types.Builtin) lowerValu
 		result.slots = []ir.Expr{ir.Const{Value: float64(array.Len())}}
 		return result
 	}
-	if value.container != nil {
-		if builtin.Name() == "len" {
-			result.slots = []ir.Expr{value.slots[0]}
-		} else {
-			result.slots = []ir.Expr{ir.Const{Value: float64(value.container.capacity)}}
+	if pointer, ok := types.Unalias(value.type_).(*types.Pointer); ok {
+		if array, arrayOK := types.Unalias(pointer.Elem()).Underlying().(*types.Array); arrayOK {
+			result.slots = []ir.Expr{ir.Const{Value: float64(array.Len())}}
+			return result
 		}
-		return result
 	}
-	l.errorAt(n, "Go builtin %s is only supported for fixed arrays and catalog containers", builtin.Name())
+	if isContainerValue(value) {
+		return l.dispatchContainerValue(n, value, func(alternative lowerValue) lowerValue {
+			if builtin.Name() == "len" {
+				return lowerValue{type_: result.type_, slots: []ir.Expr{alternative.slots[0]}}
+			}
+			return lowerValue{type_: result.type_, slots: []ir.Expr{ir.Const{Value: float64(alternative.container.capacity)}}}
+		})
+	}
+	l.errorAt(n, "Go builtin %s is only supported for fixed arrays, pointers to fixed arrays, and catalog containers", builtin.Name())
 	return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 }
 
 func (l *lowerer) materialize(name string, value lowerValue, node ast.Node) lowerValue {
-	if value.container != nil || len(value.slots) == 0 {
+	if isContainerValue(value) || value.stream != nil || len(value.slots) == 0 {
 		return value
 	}
 	if _, ok := types.Unalias(value.type_).(*types.Pointer); ok {
@@ -946,12 +2934,121 @@ func (l *lowerer) materializeAddressable(name string, value lowerValue, node ast
 	if len(value.places) == len(value.slots) && len(value.places) != 0 {
 		return value
 	}
-	if value.container != nil || len(value.slots) == 0 {
+	if isContainerValue(value) || len(value.slots) == 0 {
 		return value
 	}
 	local := l.alloc(name, value.type_)
 	l.store(local, value, node)
 	return local
+}
+
+func (l *lowerer) ensureAssignable(value lowerValue, expression ast.Expr) lowerValue {
+	if len(value.places) != 0 {
+		return value
+	}
+	identifier, ok := expression.(*ast.Ident)
+	if !ok {
+		return value
+	}
+	object := l.pkg.TypesInfo.ObjectOf(identifier)
+	if object == nil {
+		object = l.pkg.TypesInfo.Defs[identifier]
+	}
+	if object == nil || len(value.slots) == 0 {
+		return value
+	}
+	local := l.alloc(identifier.Name, object.Type())
+	l.store(local, value, identifier)
+	l.rebind(object, local)
+	return local
+}
+
+func (l *lowerer) freezePointerValue(value lowerValue, node ast.Node) lowerValue {
+	for i, raw := range value.places {
+		var index ir.Expr
+		switch place := raw.(type) {
+		case ir.IndexedLocalPlace:
+			index = place.Index
+		case ir.MemoryPlace:
+			index = place.Index
+		default:
+			continue
+		}
+		if _, constant := index.(ir.Const); constant {
+			continue
+		}
+		frozen := l.materialize("pointer.index", lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{index}}, node)
+		switch place := raw.(type) {
+		case ir.IndexedLocalPlace:
+			place.Index = frozen.slots[0]
+			value.places[i] = place
+			value.slots[i] = ir.Load{Place: place}
+		case ir.MemoryPlace:
+			place.Index = frozen.slots[0]
+			value.places[i] = place
+			value.slots[i] = ir.Load{Place: place}
+		}
+	}
+	return value
+}
+
+func (l *lowerer) entityReferenceField(node ast.Node, object *types.Var, reference lowerValue) lowerValue {
+	if reference.entity == nil || len(reference.slots) != 1 {
+		l.errorAt(node, "EntityRef.Get view requires exactly one entity index slot")
+		return zeroValue(object.Type())
+	}
+	var declaration *FieldDeclaration
+	for _, candidate := range reference.entity.binding.declaration.Fields {
+		if candidate.Object == object {
+			declaration = candidate
+			break
+		}
+	}
+	if declaration == nil {
+		l.errorAt(node, "EntityRef.Get field %s is not part of archetype %s", object.Name(), reference.entity.binding.declaration.Name)
+		return zeroValue(object.Type())
+	}
+	storage := ""
+	read, write := false, false
+	switch declaration.Storage {
+	case "imported", "data":
+		storage = "EntityDataArray"
+		read = true
+		write = l.phase == "preprocess"
+	case "shared":
+		storage = "EntitySharedMemoryArray"
+		read = true
+		write = l.phase == "preprocess" || l.phase == "updateSequential"
+		if l.mode == mode.ModePlay {
+			write = write || l.phase == "touch"
+		}
+	case "memory":
+		l.errorAt(node, "EntityRef.Get cannot access memory field %s.%s", reference.entity.binding.declaration.Name, declaration.GoName)
+		return zeroValue(declaration.Type)
+	case "exported":
+		l.errorAt(node, "EntityRef.Get cannot access exported field %s.%s", reference.entity.binding.declaration.Name, declaration.GoName)
+		return zeroValue(declaration.Type)
+	default:
+		l.errorAt(node, "EntityRef.Get field %s.%s has unsupported storage %q", reference.entity.binding.declaration.Name, declaration.GoName, declaration.Storage)
+		return zeroValue(declaration.Type)
+	}
+	value := lowerValue{type_: declaration.Type, slots: make([]ir.Expr, declaration.Size), places: make([]ir.Place, declaration.Size), entityField: true}
+	for offset := 0; offset < declaration.Size; offset++ {
+		place := l.memory(storage, reference.slots[0], 32, declaration.Offset+offset, read, write, node)
+		value.places[offset] = place
+		value.slots[offset] = ir.Load{Place: place}
+	}
+	if declaration.ContainerKind != "" {
+		_, key, element, _ := containerTypes(declaration.Type)
+		stride := declaration.KeySize + declaration.ElementSize
+		value.container = &containerValue{
+			kind: declaration.ContainerKind, capacity: declaration.Capacity, stride: stride,
+			keySize: declaration.KeySize, element: element, key: key,
+			memoryStorage: storage, memoryBase: declaration.Offset + 1, memoryEntity: reference.slots[0],
+			memoryRead: read, memoryWrite: write,
+		}
+	}
+	return value
 }
 
 func (l *lowerer) easeCall(n *ast.CallExpr) lowerValue {
@@ -1066,8 +3163,8 @@ func (l *lowerer) memoryCall(n *ast.CallExpr, recipe catalog.Recipe, args []lowe
 		}
 		return lowerValue{}
 	}
-	t := l.pkg.TypesInfo.TypeOf(n)
-	result := zeroValue(t)
+	t := l.resolveType(l.pkg.TypesInfo.TypeOf(n))
+	result := l.zeroRuntimeValue(t)
 	result.places = make([]ir.Place, len(result.slots))
 	for i := range result.slots {
 		place := l.memory(storage, index, recipe.Stride, memorySlotOffset(storage, offset, i), true, false, n)
@@ -1112,12 +3209,38 @@ func isContainerType(t types.Type) bool {
 	return ok
 }
 
-func sameContainerBacking(a, b lowerValue) bool {
-	if a.container == nil || b.container == nil || a.container.dataLocal == nil || b.container.dataLocal == nil {
+func (l *lowerer) isCompileTimeOnlyValueType(t types.Type) bool {
+	named, ok := namedType(t)
+	if !ok {
 		return false
 	}
-	if a.container.kind != b.container.kind || a.container.capacity != b.container.capacity || a.container.stride != b.container.stride || a.container.dataLocal.ID != b.container.dataLocal.ID {
+	id := typeID(named)
+	switch id {
+	case rootID("Configuration"), rootID("UIConfig"), rootID("ROMValues"), rootID("LevelFile"), rootID("StreamResource"),
+		rootID("Stream"), rootID("StreamData"), rootID("SliderOptionConfig"), rootID("ToggleOptionConfig"), rootID("SelectOptionConfig"),
+		rootID("SkinResource"), rootID("EffectResource"), rootID("ParticleResource"), rootID("BucketsResource"), rootID("InstructionResource"), rootID("InstructionIconResource"),
+		rootID("AnyArchetype"):
+		return true
+	}
+	for _, candidate := range []string{"Archetype", "CallbackOrders", "GlobalCallbacks"} {
+		if id == markerID(l.mode, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameContainerBacking(a, b lowerValue) bool {
+	if a.container == nil || b.container == nil {
 		return false
+	}
+	if a.container.kind != b.container.kind || a.container.capacity != b.container.capacity || a.container.stride != b.container.stride {
+		return false
+	}
+	if a.container.dataLocal != nil || b.container.dataLocal != nil {
+		if a.container.dataLocal == nil || b.container.dataLocal == nil || a.container.dataLocal.ID != b.container.dataLocal.ID {
+			return false
+		}
 	}
 	if len(a.places) == 0 || len(b.places) == 0 {
 		return false
@@ -1125,6 +3248,149 @@ func sameContainerBacking(a, b lowerValue) bool {
 	ap, aok := a.places[0].(ir.LocalPlace)
 	bp, bok := b.places[0].(ir.LocalPlace)
 	return aok && bok && ap.ID == bp.ID && ap.Offset == bp.Offset
+}
+
+func isContainerValue(value lowerValue) bool {
+	return value.container != nil || value.containerVariant != nil
+}
+
+func directContainerAlternative(value lowerValue) lowerValue {
+	value.containerVariant = nil
+	return value
+}
+
+func (l *lowerer) newContainerCell(name string, containerType types.Type, node ast.Node) lowerValue {
+	variant := newFiniteVariant[lowerValue](l, name+".container", node)
+	return lowerValue{type_: containerType, containerVariant: &variant}
+}
+
+func (l *lowerer) copyContainerValue(name string, source lowerValue, node ast.Node) lowerValue {
+	destination := l.newContainerCell(name, source.type_, node)
+	if source.container == nil {
+		return l.mergeContainerValue(destination, source, node)
+	}
+	alternative := directContainerAlternative(source)
+	index, ok := destination.containerVariant.add(alternative, sameContainerBacking)
+	if !ok {
+		l.errorAt(node, "finite container variant exceeds 256 alternatives")
+		return destination
+	}
+	l.store(destination.containerVariant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+	result := source
+	result.containerVariant = destination.containerVariant
+	return result
+}
+
+func (l *lowerer) mergeContainerValue(destination, source lowerValue, node ast.Node) lowerValue {
+	if !isContainerValue(source) {
+		l.errorAt(node, "container assignment requires a catalog container value")
+		return destination
+	}
+	if destination.containerVariant == nil {
+		cell := l.newContainerCell("container.variant", destination.type_, node)
+		destination.containerVariant = cell.containerVariant
+		if destination.container != nil {
+			index, ok := destination.containerVariant.add(directContainerAlternative(destination), sameContainerBacking)
+			if !ok {
+				l.errorAt(node, "finite container variant exceeds 256 alternatives")
+				return destination
+			}
+			l.store(destination.containerVariant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		}
+	}
+	variant := destination.containerVariant
+	destination.container = nil
+	destination.slots = nil
+	destination.places = nil
+	addAlternative := func(value lowerValue) int {
+		value = directContainerAlternative(value)
+		index, ok := variant.add(value, sameContainerBacking)
+		if !ok {
+			l.errorAt(node, "finite container variant exceeds 256 alternatives")
+			return -1
+		}
+		return index
+	}
+	if source.container != nil {
+		index := addAlternative(source)
+		if index >= 0 {
+			l.store(variant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		}
+		return destination
+	}
+	if source.containerVariant == nil || len(source.containerVariant.tag.slots) != 1 {
+		l.errorAt(node, "finite container source has no runtime tag")
+		return destination
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(source.containerVariant.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(source.containerVariant.tag.slots[0], cases, invalid)
+	for index, alternative := range source.containerVariant.alternatives {
+		l.setCurrent(blocks[index])
+		mapped := addAlternative(alternative)
+		if mapped >= 0 {
+			l.store(variant.tag, scalarValue(ir.Const{Value: float64(mapped)}, types.Typ[types.Int]), node)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return destination
+}
+
+func (l *lowerer) dispatchContainerValue(call *ast.CallExpr, receiver lowerValue, invoke func(lowerValue) lowerValue) lowerValue {
+	if receiver.container != nil {
+		return invoke(receiver)
+	}
+	variant := receiver.containerVariant
+	if variant == nil || len(variant.tag.slots) != 1 || len(variant.alternatives) == 0 {
+		l.errorAt(call, "finite container variant has no alternatives")
+		return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+	}
+	resultType := l.pkg.TypesInfo.TypeOf(call)
+	if isFunctionType(resultType) {
+		alternatives := make([]*staticCallable, len(variant.alternatives))
+		for index, alternative := range variant.alternatives {
+			value := invoke(alternative)
+			if value.callable == nil {
+				l.errorAt(call, "container iterator alternative %d is not callable", index)
+				continue
+			}
+			alternatives[index] = value.callable
+		}
+		frozenTag := l.materialize("container.iterator.tag", variant.tag, call)
+		return lowerValue{type_: resultType, callable: indexedCallableVariant(l, alternatives, frozenTag, call)}
+	}
+	var result lowerValue
+	if resultType != nil && l.runtimeTypeOf(resultType).Slots != 0 {
+		result = l.allocZeroed("container.variant.result", resultType, call)
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(variant.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(variant.tag.slots[0], cases, invalid)
+	for index, alternative := range variant.alternatives {
+		l.setCurrent(blocks[index])
+		value := invoke(alternative)
+		if len(result.places) != 0 {
+			l.store(result, value, call)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return result
 }
 
 func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerValue) lowerValue {
@@ -1139,7 +3405,7 @@ func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerV
 			l.errorAt(n.Args[0], "container capacity must be a positive integer constant")
 			return lowerValue{}
 		}
-		resultType := l.pkg.TypesInfo.TypeOf(n)
+		resultType := l.resolveType(l.pkg.TypesInfo.TypeOf(n))
 		kind, key, element, ok := containerTypes(resultType)
 		if !ok {
 			l.errorAt(n, "invalid container result type %s", resultType)
@@ -1149,14 +3415,29 @@ func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerV
 		if key != nil {
 			keySize = irTypeOf(key).Slots
 		}
-		stride := keySize + irTypeOf(element).Slots
+		if key != nil {
+			keySize = l.runtimeTypeOf(types.NewArray(key, 1)).Slots
+		}
+		stride := keySize + l.runtimeTypeOf(types.NewArray(element, 1)).Slots
 		size := l.allocZeroed("container.size", types.Typ[types.Int], n)
 		backingType := ir.Type{Name: resultType.String() + ".backing", Slots: capacity * stride}
 		backing := l.builder.NewLocal("container.data", backingType)
 		result := lowerValue{type_: resultType, slots: append(append([]ir.Expr{}, size.slots...), backing.Slots...), places: append(append([]ir.Place{}, size.places...), ir.Places(backing)...)}
-		first, _ := ir.Places(backing)[0].(ir.LocalPlace)
-		result.container = &containerValue{kind: kind, capacity: capacity, stride: stride, keySize: keySize, element: element, key: key, dataLocal: &first}
+		var dataLocal *ir.LocalPlace
+		if places := ir.Places(backing); len(places) != 0 {
+			first, _ := places[0].(ir.LocalPlace)
+			dataLocal = &first
+		}
+		result.container = &containerValue{kind: kind, capacity: capacity, stride: stride, keySize: keySize, element: element, key: key, dataLocal: dataLocal}
 		return result
+	}
+	if len(args) != 0 && args[0].container == nil && args[0].containerVariant != nil {
+		receiver := args[0]
+		return l.dispatchContainerValue(n, receiver, func(alternative lowerValue) lowerValue {
+			direct := append([]lowerValue(nil), args...)
+			direct[0] = alternative
+			return l.containerCall(n, operation, direct)
+		})
 	}
 	if len(args) == 0 || args[0].container == nil {
 		l.errorAt(n, "container method receiver has no backing layout")
@@ -1180,27 +3461,39 @@ func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerV
 	indexValue := func(index ir.Expr, offset, count int, t types.Type) lowerValue {
 		return l.containerElement(n, c, index, offset, count, t)
 	}
+	swap := func(left, right ir.Expr) {
+		leftValue := l.materialize("container.swap", indexValue(left, 0, c.stride, c.element), n)
+		rightValue := l.materialize("container.swap", indexValue(right, 0, c.stride, c.element), n)
+		l.store(indexValue(left, 0, c.stride, c.element), rightValue, n)
+		l.store(indexValue(right, 0, c.stride, c.element), leftValue, n)
+	}
 	switch operation {
 	case "varArray.len", "arrayMap.len", "arraySet.len":
 		return scalar(size, l.pkg.TypesInfo.TypeOf(n))
 	case "varArray.capacity", "arrayMap.capacity", "arraySet.capacity":
 		return scalar(ir.Const{Value: float64(c.capacity)}, l.pkg.TypesInfo.TypeOf(n))
-	case "varArray.isFull":
+	case "varArray.isFull", "arrayMap.isFull", "arraySet.isFull":
 		return scalar(l.pure(resource.RuntimeFunctionEqual, n, size, ir.Const{Value: float64(c.capacity)}), l.pkg.TypesInfo.TypeOf(n))
-	case "varArray.get":
+	case "varArray.get", "varArray.getUnchecked":
 		if len(args) == 2 {
-			l.guard(n, indexInRange(args[1].slots[0], false))
+			if operation == "varArray.get" {
+				l.guard(n, indexInRange(args[1].slots[0], false))
+			}
 			return indexValue(args[1].slots[0], 0, c.stride, c.element)
 		}
-	case "varArray.set":
+	case "varArray.set", "varArray.setUnchecked":
 		if len(args) == 3 {
-			l.guard(n, indexInRange(args[1].slots[0], false))
+			if operation == "varArray.set" {
+				l.guard(n, indexInRange(args[1].slots[0], false))
+			}
 			l.store(indexValue(args[1].slots[0], 0, c.stride, c.element), args[2], n)
 			return lowerValue{}
 		}
-	case "varArray.append":
+	case "varArray.append", "varArray.appendUnchecked":
 		if len(args) == 2 {
-			l.guard(n, hasCapacity())
+			if operation == "varArray.append" {
+				l.guard(n, hasCapacity())
+			}
 			l.store(indexValue(size, 0, c.stride, c.element), args[1], n)
 			l.store(lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{size}, places: receiver.places[:1]}, scalar(l.pure(resource.RuntimeFunctionAdd, n, size, ir.Const{Value: 1}), types.Typ[types.Int]), n)
 			return lowerValue{}
@@ -1210,6 +3503,121 @@ func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerV
 		newSize := l.pure(resource.RuntimeFunctionSubtract, n, size, ir.Const{Value: 1})
 		l.store(lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{size}, places: receiver.places[:1]}, scalar(newSize, types.Typ[types.Int]), n)
 		return indexValue(newSize, 0, c.stride, c.element)
+	case "varArray.removeAt":
+		if len(args) == 2 {
+			l.guard(n, indexInRange(args[1].slots[0], false))
+			result := l.materialize("container.removed", indexValue(args[1].slots[0], 0, c.stride, c.element), n)
+			l.containerRemoveAt(n, receiver, args[1])
+			return result
+		}
+	case "varArray.remove":
+		if len(args) == 2 {
+			index, found := l.containerFind(n, receiver, args[1], 0, c.stride)
+			remove, done := l.newBlock(), l.newBlock()
+			_ = l.builder.Branch(found.slots[0], remove, done)
+			l.setCurrent(remove)
+			l.containerRemoveAt(n, receiver, index)
+			l.jump(done)
+			l.setCurrent(done)
+			return found
+		}
+	case "varArray.index":
+		if len(args) == 2 {
+			index, found := l.containerFind(n, receiver, args[1], 0, c.stride)
+			return scalar(l.pure(resource.RuntimeFunctionIf, n, found.slots[0], index.slots[0], ir.Const{Value: -1}), types.Typ[types.Int])
+		}
+	case "varArray.lastIndex":
+		if len(args) == 2 {
+			index := l.allocZeroed("container.find.last.index", types.Typ[types.Int], n)
+			result := l.alloc("container.find.last.result", types.Typ[types.Int])
+			l.store(result, scalar(ir.Const{Value: -1}, types.Typ[types.Int]), n)
+			header, body, match, next, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+			l.jump(header)
+			l.setCurrent(header)
+			_ = l.builder.Branch(l.pure(resource.RuntimeFunctionLess, n, index.slots[0], size), body, exit)
+			l.setCurrent(body)
+			candidate := indexValue(index.slots[0], 0, c.stride, c.element)
+			var equal ir.Expr = ir.Const{Value: 1}
+			for slot := range candidate.slots {
+				equal = l.pure(resource.RuntimeFunctionAnd, n, equal, l.pure(resource.RuntimeFunctionEqual, n, candidate.slots[slot], args[1].slots[slot]))
+			}
+			_ = l.builder.Branch(equal, match, next)
+			l.setCurrent(match)
+			l.store(result, index, n)
+			l.jump(next)
+			l.setCurrent(next)
+			l.store(index, scalar(l.pure(resource.RuntimeFunctionAdd, n, index.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+			l.jump(header)
+			l.setCurrent(exit)
+			return result
+		}
+	case "varArray.count":
+		if len(args) == 2 {
+			index := l.allocZeroed("container.count.index", types.Typ[types.Int], n)
+			count := l.allocZeroed("container.count.value", types.Typ[types.Int], n)
+			header, body, match, next, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+			l.jump(header)
+			l.setCurrent(header)
+			_ = l.builder.Branch(l.pure(resource.RuntimeFunctionLess, n, index.slots[0], size), body, exit)
+			l.setCurrent(body)
+			candidate := indexValue(index.slots[0], 0, c.stride, c.element)
+			var equal ir.Expr = ir.Const{Value: 1}
+			for i := range candidate.slots {
+				equal = l.pure(resource.RuntimeFunctionAnd, n, equal, l.pure(resource.RuntimeFunctionEqual, n, candidate.slots[i], args[1].slots[i]))
+			}
+			_ = l.builder.Branch(equal, match, next)
+			l.setCurrent(match)
+			l.store(count, scalar(l.pure(resource.RuntimeFunctionAdd, n, count.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+			l.jump(next)
+			l.setCurrent(next)
+			l.store(index, scalar(l.pure(resource.RuntimeFunctionAdd, n, index.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+			l.jump(header)
+			l.setCurrent(exit)
+			return count
+		}
+	case "varArray.swap", "varArray.swapUnchecked":
+		if len(args) == 3 {
+			if operation == "varArray.swap" {
+				l.guard(n, indexInRange(args[1].slots[0], false))
+				l.guard(n, indexInRange(args[2].slots[0], false))
+			}
+			swap(args[1].slots[0], args[2].slots[0])
+			return lowerValue{}
+		}
+	case "varArray.reverse", "varArray.shuffle":
+		index := l.allocZeroed("container.reorder.index", types.Typ[types.Int], n)
+		header, body, exit := l.newBlock(), l.newBlock(), l.newBlock()
+		l.jump(header)
+		l.setCurrent(header)
+		limit := l.pure(resource.RuntimeFunctionDivide, n, size, ir.Const{Value: 2})
+		if operation == "varArray.shuffle" {
+			limit = size
+		}
+		_ = l.builder.Branch(l.pure(resource.RuntimeFunctionLess, n, index.slots[0], limit), body, exit)
+		l.setCurrent(body)
+		other := l.pure(resource.RuntimeFunctionSubtract, n, l.pure(resource.RuntimeFunctionSubtract, n, size, ir.Const{Value: 1}), index.slots[0])
+		if operation == "varArray.shuffle" {
+			other = l.builder.RuntimeCall(resource.RuntimeFunctionRandomInteger, []ir.Expr{index.slots[0], size}, irTypeOf(types.Typ[types.Int]), false, sourcePos(l.pkg, n.Pos()))
+		}
+		swap(index.slots[0], other)
+		l.store(index, scalar(l.pure(resource.RuntimeFunctionAdd, n, index.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+		l.jump(header)
+		l.setCurrent(exit)
+		return lowerValue{}
+	case "varArray.values":
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{iterator: &containerIterator{receiver: receiver, offsets: []int{0}, types: []types.Type{c.element}}}}
+	case "varArray.valuesReversed":
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{iterator: &containerIterator{receiver: receiver, offsets: []int{0}, types: []types.Type{c.element}, desc: true}}}
+	case "varArray.items":
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{iterator: &containerIterator{receiver: receiver, offsets: []int{0}, types: []types.Type{c.element}, index: true}}}
+	case "arrayMap.keys":
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{iterator: &containerIterator{receiver: receiver, offsets: []int{0}, types: []types.Type{c.key}}}}
+	case "arrayMap.values":
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{iterator: &containerIterator{receiver: receiver, offsets: []int{c.keySize}, types: []types.Type{c.element}}}}
+	case "arrayMap.items":
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{iterator: &containerIterator{receiver: receiver, offsets: []int{0, c.keySize}, types: []types.Type{c.key, c.element}}}}
+	case "arraySet.values":
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{iterator: &containerIterator{receiver: receiver, offsets: []int{0}, types: []types.Type{c.element}}}}
 	case "varArray.clear", "arrayMap.clear", "arraySet.clear":
 		l.store(lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{size}, places: receiver.places[:1]}, scalar(ir.Const{}, types.Typ[types.Int]), n)
 		return lowerValue{}
@@ -1228,6 +3636,23 @@ func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerV
 			index, found := l.containerFind(n, receiver, args[1], 0, c.keySize)
 			l.guard(n, found.slots[0])
 			return indexValue(index.slots[0], c.keySize, c.stride-c.keySize, c.element)
+		}
+	case "arrayMap.getOK", "arrayMap.pop":
+		if len(args) == 2 {
+			index, found := l.containerFind(n, receiver, args[1], 0, c.keySize)
+			result := l.allocZeroed("map.lookup", l.pkg.TypesInfo.TypeOf(n), n)
+			present, done := l.newBlock(), l.newBlock()
+			_ = l.builder.Branch(found.slots[0], present, done)
+			l.setCurrent(present)
+			value := l.materialize("map.value", indexValue(index.slots[0], c.keySize, c.stride-c.keySize, c.element), n)
+			combined := lowerValue{type_: result.type_, slots: append(append([]ir.Expr(nil), value.slots...), ir.Const{Value: 1})}
+			l.store(result, combined, n)
+			if operation == "arrayMap.pop" {
+				l.containerRemoveAt(n, receiver, index)
+			}
+			l.jump(done)
+			l.setCurrent(done)
+			return result
 		}
 	case "arrayMap.set":
 		if len(args) == 3 {
@@ -1307,11 +3732,401 @@ func (l *lowerer) containerCall(n *ast.CallExpr, operation string, args []lowerV
 	return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 }
 
+func (l *lowerer) sortContainerCall(n *ast.CallExpr, fn *types.Func) lowerValue {
+	if len(n.Args) != 1 {
+		l.errorAt(n, "VarArray.SortFunc requires one comparator")
+		return lowerValue{}
+	}
+	selector, ok := n.Fun.(*ast.SelectorExpr)
+	if !ok {
+		l.errorAt(n, "VarArray.SortFunc requires a method receiver")
+		return lowerValue{}
+	}
+	receiver := l.callReceiver(selector, fn)
+	comparator, ok := l.staticCallable(n.Args[0])
+	if !ok {
+		l.errorAt(n.Args[0], "VarArray.SortFunc comparator must be statically callable")
+		return lowerValue{}
+	}
+	return l.dispatchContainerValue(n, receiver, func(alternative lowerValue) lowerValue {
+		return l.sortContainerValue(n, alternative, comparator)
+	})
+}
+
+func (l *lowerer) sortContainerValue(n *ast.CallExpr, receiver lowerValue, comparator *staticCallable) lowerValue {
+	if receiver.container == nil || receiver.container.kind != "VarArray" {
+		l.errorAt(n, "VarArray.SortFunc receiver has no container backing")
+		return lowerValue{}
+	}
+	c := receiver.container
+	index := l.allocZeroed("container.sort.index", types.Typ[types.Int], n)
+	cursor := l.allocZeroed("container.sort.cursor", types.Typ[types.Int], n)
+	l.store(index, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: 1}}}, n)
+	outer, loadKey, inner, compare, shift, insert, advance, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(outer)
+	l.setCurrent(outer)
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionLess, n, index.slots[0], receiver.slots[0]), loadKey, exit)
+	l.setCurrent(loadKey)
+	key := l.materialize("sort.key", l.containerElement(n, c, index.slots[0], 0, c.stride, c.element), n)
+	l.store(cursor, index, n)
+	l.jump(inner)
+	l.setCurrent(inner)
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionGreater, n, cursor.slots[0], ir.Const{}), compare, insert)
+	l.setCurrent(compare)
+	previousIndex := l.pure(resource.RuntimeFunctionSubtract, n, cursor.slots[0], ir.Const{Value: 1})
+	previous := l.materialize("sort.previous", l.containerElement(n, c, previousIndex, 0, c.stride, c.element), n)
+	typedComparator := *comparator
+	typedComparator.resultType = types.Typ[types.Bool]
+	less := l.inlineStaticCallable(n, &typedComparator, []callArgument{{value: key}, {value: previous}})
+	if len(less.slots) != 1 {
+		l.errorAt(n, "VarArray.SortFunc comparator must return bool")
+		l.jump(exit)
+		l.setCurrent(exit)
+		return lowerValue{}
+	}
+	_ = l.builder.Branch(less.slots[0], shift, insert)
+	l.setCurrent(shift)
+	l.store(l.containerElement(n, c, cursor.slots[0], 0, c.stride, c.element), previous, n)
+	l.store(cursor, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{previousIndex}}, n)
+	l.jump(inner)
+	l.setCurrent(insert)
+	l.store(l.containerElement(n, c, cursor.slots[0], 0, c.stride, c.element), key, n)
+	l.jump(advance)
+	l.setCurrent(advance)
+	l.store(index, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{l.pure(resource.RuntimeFunctionAdd, n, index.slots[0], ir.Const{Value: 1})}}, n)
+	l.jump(outer)
+	l.setCurrent(exit)
+	return lowerValue{}
+}
+
+func (l *lowerer) extremeContainerCall(n *ast.CallExpr, fn *types.Func, operation string) lowerValue {
+	if len(n.Args) != 1 {
+		l.errorAt(n, "VarArray.%s requires one comparator", operation)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	selector, ok := n.Fun.(*ast.SelectorExpr)
+	if !ok {
+		l.errorAt(n, "VarArray.%s requires a method receiver", operation)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	receiver := l.callReceiver(selector, fn)
+	comparator, ok := l.staticCallable(n.Args[0])
+	if !ok {
+		l.errorAt(n.Args[0], "VarArray.%s comparator must be statically callable", operation)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	return l.dispatchContainerValue(n, receiver, func(alternative lowerValue) lowerValue {
+		return l.extremeContainerValue(n, alternative, comparator, operation)
+	})
+}
+
+func (l *lowerer) extremeContainerValue(n *ast.CallExpr, receiver lowerValue, comparator *staticCallable, operation string) lowerValue {
+	if receiver.container == nil || receiver.container.kind != "VarArray" {
+		l.errorAt(n, "VarArray.%s receiver has no container backing", operation)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	wantsIndex := strings.HasPrefix(operation, "Index")
+	wantsMax := strings.Contains(operation, "Max")
+	if !wantsIndex {
+		l.guardWith(n, l.pure(resource.RuntimeFunctionGreater, n, receiver.slots[0], ir.Const{}), "VarArray."+operation+" requires a non-empty array", true)
+	}
+	best := l.alloc("container.extreme.best", types.Typ[types.Int])
+	cursor := l.alloc("container.extreme.index", types.Typ[types.Int])
+	l.store(best, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: -1}}}, n)
+	l.store(cursor, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{}}}, n)
+	header, seed, update, advance, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(header)
+	l.setCurrent(header)
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionLess, n, cursor.slots[0], receiver.slots[0]), seed, exit)
+	l.setCurrent(seed)
+	missing := l.pure(resource.RuntimeFunctionLess, n, best.slots[0], ir.Const{})
+	haveBest, evaluate := l.newBlock(), l.newBlock()
+	_ = l.builder.Branch(missing, update, haveBest)
+	l.setCurrent(haveBest)
+	l.jump(evaluate)
+	l.setCurrent(evaluate)
+	candidate := l.materialize("extreme.candidate", l.containerElement(n, receiver.container, cursor.slots[0], 0, receiver.container.stride, receiver.container.element), n)
+	current := l.materialize("extreme.current", l.containerElement(n, receiver.container, best.slots[0], 0, receiver.container.stride, receiver.container.element), n)
+	arguments := []callArgument{{value: candidate}, {value: current}}
+	if wantsMax {
+		arguments[0], arguments[1] = arguments[1], arguments[0]
+	}
+	typedComparator := *comparator
+	typedComparator.resultType = types.Typ[types.Bool]
+	less := l.inlineStaticCallable(n, &typedComparator, arguments)
+	if len(less.slots) != 1 {
+		l.errorAt(n, "VarArray.%s comparator must return bool", operation)
+		l.jump(exit)
+		l.setCurrent(exit)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	_ = l.builder.Branch(less.slots[0], update, advance)
+	l.setCurrent(update)
+	l.store(best, cursor, n)
+	l.jump(advance)
+	l.setCurrent(advance)
+	l.store(cursor, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{l.pure(resource.RuntimeFunctionAdd, n, cursor.slots[0], ir.Const{Value: 1})}}, n)
+	l.jump(header)
+	l.setCurrent(exit)
+	if wantsIndex {
+		return best
+	}
+	return l.containerElement(n, receiver.container, best.slots[0], 0, receiver.container.stride, receiver.container.element)
+}
+
+func (l *lowerer) sortLinkedEntitiesCall(n *ast.CallExpr, doubly bool) lowerValue {
+	expected := 4
+	if doubly {
+		expected = 5
+	}
+	if len(n.Args) != expected {
+		l.errorAt(n, "linked entity sort requires %d arguments", expected)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	head := l.materialize("linked.head", l.expr(n.Args[0]), n.Args[0])
+	if len(head.slots) != 1 {
+		l.errorAt(n.Args[0], "linked entity sort head must be a one-slot EntityRef")
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	named, ok := namedType(head.type_)
+	if !ok || typeID(named) != rootID("EntityRef") || named.TypeArgs().Len() != 1 {
+		l.errorAt(n.Args[0], "linked entity sort head must be EntityRef[T]")
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	element := named.TypeArgs().At(0)
+	binding, exists := l.entityBinding(element)
+	if !exists {
+		l.errorAt(n.Args[0], "linked entity sort target %s is not an archetype declared in %s mode", element, l.mode)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	callables := make([]*staticCallable, expected-1)
+	for index := 1; index < expected; index++ {
+		callable, callableOK := l.staticCallable(n.Args[index])
+		if !callableOK {
+			l.errorAt(n.Args[index], "linked entity sort accessor must be statically callable")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		callables[index-1] = callable
+	}
+	less, next, setNext := callables[0], callables[1], callables[2]
+	var setPrevious *staticCallable
+	if doubly {
+		setPrevious = callables[3]
+	}
+	refType := head.type_
+	ref := func(expression ir.Expr) lowerValue { return lowerValue{type_: refType, slots: []ir.Expr{expression}} }
+	view := func(reference lowerValue) lowerValue {
+		return lowerValue{type_: types.NewPointer(element), slots: []ir.Expr{reference.slots[0]}, entity: &entityReferenceValue{binding: binding}}
+	}
+	nextOf := func(reference lowerValue) lowerValue {
+		value := l.inlineStaticCallable(n, next, []callArgument{{value: view(reference)}})
+		if len(value.slots) != 1 {
+			l.errorAt(n, "linked entity next accessor must return EntityRef[T]")
+			return ref(ir.Const{Value: -1})
+		}
+		value.type_ = refType
+		return value
+	}
+	setNextOf := func(reference, value lowerValue) {
+		l.inlineStaticCallable(n, setNext, []callArgument{{value: view(reference)}, {value: value}})
+	}
+	lessThan := func(left, right lowerValue) ir.Expr {
+		result := l.inlineStaticCallable(n, less, []callArgument{{value: view(left)}, {value: view(right)}})
+		if len(result.slots) != 1 {
+			l.errorAt(n, "linked entity comparator must return bool")
+			return ir.Const{}
+		}
+		return result.slots[0]
+	}
+	result := l.alloc("linked.result", refType)
+	l.store(result, head, n)
+	width := l.alloc("linked.width", types.Typ[types.Int])
+	l.store(width, scalarValue(ir.Const{Value: 1}, types.Typ[types.Int]), n)
+	pass, passBody, done := l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(pass)
+	l.setCurrent(pass)
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionGreaterOr, n, result.slots[0], ir.Const{}), passBody, done)
+	l.setCurrent(passBody)
+	current := l.alloc("linked.current", refType)
+	newHead := l.alloc("linked.newHead", refType)
+	tail := l.alloc("linked.tail", refType)
+	merges := l.allocZeroed("linked.merges", types.Typ[types.Int], n)
+	l.store(current, result, n)
+	l.store(newHead, ref(ir.Const{Value: -1}), n)
+	l.store(tail, ref(ir.Const{Value: -1}), n)
+	outer, splitLeft, splitRight, merge, appendLeft, appendRight, appended, nextRun, finishPass := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(outer)
+	l.setCurrent(outer)
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionGreaterOr, n, current.slots[0], ir.Const{}), splitLeft, finishPass)
+	l.setCurrent(splitLeft)
+	l.store(merges, scalarValue(l.pure(resource.RuntimeFunctionAdd, n, merges.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+	left := l.alloc("linked.left", refType)
+	right := l.alloc("linked.right", refType)
+	rest := l.alloc("linked.rest", refType)
+	l.store(left, current, n)
+	leftTail := l.alloc("linked.leftTail", refType)
+	l.store(leftTail, left, n)
+	leftCount := l.alloc("linked.leftCount", types.Typ[types.Int])
+	l.store(leftCount, scalarValue(ir.Const{Value: 1}, types.Typ[types.Int]), n)
+	leftLoop, leftAdvance, leftDone := l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(leftLoop)
+	l.setCurrent(leftLoop)
+	leftNext := l.materialize("linked.leftNext", nextOf(leftTail), n)
+	leftMore := l.pure(resource.RuntimeFunctionAnd, n,
+		l.pure(resource.RuntimeFunctionLess, n, leftCount.slots[0], width.slots[0]),
+		l.pure(resource.RuntimeFunctionGreaterOr, n, leftNext.slots[0], ir.Const{}))
+	_ = l.builder.Branch(leftMore, leftAdvance, leftDone)
+	l.setCurrent(leftAdvance)
+	l.store(leftTail, leftNext, n)
+	l.store(leftCount, scalarValue(l.pure(resource.RuntimeFunctionAdd, n, leftCount.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+	l.jump(leftLoop)
+	l.setCurrent(leftDone)
+	l.store(right, leftNext, n)
+	setNextOf(leftTail, ref(ir.Const{Value: -1}))
+	l.jump(splitRight)
+	l.setCurrent(splitRight)
+	rightTail := l.alloc("linked.rightTail", refType)
+	l.store(rightTail, right, n)
+	rightCount := l.alloc("linked.rightCount", types.Typ[types.Int])
+	l.store(rightCount, scalarValue(ir.Const{Value: 1}, types.Typ[types.Int]), n)
+	rightLoop, rightAdvance, rightDone, noRight := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionGreaterOr, n, right.slots[0], ir.Const{}), rightLoop, noRight)
+	l.setCurrent(rightLoop)
+	rightNext := l.materialize("linked.rightNext", nextOf(rightTail), n)
+	rightMore := l.pure(resource.RuntimeFunctionAnd, n,
+		l.pure(resource.RuntimeFunctionLess, n, rightCount.slots[0], width.slots[0]),
+		l.pure(resource.RuntimeFunctionGreaterOr, n, rightNext.slots[0], ir.Const{}))
+	_ = l.builder.Branch(rightMore, rightAdvance, rightDone)
+	l.setCurrent(rightAdvance)
+	l.store(rightTail, rightNext, n)
+	l.store(rightCount, scalarValue(l.pure(resource.RuntimeFunctionAdd, n, rightCount.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+	l.jump(rightLoop)
+	l.setCurrent(rightDone)
+	l.store(rest, rightNext, n)
+	setNextOf(rightTail, ref(ir.Const{Value: -1}))
+	l.jump(merge)
+	l.setCurrent(noRight)
+	l.store(rest, ref(ir.Const{Value: -1}), n)
+	l.jump(merge)
+	l.setCurrent(merge)
+	leftValid := l.pure(resource.RuntimeFunctionGreaterOr, n, left.slots[0], ir.Const{})
+	rightValid := l.pure(resource.RuntimeFunctionGreaterOr, n, right.slots[0], ir.Const{})
+	chooseRightCheck, chooseLeftCheck := l.newBlock(), l.newBlock()
+	_ = l.builder.Branch(leftValid, chooseRightCheck, appendRight)
+	l.setCurrent(chooseRightCheck)
+	_ = l.builder.Branch(rightValid, chooseLeftCheck, appendLeft)
+	l.setCurrent(chooseLeftCheck)
+	_ = l.builder.Branch(lessThan(right, left), appendRight, appendLeft)
+	l.setCurrent(appendLeft)
+	chosen := l.alloc("linked.chosen", refType)
+	l.store(chosen, left, n)
+	l.store(left, nextOf(left), n)
+	l.jump(appended)
+	l.setCurrent(appendRight)
+	l.store(chosen, right, n)
+	l.store(right, nextOf(right), n)
+	l.jump(appended)
+	l.setCurrent(appended)
+	firstAppend, appendTail := l.newBlock(), l.newBlock()
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionLess, n, tail.slots[0], ir.Const{}), firstAppend, appendTail)
+	l.setCurrent(firstAppend)
+	l.store(newHead, chosen, n)
+	l.jump(appendTail)
+	l.setCurrent(appendTail)
+	setTail, afterTail := l.newBlock(), l.newBlock()
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionGreaterOr, n, tail.slots[0], ir.Const{}), setTail, afterTail)
+	l.setCurrent(setTail)
+	setNextOf(tail, chosen)
+	l.jump(afterTail)
+	l.setCurrent(afterTail)
+	l.store(tail, chosen, n)
+	remaining := l.pure(resource.RuntimeFunctionOr, n,
+		l.pure(resource.RuntimeFunctionGreaterOr, n, left.slots[0], ir.Const{}),
+		l.pure(resource.RuntimeFunctionGreaterOr, n, right.slots[0], ir.Const{}))
+	_ = l.builder.Branch(remaining, merge, nextRun)
+	l.setCurrent(nextRun)
+	l.store(current, rest, n)
+	l.jump(outer)
+	l.setCurrent(finishPass)
+	setNextDone, afterTerminate := l.newBlock(), l.newBlock()
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionGreaterOr, n, tail.slots[0], ir.Const{}), setNextDone, afterTerminate)
+	l.setCurrent(setNextDone)
+	setNextOf(tail, ref(ir.Const{Value: -1}))
+	l.jump(afterTerminate)
+	l.setCurrent(afterTerminate)
+	l.store(result, newHead, n)
+	morePasses := l.pure(resource.RuntimeFunctionGreater, n, merges.slots[0], ir.Const{Value: 1})
+	continuePass := l.newBlock()
+	_ = l.builder.Branch(morePasses, continuePass, done)
+	l.setCurrent(continuePass)
+	l.store(width, scalarValue(l.pure(resource.RuntimeFunctionMultiply, n, width.slots[0], ir.Const{Value: 2}), types.Typ[types.Int]), n)
+	l.jump(pass)
+	l.setCurrent(done)
+	if setPrevious != nil {
+		previous := l.alloc("linked.previous", refType)
+		cursor := l.alloc("linked.previousCursor", refType)
+		l.store(previous, ref(ir.Const{Value: -1}), n)
+		l.store(cursor, result, n)
+		header, body, exit := l.newBlock(), l.newBlock(), l.newBlock()
+		l.jump(header)
+		l.setCurrent(header)
+		_ = l.builder.Branch(l.pure(resource.RuntimeFunctionGreaterOr, n, cursor.slots[0], ir.Const{}), body, exit)
+		l.setCurrent(body)
+		following := l.materialize("linked.following", nextOf(cursor), n)
+		l.inlineStaticCallable(n, setPrevious, []callArgument{{value: view(cursor)}, {value: previous}})
+		l.store(previous, cursor, n)
+		l.store(cursor, following, n)
+		l.jump(header)
+		l.setCurrent(exit)
+	}
+	return result
+}
+
+func (l *lowerer) diagnosticText(n ast.Node, message string) string {
+	position := l.pkg.Fset.Position(n.Pos())
+	file := canonicalSourceFile(l.pkg, position.Filename)
+	text := fmt.Sprintf("%s/%s/%s:%s:%d:%d: %s", l.mode, l.phase, l.builder.Function().Name, file, position.Line, position.Column, message)
+	for i := len(l.inlineCalls) - 1; i >= 0; i-- {
+		call := l.inlineCalls[i]
+		text += fmt.Sprintf("\ninlined from %s:%d:%d (%s)", filepath.ToSlash(call.pos.File), call.pos.Line, call.pos.Column, call.function)
+	}
+	return text
+}
+
 func (l *lowerer) guard(n ast.Node, condition ir.Expr) {
+	l.guardWith(n, condition, "runtime check failed", false)
+}
+
+func (l *lowerer) terminateRuntime(n ast.Node, message string) {
+	l.notifyRuntime(n, message)
+	_ = l.builder.MarkUnreachable()
+}
+
+func (l *lowerer) notifyRuntime(n ast.Node, message string) {
+	if l.checks == RuntimeChecksNotify {
+		log := l.builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Const{}}, ir.Type{Name: "void"}, false, sourcePos(l.pkg, n.Pos()))
+		log.Diagnostic = l.diagnosticText(n, message)
+		pause := l.builder.RuntimeCall(resource.RuntimeFunctionDebugPause, nil, ir.Type{Name: "void"}, false, sourcePos(l.pkg, n.Pos()))
+		_ = l.builder.Eval(log)
+		_ = l.builder.Eval(pause)
+	}
+}
+
+func (l *lowerer) guardWith(n ast.Node, condition ir.Expr, message string, required bool) {
+	if value, ok := condition.(ir.Const); ok {
+		if value.Value != 0 {
+			return
+		}
+		l.errorAt(n, "%s", message)
+		return
+	}
+	if l.checks == RuntimeChecksNone && !required {
+		return
+	}
 	valid, invalid := l.newBlock(), l.newBlock()
 	_ = l.builder.Branch(condition, valid, invalid)
 	l.setCurrent(invalid)
-	_ = l.builder.MarkUnreachable()
+	l.terminateRuntime(n, message)
 	l.setCurrent(valid)
 }
 
@@ -1367,10 +4182,18 @@ func (l *lowerer) containerElement(n ast.Node, c *containerValue, index ir.Expr,
 		var p ir.Place
 		if c.dataLocal != nil {
 			p = l.indexedLocal(*c.dataLocal, index, c.capacity, c.stride, offset+i, n)
+		} else if c.memoryEntity != nil {
+			combined := l.pure(resource.RuntimeFunctionAdd, n,
+				l.pure(resource.RuntimeFunctionMultiply, n, c.memoryEntity, ir.Const{Value: 32}),
+				l.pure(resource.RuntimeFunctionMultiply, n, index, ir.Const{Value: float64(c.stride)}))
+			p = l.memory(c.memoryStorage, combined, 1, c.memoryBase+offset+i, c.memoryRead, c.memoryWrite, n)
 		} else {
 			p = l.memory(c.memoryStorage, index, c.stride, c.memoryBase+offset+i, c.memoryRead, c.memoryWrite, n)
 		}
 		v.places[i], v.slots[i] = p, ir.Load{Place: p}
+	}
+	if binding, exists := l.entityBinding(t); exists {
+		v.entity = &entityReferenceValue{binding: binding}
 	}
 	return v
 }
@@ -1403,6 +4226,233 @@ func (l *lowerer) containerFind(n ast.Node, receiver, needle lowerValue, offset,
 }
 
 func (l *lowerer) resourceCall(n *ast.CallExpr, operation string, args []lowerValue) lowerValue {
+	if strings.HasPrefix(operation, "stream.") {
+		if len(args) == 0 || len(args[0].slots) == 0 {
+			l.errorAt(n, "%s requires a stream receiver", operation)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		receiver := args[0]
+		iteratorKind := ""
+		descending, frame := false, false
+		switch operation {
+		case "stream.itemsFrom", "stream.itemsFromDescending", "stream.itemsSincePreviousFrame":
+			iteratorKind = "items"
+		case "stream.keysFrom", "stream.keysFromDescending", "stream.keysSincePreviousFrame":
+			iteratorKind = "keys"
+		case "stream.valuesFrom", "stream.valuesFromDescending", "stream.valuesSincePreviousFrame":
+			iteratorKind = "values"
+		}
+		if iteratorKind != "" {
+			descending = strings.HasSuffix(operation, "Descending")
+			frame = strings.HasSuffix(operation, "SincePreviousFrame")
+			if (!frame && (len(args) != 2 || len(args[1].slots) != 1)) || (frame && len(args) != 1) {
+				l.errorAt(n, "%s has invalid arguments", operation)
+				return lowerValue{}
+			}
+			start := ir.Expr(ir.Const{})
+			if !frame {
+				start = args[1].slots[0]
+			}
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), callable: &staticCallable{streamIter: &streamIterator{receiver: receiver, kind: iteratorKind, start: start, desc: descending, frame: frame}}}
+		}
+		if len(args) < 2 || len(args[1].slots) != 1 {
+			l.errorAt(n, "%s requires a stream receiver and key", operation)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		key := args[1].slots[0]
+		if operation == "stream.set" {
+			if l.mode != mode.ModePlay {
+				l.errorAt(n, "stream writes are only available in play mode")
+				return lowerValue{}
+			}
+			if len(args) != 3 || len(args[0].slots) != len(args[2].slots) {
+				l.errorAt(n, "stream Set value layout does not match stream layout")
+				return lowerValue{}
+			}
+			for index, id := range receiver.slots {
+				call := l.builder.RuntimeCall(resource.RuntimeFunctionStreamSet, []ir.Expr{id, key, args[2].slots[index]}, ir.Type{Name: "void"}, false, sourcePos(l.pkg, n.Pos()))
+				_ = l.builder.Eval(call)
+			}
+			return lowerValue{}
+		}
+		if l.mode != mode.ModeWatch {
+			l.errorAt(n, "stream queries are only available in watch mode")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		switch operation {
+		case "stream.has":
+			return scalarValue(l.streamHas(n, receiver, key), types.Typ[types.Bool])
+		case "stream.previousKey", "stream.nextKey":
+			return scalarValue(l.streamKey(n, receiver, key, operation == "stream.nextKey"), l.pkg.TypesInfo.TypeOf(n))
+		case "stream.get":
+			return l.streamValueAt(n, receiver, key, l.pkg.TypesInfo.TypeOf(n))
+		case "stream.previousKeyOrDefault", "stream.nextKeyOrDefault":
+			if len(args) != 3 || len(args[2].slots) != 1 {
+				l.errorAt(n, "%s requires key and fallback", operation)
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			next := strings.Contains(operation, "next")
+			candidate := l.streamKey(n, receiver, key, next)
+			comparison := l.pure(resource.RuntimeFunctionLess, n, candidate, key)
+			if next {
+				comparison = l.pure(resource.RuntimeFunctionGreater, n, candidate, key)
+			}
+			return scalarValue(l.pure(resource.RuntimeFunctionIf, n, comparison, candidate, args[2].slots[0]), l.pkg.TypesInfo.TypeOf(n))
+		case "stream.hasPreviousKey", "stream.hasNextKey":
+			next := strings.Contains(operation, "Next")
+			candidate := l.streamKey(n, receiver, key, next)
+			comparison := resource.RuntimeFunctionLess
+			if next {
+				comparison = resource.RuntimeFunctionGreater
+			}
+			return scalarValue(l.pure(comparison, n, candidate, key), types.Typ[types.Bool])
+		case "stream.previousKeyInclusive", "stream.nextKeyInclusive":
+			next := strings.Contains(operation, "next")
+			candidate := l.streamKey(n, receiver, key, next)
+			return scalarValue(l.pure(resource.RuntimeFunctionIf, n, l.streamHas(n, receiver, key), key, candidate), l.pkg.TypesInfo.TypeOf(n))
+		case "stream.getPrevious", "stream.getNext", "stream.getPreviousInclusive", "stream.getNextInclusive":
+			next := strings.Contains(operation, "Next")
+			candidate := l.streamKey(n, receiver, key, next)
+			if strings.HasSuffix(operation, "Inclusive") {
+				candidate = l.pure(resource.RuntimeFunctionIf, n, l.streamHas(n, receiver, key), key, candidate)
+			}
+			return l.streamValueAt(n, receiver, candidate, l.pkg.TypesInfo.TypeOf(n))
+		}
+	}
+	if strings.HasPrefix(operation, "streamData.") {
+		if len(args) == 0 || len(args[0].slots) != 1 {
+			l.errorAt(n, "%s requires a StreamData receiver", operation)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		id := args[0].slots[0]
+		switch operation {
+		case "streamData.set":
+			if l.mode != mode.ModePlay {
+				l.errorAt(n, "StreamData writes are only available in play mode")
+				return lowerValue{}
+			}
+			if len(args) != 2 {
+				l.errorAt(n, "StreamData.Set requires one value")
+				return lowerValue{}
+			}
+			for index, value := range args[1].slots {
+				for _, key := range []float64{float64(index) - 0.5, float64(index), float64(index) + 0.5} {
+					stored := value
+					if key != float64(index) {
+						stored = ir.Const{}
+					}
+					_ = l.builder.Eval(l.builder.RuntimeCall(resource.RuntimeFunctionStreamSet, []ir.Expr{id, ir.Const{Value: key}, stored}, ir.Type{Name: "void"}, false, sourcePos(l.pkg, n.Pos())))
+				}
+			}
+			return lowerValue{}
+		case "streamData.get":
+			if l.mode != mode.ModeWatch {
+				l.errorAt(n, "StreamData reads are only available in watch mode")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			result := zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			for index := range result.slots {
+				result.slots[index] = l.builder.RuntimeCall(resource.RuntimeFunctionStreamGetValue, []ir.Expr{id, ir.Const{Value: float64(index)}}, ir.Type{Name: "stream.data", Slots: 1}, false, sourcePos(l.pkg, n.Pos()))
+			}
+			return result
+		}
+	}
+	if operation == "entityRef.as" {
+		if len(args) != 1 || len(args[0].slots) != 1 {
+			l.errorAt(n, "EntityRefAs requires a one-slot entity reference")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{args[0].slots[0]}}
+	}
+	if operation == "entityRef.matches" {
+		if len(args) != 2 || len(args[0].slots) != 1 || len(args[1].slots) != 1 {
+			l.errorAt(n, "EntityRefMatches requires an entity reference and strict flag")
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		target, ok := l.callTypeArgument(n, 0)
+		binding, exists := l.entityBinding(target)
+		anyTarget := typeID(target) == rootID("AnyArchetype")
+		if !ok || (!exists && !anyTarget) {
+			l.errorAt(n, "EntityRefMatches target %s is not an archetype declared in %s mode", target, l.mode)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		stride := 3
+		if l.mode == mode.ModePreview {
+			stride = 2
+		}
+		place := l.memory("EntityInfo", args[0].slots[0], stride, 1, true, false, n)
+		actual := ir.Expr(ir.Load{Place: place})
+		var strict ir.Expr = ir.Const{}
+		if exists {
+			strict = l.pure(resource.RuntimeFunctionEqual, n, actual, ir.Const{Value: float64(binding.id)})
+		}
+		var derived ir.Expr = ir.Const{}
+		candidates := make([]archetypeBinding, 0, len(l.archetypes))
+		for _, candidate := range l.archetypes {
+			candidates = append(candidates, candidate)
+		}
+		sort.Slice(candidates, func(i, j int) bool { return candidates[i].id < candidates[j].id })
+		for _, candidate := range candidates {
+			if anyTarget {
+				derived = l.pure(resource.RuntimeFunctionOr, n, derived, l.pure(resource.RuntimeFunctionEqual, n, actual, ir.Const{Value: float64(candidate.id)}))
+				continue
+			}
+			for _, member := range candidate.declaration.MRO {
+				if member == binding.declaration {
+					derived = l.pure(resource.RuntimeFunctionOr, n, derived, l.pure(resource.RuntimeFunctionEqual, n, actual, ir.Const{Value: float64(candidate.id)}))
+					break
+				}
+			}
+		}
+		if anyTarget {
+			strict = derived
+		}
+		result := l.pure(resource.RuntimeFunctionIf, n, args[1].slots[0], strict, derived)
+		return lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{result}}
+	}
+	if operation == "entityRef.get" || operation == "entityRef.getUnchecked" || operation == "entityRef.getAs" {
+		if len(args) != 1 || len(args[0].slots) != 1 {
+			l.errorAt(n, "%s requires a one-slot entity reference", operation)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		target := l.resolveType(l.pkg.TypesInfo.TypeOf(n))
+		if pointer, ok := types.Unalias(target).(*types.Pointer); ok {
+			target = pointer.Elem()
+		}
+		binding, exists := l.entityBinding(target)
+		if !exists {
+			l.errorAt(n, "%s target %s is not an archetype declared in %s mode", operation, target, l.mode)
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		if operation != "entityRef.getUnchecked" {
+			stride := 3
+			if l.mode == mode.ModePreview {
+				stride = 2
+			}
+			place := l.memory("EntityInfo", args[0].slots[0], stride, 1, true, false, n)
+			actual := ir.Expr(ir.Load{Place: place})
+			var matches ir.Expr = ir.Const{}
+			candidates := make([]archetypeBinding, 0, len(l.archetypes))
+			for _, candidate := range l.archetypes {
+				candidates = append(candidates, candidate)
+			}
+			sort.Slice(candidates, func(i, j int) bool { return candidates[i].id < candidates[j].id })
+			for _, candidate := range candidates {
+				for _, member := range candidate.declaration.MRO {
+					if member == binding.declaration {
+						matches = l.pure(resource.RuntimeFunctionOr, n, matches, l.pure(resource.RuntimeFunctionEqual, n, actual, ir.Const{Value: float64(candidate.id)}))
+						break
+					}
+				}
+			}
+			valid := l.pure(resource.RuntimeFunctionAnd, n, l.pure(resource.RuntimeFunctionGreaterOr, n, args[0].slots[0], ir.Const{}), matches)
+			l.guardWith(n, valid, "EntityRef target does not match requested archetype", false)
+		}
+		return lowerValue{
+			type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{args[0].slots[0]},
+			entity: &entityReferenceValue{binding: binding},
+		}
+	}
 	if operation == "archetype.spawn" {
 		if len(args) != 1 {
 			l.errorAt(n, "Spawn requires one archetype value")
@@ -1888,17 +4938,353 @@ func (l *lowerer) aggregateCall(n *ast.CallExpr, operation string, args []lowerV
 }
 
 func (l *lowerer) inlineStaticCallable(call *ast.CallExpr, callable *staticCallable, args []callArgument) lowerValue {
+	if len(callable.substitutions) != 0 {
+		l.typeSubstitutions = append(l.typeSubstitutions, callable.substitutions)
+		defer func() { l.typeSubstitutions = l.typeSubstitutions[:len(l.typeSubstitutions)-1] }()
+	}
+	if callable.intrinsic != nil {
+		return callable.intrinsic(call, args)
+	}
+	if callable.tag.type_ != nil {
+		return l.inlineCallableAlternatives(call, callable, args)
+	}
+	if callable.yield != nil {
+		return l.inlineRangeYield(call, callable.yield, args)
+	}
+	if callable.iterator != nil {
+		return l.inlineContainerIterator(call, callable.iterator, args)
+	}
+	if callable.streamIter != nil {
+		return l.inlineStreamIterator(call, callable.streamIter, args)
+	}
+	if callable.interfaceMethod != nil {
+		return l.inlineInterfaceMethodExpression(call, callable.interfaceMethod, args)
+	}
 	if callable.literal != nil {
 		return l.inlineLiteralArguments(call, callable, args)
 	}
 	if callable.function != nil {
-		return l.inlineCallArguments(call, callable.function, args)
+		if callable.receiver != nil {
+			args = append([]callArgument{*callable.receiver}, args...)
+		}
+		return l.inlineCallArgumentsAs(call, callable.function, args, callable.resultType)
 	}
 	l.errorAt(call, "static callable has no function body")
 	return zeroValue(l.pkg.TypesInfo.TypeOf(call))
 }
 
+func (l *lowerer) inlineInterfaceMethodExpression(call *ast.CallExpr, method *types.Func, args []callArgument) lowerValue {
+	if len(args) == 0 || args[0].callable != nil {
+		l.errorAt(call, "interface method expression %s requires an explicit receiver", method.FullName())
+		return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+	}
+	receiver := args[0].value
+	remaining := args[1:]
+	if receiver.interface_ != nil {
+		return l.inlineInterfaceMethodAlternatives(call, method, receiver, remaining)
+	}
+	if receiver.type_ == nil || isInterfaceType(receiver.type_) {
+		l.errorAt(call, "interface method expression %s requires a finite concrete receiver", method.FullName())
+		return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+	}
+	object, _, _ := types.LookupFieldOrMethod(receiver.type_, true, method.Pkg(), method.Name())
+	concrete, _ := object.(*types.Func)
+	if concrete == nil {
+		l.errorAt(call, "concrete type %s does not implement interface method %s", receiver.type_, method.Name())
+		return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+	}
+	arguments := append([]callArgument{{value: receiver}}, remaining...)
+	return l.inlineCallArguments(call, concrete, arguments)
+}
+
+func (l *lowerer) extendContainerCall(n *ast.CallExpr, fn *types.Func) lowerValue {
+	if len(n.Args) != 1 {
+		l.errorAt(n, "VarArray.Extend requires one sequence")
+		return lowerValue{}
+	}
+	selector, ok := n.Fun.(*ast.SelectorExpr)
+	if !ok {
+		l.errorAt(n, "VarArray.Extend requires a method receiver")
+		return lowerValue{}
+	}
+	receiver := l.callReceiver(selector, fn)
+	sequence, ok := l.staticCallable(n.Args[0])
+	if !ok {
+		l.errorAt(n.Args[0], "VarArray.Extend sequence must be statically callable")
+		return lowerValue{}
+	}
+	return l.dispatchContainerValue(n, receiver, func(alternative lowerValue) lowerValue {
+		return l.extendContainerValue(n, alternative, sequence)
+	})
+}
+
+func (l *lowerer) extendContainerValue(n *ast.CallExpr, receiver lowerValue, sequence *staticCallable) lowerValue {
+	if receiver.container == nil || receiver.container.kind != "VarArray" {
+		l.errorAt(n, "VarArray.Extend receiver has no container backing")
+		return lowerValue{}
+	}
+	c := receiver.container
+	bufferSize := l.allocZeroed("container.extend.size", types.Typ[types.Int], n)
+	backing := l.builder.NewLocal("container.extend.data", ir.Type{Name: "container.extend.backing", Slots: c.capacity * c.stride})
+	first, _ := ir.Places(backing)[0].(ir.LocalPlace)
+	buffer := lowerValue{
+		type_:     receiver.type_,
+		slots:     append(append([]ir.Expr(nil), bufferSize.slots...), backing.Slots...),
+		places:    append(append([]ir.Place(nil), bufferSize.places...), ir.Places(backing)...),
+		container: &containerValue{kind: "VarArray", capacity: c.capacity, stride: c.stride, element: c.element, dataLocal: &first},
+	}
+	yield := &staticCallable{intrinsic: func(call *ast.CallExpr, arguments []callArgument) lowerValue {
+		if len(arguments) != 1 || arguments[0].callable != nil {
+			l.errorAt(call, "VarArray.Extend sequence must yield one value")
+			return scalarValue(ir.Const{}, types.Typ[types.Bool])
+		}
+		condition := l.pure(resource.RuntimeFunctionLess, call, buffer.slots[0], ir.Const{Value: float64(c.capacity)})
+		l.guardWith(call, condition, "VarArray.Extend sequence exceeds receiver capacity", true)
+		l.store(l.containerElement(call, buffer.container, buffer.slots[0], 0, c.stride, c.element), arguments[0].value, call)
+		l.store(l.containerSizeValue(buffer), scalarValue(l.pure(resource.RuntimeFunctionAdd, call, buffer.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), call)
+		return scalarValue(ir.Const{Value: 1}, types.Typ[types.Bool])
+	}}
+	l.inlineStaticCallable(n, sequence, []callArgument{{callable: yield}})
+	originalSize := l.materialize("container.extend.originalSize", l.containerSizeValue(receiver), n)
+	total := l.pure(resource.RuntimeFunctionAdd, n, originalSize.slots[0], buffer.slots[0])
+	l.guardWith(n, l.pure(resource.RuntimeFunctionLessOr, n, total, ir.Const{Value: float64(c.capacity)}), "VarArray.Extend exceeds receiver capacity", true)
+	index := l.allocZeroed("container.extend.index", types.Typ[types.Int], n)
+	header, body, exit := l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(header)
+	l.setCurrent(header)
+	_ = l.builder.Branch(l.pure(resource.RuntimeFunctionLess, n, index.slots[0], buffer.slots[0]), body, exit)
+	l.setCurrent(body)
+	destination := l.pure(resource.RuntimeFunctionAdd, n, originalSize.slots[0], index.slots[0])
+	value := l.containerElement(n, buffer.container, index.slots[0], 0, c.stride, c.element)
+	l.store(l.containerElement(n, c, destination, 0, c.stride, c.element), value, n)
+	l.store(index, scalarValue(l.pure(resource.RuntimeFunctionAdd, n, index.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), n)
+	l.jump(header)
+	l.setCurrent(exit)
+	l.store(l.containerSizeValue(receiver), scalarValue(total, types.Typ[types.Int]), n)
+	return lowerValue{}
+}
+
+func (l *lowerer) streamHas(node ast.Node, receiver lowerValue, key ir.Expr) ir.Expr {
+	return l.builder.RuntimeCall(resource.RuntimeFunctionStreamHas, []ir.Expr{receiver.slots[0], key}, irTypeOf(types.Typ[types.Bool]), false, sourcePos(l.pkg, node.Pos()))
+}
+
+func (l *lowerer) streamKey(node ast.Node, receiver lowerValue, key ir.Expr, next bool) ir.Expr {
+	function := resource.RuntimeFunctionStreamGetPreviousKey
+	if next {
+		function = resource.RuntimeFunctionStreamGetNextKey
+	}
+	return l.builder.RuntimeCall(function, []ir.Expr{receiver.slots[0], key}, irTypeOf(types.Typ[types.Float64]), false, sourcePos(l.pkg, node.Pos()))
+}
+
+func (l *lowerer) streamValueAt(node ast.Node, receiver lowerValue, key ir.Expr, resultType types.Type) lowerValue {
+	result := lowerValue{type_: resultType, slots: make([]ir.Expr, len(receiver.slots))}
+	for index, id := range receiver.slots {
+		result.slots[index] = l.builder.RuntimeCall(resource.RuntimeFunctionStreamGetValue, []ir.Expr{id, key}, ir.Type{Name: "stream.value", Slots: 1}, false, sourcePos(l.pkg, node.Pos()))
+	}
+	return result
+}
+
+func (l *lowerer) inlineStreamIterator(call *ast.CallExpr, iterator *streamIterator, args []callArgument) lowerValue {
+	if len(args) != 1 || args[0].callable == nil {
+		l.errorAt(call, "stream iterator requires one yield callable")
+		return lowerValue{}
+	}
+	if l.mode != mode.ModeWatch {
+		l.errorAt(call, "stream iterators are only available in watch mode")
+		return lowerValue{}
+	}
+	start := iterator.start
+	var end ir.Expr
+	if iterator.frame {
+		now := ir.Load{Place: l.memory("RuntimeUpdate", ir.Const{}, 0, 0, true, false, call)}
+		delta := ir.Load{Place: l.memory("RuntimeUpdate", ir.Const{}, 0, 1, true, false, call)}
+		start = l.pure(resource.RuntimeFunctionSubtract, call, now, delta)
+		end = now
+	}
+	current := l.alloc("stream.iterator.key", types.Typ[types.Float64])
+	first := l.streamKey(call, iterator.receiver, start, !iterator.desc)
+	if !iterator.frame {
+		first = l.pure(resource.RuntimeFunctionIf, call, l.streamHas(call, iterator.receiver, start), start, first)
+	}
+	l.store(current, scalarValue(first, types.Typ[types.Float64]), call)
+	header, body, advance, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(header)
+	l.setCurrent(header)
+	condition := l.streamHas(call, iterator.receiver, current.slots[0])
+	if iterator.frame {
+		condition = l.pure(resource.RuntimeFunctionAnd, call, condition, l.pure(resource.RuntimeFunctionLessOr, call, current.slots[0], end))
+	}
+	_ = l.builder.Branch(condition, body, exit)
+	l.setCurrent(body)
+	streamNamed, _ := namedType(iterator.receiver.type_)
+	valueType := streamNamed.TypeArgs().At(0)
+	value := l.streamValueAt(call, iterator.receiver, current.slots[0], valueType)
+	var yielded []callArgument
+	switch iterator.kind {
+	case "items":
+		yielded = []callArgument{{value: scalarValue(current.slots[0], types.Typ[types.Float64])}, {value: value}}
+	case "keys":
+		yielded = []callArgument{{value: scalarValue(current.slots[0], types.Typ[types.Float64])}}
+	case "values":
+		yielded = []callArgument{{value: value}}
+	}
+	keepGoing := l.inlineStaticCallable(call, args[0].callable, yielded)
+	if len(keepGoing.slots) != 1 {
+		l.errorAt(call, "stream iterator yield must return bool")
+		l.jump(exit)
+		l.setCurrent(exit)
+		return lowerValue{}
+	}
+	_ = l.builder.Branch(keepGoing.slots[0], advance, exit)
+	l.setCurrent(advance)
+	next := l.streamKey(call, iterator.receiver, current.slots[0], !iterator.desc)
+	progress := l.pure(resource.RuntimeFunctionGreater, call, next, current.slots[0])
+	if iterator.desc {
+		progress = l.pure(resource.RuntimeFunctionLess, call, next, current.slots[0])
+	}
+	progressBlock := l.newBlock()
+	_ = l.builder.Branch(progress, progressBlock, exit)
+	l.setCurrent(progressBlock)
+	l.store(current, scalarValue(next, types.Typ[types.Float64]), call)
+	l.jump(header)
+	l.setCurrent(exit)
+	return lowerValue{}
+}
+
+func (l *lowerer) inlineContainerIterator(call *ast.CallExpr, iterator *containerIterator, args []callArgument) lowerValue {
+	if len(args) != 1 || args[0].callable == nil {
+		l.errorAt(call, "container iterator requires one yield callable")
+		return lowerValue{}
+	}
+	index := l.allocZeroed("container.iterator.index", types.Typ[types.Int], call)
+	if iterator.desc {
+		l.store(index, scalarValue(l.pure(resource.RuntimeFunctionSubtract, call, iterator.receiver.slots[0], ir.Const{Value: 1}), types.Typ[types.Int]), call)
+	}
+	header, body, exit := l.newBlock(), l.newBlock(), l.newBlock()
+	l.jump(header)
+	l.setCurrent(header)
+	condition := l.pure(resource.RuntimeFunctionLess, call, index.slots[0], iterator.receiver.slots[0])
+	if iterator.desc {
+		condition = l.pure(resource.RuntimeFunctionGreaterOr, call, index.slots[0], ir.Const{})
+	}
+	_ = l.builder.Branch(condition, body, exit)
+	l.setCurrent(body)
+	values := make([]callArgument, 0, len(iterator.offsets)+1)
+	if iterator.index {
+		values = append(values, callArgument{value: scalarValue(index.slots[0], types.Typ[types.Int])})
+	}
+	for i, offset := range iterator.offsets {
+		size := l.runtimeTypeOf(types.NewArray(iterator.types[i], 1)).Slots
+		values = append(values, callArgument{value: l.containerElement(call, iterator.receiver.container, index.slots[0], offset, size, iterator.types[i])})
+	}
+	keepGoing := l.inlineStaticCallable(call, args[0].callable, values)
+	next, stop := l.newBlock(), l.newBlock()
+	if len(keepGoing.slots) != 1 {
+		l.errorAt(call, "container iterator yield must return bool")
+		l.jump(exit)
+		l.setCurrent(exit)
+		return lowerValue{}
+	}
+	_ = l.builder.Branch(keepGoing.slots[0], next, stop)
+	l.setCurrent(next)
+	advance := resource.RuntimeFunctionAdd
+	if iterator.desc {
+		advance = resource.RuntimeFunctionSubtract
+	}
+	l.store(index, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{l.pure(advance, call, index.slots[0], ir.Const{Value: 1})}}, call)
+	l.jump(header)
+	l.setCurrent(stop)
+	l.jump(exit)
+	l.setCurrent(exit)
+	return lowerValue{}
+}
+
+func (l *lowerer) inlineCallableAlternatives(call *ast.CallExpr, callable *staticCallable, args []callArgument) lowerValue {
+	resultType := l.pkg.TypesInfo.TypeOf(call)
+	if isFunctionType(resultType) || isContainerType(resultType) || isPointerType(resultType) {
+		l.errorAt(call, "runtime callable selection cannot return compile-time-only values")
+		return zeroValue(resultType)
+	}
+	var result lowerValue
+	if resultType != nil {
+		result = l.allocZeroed("callable.result", resultType, call)
+	}
+	merge := l.newBlock()
+	invalid := l.newBlock()
+	blocks := make([]*ir.Block, len(callable.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for i := range blocks {
+		blocks[i] = l.newBlock()
+		cases[i] = ir.SwitchCase{Value: float64(i), Target: blocks[i].ID}
+	}
+	_ = l.builder.Switch(callable.tag.slots[0], cases, invalid)
+	for i, alternative := range callable.alternatives {
+		l.setCurrent(blocks[i])
+		value := l.inlineStaticCallable(call, alternative, args)
+		if resultType != nil {
+			l.store(result, value, call)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return result
+}
+
+func (l *lowerer) inlineRangeYield(call *ast.CallExpr, yield *rangeYield, args []callArgument) lowerValue {
+	statement := yield.statement
+	targets := []ast.Expr{}
+	if statement.Key != nil {
+		targets = append(targets, statement.Key)
+	}
+	if statement.Value != nil {
+		targets = append(targets, statement.Value)
+	}
+	if len(args) != len(targets) {
+		l.errorAt(call, "range-over-func yielded %d values; expected %d", len(args), len(targets))
+		return lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{ir.Const{}}}
+	}
+	if len(yield.active.slots) == 1 {
+		l.guardWith(call, yield.active.slots[0], "range-over-func producer called yield after it returned false", false)
+	}
+	for i, target := range targets {
+		if args[i].callable != nil {
+			l.errorAt(call, "range-over-func cannot yield callable values")
+			continue
+		}
+		l.assignRangeValue(target, statement.Tok, args[i].value)
+	}
+	result := l.alloc("range.yield", types.Typ[types.Bool])
+	continued, broken, merge := l.newBlock(), l.newBlock(), l.newBlock()
+	restoreLabel := l.pushLabel(yield.label, broken, continued)
+	l.breaks = append(l.breaks, broken)
+	l.continues = append(l.continues, continued)
+	l.returnFrames = append(l.returnFrames, returnRedirect{owner: yield.owner, depth: len(l.frames)})
+	l.dynamic(func() { l.stmts(statement.Body.List) })
+	l.returnFrames = l.returnFrames[:len(l.returnFrames)-1]
+	l.jump(continued)
+	l.breaks = l.breaks[:len(l.breaks)-1]
+	l.continues = l.continues[:len(l.continues)-1]
+	restoreLabel()
+	l.setCurrent(continued)
+	l.store(result, lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{ir.Const{Value: 1}}}, call)
+	l.jump(merge)
+	l.setCurrent(broken)
+	if len(yield.active.places) == 1 {
+		l.store(yield.active, lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{ir.Const{}}}, call)
+	}
+	l.store(result, lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{ir.Const{}}}, call)
+	l.jump(merge)
+	l.setCurrent(merge)
+	return result
+}
+
 func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCallable, args []callArgument) lowerValue {
+	if len(l.inlineCalls) >= 256 {
+		l.errorAt(call, "closure inline depth exceeds 256 calls")
+		return zeroValue(l.pkg.TypesInfo.TypeOf(call))
+	}
 	literal := callable.literal
 	oldPkg := l.pkg
 	if callable.pkg != nil {
@@ -1910,21 +5296,49 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 		l.errorAt(call, "immediate closure has no static signature")
 		return lowerValue{}
 	}
-	if l.callStack[literal] {
-		l.errorAt(call, "recursive static closure call is not supported")
-		return zeroValue(oldPkg.TypesInfo.TypeOf(call))
+	active := l.callStack[literal]
+	var recursionKey recursiveCallKey
+	if active {
+		fingerprint, static := staticCallFingerprint(args)
+		if !static {
+			l.errorAt(call, "recursive static closure call requires compile-time constant arguments")
+			return zeroValue(oldPkg.TypesInfo.TypeOf(call))
+		}
+		recursionKey = recursiveCallKey{target: literal, args: fingerprint}
+		if l.callStack[recursionKey] {
+			l.errorAt(call, "recursive static closure call repeats compile-time state")
+			return zeroValue(oldPkg.TypesInfo.TypeOf(call))
+		}
+		l.callStack[recursionKey] = true
 	}
 	l.callStack[literal] = true
-	defer delete(l.callStack, literal)
-	frame := &lowerFrame{vars: map[types.Object]lowerValue{}, callables: map[types.Object]*staticCallable{}, results: map[types.Object]bool{}, returnBlock: l.newBlock()}
-	resultType := oldPkg.TypesInfo.TypeOf(call)
-	if isFunctionType(resultType) {
-		l.errorAt(call, "function values cannot be returned from callbacks or helpers")
-		return lowerValue{}
+	defer func() {
+		if active {
+			delete(l.callStack, recursionKey)
+		} else {
+			delete(l.callStack, literal)
+		}
+	}()
+	frame := &lowerFrame{
+		vars: cloneValueBindings(callable.captures), callables: cloneCallableBindings(callable.callables),
+		results: map[types.Object]bool{}, returnBlock: l.newBlock(),
 	}
-	if resultType != nil {
-		if isContainerType(resultType) {
-			frame.result = lowerValue{type_: resultType}
+	resultType := callable.resultType
+	if resultType == nil {
+		resultType = oldPkg.TypesInfo.TypeOf(call)
+	}
+	if isFunctionType(resultType) {
+		frame.result = lowerValue{type_: resultType}
+	} else if isInterfaceType(resultType) {
+		frame.result = lowerValue{type_: resultType}
+		frame.interfaceResult = true
+	} else if resultType != nil {
+		if binding, entityView := l.entityBinding(resultType); entityView {
+			frame.result = l.newEntityViewLocal("closure.entity.result", resultType, binding)
+		} else if isPointerType(resultType) {
+			frame.result = l.newPointerCell("closure.pointer.result", resultType, call)
+		} else if isContainerType(resultType) {
+			frame.result = l.newContainerCell("closure.container.result", resultType, call)
 		} else {
 			frame.result = l.allocZeroed("closure.result", resultType, call)
 		}
@@ -1946,16 +5360,18 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 		for _, name := range field.Names {
 			if sig.Variadic() && fieldIndex == len(literal.Type.Params.List)-1 {
 				obj, _ := l.pkg.TypesInfo.Defs[name].(*types.Var)
-				slice, _ := types.Unalias(obj.Type()).Underlying().(*types.Slice)
+				parameterType := l.resolveType(obj.Type())
+				slice, _ := types.Unalias(parameterType).Underlying().(*types.Slice)
 				elements := make([]lowerValue, len(args)-arg)
+				callables := make([]*staticCallable, len(elements))
 				for i := range elements {
 					if args[arg+i].callable != nil {
-						l.errorAt(call, "variadic function values are not supported")
-						continue
+						callables[i] = args[arg+i].callable
+					} else {
+						elements[i] = args[arg+i].value
 					}
-					elements[i] = args[arg+i].value
 				}
-				l.bind(obj, lowerValue{type_: obj.Type(), variadic: &variadicValue{element: slice.Elem(), elements: elements}})
+				l.bind(obj, lowerValue{type_: parameterType, variadic: &variadicValue{element: slice.Elem(), elements: elements, callables: callables}})
 				arg = len(args)
 				parameterIndex++
 				continue
@@ -1982,18 +5398,25 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 	if literal.Type.Results != nil && frame.result.slots != nil {
 		offset := 0
 		for _, field := range literal.Type.Results.List {
-			size := irTypeOf(l.pkg.TypesInfo.TypeOf(field.Type)).Slots
+			fieldType := l.resolveType(l.pkg.TypesInfo.TypeOf(field.Type))
+			size := l.runtimeTypeOf(fieldType).Slots
+			if frame.result.entity != nil {
+				size = 1
+			}
 			if len(field.Names) == 0 {
 				offset += size
 				continue
 			}
 			for _, name := range field.Names {
 				if obj := l.pkg.TypesInfo.Defs[name]; obj != nil {
+					objectType := l.resolveType(obj.Type())
 					frame.results[obj] = true
-					if isContainerType(obj.Type()) {
-						frame.vars[obj] = lowerValue{type_: obj.Type()}
+					if frame.result.entity != nil {
+						frame.vars[obj] = lowerValue{type_: objectType, slots: frame.result.slots[offset : offset+1], places: frame.result.places[offset : offset+1], entity: frame.result.entity}
+					} else if isContainerType(objectType) || isPointerType(objectType) {
+						frame.vars[obj] = lowerValue{type_: objectType}
 					} else {
-						frame.vars[obj] = lowerValue{type_: obj.Type(), slots: frame.result.slots[offset : offset+size], places: frame.result.places[offset : offset+size]}
+						frame.vars[obj] = lowerValue{type_: objectType, slots: frame.result.slots[offset : offset+size], places: frame.result.places[offset : offset+size]}
 					}
 				}
 				offset += size
@@ -2010,6 +5433,9 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 	l.stmts(literal.Body.List)
 	l.jump(frame.returnBlock)
 	l.setCurrent(frame.returnBlock)
+	if isFunctionType(resultType) {
+		return lowerValue{type_: resultType, callable: frame.callableResult}
+	}
 	return frame.result
 }
 
@@ -2021,14 +5447,23 @@ func (l *lowerer) runtimeCall(n *ast.CallExpr, op resource.RuntimeFunction, pure
 	for _, arg := range args {
 		flat = append(flat, arg.slots...)
 	}
-	t := l.pkg.TypesInfo.TypeOf(n)
-	resultType := irTypeOf(t)
+	if l.streamSize > 1 && (op == resource.RuntimeFunctionStreamSet || op == resource.RuntimeFunctionStreamHas || op == resource.RuntimeFunctionStreamGetValue || op == resource.RuntimeFunctionStreamGetPreviousKey || op == resource.RuntimeFunctionStreamGetNextKey) {
+		if len(flat) == 0 {
+			l.errorAt(n, "low-level stream API requires a stream ID")
+		} else if id, ok := flat[0].(ir.Const); !ok {
+			l.errorAt(n, "dynamic low-level stream ID may overlap typed stream IDs 1..%d", l.streamSize-1)
+		} else if id.Value >= 1 && id.Value < float64(l.streamSize) {
+			l.errorAt(n, "low-level stream ID %v overlaps typed stream IDs 1..%d", id.Value, l.streamSize-1)
+		}
+	}
+	t := l.resolveType(l.pkg.TypesInfo.TypeOf(n))
+	resultType := l.runtimeTypeOf(t)
 	call := l.builder.RuntimeCall(op, flat, resultType, pure, sourcePos(l.pkg, n.Pos()))
 	if t == nil || resultType.Slots == 0 {
 		_ = l.builder.Eval(call)
 		return lowerValue{}
 	}
-	out := zeroValue(t)
+	out := l.zeroRuntimeValue(t)
 	if len(out.slots) != 1 {
 		l.errorAt(n, "runtime call %s cannot directly return a multi-slot value", op)
 		return out
@@ -2053,9 +5488,28 @@ func (l *lowerer) inlineCall(n *ast.CallExpr, fn *types.Func, args []lowerValue)
 }
 
 func (l *lowerer) inlineCallArguments(n *ast.CallExpr, fn *types.Func, args []callArgument) lowerValue {
-	if l.callStack[fn] {
-		l.errorAt(n, "recursive helper call to %s is not supported", fn.FullName())
+	return l.inlineCallArgumentsAs(n, fn, args, nil)
+}
+
+func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []callArgument, overrideResult types.Type) lowerValue {
+	if len(l.inlineCalls) >= 256 {
+		l.errorAt(n, "helper inline depth exceeds 256 calls")
 		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	active := l.callStack[fn]
+	var recursionKey recursiveCallKey
+	if active {
+		fingerprint, static := staticCallFingerprint(args)
+		if !static {
+			l.errorAt(n, "recursive helper call to %s requires compile-time constant arguments", fn.FullName())
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		recursionKey = recursiveCallKey{target: fn, args: fingerprint}
+		if l.callStack[recursionKey] {
+			l.errorAt(n, "recursive helper call to %s repeats compile-time state", fn.FullName())
+			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+		}
+		l.callStack[recursionKey] = true
 	}
 	pkg := l.packages[fn.Pkg()]
 	if pkg == nil {
@@ -2067,12 +5521,12 @@ func (l *lowerer) inlineCallArguments(n *ast.CallExpr, fn *types.Func, args []ca
 		l.errorAt(n, "function %s has no source body", fn.FullName())
 		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 	}
-	resultType := l.pkg.TypesInfo.TypeOf(n)
-	if isFunctionType(resultType) {
-		l.errorAt(n, "function values cannot be returned from callbacks or helpers")
-		return lowerValue{}
+	resultType := overrideResult
+	if resultType == nil {
+		resultType = l.pkg.TypesInfo.TypeOf(n)
 	}
 	sig := fn.Type().(*types.Signature)
+	sourceSig := fn.Origin().Type().(*types.Signature)
 	expectedArgs := sig.Params().Len()
 	if sig.Recv() != nil {
 		expectedArgs++
@@ -2089,13 +5543,30 @@ func (l *lowerer) inlineCallArguments(n *ast.CallExpr, fn *types.Func, args []ca
 	if callSig == nil {
 		callSig = sig
 	}
+	substitutions := l.inferCallTypeSubstitutions(sourceSig, callSig, args)
+	if instance, exists := callableInstance(l.pkg, n.Fun); exists {
+		for index := 0; index < sourceSig.TypeParams().Len() && index < instance.TypeArgs.Len(); index++ {
+			substitutions[sourceSig.TypeParams().At(index)] = l.resolveType(instance.TypeArgs.At(index))
+		}
+	}
+	l.typeSubstitutions = append(l.typeSubstitutions, substitutions)
+	defer func() { l.typeSubstitutions = l.typeSubstitutions[:len(l.typeSubstitutions)-1] }()
 	oldPkg := l.pkg
 	l.pkg = pkg
 	defer func() { l.pkg = oldPkg }()
 	frame := &lowerFrame{vars: map[types.Object]lowerValue{}, callables: map[types.Object]*staticCallable{}, results: map[types.Object]bool{}}
-	if resultType != nil {
-		if isContainerType(resultType) {
-			frame.result = lowerValue{type_: resultType}
+	if isFunctionType(resultType) {
+		frame.result = lowerValue{type_: resultType}
+	} else if isInterfaceType(resultType) {
+		frame.result = lowerValue{type_: resultType}
+		frame.interfaceResult = true
+	} else if resultType != nil {
+		if binding, entityView := l.entityBinding(resultType); entityView {
+			frame.result = l.newEntityViewLocal(fn.Name()+".entity.result", resultType, binding)
+		} else if isPointerType(resultType) {
+			frame.result = l.newPointerCell(fn.Name()+".pointer.result", resultType, n)
+		} else if isContainerType(resultType) {
+			frame.result = l.newContainerCell(fn.Name()+".container.result", resultType, n)
 		} else {
 			frame.result = l.allocZeroed(fn.Name()+".result", resultType, n)
 		}
@@ -2106,27 +5577,39 @@ func (l *lowerer) inlineCallArguments(n *ast.CallExpr, fn *types.Func, args []ca
 	l.inlineCalls = append(l.inlineCalls, inlineCallSite{function: fn.FullName(), pos: sourcePos(oldPkg, n.Pos())})
 	defer func() {
 		l.inlineCalls = l.inlineCalls[:len(l.inlineCalls)-1]
-		delete(l.callStack, fn)
+		if active {
+			delete(l.callStack, recursionKey)
+		} else {
+			delete(l.callStack, fn)
+		}
 		l.frames = l.frames[:len(l.frames)-1]
 	}()
 	arg := 0
-	if sig.Recv() != nil {
-		frame.vars[sig.Recv()] = args[arg].value
+	if sourceSig.Recv() != nil {
+		if args[arg].value.entity != nil {
+			l.bindParameter(sourceSig.Recv(), args[arg].value, sourceSig.Recv().Name(), n)
+		} else {
+			receiver := args[arg].value
+			receiver.type_ = l.resolveType(sourceSig.Recv().Type())
+			frame.vars[sourceSig.Recv()] = receiver
+		}
 		arg++
 	}
-	for i := 0; i < sig.Params().Len(); i++ {
-		parameter := sig.Params().At(i)
-		if sig.Variadic() && i == sig.Params().Len()-1 {
-			slice, _ := types.Unalias(parameter.Type()).Underlying().(*types.Slice)
+	for i := 0; i < sourceSig.Params().Len(); i++ {
+		parameter := sourceSig.Params().At(i)
+		if sourceSig.Variadic() && i == sourceSig.Params().Len()-1 {
+			parameterType := l.resolveType(parameter.Type())
+			slice, _ := types.Unalias(parameterType).Underlying().(*types.Slice)
 			elements := make([]lowerValue, len(args)-arg)
+			callables := make([]*staticCallable, len(elements))
 			for j := range elements {
 				if args[arg+j].callable != nil {
-					l.errorAt(n, "variadic function values are not supported")
-					continue
+					callables[j] = args[arg+j].callable
+				} else {
+					elements[j] = args[arg+j].value
 				}
-				elements[j] = args[arg+j].value
 			}
-			l.bind(parameter, lowerValue{type_: parameter.Type(), variadic: &variadicValue{element: slice.Elem(), elements: elements}})
+			l.bind(parameter, lowerValue{type_: parameterType, variadic: &variadicValue{element: slice.Elem(), elements: elements, callables: callables}})
 			arg = len(args)
 			continue
 		}
@@ -2154,11 +5637,21 @@ func (l *lowerer) inlineCallArguments(n *ast.CallExpr, fn *types.Func, args []ca
 			for i := 0; i < count; i++ {
 				actualType := callSig.Results().At(resultIndex).Type()
 				size := irTypeOf(actualType).Slots
+				if frame.result.entity != nil {
+					size = 1
+				}
 				if len(field.Names) != 0 {
 					result := pkg.TypesInfo.Defs[field.Names[i]]
 					frame.results[result] = true
-					if isContainerType(actualType) {
-						frame.vars[result] = lowerValue{type_: actualType}
+					if frame.result.entity != nil {
+						frame.vars[result] = lowerValue{type_: actualType, slots: frame.result.slots[offset : offset+1], places: frame.result.places[offset : offset+1], entity: frame.result.entity}
+					} else if isPointerType(actualType) {
+						if frame.result.pointer != nil && len(frame.result.pointer.alternatives) == 0 {
+							frame.result = l.mergePointerValue(frame.result, lowerValue{type_: actualType, nilPointer: true}, field.Names[i])
+						}
+						frame.vars[result] = frame.result
+					} else if isContainerType(actualType) {
+						frame.vars[result] = frame.result
 					} else {
 						frame.vars[result] = lowerValue{type_: actualType, slots: frame.result.slots[offset : offset+size], places: frame.result.places[offset : offset+size]}
 					}
@@ -2171,6 +5664,9 @@ func (l *lowerer) inlineCallArguments(n *ast.CallExpr, fn *types.Func, args []ca
 	l.stmts(decl.Body.List)
 	l.jump(frame.returnBlock)
 	l.setCurrent(frame.returnBlock)
+	if isFunctionType(resultType) {
+		return lowerValue{type_: resultType, callable: frame.callableResult}
+	}
 	return frame.result
 }
 
@@ -2190,8 +5686,15 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 		}
 	case *ast.DeclStmt:
 		decl, ok := n.Decl.(*ast.GenDecl)
-		if !ok || decl.Tok != token.VAR {
+		if !ok {
 			l.errorAt(n, "only local var declarations are supported by the frozen callback subset")
+			return
+		}
+		if decl.Tok == token.CONST || decl.Tok == token.TYPE {
+			return
+		}
+		if decl.Tok != token.VAR {
+			l.errorAt(n, "only local var, const, and type declarations are supported by the callback subset")
 			return
 		}
 		for _, spec := range decl.Specs {
@@ -2206,21 +5709,33 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 			}
 			for _, name := range vs.Names {
 				obj := l.pkg.TypesInfo.Defs[name]
-				if isFunctionType(obj.Type()) {
-					l.errorAt(name, "static callable variables require an initializer and cannot be assigned later")
+				objectType := l.resolveType(obj.Type())
+				if isInterfaceType(objectType) {
+					l.bind(obj, l.newInterfaceValue(name.Name+".interface", objectType, name))
 					continue
 				}
-				if kind := containsResourceHandle(obj.Type()); kind != "" {
+				if isFunctionType(objectType) {
+					tag := l.allocZeroed(name.Name+".callable", types.Typ[types.Int], name)
+					l.store(tag, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: -1}}}, name)
+					l.bindCallable(obj, &staticCallable{finiteVariant: finiteVariant[*staticCallable]{tag: tag}})
+					continue
+				}
+				if kind := containsResourceHandle(objectType); kind != "" {
 					l.errorAt(name, "%s resource handle aggregates cannot be declared without a resource value", kind)
 					continue
 				}
-				l.bind(obj, l.allocZeroed(name.Name, obj.Type(), name))
+				if isPointerType(objectType) {
+					value := lowerValue{type_: objectType, nilPointer: true}
+					l.bind(obj, l.copyPointerValue(name.Name, value, name))
+					continue
+				}
+				l.bind(obj, l.allocZeroed(name.Name, objectType, name))
 			}
 		}
 	case *ast.AssignStmt:
 		l.assign(n)
 	case *ast.IncDecStmt:
-		dst := l.expr(n.X)
+		dst := l.ensureAssignable(l.expr(n.X), n.X)
 		op := resource.RuntimeFunctionAdd
 		if n.Tok == token.DEC {
 			op = resource.RuntimeFunctionSubtract
@@ -2230,40 +5745,206 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 	case *ast.IfStmt:
 		l.ifStmt(n)
 	case *ast.ForStmt:
-		l.forStmt(n)
+		l.forStmt(n, "")
 	case *ast.RangeStmt:
-		l.rangeStmt(n)
+		l.rangeStmt(n, "")
 	case *ast.SwitchStmt:
-		l.switchStmt(n)
+		l.switchStmt(n, "")
+	case *ast.TypeSwitchStmt:
+		l.typeSwitchStmt(n, "")
+	case *ast.LabeledStmt:
+		switch statement := n.Stmt.(type) {
+		case *ast.ForStmt:
+			l.forStmt(statement, n.Label.Name)
+		case *ast.RangeStmt:
+			l.rangeStmt(statement, n.Label.Name)
+		case *ast.SwitchStmt:
+			l.switchStmt(statement, n.Label.Name)
+		case *ast.TypeSwitchStmt:
+			l.typeSwitchStmt(statement, n.Label.Name)
+		default:
+			l.stmt(statement)
+		}
 	case *ast.BranchStmt:
-		if n.Tok == token.BREAK && len(l.breaks) > 0 {
-			l.jump(l.breaks[len(l.breaks)-1])
-		} else if n.Tok == token.CONTINUE && len(l.continues) > 0 {
-			l.jump(l.continues[len(l.continues)-1])
-		} else {
+		if n.Label != nil {
+			targets, ok := l.labels[n.Label.Name]
+			if !ok {
+				l.errorAt(n, "branch label %s is not an active loop or switch", n.Label.Name)
+				break
+			}
+			switch n.Tok {
+			case token.BREAK:
+				if targets.breakTarget == nil {
+					l.errorAt(n, "label %s cannot be used with break", n.Label.Name)
+				} else {
+					l.jump(targets.breakTarget)
+				}
+			case token.CONTINUE:
+				if targets.continueTarget == nil {
+					l.errorAt(n, "label %s does not name a loop", n.Label.Name)
+				} else {
+					l.jump(targets.continueTarget)
+				}
+			default:
+				l.errorAt(n, "unsupported labeled branch %s", n.Tok)
+			}
+			break
+		}
+		switch n.Tok {
+		case token.BREAK:
+			if len(l.breaks) == 0 {
+				l.errorAt(n, "break is not inside a loop or switch")
+			} else {
+				l.jump(l.breaks[len(l.breaks)-1])
+			}
+		case token.CONTINUE:
+			if len(l.continues) == 0 {
+				l.errorAt(n, "continue is not inside a loop")
+			} else {
+				l.jump(l.continues[len(l.continues)-1])
+			}
+		case token.FALLTHROUGH:
+			if len(l.fallthroughs) == 0 || l.fallthroughs[len(l.fallthroughs)-1] == nil {
+				l.errorAt(n, "fallthrough is not inside a non-final expression switch case")
+			} else {
+				l.jump(l.fallthroughs[len(l.fallthroughs)-1])
+			}
+		default:
 			l.errorAt(n, "unsupported branch %s", n.Tok)
 		}
 	case *ast.ReturnStmt:
 		frame := l.frames[len(l.frames)-1]
+		if len(l.returnFrames) != 0 {
+			redirect := l.returnFrames[len(l.returnFrames)-1]
+			if len(l.frames) == redirect.depth {
+				frame = redirect.owner
+			}
+		}
+		if isFunctionType(frame.result.type_) {
+			if len(n.Results) != 1 {
+				l.errorAt(n, "callable helper return requires exactly one result")
+			} else if callable, ok := l.staticCallable(n.Results[0]); !ok {
+				l.errorAt(n.Results[0], "callable helper return requires a statically known target")
+			} else {
+				if frame.callableResult == nil {
+					tag := l.allocZeroed("callable.return", types.Typ[types.Int], n.Results[0])
+					l.store(tag, scalarValue(ir.Const{Value: -1}, types.Typ[types.Int]), n.Results[0])
+					frame.callableResult = &staticCallable{finiteVariant: finiteVariant[*staticCallable]{tag: tag}, resultType: callable.resultType}
+				}
+				alternative := -1
+				for index, candidate := range frame.callableResult.alternatives {
+					if sameCallable(candidate, callable) {
+						alternative = index
+						break
+					}
+				}
+				if alternative == -1 {
+					var added bool
+					alternative, added = frame.callableResult.add(callable, sameCallable)
+					if !added {
+						l.errorAt(n.Results[0], "finite callable return exceeds 256 alternatives")
+						return
+					}
+				}
+				l.store(frame.callableResult.tag, scalarValue(ir.Const{Value: float64(alternative)}, types.Typ[types.Int]), n.Results[0])
+			}
+			l.jump(frame.returnBlock)
+			return
+		}
+		if frame.interfaceResult {
+			if len(n.Results) != 1 {
+				l.errorAt(n, "static interface helper return requires exactly one result")
+			} else {
+				value := l.expr(n.Results[0])
+				if value.interface_ != nil {
+					frame.result.interface_ = value.interface_
+				} else if value.type_ == nil || isInterfaceType(value.type_) {
+					l.errorAt(n.Results[0], "static interface helper return requires a known concrete type")
+				} else {
+					if frame.result.interface_ == nil {
+						frame.result.interface_ = &interfaceValue{finiteVariant: newFiniteVariant[lowerValue](l, "interface.return.tag", n.Results[0])}
+					}
+					variant := frame.result.interface_
+					alternative := -1
+					for index, candidate := range variant.alternatives {
+						if types.Identical(candidate.type_, value.type_) {
+							alternative = index
+							break
+						}
+					}
+					if alternative == -1 {
+						payload := l.allocZeroed("interface.return.value", value.type_, n.Results[0])
+						var added bool
+						alternative, added = variant.add(payload, func(left, right lowerValue) bool {
+							return left.type_ != nil && right.type_ != nil && types.Identical(left.type_, right.type_)
+						})
+						if !added {
+							l.errorAt(n.Results[0], "finite static interface return exceeds 256 alternatives")
+							return
+						}
+					}
+					l.store(variant.alternatives[alternative], value, n.Results[0])
+					l.store(variant.tag, scalarValue(ir.Const{Value: float64(alternative)}, types.Typ[types.Int]), n.Results[0])
+				}
+			}
+			l.jump(frame.returnBlock)
+			return
+		}
 		for _, result := range n.Results {
 			if isFunctionType(l.pkg.TypesInfo.TypeOf(result)) {
 				l.errorAt(result, "function values cannot be returned from callbacks or helpers")
 				return
 			}
 		}
+		if frame.result.entity != nil {
+			if len(n.Results) != 1 {
+				l.errorAt(n, "EntityRef.Get view helper return requires exactly one result")
+			} else {
+				value := l.expr(n.Results[0])
+				if value.entity == nil {
+					l.errorAt(n.Results[0], "EntityRef.Get view helper must return an entity view")
+				} else {
+					l.storeEntityView(frame.result, value, n.Results[0])
+				}
+			}
+			l.jump(frame.returnBlock)
+			return
+		}
+		if isPointerType(frame.result.type_) {
+			if len(n.Results) == 0 {
+				l.jump(frame.returnBlock)
+				return
+			}
+			if len(n.Results) != 1 {
+				l.errorAt(n, "pointer helper return requires exactly one result")
+			} else {
+				value := l.expr(n.Results[0])
+				if !isStaticPointer(value) {
+					l.errorAt(n.Results[0], "pointer helper must return a statically known address")
+				} else {
+					if len(frame.result.places) == 0 && frame.result.pointer == nil {
+						frame.result = value
+					} else if frame.result.pointer == nil && samePlaces(frame.result.places, value.places) {
+						frame.result = value
+					} else {
+						frame.result = l.mergePointerValue(frame.result, value, n.Results[0])
+					}
+				}
+			}
+			l.jump(frame.returnBlock)
+			return
+		}
 		if isContainerType(frame.result.type_) {
 			if len(n.Results) > 1 {
 				l.errorAt(n, "container helper return requires exactly one result")
 			} else if len(n.Results) == 1 {
 				value := l.expr(n.Results[0])
-				if value.container == nil {
+				if !isContainerValue(value) {
 					l.errorAt(n.Results[0], "container helper must return a catalog container with static backing storage")
-				} else if frame.result.container != nil && !sameContainerBacking(frame.result, value) {
-					l.errorAt(n.Results[0], "container helper cannot select between different backing stores at runtime")
 				} else {
-					frame.result = value
+					frame.result = l.mergeContainerValue(frame.result, value, n.Results[0])
 				}
-			} else if frame.result.container == nil {
+			} else if frame.result.container == nil && (frame.result.containerVariant == nil || len(frame.result.containerVariant.alternatives) == 0) {
 				l.errorAt(n, "named container result has no static backing storage")
 			}
 			l.jump(frame.returnBlock)
@@ -2272,7 +5953,12 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 		if len(n.Results) > 0 {
 			combined := lowerValue{type_: frame.result.type_}
 			for _, result := range n.Results {
-				value := l.materialize("return.value", l.expr(result), result)
+				value := l.expr(result)
+				if value.entity != nil {
+					l.errorAt(result, "EntityRef.Get views cannot escape through helper returns")
+					return
+				}
+				value = l.materialize("return.value", value, result)
 				if value.variadic != nil {
 					l.errorAt(result, "variadic helper parameters cannot escape through return")
 					return
@@ -2288,9 +5974,173 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 	}
 }
 
-func (l *lowerer) switchStmt(n *ast.SwitchStmt) {
+func (l *lowerer) typeSwitchStmt(statement *ast.TypeSwitchStmt, label string) {
+	if statement.Init != nil {
+		l.stmt(statement.Init)
+	}
+	var assertion *ast.TypeAssertExpr
+	switch assignment := statement.Assign.(type) {
+	case *ast.ExprStmt:
+		assertion, _ = assignment.X.(*ast.TypeAssertExpr)
+	case *ast.AssignStmt:
+		if len(assignment.Rhs) == 1 {
+			assertion, _ = assignment.Rhs[0].(*ast.TypeAssertExpr)
+		}
+	}
+	if assertion == nil || assertion.Type != nil {
+		l.errorAt(statement, "type switch must use a static interface or type-parameter value")
+		return
+	}
+	value := l.expr(assertion.X)
+	if value.interface_ != nil {
+		variant := value.interface_
+		exit, invalid := l.newBlock(), l.newBlock()
+		restoreLabel := l.pushLabel(label, exit, nil)
+		defer restoreLabel()
+		blocks := make([]*ir.Block, len(variant.alternatives))
+		cases := make([]ir.SwitchCase, len(blocks))
+		for index := range blocks {
+			blocks[index] = l.newBlock()
+			cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+		}
+		_ = l.builder.Switch(variant.tag.slots[0], cases, invalid)
+		for index, alternative := range variant.alternatives {
+			l.setCurrent(blocks[index])
+			var selected, fallback *ast.CaseClause
+			for _, item := range statement.Body.List {
+				clause := item.(*ast.CaseClause)
+				if len(clause.List) == 0 {
+					fallback = clause
+					continue
+				}
+				for _, expression := range clause.List {
+					target := l.resolveType(l.pkg.TypesInfo.TypeOf(expression))
+					if target != nil && (types.AssignableTo(alternative.type_, target) || types.Identical(alternative.type_, target)) {
+						selected = clause
+						break
+					}
+				}
+				if selected != nil {
+					break
+				}
+			}
+			if selected == nil {
+				selected = fallback
+			}
+			if selected != nil {
+				frame := l.frames[len(l.frames)-1]
+				if implicit := l.pkg.TypesInfo.Implicits[selected]; implicit != nil {
+					frame.vars[implicit] = alternative
+				}
+				l.breaks = append(l.breaks, exit)
+				l.dynamic(func() { l.stmts(selected.Body) })
+				l.breaks = l.breaks[:len(l.breaks)-1]
+			}
+			l.jump(exit)
+		}
+		l.setCurrent(invalid)
+		_ = l.builder.MarkUnreachable()
+		l.setCurrent(exit)
+		return
+	}
+	var selected, fallback *ast.CaseClause
+	for _, item := range statement.Body.List {
+		clause := item.(*ast.CaseClause)
+		if len(clause.List) == 0 {
+			fallback = clause
+			continue
+		}
+		for _, expression := range clause.List {
+			target := l.resolveType(l.pkg.TypesInfo.TypeOf(expression))
+			if target != nil && value.type_ != nil && (types.AssignableTo(value.type_, target) || types.Identical(value.type_, target)) {
+				selected = clause
+				break
+			}
+		}
+		if selected != nil {
+			break
+		}
+	}
+	if selected == nil {
+		selected = fallback
+	}
+	if selected == nil {
+		return
+	}
+	frame := l.frames[len(l.frames)-1]
+	if implicit := l.pkg.TypesInfo.Implicits[selected]; implicit != nil {
+		frame.vars[implicit] = value
+	}
+	exit := l.newBlock()
+	restoreLabel := l.pushLabel(label, exit, nil)
+	defer restoreLabel()
+	l.breaks = append(l.breaks, exit)
+	l.stmts(selected.Body)
+	l.breaks = l.breaks[:len(l.breaks)-1]
+	l.jump(exit)
+	l.setCurrent(exit)
+}
+
+func staticSwitchClause(pkg *packages.Package, n *ast.SwitchStmt) (*ast.CaseClause, bool) {
+	for _, raw := range n.Body.List {
+		clause := raw.(*ast.CaseClause)
+		if len(clause.Body) != 0 {
+			if branch, ok := clause.Body[len(clause.Body)-1].(*ast.BranchStmt); ok && branch.Tok == token.FALLTHROUGH {
+				return nil, false
+			}
+		}
+	}
+	var tag constant.Value
+	if n.Tag != nil {
+		tag = pkg.TypesInfo.Types[n.Tag].Value
+		if tag == nil {
+			return nil, false
+		}
+	}
+	var fallback *ast.CaseClause
+	for _, raw := range n.Body.List {
+		clause := raw.(*ast.CaseClause)
+		if len(clause.List) == 0 {
+			fallback = clause
+			continue
+		}
+		for _, expression := range clause.List {
+			value := pkg.TypesInfo.Types[expression].Value
+			if value == nil {
+				return nil, false
+			}
+			if tag == nil {
+				if value.Kind() != constant.Bool {
+					return nil, false
+				}
+				if constant.BoolVal(value) {
+					return clause, true
+				}
+			} else if constant.Compare(tag, token.EQL, value) {
+				return clause, true
+			}
+		}
+	}
+	return fallback, true
+}
+
+func (l *lowerer) switchStmt(n *ast.SwitchStmt, label string) {
 	if n.Init != nil {
 		l.stmt(n.Init)
+	}
+	if clause, ok := staticSwitchClause(l.pkg, n); ok {
+		if clause == nil {
+			return
+		}
+		exit := l.newBlock()
+		restoreLabel := l.pushLabel(label, exit, nil)
+		l.breaks = append(l.breaks, exit)
+		l.stmts(clause.Body)
+		l.jump(exit)
+		l.breaks = l.breaks[:len(l.breaks)-1]
+		restoreLabel()
+		l.setCurrent(exit)
+		return
 	}
 	allConstant := n.Tag != nil
 	for _, raw := range n.Body.List {
@@ -2301,7 +6151,7 @@ func (l *lowerer) switchStmt(n *ast.SwitchStmt) {
 		}
 	}
 	if !allConstant {
-		l.dynamicSwitchStmt(n)
+		l.dynamicSwitchStmt(n, label)
 		return
 	}
 	value := l.materialize("switch.tag", l.expr(n.Tag), n.Tag)
@@ -2337,18 +6187,28 @@ func (l *lowerer) switchStmt(n *ast.SwitchStmt) {
 		}
 	}
 	_ = l.builder.Switch(term.Value, term.Cases, defaultBlock)
+	restoreLabel := l.pushLabel(label, exit, nil)
+	defer restoreLabel()
 	l.breaks = append(l.breaks, exit)
 	for i, raw := range n.Body.List {
 		l.setCurrent(caseBlocks[i])
+		var fallthroughTarget *ir.Block
+		if i+1 < len(caseBlocks) {
+			fallthroughTarget = caseBlocks[i+1]
+		}
+		l.fallthroughs = append(l.fallthroughs, fallthroughTarget)
 		l.dynamic(func() { l.stmts(raw.(*ast.CaseClause).Body) })
+		l.fallthroughs = l.fallthroughs[:len(l.fallthroughs)-1]
 		l.jump(exit)
 	}
 	l.breaks = l.breaks[:len(l.breaks)-1]
 	l.setCurrent(exit)
 }
 
-func (l *lowerer) dynamicSwitchStmt(n *ast.SwitchStmt) {
+func (l *lowerer) dynamicSwitchStmt(n *ast.SwitchStmt, label string) {
 	exit := l.newBlock()
+	restoreLabel := l.pushLabel(label, exit, nil)
+	defer restoreLabel()
 	caseBlocks := make([]*ir.Block, len(n.Body.List))
 	var defaultBlock *ir.Block
 	for i, raw := range n.Body.List {
@@ -2387,7 +6247,13 @@ func (l *lowerer) dynamicSwitchStmt(n *ast.SwitchStmt) {
 	l.breaks = append(l.breaks, exit)
 	for i, raw := range n.Body.List {
 		l.setCurrent(caseBlocks[i])
+		var fallthroughTarget *ir.Block
+		if i+1 < len(caseBlocks) {
+			fallthroughTarget = caseBlocks[i+1]
+		}
+		l.fallthroughs = append(l.fallthroughs, fallthroughTarget)
 		l.dynamic(func() { l.stmts(raw.(*ast.CaseClause).Body) })
+		l.fallthroughs = l.fallthroughs[:len(l.fallthroughs)-1]
 		l.jump(exit)
 	}
 	l.breaks = l.breaks[:len(l.breaks)-1]
@@ -2407,43 +6273,80 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			l.errorAt(n.Lhs[0], "static callable can only be stored in a local variable")
 			return
 		}
-		if n.Tok != token.DEFINE {
-			l.errorAt(n, "static callable variables cannot be reassigned")
-			return
-		}
-		if l.dynamicDepth != 0 {
-			l.errorAt(n, "static callable variables cannot be initialized in runtime control flow")
-			return
-		}
 		callable, ok := l.staticCallable(n.Rhs[0])
 		if !ok {
 			l.errorAt(n.Rhs[0], "function variable initializer must have one statically known callable target")
 			return
 		}
-		object := l.pkg.TypesInfo.Defs[identifier]
-		if object == nil {
-			l.errorAt(identifier, "static callable declaration has no object identity")
-			return
+		switch n.Tok {
+		case token.DEFINE:
+			if l.dynamicDepth != 0 {
+				l.errorAt(n, "static callable variables cannot be initialized in runtime control flow")
+				return
+			}
+			object := l.pkg.TypesInfo.Defs[identifier]
+			if object == nil {
+				l.errorAt(identifier, "static callable declaration has no object identity")
+				return
+			}
+			l.bindCallable(object, callable)
+		case token.ASSIGN:
+			object := l.pkg.TypesInfo.ObjectOf(identifier)
+			existing, exists := l.lookupCallable(object)
+			if !exists || existing.tag.type_ == nil {
+				l.errorAt(n, "initialized callable variables cannot be reassigned; declare the callable with var before runtime selection")
+				return
+			}
+			alternative := -1
+			for i, candidate := range existing.alternatives {
+				if sameCallable(candidate, callable) {
+					alternative = i
+					break
+				}
+			}
+			if alternative == -1 {
+				var added bool
+				alternative, added = existing.add(callable, sameCallable)
+				if !added {
+					l.errorAt(n, "finite callable variable exceeds 256 alternatives")
+					return
+				}
+			}
+			l.store(existing.tag, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: float64(alternative)}}}, n)
+		default:
+			l.errorAt(n, "unsupported callable assignment %s", n.Tok)
 		}
-		l.bindCallable(object, callable)
 		return
 	}
 	compound := map[token.Token]resource.RuntimeFunction{
 		token.ADD_ASSIGN: resource.RuntimeFunctionAdd, token.SUB_ASSIGN: resource.RuntimeFunctionSubtract,
 		token.MUL_ASSIGN: resource.RuntimeFunctionMultiply, token.QUO_ASSIGN: resource.RuntimeFunctionDivide,
-		token.REM_ASSIGN: resource.RuntimeFunctionMod,
+		token.REM_ASSIGN: resource.RuntimeFunctionRem,
 	}
 	if op, ok := compound[n.Tok]; ok {
 		if len(n.Lhs) != 1 || len(n.Rhs) != 1 {
 			l.errorAt(n, "compound assignment requires one value")
 			return
 		}
-		dst, rhs := l.expr(n.Lhs[0]), l.expr(n.Rhs[0])
+		dst := l.ensureAssignable(l.expr(n.Lhs[0]), n.Lhs[0])
+		rhs := l.materialize("compound.right", l.expr(n.Rhs[0]), n.Rhs[0])
 		if len(dst.slots) != 1 || len(rhs.slots) != 1 {
 			l.errorAt(n, "compound assignment requires scalar values")
 			return
 		}
-		value := lowerValue{type_: dst.type_, slots: []ir.Expr{ir.RuntimeCall{Function: op, Args: []ir.Expr{dst.slots[0], rhs.slots[0]}, Result: irTypeOf(dst.type_), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}}}
+		if (n.Tok == token.QUO_ASSIGN || n.Tok == token.REM_ASSIGN) && !l.requireIntegerDivisor(n, rhs.slots[0], dst.type_, n.Tok) {
+			return
+		}
+		result := ir.Expr(ir.RuntimeCall{Function: op, Args: []ir.Expr{dst.slots[0], rhs.slots[0]}, Result: irTypeOf(dst.type_), Pure: true, Pos: sourcePos(l.pkg, n.Pos())})
+		if n.Tok == token.QUO_ASSIGN {
+			if kind, supported := runtimeBasicKind(dst.type_); !supported {
+				l.errorAt(n, "runtime arithmetic does not support %s", dst.type_)
+				return
+			} else if kind == types.Int {
+				result = ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{result}, Result: irTypeOf(dst.type_), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
+			}
+		}
+		value := lowerValue{type_: dst.type_, slots: []ir.Expr{result}}
 		l.store(dst, value, n)
 		return
 	}
@@ -2469,15 +6372,40 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			// them after the RHS so container assignments can rebind backing.
 		}
 	}
-	values := make([]lowerValue, len(n.Rhs))
-	for i, rhs := range n.Rhs {
-		values[i] = l.expr(rhs)
-		if values[i].variadic != nil {
-			l.errorAt(rhs, "variadic helper parameters cannot be assigned or stored")
-			return
+	var values []lowerValue
+	if len(n.Lhs) == 2 && len(n.Rhs) == 1 {
+		if assertion, ok := n.Rhs[0].(*ast.TypeAssertExpr); ok && assertion.Type != nil {
+			source := l.expr(assertion.X)
+			target := l.resolveType(l.pkg.TypesInfo.TypeOf(assertion.Type))
+			if source.interface_ != nil {
+				value, present := l.interfaceAssertion(assertion, source, target, true)
+				values = []lowerValue{l.materialize("assignment.rhs", value, assertion), present}
+			} else {
+				matches := source.type_ != nil && target != nil && (types.AssignableTo(source.type_, target) || types.Identical(source.type_, target))
+				value := zeroValue(target)
+				if matches {
+					value = source
+					value.type_ = target
+				}
+				boolean := 0.0
+				if matches {
+					boolean = 1
+				}
+				values = []lowerValue{l.materialize("assignment.rhs", value, assertion), {type_: types.Typ[types.Bool], slots: []ir.Expr{ir.Const{Value: boolean}}}}
+			}
 		}
-		if len(n.Lhs) > 1 {
-			values[i] = l.materialize("assignment.rhs", values[i], rhs)
+	}
+	if values == nil {
+		values = make([]lowerValue, len(n.Rhs))
+		for i, rhs := range n.Rhs {
+			values[i] = l.expr(rhs)
+			if values[i].variadic != nil {
+				l.errorAt(rhs, "variadic helper parameters cannot be assigned or stored")
+				return
+			}
+			if len(n.Lhs) > 1 {
+				values[i] = l.materialize("assignment.rhs", values[i], rhs)
+			}
 		}
 	}
 	if len(values) == 1 && len(n.Lhs) > 1 {
@@ -2485,8 +6413,8 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 		values = make([]lowerValue, len(n.Lhs))
 		offset := 0
 		for i, lhs := range n.Lhs {
-			typ := l.pkg.TypesInfo.TypeOf(lhs)
-			size := irTypeOf(typ).Slots
+			typ := l.resolveType(l.pkg.TypesInfo.TypeOf(lhs))
+			size := l.runtimeTypeOf(typ).Slots
 			if offset+size > len(combined.slots) {
 				l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: result has %d slots, target %d requires slots [%d:%d]", len(combined.slots), i+1, offset, offset+size)
 				return
@@ -2507,13 +6435,46 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 		if object == nil {
 			continue
 		}
-		if values[i].container != nil {
+		objectType := l.resolveType(object.Type())
+		if values[i].interface_ != nil {
+			values[i].type_ = objectType
 			l.bind(object, values[i])
 			skipStore[i] = true
 			continue
 		}
+		if isInterfaceType(objectType) {
+			identifier := n.Lhs[i].(*ast.Ident)
+			value := l.storeInterfaceValue(l.newInterfaceValue(identifier.Name+".interface", objectType, identifier), values[i], identifier)
+			l.bind(object, value)
+			skipStore[i] = true
+			continue
+		}
+		if isStaticPointer(values[i]) {
+			values[i].type_ = objectType
+			identifier := n.Lhs[i].(*ast.Ident)
+			l.bind(object, l.copyPointerValue(identifier.Name, values[i], identifier))
+			skipStore[i] = true
+			continue
+		}
+		if values[i].entity != nil {
+			identifier := n.Lhs[i].(*ast.Ident)
+			if !types.Identical(objectType, values[i].type_) {
+				l.errorAt(identifier, "EntityRef.Get views cannot be stored in interfaces or converted variables")
+				skipStore[i] = true
+				continue
+			}
+			l.bind(object, l.allocEntityView(identifier.Name, values[i], identifier))
+			skipStore[i] = true
+			continue
+		}
+		if isContainerValue(values[i]) {
+			identifier := n.Lhs[i].(*ast.Ident)
+			l.bind(object, l.copyContainerValue(identifier.Name, values[i], identifier))
+			skipStore[i] = true
+			continue
+		}
 		identifier := n.Lhs[i].(*ast.Ident)
-		destination := l.alloc(identifier.Name, object.Type())
+		destination := l.alloc(identifier.Name, objectType)
 		l.bind(object, destination)
 		destinations[i] = destination
 	}
@@ -2521,7 +6482,82 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 		if skipStore[i] {
 			continue
 		}
-		if values[i].container != nil {
+		if identifier, ok := lhs.(*ast.Ident); ok {
+			object := l.pkg.TypesInfo.ObjectOf(identifier)
+			if object == nil {
+				object = l.pkg.TypesInfo.Defs[identifier]
+			}
+			if object != nil && isInterfaceType(object.Type()) {
+				existing, exists := l.lookup(object)
+				if !exists || existing.interface_ == nil {
+					existing = l.newInterfaceValue(identifier.Name+".interface", object.Type(), identifier)
+				}
+				existing = l.storeInterfaceValue(existing, values[i], lhs)
+				l.rebind(object, existing)
+				continue
+			}
+		}
+		if values[i].interface_ != nil {
+			identifier, ok := lhs.(*ast.Ident)
+			if !ok {
+				l.errorAt(lhs, "finite static interface values can only be assigned to local variables")
+				continue
+			}
+			object := l.pkg.TypesInfo.ObjectOf(identifier)
+			if object == nil {
+				object = l.pkg.TypesInfo.Defs[identifier]
+			}
+			if object == nil || !isInterfaceType(object.Type()) {
+				l.errorAt(lhs, "finite static interface assignment requires an interface local")
+				continue
+			}
+			values[i].type_ = object.Type()
+			l.rebind(object, values[i])
+			continue
+		}
+		if isStaticPointer(values[i]) {
+			identifier, ok := lhs.(*ast.Ident)
+			if !ok {
+				l.errorAt(lhs, "pointer aliases can only be assigned to local variables")
+				continue
+			}
+			object := l.pkg.TypesInfo.ObjectOf(identifier)
+			if object == nil {
+				object = l.pkg.TypesInfo.Defs[identifier]
+			}
+			existing, exists := l.lookup(object)
+			if !exists || !isStaticPointer(existing) {
+				l.errorAt(lhs, "pointer alias assignment target has no static address binding")
+				continue
+			}
+			if existing.pointer != nil {
+				if existing.pointer == values[i].pointer {
+					continue
+				}
+				existing = l.mergePointerValue(existing, values[i], lhs)
+				l.rebind(object, existing)
+				continue
+			}
+			if l.dynamicDepth != 0 {
+				if existing.pointer == values[i].pointer && existing.pointer != nil || existing.pointer == nil && values[i].pointer == nil && samePlaces(existing.places, values[i].places) {
+					continue
+				}
+				existing = l.mergePointerValue(existing, values[i], lhs)
+				l.rebind(object, existing)
+				continue
+			}
+			l.rebind(object, l.copyPointerValue(identifier.Name, values[i], identifier))
+			continue
+		}
+		if identifier, ok := lhs.(*ast.Ident); ok && values[i].entity == nil {
+			if object := l.pkg.TypesInfo.ObjectOf(identifier); object != nil {
+				if existing, exists := l.lookup(object); exists && existing.entity != nil {
+					l.errorAt(lhs, "EntityRef.Get view locals can only be assigned another EntityRef.Get view")
+					continue
+				}
+			}
+		}
+		if isContainerValue(values[i]) {
 			identifier, ok := lhs.(*ast.Ident)
 			if !ok {
 				l.errorAt(lhs, "container values can only be assigned to local variables")
@@ -2535,18 +6571,64 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 				l.errorAt(lhs, "container assignment target has no object identity")
 				continue
 			}
-			if l.dynamicDepth > 0 {
-				existing, exists := l.lookup(object)
-				if !exists || existing.container == nil || !sameContainerBacking(existing, values[i]) {
-					l.errorAt(lhs, "container assignment cannot select a different backing store in runtime control flow")
+			existing, exists := l.lookup(object)
+			if !exists || !isContainerValue(existing) {
+				l.errorAt(lhs, "container assignment target has no container binding")
+				continue
+			}
+			if existing.containerVariant != nil {
+				existing = l.mergeContainerValue(existing, values[i], lhs)
+				l.rebind(object, existing)
+				continue
+			}
+			l.rebind(object, l.copyContainerValue(identifier.Name, values[i], identifier))
+			continue
+		}
+		if values[i].entity != nil {
+			identifier, ok := lhs.(*ast.Ident)
+			if !ok {
+				destination := l.expr(lhs)
+				if destination.entity == nil || destination.entity.binding.declaration != values[i].entity.binding.declaration {
+					l.errorAt(lhs, "EntityRef.Get view storage must keep one static archetype target")
 					continue
 				}
+				l.store(destination, values[i], lhs)
+				continue
 			}
-			l.rebind(object, values[i])
+			object := l.pkg.TypesInfo.ObjectOf(identifier)
+			if object == nil {
+				object = l.pkg.TypesInfo.Defs[identifier]
+			}
+			if object == nil {
+				l.errorAt(lhs, "EntityRef.Get proxy assignment target has no object identity")
+				continue
+			}
+			existing, exists := l.lookup(object)
+			if !exists || existing.entity == nil {
+				l.errorAt(lhs, "EntityRef.Get views can only be assigned to entity-view local variables")
+				continue
+			}
+			l.storeEntityView(existing, values[i], lhs)
 			continue
 		}
 		if len(destinations[i].places) == 0 {
 			destinations[i] = l.expr(lhs)
+		}
+		if len(destinations[i].places) == 0 {
+			if identifier, ok := lhs.(*ast.Ident); ok {
+				object := l.pkg.TypesInfo.ObjectOf(identifier)
+				if object == nil {
+					object = l.pkg.TypesInfo.Defs[identifier]
+				}
+				if object != nil {
+					if current, exists := l.lookup(object); exists && len(current.slots) != 0 {
+						local := l.alloc(identifier.Name, object.Type())
+						l.store(local, current, identifier)
+						l.rebind(object, local)
+						destinations[i] = local
+					}
+				}
+			}
 		}
 		l.store(destinations[i], values[i], lhs)
 	}
@@ -2564,7 +6646,25 @@ func (l *lowerer) ifStmt(n *ast.IfStmt) {
 	if n.Init != nil {
 		l.stmt(n.Init)
 	}
+	if condition, ok := constantBool(l.pkg, n.Cond); ok {
+		if condition {
+			l.stmts(n.Body.List)
+		} else if n.Else != nil {
+			l.stmt(n.Else)
+		}
+		return
+	}
 	cond := l.expr(n.Cond)
+	if len(cond.slots) == 1 {
+		if constant, ok := cond.slots[0].(ir.Const); ok {
+			if constant.Value != 0 {
+				l.stmts(n.Body.List)
+			} else if n.Else != nil {
+				l.stmt(n.Else)
+			}
+			return
+		}
+	}
 	thenBlock, elseBlock, merge := l.newBlock(), l.newBlock(), l.newBlock()
 	_ = l.builder.Branch(cond.slots[0], thenBlock, elseBlock)
 	l.setCurrent(thenBlock)
@@ -2578,11 +6678,18 @@ func (l *lowerer) ifStmt(n *ast.IfStmt) {
 	l.setCurrent(merge)
 }
 
-func (l *lowerer) forStmt(n *ast.ForStmt) {
+func (l *lowerer) forStmt(n *ast.ForStmt, label string) {
 	if n.Init != nil {
 		l.stmt(n.Init)
 	}
+	if n.Cond != nil {
+		if condition, ok := constantBool(l.pkg, n.Cond); ok && !condition {
+			return
+		}
+	}
 	header, body, post, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	restoreLabel := l.pushLabel(label, exit, post)
+	defer restoreLabel()
 	l.jump(header)
 	l.setCurrent(header)
 	if n.Cond == nil {
@@ -2606,22 +6713,79 @@ func (l *lowerer) forStmt(n *ast.ForStmt) {
 	l.setCurrent(exit)
 }
 
-func (l *lowerer) rangeStmt(n *ast.RangeStmt) {
+func (l *lowerer) rangeStmt(n *ast.RangeStmt, label string) {
+	if signature, ok := types.Unalias(l.pkg.TypesInfo.TypeOf(n.X)).Underlying().(*types.Signature); ok && signature.Params().Len() == 1 && signature.Results().Len() == 0 {
+		yieldSignature, yieldOK := types.Unalias(signature.Params().At(0).Type()).Underlying().(*types.Signature)
+		if yieldOK && yieldSignature.Results().Len() == 1 {
+			if resultKind, supported := runtimeBasicKind(yieldSignature.Results().At(0).Type()); supported && resultKind == types.Bool && yieldSignature.Params().Len() <= 2 {
+				callable, callableOK := l.staticCallable(n.X)
+				if !callableOK {
+					l.errorAt(n.X, "range-over-func requires one statically known sequence target")
+					return
+				}
+				call := &ast.CallExpr{Fun: n.X}
+				owner := l.frames[len(l.frames)-1]
+				active := l.allocZeroed("range.yield.active", types.Typ[types.Bool], n)
+				l.store(active, lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{ir.Const{Value: 1}}}, n)
+				l.inlineStaticCallable(call, callable, []callArgument{{callable: &staticCallable{yield: &rangeYield{statement: n, owner: owner, active: active, label: label}}}})
+				return
+			}
+		}
+	}
 	collection := l.expr(n.X)
+	var pointerArray *types.Array
+	var pointerCollection lowerValue
+	if pointer, ok := types.Unalias(collection.type_).(*types.Pointer); ok {
+		if array, arrayOK := types.Unalias(pointer.Elem()).Underlying().(*types.Array); arrayOK {
+			pointerArray = array
+			pointerCollection = collection
+		}
+	}
+	if collection.container == nil && collection.containerVariant != nil {
+		slice, ok := types.Unalias(collection.type_).Underlying().(*types.Slice)
+		if !ok {
+			l.errorAt(n.X, "finite container variant has no slice element layout")
+			return
+		}
+		callables := make([]*staticCallable, len(collection.containerVariant.alternatives))
+		for index, alternative := range collection.containerVariant.alternatives {
+			iterator := &containerIterator{receiver: alternative, index: true}
+			if n.Value != nil {
+				iterator.offsets = []int{0}
+				iterator.types = []types.Type{slice.Elem()}
+			}
+			callables[index] = &staticCallable{iterator: iterator}
+		}
+		frozenTag := l.materialize("range.container.tag", collection.containerVariant.tag, n)
+		callable := indexedCallableVariant(l, callables, frozenTag, n)
+		call := &ast.CallExpr{Fun: n.X}
+		owner := l.frames[len(l.frames)-1]
+		active := l.allocZeroed("range.yield.active", types.Typ[types.Bool], n)
+		l.store(active, scalarValue(ir.Const{Value: 1}, types.Typ[types.Bool]), n)
+		l.inlineStaticCallable(call, callable, []callArgument{{callable: &staticCallable{yield: &rangeYield{statement: n, owner: owner, active: active, label: label}}}})
+		return
+	}
 	if basic, ok := types.Unalias(collection.type_).Underlying().(*types.Basic); ok && basic.Kind() == types.Int {
-		l.integerRangeStmt(n, collection)
+		l.integerRangeStmt(n, collection, label)
 		return
 	}
 	array, ok := types.Unalias(collection.type_).Underlying().(*types.Array)
+	if pointerArray != nil {
+		array, ok = pointerArray, true
+	}
 	if !ok && collection.container == nil && collection.variadic == nil {
-		l.errorAt(n.X, "range is only supported for int values, fixed arrays, variadic parameters, and catalog containers")
+		l.errorAt(n.X, "range is only supported for int values, fixed arrays or pointers to fixed arrays, variadic parameters, and catalog containers")
 		return
 	}
 	var length ir.Expr
 	var elementType types.Type
 	arrayLength := 0
 	if ok {
-		collection = l.materializeAddressable("range.array", collection, n.X)
+		if pointerArray == nil && !blankExpr(n.Value) {
+			snapshot := l.alloc("range.array", collection.type_)
+			l.store(snapshot, collection, n.X)
+			collection = snapshot
+		}
 		length = ir.Const{Value: float64(array.Len())}
 		elementType = array.Elem()
 		arrayLength = int(array.Len())
@@ -2629,8 +6793,8 @@ func (l *lowerer) rangeStmt(n *ast.RangeStmt) {
 		length = ir.Const{Value: float64(len(collection.variadic.elements))}
 		elementType = collection.variadic.element
 		arrayLength = len(collection.variadic.elements)
-		if arrayLength > 0 {
-			size := irTypeOf(elementType).Slots
+		if arrayLength > 0 && !isFunctionType(elementType) {
+			size := l.runtimeTypeOf(types.NewArray(elementType, 1)).Slots
 			backing := l.builder.NewLocal("range.variadic", ir.Type{Name: collection.type_.String() + ".range", Slots: arrayLength * size})
 			collection.places = ir.Places(backing)
 			collection.slots = make([]ir.Expr, len(collection.places))
@@ -2657,6 +6821,8 @@ func (l *lowerer) rangeStmt(n *ast.RangeStmt) {
 	index := l.alloc("range.index", types.Typ[types.Int])
 	l.store(index, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{}}}, n)
 	header, body, post, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	restoreLabel := l.pushLabel(label, exit, post)
+	defer restoreLabel()
 	l.jump(header)
 	l.setCurrent(header)
 	condition := ir.RuntimeCall{Function: resource.RuntimeFunctionLess, Args: []ir.Expr{index.slots[0], length}, Result: irTypeOf(types.Typ[types.Bool]), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
@@ -2666,10 +6832,17 @@ func (l *lowerer) rangeStmt(n *ast.RangeStmt) {
 		l.assignRangeValue(n.Key, n.Tok, index)
 	}
 	if !blankExpr(n.Value) {
-		size := irTypeOf(elementType).Slots
+		size := l.runtimeTypeOf(types.NewArray(elementType, 1)).Slots
 		var element lowerValue
-		if collection.variadic != nil && arrayLength == 0 {
+		if collection.variadic != nil && isFunctionType(elementType) {
+			element = lowerValue{type_: elementType, callable: indexedCallableVariant(l, collection.variadic.callables, index, n)}
+		} else if collection.variadic != nil && arrayLength == 0 {
 			element = zeroValue(elementType)
+		} else if pointerArray != nil {
+			pointer, _ := types.Unalias(pointerCollection.type_).(*types.Pointer)
+			element = l.loadPointerIndex(pointerCollection, pointer, pointerArray, index, n)
+		} else if size == 0 {
+			element = l.zeroRuntimeValue(elementType)
 		} else if collection.container != nil {
 			element = l.containerElement(n, collection.container, index.slots[0], 0, size, elementType)
 		} else {
@@ -2685,13 +6858,21 @@ func (l *lowerer) rangeStmt(n *ast.RangeStmt) {
 					element.places[offset], element.slots[offset] = place, ir.Load{Place: place}
 				}
 			case ir.MemoryPlace:
-				baseIndex, staticBase := first.Index.(ir.Const)
-				if !staticBase || baseIndex.Value != 0 || first.Stride != 0 {
-					l.errorAt(n.X, "range cannot combine an array index with a dynamic memory record index")
-					return
+				baseIndex := first.Index
+				if _, constant := baseIndex.(ir.Const); !constant {
+					baseIndex = l.materialize("range.memory.index", scalarValue(baseIndex, types.Typ[types.Int]), n.X).slots[0]
 				}
+				baseAddress := baseIndex
+				if first.Stride > 0 {
+					baseAddress = l.pure(resource.RuntimeFunctionMultiply, n.X, baseAddress, ir.Const{Value: float64(first.Stride)})
+				}
+				if first.Offset != 0 {
+					baseAddress = l.pure(resource.RuntimeFunctionAdd, n.X, baseAddress, ir.Const{Value: float64(first.Offset)})
+				}
+				elementOffset := l.pure(resource.RuntimeFunctionMultiply, n, index.slots[0], ir.Const{Value: float64(size)})
+				address := l.pure(resource.RuntimeFunctionAdd, n, baseAddress, elementOffset)
 				for offset := 0; offset < size; offset++ {
-					place := l.memory(first.Storage, index.slots[0], size, first.Offset+offset, first.Read, first.Write, n)
+					place := l.memory(first.Storage, address, 0, offset, first.Read, first.Write, n)
 					element.places[offset], element.slots[offset] = place, ir.Load{Place: place}
 				}
 			default:
@@ -2714,7 +6895,7 @@ func (l *lowerer) rangeStmt(n *ast.RangeStmt) {
 	l.setCurrent(exit)
 }
 
-func (l *lowerer) integerRangeStmt(n *ast.RangeStmt, length lowerValue) {
+func (l *lowerer) integerRangeStmt(n *ast.RangeStmt, length lowerValue, label string) {
 	if !blankExpr(n.Value) {
 		l.errorAt(n.Value, "integer range does not produce a second iteration value")
 		return
@@ -2723,6 +6904,8 @@ func (l *lowerer) integerRangeStmt(n *ast.RangeStmt, length lowerValue) {
 	index := l.alloc("range.index", types.Typ[types.Int])
 	l.store(index, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{}}}, n)
 	header, body, post, exit := l.newBlock(), l.newBlock(), l.newBlock(), l.newBlock()
+	restoreLabel := l.pushLabel(label, exit, post)
+	defer restoreLabel()
 	l.jump(header)
 	l.setCurrent(header)
 	condition := ir.RuntimeCall{Function: resource.RuntimeFunctionLess, Args: []ir.Expr{index.slots[0], length.slots[0]}, Result: irTypeOf(types.Typ[types.Bool]), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
@@ -2764,12 +6947,20 @@ func (l *lowerer) assignRangeValue(target ast.Expr, op token.Token, value lowerV
 		l.errorAt(target, "range declaration has no type object")
 		return
 	}
+	if value.entity != nil {
+		l.bind(object, l.allocEntityView(identifier.Name, value, identifier))
+		return
+	}
+	if value.callable != nil {
+		l.bindCallable(object, value.callable)
+		return
+	}
 	local := l.alloc(identifier.Name, object.Type())
 	l.bind(object, local)
 	l.store(local, value, target)
 }
 
-func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string) (*ir.Function, []error) {
+func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string, checks RuntimeChecks) (*ir.Function, []error) {
 	if decl == nil {
 		return nil, nil
 	}
@@ -2787,7 +6978,7 @@ func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *pa
 	for _, field := range fields {
 		archetypeFields[field.Object] = field
 	}
-	l := &lowerer{mode: m, phase: phase, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, configuration: configuration, archetypeFields: archetypeFields, archetypes: archetypes}
+	l := &lowerer{mode: m, phase: phase, checks: checks, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, streamSize: resources.StreamSize, configuration: configuration, archetypeFields: archetypeFields, archetypes: archetypes}
 	entry := l.newBlock()
 	_ = builder.SetEntry(entry)
 	l.setCurrent(entry)

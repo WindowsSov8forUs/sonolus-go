@@ -28,7 +28,7 @@ sonolus-go version
 
 ## 基础使用
 
-引擎源码必须位于 Go module 中，入口 package 为 `main`。本仓库的 [`godori/`](godori/) 是一个可游玩的 Tap-only 四模式引擎，也是公开示例和端到端验收工程。其声明方式和项目结构见[快速开始](docs/getting-started.md)。
+引擎源码必须位于 Go module 中，入口 package 为 `main`。本仓库的 [`godori/`](godori/) 是一个可游玩的四模式引擎，也是公开示例和端到端验收工程。其声明方式和项目结构见[快速开始](docs/getting-started.md)。
 
 编译全部四种模式：
 

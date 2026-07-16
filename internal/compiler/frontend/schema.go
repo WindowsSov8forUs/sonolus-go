@@ -45,6 +45,13 @@ func ParseArchetypeDeclarations(pkg *packages.Package, m mode.Mode) ([]*Archetyp
 			declarations = append(declarations, declaration)
 		}
 	}
+	sort.Slice(declarations, func(i, j int) bool {
+		if declarations[i].Name == declarations[j].Name {
+			return declarations[i].PackagePath < declarations[j].PackagePath
+		}
+		return declarations[i].Name < declarations[j].Name
+	})
+	errs = append(errs, resolveArchetypeInheritance(declarations)...)
 	if len(errs) != 0 {
 		messages := make([]string, len(errs))
 		for i, err := range errs {
@@ -53,11 +60,5 @@ func ParseArchetypeDeclarations(pkg *packages.Package, m mode.Mode) ([]*Archetyp
 		sort.Strings(messages)
 		return nil, fmt.Errorf("%s", strings.Join(messages, "\n"))
 	}
-	sort.Slice(declarations, func(i, j int) bool {
-		if declarations[i].Name == declarations[j].Name {
-			return declarations[i].PackagePath < declarations[j].PackagePath
-		}
-		return declarations[i].Name < declarations[j].Name
-	})
 	return declarations, nil
 }

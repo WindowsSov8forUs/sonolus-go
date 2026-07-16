@@ -10,7 +10,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/backend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/simexec"
 	"math"
 
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
@@ -153,7 +157,7 @@ func expandNode(nodes []any, index int, visiting map[int]bool) (any, error) {
 }
 
 type executableMode struct {
-	nodes []map[string]any
+	nodes []resource.EngineDataNode
 	roots map[string]int
 }
 
@@ -202,7 +206,7 @@ func TestOptimizationLevelsPreserveReferenceCallbackSemantics(t *testing.T) {
 						t.Fatalf("%s/%s/%s seed %v: %v", level, modeName, label, seed, err)
 					}
 					if !reflect.DeepEqual(got, want) {
-						t.Fatalf("%s/%s/%s seed %v changed semantics\nminimal: %#v\n%s: %#v", level, modeName, label, seed, want, level, got)
+						t.Fatalf("%s/%s/%s seed %v changed semantics\\nminimal: %#v\\n%s: %#v", level, modeName, label, seed, want, level, got)
 					}
 				}
 			}
@@ -215,310 +219,97 @@ func executeOptionalRoot(mode executableMode, label string, seed float64) (execu
 		return executeRoot(mode, root, seed)
 	}
 	value := float64(0)
-	if len(label) >= len("shouldSpawn") && label[len(label)-len("shouldSpawn"):] == "shouldSpawn" {
+	if strings.HasSuffix(label, "shouldSpawn") {
 		value = 1
 	}
-	return executionResult{Value: math.Float64bits(value), Memory: map[string]uint64{}}, nil
+	return executionResult{Value: math.Float64bits(value), Memory: map[string]uint64{}, Effects: []string{}}, nil
 }
 
 func decodeExecutableMode(data any) (executableMode, error) {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return executableMode{}, err
+	result := executableMode{roots: map[string]int{}}
+	add := func(archetype int, name string, callbackIndex int) {
+		result.roots[fmt.Sprintf("archetype[%d].%s", archetype, name)] = callbackIndex
 	}
-	var value map[string]any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return executableMode{}, err
-	}
-	rawNodes, _ := value["nodes"].([]any)
-	nodes := make([]map[string]any, len(rawNodes))
-	for i, node := range rawNodes {
-		nodes[i] = node.(map[string]any)
-	}
-	roots := map[string]int{}
-	if archetypes, ok := value["archetypes"].([]any); ok {
-		for archetypeIndex, rawArchetype := range archetypes {
-			archetype := rawArchetype.(map[string]any)
-			for _, name := range []string{"preprocess", "spawnOrder", "shouldSpawn", "initialize", "updateSequential", "touch", "updateParallel", "terminate", "spawnTime", "despawnTime", "render"} {
-				callback, ok := archetype[name].(map[string]any)
-				if !ok {
-					continue
-				}
-				index, ok := callback["index"].(float64)
-				if ok {
-					roots[fmt.Sprintf("archetype[%d].%s", archetypeIndex, name)] = int(index)
+	switch value := data.(type) {
+	case *resource.EnginePlayData:
+		result.nodes = value.Nodes
+		for index, archetype := range value.Archetypes {
+			for name, callback := range map[string]*resource.EnginePlayDataArchetypeCallback{
+				"preprocess": archetype.Preprocess, "spawnOrder": archetype.SpawnOrder, "shouldSpawn": archetype.ShouldSpawn,
+				"initialize": archetype.Initialize, "updateSequential": archetype.UpdateSequential, "touch": archetype.Touch,
+				"updateParallel": archetype.UpdateParallel, "terminate": archetype.Terminate,
+			} {
+				if callback != nil {
+					add(index, name, callback.Index)
 				}
 			}
 		}
-	}
-	for _, name := range []string{"updateSpawn", "preprocess", "navigate", "update"} {
-		if index, ok := value[name].(float64); ok && int(index) >= 0 && int(index) < len(nodes) {
-			roots["global."+name] = int(index)
+	case *resource.EngineWatchData:
+		result.nodes = value.Nodes
+		result.roots["global.updateSpawn"] = value.UpdateSpawn
+		for index, archetype := range value.Archetypes {
+			for name, callback := range map[string]*resource.EngineWatchDataArchetypeCallback{
+				"preprocess": archetype.Preprocess, "spawnTime": archetype.SpawnTime, "despawnTime": archetype.DespawnTime,
+				"initialize": archetype.Initialize, "updateSequential": archetype.UpdateSequential,
+				"updateParallel": archetype.UpdateParallel, "terminate": archetype.Terminate,
+			} {
+				if callback != nil {
+					add(index, name, callback.Index)
+				}
+			}
 		}
+	case *resource.EnginePreviewData:
+		result.nodes = value.Nodes
+		for index, archetype := range value.Archetypes {
+			for name, callback := range map[string]*resource.EnginePreviewDataArchetypeCallback{"preprocess": archetype.Preprocess, "render": archetype.Render} {
+				if callback != nil {
+					add(index, name, callback.Index)
+				}
+			}
+		}
+	case *resource.EngineTutorialData:
+		result.nodes = value.Nodes
+		result.roots["global.preprocess"] = value.Preprocess
+		result.roots["global.navigate"] = value.Navigate
+		result.roots["global.update"] = value.Update
+	default:
+		return executableMode{}, fmt.Errorf("unsupported executable mode %T", data)
 	}
-	return executableMode{nodes: nodes, roots: roots}, nil
-}
-
-type runtimeExecutor struct {
-	mode    executableMode
-	seed    float64
-	memory  map[string]float64
-	effects []string
-	steps   int
-}
-
-type breakSignal struct {
-	depth int
-	value float64
+	return result, nil
 }
 
 func executeRoot(mode executableMode, root int, seed float64) (executionResult, error) {
-	executor := &runtimeExecutor{mode: mode, seed: seed, memory: map[string]float64{}}
-	value, signal, err := executor.eval(root)
+	result, err := simexec.Execute(mode.nodes, root, simexec.Request{DefaultMemory: &seed, StepLimit: 10000})
 	if err != nil {
 		return executionResult{}, err
 	}
-	if signal != nil {
-		return executionResult{}, fmt.Errorf("uncaught break depth %d", signal.depth)
-	}
-	memory := make(map[string]uint64, len(executor.memory))
-	for key, value := range executor.memory {
-		if strings.HasPrefix(key, fmt.Sprintf("%x:", math.Float64bits(10000))) {
+	memory := map[string]uint64{}
+	for block, values := range result.Memory {
+		if block == 10000 || block == 3000 {
 			continue
 		}
-		memory[key] = math.Float64bits(value)
+		for index, value := range values {
+			memory[fmt.Sprintf("%d:%d", block, index)] = math.Float64bits(value)
+		}
 	}
-	return executionResult{Value: math.Float64bits(value), Memory: memory, Effects: executor.effects}, nil
+	effects := make([]string, len(result.Effects))
+	for index, effect := range result.Effects {
+		arguments := make([]uint64, len(effect.Arguments))
+		for argument, value := range effect.Arguments {
+			arguments[argument] = math.Float64bits(value)
+		}
+		effects[index] = fmt.Sprintf("%s:%v", effect.Function, arguments)
+	}
+	return executionResult{Value: math.Float64bits(result.Value), Memory: memory, Effects: effects}, nil
 }
 
-func (e *runtimeExecutor) eval(index int) (float64, *breakSignal, error) {
-	e.steps++
-	if e.steps > 10000 {
-		return 0, nil, fmt.Errorf("execution step limit exceeded")
-	}
-	if index < 0 || index >= len(e.mode.nodes) {
-		return 0, nil, fmt.Errorf("node index %d out of range", index)
-	}
-	node := e.mode.nodes[index]
-	if value, ok := node["value"].(float64); ok {
-		return value, nil, nil
-	}
-	function := node["func"].(string)
-	rawArgs := node["args"].([]any)
-	argIndex := func(i int) int { return int(rawArgs[i].(float64)) }
-	evalArg := func(i int) (float64, *breakSignal, error) { return e.eval(argIndex(i)) }
-	evalAll := func() ([]float64, *breakSignal, error) {
-		values := make([]float64, len(rawArgs))
-		for i := range rawArgs {
-			value, signal, err := evalArg(i)
-			if err != nil || signal != nil {
-				return nil, signal, err
-			}
-			values[i] = value
-		}
-		return values, nil, nil
-	}
-	switch function {
-	case "Execute":
-		values, signal, err := evalAll()
-		if err != nil || signal != nil || len(values) == 0 {
-			return 0, signal, err
-		}
-		return values[len(values)-1], nil, nil
-	case "If":
-		condition, signal, err := evalArg(0)
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		if condition != 0 {
-			return evalArg(1)
-		}
-		return evalArg(2)
-	case "And":
-		for i := range rawArgs {
-			value, signal, err := evalArg(i)
-			if err != nil || signal != nil {
-				return 0, signal, err
-			}
-			if value == 0 {
-				return 0, nil, nil
-			}
-		}
-		return 1, nil, nil
-	case "Block":
-		value, signal, err := evalArg(0)
-		if signal != nil {
-			if signal.depth == 1 {
-				return signal.value, nil, err
-			}
-			signal.depth--
-		}
-		return value, signal, err
-	case "JumpLoop":
-		next := 0
-		for next >= 0 && next < len(rawArgs) {
-			value, signal, err := evalArg(next)
-			if err != nil || signal != nil {
-				return 0, signal, err
-			}
-			next = int(value)
-		}
-		return float64(next), nil, nil
-	case "Break":
-		depth, signal, err := evalArg(0)
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		value, signal, err := evalArg(1)
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		return 0, &breakSignal{depth: int(depth), value: value}, nil
-	case "Get":
-		args, signal, err := evalAll()
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		key := memoryKey(args[0], args[1])
-		if value, ok := e.memory[key]; ok {
-			return value, nil, nil
-		}
-		return e.initialMemory(args[0]), nil, nil
-	case "GetShifted":
-		args, signal, err := evalAll()
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		key := memoryKey(args[0], args[1]+args[2]*args[3])
-		if value, ok := e.memory[key]; ok {
-			return value, nil, nil
-		}
-		return e.initialMemory(args[0]), nil, nil
-	case "Set", "SetAdd", "SetSubtract", "SetMultiply", "SetDivide", "SetMod", "SetRem", "SetPower":
-		args, signal, err := evalAll()
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		key := memoryKey(args[0], args[1])
-		value := args[2]
-		if function != "Set" {
-			current, ok := e.memory[key]
-			if !ok {
-				current = e.initialMemory(args[0])
-			}
-			switch function {
-			case "SetAdd":
-				value = current + value
-			case "SetSubtract":
-				value = current - value
-			case "SetMultiply":
-				value = current * value
-			case "SetDivide":
-				value = current / value
-			case "SetMod":
-				value = current - math.Floor(current/value)*value
-			case "SetRem":
-				value = math.Mod(current, value)
-			case "SetPower":
-				value = math.Pow(current, value)
-			}
-		}
-		e.memory[key] = value
-		return value, nil, nil
-	case "SetShifted", "SetAddShifted", "SetSubtractShifted", "SetMultiplyShifted", "SetDivideShifted", "SetModShifted", "SetRemShifted", "SetPowerShifted":
-		args, signal, err := evalAll()
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		key := memoryKey(args[0], args[1]+args[2]*args[3])
-		value := args[4]
-		if function != "SetShifted" {
-			current, ok := e.memory[key]
-			if !ok {
-				current = e.initialMemory(args[0])
-			}
-			switch function {
-			case "SetAddShifted":
-				value = current + value
-			case "SetSubtractShifted":
-				value = current - value
-			case "SetMultiplyShifted":
-				value = current * value
-			case "SetDivideShifted":
-				value = current / value
-			case "SetModShifted":
-				value = current - math.Floor(current/value)*value
-			case "SetRemShifted":
-				value = math.Mod(current, value)
-			case "SetPowerShifted":
-				value = math.Pow(current, value)
-			}
-		}
-		e.memory[key] = value
-		return value, nil, nil
-	case "DebugLog", "Paint":
-		args, signal, err := evalAll()
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		e.effects = append(e.effects, fmt.Sprintf("%s:%v", function, floatBits(args)))
-		return 0, nil, nil
-	case "Negate":
-		value, signal, err := evalArg(0)
-		return -value, signal, err
-	case "Add", "Subtract", "Less", "Greater":
-		args, signal, err := evalAll()
-		if err != nil || signal != nil {
-			return 0, signal, err
-		}
-		switch function {
-		case "Add":
-			result := 0.0
-			for _, value := range args {
-				result += value
-			}
-			return result, nil, nil
-		case "Subtract":
-			return args[0] - args[1], nil, nil
-		case "Less":
-			if args[0] < args[1] {
-				return 1, nil, nil
-			}
-			return 0, nil, nil
-		}
-		if args[0] > args[1] {
-			return 1, nil, nil
-		}
-		return 0, nil, nil
-	default:
-		return 0, nil, fmt.Errorf("interpreter does not support %s", function)
-	}
-}
-
-func memoryKey(block, index float64) string {
-	return fmt.Sprintf("%x:%x", math.Float64bits(block), math.Float64bits(index))
-}
-
-func (e *runtimeExecutor) initialMemory(block float64) float64 {
-	if block == 10000 {
-		return 0
-	}
-	return e.seed
-}
-
-func floatBits(values []float64) []uint64 {
-	result := make([]uint64, len(values))
-	for i, value := range values {
-		result[i] = math.Float64bits(value)
-	}
-	return result
-}
 func BenchmarkCompileAll(b *testing.B) {
 	corpora := []struct {
 		name    string
 		pattern string
 	}{
 		{name: "reference", pattern: "./testdata/reference"},
+		{name: "godori", pattern: "../../godori"},
 	}
 	levels := []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard}
 	for _, corpus := range corpora {
@@ -539,6 +330,71 @@ func BenchmarkCompileAll(b *testing.B) {
 	}
 }
 
+func BenchmarkCompilerStages(b *testing.B) {
+	for _, corpus := range []struct {
+		name, pattern string
+	}{{"reference", "./testdata/reference"}, {"godori", "../../godori"}} {
+		b.Run(corpus.name, func(b *testing.B) {
+			b.Run("load", func(b *testing.B) {
+				for range b.N {
+					compiler := NewCompiler(Options{Optimization: optimize.LevelStandard}, corpus.pattern)
+					if _, _, err := compiler.loadModes(orderedModes); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			compiler := NewCompiler(Options{Optimization: optimize.LevelStandard}, corpus.pattern)
+			loaded, _, err := compiler.loadModes(orderedModes)
+			if err != nil {
+				b.Fatal(err)
+			}
+			parse := func() *frontend.Project {
+				parser := frontend.NewParser()
+				for _, currentMode := range orderedModes {
+					if err := parser.Parse(currentMode, loaded[currentMode]); err != nil {
+						b.Fatal(err)
+					}
+				}
+				project, parseErr := parser.GetProject()
+				if parseErr != nil {
+					b.Fatal(parseErr)
+				}
+				if diagnosticErr := frontend.ResolveDiagnostics(project); diagnosticErr != nil {
+					b.Fatal(diagnosticErr)
+				}
+				return project
+			}
+
+			b.Run("frontend", func(b *testing.B) {
+				for range b.N {
+					_ = parse()
+				}
+			})
+			project := parse()
+			b.Run("optimize", func(b *testing.B) {
+				optimizer := optimize.NewOptimizer(optimize.LevelStandard)
+				for range b.N {
+					if _, optimizeErr := optimizeProject(optimizer, project); optimizeErr != nil {
+						b.Fatal(optimizeErr)
+					}
+				}
+			})
+			optimized, err := optimizeProject(optimize.NewOptimizer(optimize.LevelStandard), project)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.Run("backend", func(b *testing.B) {
+				for range b.N {
+					if _, backendErr := backend.Compile(optimized); backendErr != nil {
+						b.Fatal(backendErr)
+					}
+				}
+			})
+		})
+	}
+}
+
 func TestReferenceArtifactScale(t *testing.T) {
 	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
 		artifacts, err := NewCompiler(Options{Optimization: level}, "./testdata/reference").CompileAll()
@@ -550,6 +406,39 @@ func TestReferenceArtifactScale(t *testing.T) {
 			t.Fatalf("%s reference node count grew to %d; review the structural regression before updating the limit", level, nodes)
 		}
 		t.Logf("%s: %d nodes", level, nodes)
+	}
+}
+
+func TestTypedStreamsRoundTripThroughFinalEngineData(t *testing.T) {
+	var reference map[int][]simexec.StreamEntry
+	for levelIndex, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+		artifacts, err := NewCompiler(Options{Optimization: level}, "./testdata/streams").Compile(mode.ModePlay, mode.ModeWatch)
+		if err != nil {
+			t.Fatalf("%s: %v", level, err)
+		}
+		playRoot := artifacts.Play.Archetypes[0].Preprocess.Index
+		playResult, err := simexec.Execute(artifacts.Play.Nodes, playRoot, simexec.Request{})
+		if err != nil {
+			t.Fatalf("%s play: %v", level, err)
+		}
+		for streamID, want := range map[int][]simexec.StreamEntry{
+			1: {{Key: 1, Value: 2}}, 2: {{Key: 1, Value: 3}}, 3: {{Key: 1, Value: 4}},
+			7: {{Key: -0.5, Value: 0}, {Key: 0, Value: 5}, {Key: 0.5, Value: 0}, {Key: 1, Value: 6}, {Key: 1.5, Value: 0}},
+		} {
+			if !reflect.DeepEqual(playResult.Streams[streamID], want) {
+				t.Fatalf("%s stream %d = %+v, want %+v", level, streamID, playResult.Streams[streamID], want)
+			}
+		}
+		watchRoot := artifacts.Watch.Archetypes[0].Preprocess.Index
+		watchResult, err := simexec.Execute(artifacts.Watch.Nodes, watchRoot, simexec.Request{Streams: playResult.Streams})
+		if err != nil || len(watchResult.Effects) == 0 {
+			t.Fatalf("%s watch result=%+v err=%v", level, watchResult, err)
+		}
+		if levelIndex == 0 {
+			reference = playResult.Streams
+		} else if !reflect.DeepEqual(playResult.Streams, reference) {
+			t.Fatalf("%s stream state differs from Minimal", level)
+		}
 	}
 }
 func FuzzCompiledCallbackOptimizationSemantics(f *testing.F) {

@@ -1,0 +1,866 @@
+{
+  "schemaVersion": 2,
+  "javascriptCommit": "37b0eee5aa16d1e01973d33d625d86f5ef72d268",
+  "nativeSourceSha256": "b880ac08485df8958fd7dbe1839c601093f74927e8c1bf1d6ecba9055aabbb70",
+  "cases": [
+    {
+      "function": "Add",
+      "arguments": [
+        1,
+        -2,
+        3.5
+      ],
+      "result": 2.5
+    },
+    {
+      "function": "Add",
+      "arguments": [],
+      "result": 0
+    },
+    {
+      "function": "Add",
+      "arguments": [
+        7
+      ],
+      "result": 7
+    },
+    {
+      "function": "Add",
+      "arguments": [
+        "+Inf",
+        "-Inf"
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Multiply",
+      "arguments": [
+        2,
+        -3,
+        0.5
+      ],
+      "result": -3
+    },
+    {
+      "function": "Multiply",
+      "arguments": [],
+      "result": 0
+    },
+    {
+      "function": "Multiply",
+      "arguments": [
+        7
+      ],
+      "result": 7
+    },
+    {
+      "function": "Multiply",
+      "arguments": [
+        "-0",
+        4
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Divide",
+      "arguments": [
+        24,
+        3,
+        2
+      ],
+      "result": 4
+    },
+    {
+      "function": "Divide",
+      "arguments": [],
+      "result": 0
+    },
+    {
+      "function": "Divide",
+      "arguments": [
+        7
+      ],
+      "result": 7
+    },
+    {
+      "function": "Divide",
+      "arguments": [
+        1,
+        0
+      ],
+      "result": "+Inf"
+    },
+    {
+      "function": "Divide",
+      "arguments": [
+        0,
+        0
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Rem",
+      "arguments": [
+        -5,
+        3
+      ],
+      "result": -2
+    },
+    {
+      "function": "Rem",
+      "arguments": [],
+      "result": 0
+    },
+    {
+      "function": "Rem",
+      "arguments": [
+        7
+      ],
+      "result": 7
+    },
+    {
+      "function": "Rem",
+      "arguments": [
+        1,
+        0
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Mod",
+      "arguments": [
+        -5,
+        3
+      ],
+      "result": 1
+    },
+    {
+      "function": "Mod",
+      "arguments": [],
+      "result": 0
+    },
+    {
+      "function": "Mod",
+      "arguments": [
+        7
+      ],
+      "result": 7
+    },
+    {
+      "function": "Mod",
+      "arguments": [
+        1,
+        0
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Power",
+      "arguments": [
+        2,
+        3
+      ],
+      "result": 8
+    },
+    {
+      "function": "Power",
+      "arguments": [],
+      "result": 0
+    },
+    {
+      "function": "Power",
+      "arguments": [
+        7
+      ],
+      "result": 7
+    },
+    {
+      "function": "Power",
+      "arguments": [
+        -1,
+        0.5
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Log",
+      "arguments": [
+        2.718281828459045
+      ],
+      "result": 1
+    },
+    {
+      "function": "Log",
+      "arguments": [
+        0
+      ],
+      "result": "-Inf"
+    },
+    {
+      "function": "Log",
+      "arguments": [
+        -1
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Negate",
+      "arguments": [
+        -3.25
+      ],
+      "result": 3.25
+    },
+    {
+      "function": "Negate",
+      "arguments": [
+        0
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Negate",
+      "arguments": [
+        "-0"
+      ],
+      "result": 0
+    },
+    {
+      "function": "Equal",
+      "arguments": [
+        2,
+        2
+      ],
+      "result": 1
+    },
+    {
+      "function": "Equal",
+      "arguments": [
+        "NaN",
+        "NaN"
+      ],
+      "result": 0
+    },
+    {
+      "function": "Equal",
+      "arguments": [
+        0,
+        "-0"
+      ],
+      "result": 1
+    },
+    {
+      "function": "NotEqual",
+      "arguments": [
+        2,
+        3
+      ],
+      "result": 1
+    },
+    {
+      "function": "NotEqual",
+      "arguments": [
+        "NaN",
+        "NaN"
+      ],
+      "result": 1
+    },
+    {
+      "function": "Greater",
+      "arguments": [
+        3,
+        2
+      ],
+      "result": 1
+    },
+    {
+      "function": "Greater",
+      "arguments": [
+        "NaN",
+        0
+      ],
+      "result": 0
+    },
+    {
+      "function": "GreaterOr",
+      "arguments": [
+        2,
+        2
+      ],
+      "result": 1
+    },
+    {
+      "function": "GreaterOr",
+      "arguments": [
+        "NaN",
+        0
+      ],
+      "result": 0
+    },
+    {
+      "function": "Less",
+      "arguments": [
+        2,
+        3
+      ],
+      "result": 1
+    },
+    {
+      "function": "Less",
+      "arguments": [
+        "NaN",
+        0
+      ],
+      "result": 0
+    },
+    {
+      "function": "LessOr",
+      "arguments": [
+        2,
+        2
+      ],
+      "result": 1
+    },
+    {
+      "function": "LessOr",
+      "arguments": [
+        "NaN",
+        0
+      ],
+      "result": 0
+    },
+    {
+      "function": "Not",
+      "arguments": [
+        0
+      ],
+      "result": 1
+    },
+    {
+      "function": "Not",
+      "arguments": [
+        "-0"
+      ],
+      "result": 1
+    },
+    {
+      "function": "Not",
+      "arguments": [
+        "NaN"
+      ],
+      "result": 1
+    },
+    {
+      "function": "Not",
+      "arguments": [
+        2
+      ],
+      "result": 0
+    },
+    {
+      "function": "Abs",
+      "arguments": [
+        -3.25
+      ],
+      "result": 3.25
+    },
+    {
+      "function": "Abs",
+      "arguments": [
+        "-0"
+      ],
+      "result": 0
+    },
+    {
+      "function": "Abs",
+      "arguments": [
+        "-Inf"
+      ],
+      "result": "+Inf"
+    },
+    {
+      "function": "Sign",
+      "arguments": [
+        -3.25
+      ],
+      "result": -1
+    },
+    {
+      "function": "Sign",
+      "arguments": [
+        "-0"
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Sign",
+      "arguments": [
+        "NaN"
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Min",
+      "arguments": [
+        2,
+        -3
+      ],
+      "result": -3
+    },
+    {
+      "function": "Min",
+      "arguments": [
+        "NaN",
+        1
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Min",
+      "arguments": [
+        0,
+        "-0"
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Max",
+      "arguments": [
+        2,
+        -3
+      ],
+      "result": 2
+    },
+    {
+      "function": "Max",
+      "arguments": [
+        "NaN",
+        1
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Max",
+      "arguments": [
+        0,
+        "-0"
+      ],
+      "result": 0
+    },
+    {
+      "function": "Ceil",
+      "arguments": [
+        -1.25
+      ],
+      "result": -1
+    },
+    {
+      "function": "Ceil",
+      "arguments": [
+        "-0"
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Ceil",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": "+Inf"
+    },
+    {
+      "function": "Floor",
+      "arguments": [
+        -1.25
+      ],
+      "result": -2
+    },
+    {
+      "function": "Floor",
+      "arguments": [
+        "-0"
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Floor",
+      "arguments": [
+        "-Inf"
+      ],
+      "result": "-Inf"
+    },
+    {
+      "function": "Round",
+      "arguments": [
+        1.5
+      ],
+      "result": 2
+    },
+    {
+      "function": "Round",
+      "arguments": [
+        -1.5
+      ],
+      "result": -1
+    },
+    {
+      "function": "Round",
+      "arguments": [
+        -0.5
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Round",
+      "arguments": [
+        "-0"
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Frac",
+      "arguments": [
+        -1.25
+      ],
+      "result": 0.75
+    },
+    {
+      "function": "Frac",
+      "arguments": [
+        "-0"
+      ],
+      "result": 0
+    },
+    {
+      "function": "Frac",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Trunc",
+      "arguments": [
+        -1.75
+      ],
+      "result": -1
+    },
+    {
+      "function": "Trunc",
+      "arguments": [
+        "-0"
+      ],
+      "result": "-0"
+    },
+    {
+      "function": "Trunc",
+      "arguments": [
+        "-Inf"
+      ],
+      "result": "-Inf"
+    },
+    {
+      "function": "Degree",
+      "arguments": [
+        3.141592653589793
+      ],
+      "result": 180
+    },
+    {
+      "function": "Degree",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": "+Inf"
+    },
+    {
+      "function": "Radian",
+      "arguments": [
+        180
+      ],
+      "result": 3.141592653589793
+    },
+    {
+      "function": "Radian",
+      "arguments": [
+        "-Inf"
+      ],
+      "result": "-Inf"
+    },
+    {
+      "function": "Sin",
+      "arguments": [
+        0.75
+      ],
+      "result": 0.6816387600233341
+    },
+    {
+      "function": "Sin",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Cos",
+      "arguments": [
+        0.75
+      ],
+      "result": 0.7316888688738209
+    },
+    {
+      "function": "Cos",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Tan",
+      "arguments": [
+        0.75
+      ],
+      "result": 0.9315964599440725
+    },
+    {
+      "function": "Tan",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Sinh",
+      "arguments": [
+        0.75
+      ],
+      "result": 0.82231673193583
+    },
+    {
+      "function": "Sinh",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": "+Inf"
+    },
+    {
+      "function": "Cosh",
+      "arguments": [
+        0.75
+      ],
+      "result": 1.2946832846768448
+    },
+    {
+      "function": "Cosh",
+      "arguments": [
+        "-Inf"
+      ],
+      "result": "+Inf"
+    },
+    {
+      "function": "Tanh",
+      "arguments": [
+        0.75
+      ],
+      "result": 0.6351489523872873
+    },
+    {
+      "function": "Tanh",
+      "arguments": [
+        "-Inf"
+      ],
+      "result": -1
+    },
+    {
+      "function": "Arcsin",
+      "arguments": [
+        0.5
+      ],
+      "result": 0.5235987755982989
+    },
+    {
+      "function": "Arcsin",
+      "arguments": [
+        2
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Arccos",
+      "arguments": [
+        0.5
+      ],
+      "result": 1.0471975511965979
+    },
+    {
+      "function": "Arccos",
+      "arguments": [
+        2
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Arctan",
+      "arguments": [
+        0.5
+      ],
+      "result": 0.4636476090008061
+    },
+    {
+      "function": "Arctan",
+      "arguments": [
+        "+Inf"
+      ],
+      "result": 1.5707963267948966
+    },
+    {
+      "function": "Arctan2",
+      "arguments": [
+        1,
+        -1
+      ],
+      "result": 2.356194490192345
+    },
+    {
+      "function": "Arctan2",
+      "arguments": [
+        "-0",
+        "-0"
+      ],
+      "result": -3.141592653589793
+    },
+    {
+      "function": "Clamp",
+      "arguments": [
+        3,
+        -1,
+        2
+      ],
+      "result": 2
+    },
+    {
+      "function": "Clamp",
+      "arguments": [
+        "NaN",
+        -1,
+        2
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Lerp",
+      "arguments": [
+        -2,
+        6,
+        0.25
+      ],
+      "result": 0
+    },
+    {
+      "function": "Lerp",
+      "arguments": [
+        0,
+        "+Inf",
+        0
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "LerpClamped",
+      "arguments": [
+        -2,
+        6,
+        2
+      ],
+      "result": 6
+    },
+    {
+      "function": "LerpClamped",
+      "arguments": [
+        -2,
+        6,
+        "NaN"
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Unlerp",
+      "arguments": [
+        -2,
+        6,
+        2
+      ],
+      "result": 0.5
+    },
+    {
+      "function": "Unlerp",
+      "arguments": [
+        1,
+        1,
+        1
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "UnlerpClamped",
+      "arguments": [
+        -2,
+        6,
+        10
+      ],
+      "result": 1
+    },
+    {
+      "function": "UnlerpClamped",
+      "arguments": [
+        1,
+        1,
+        1
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "Remap",
+      "arguments": [
+        0,
+        10,
+        -2,
+        2,
+        2.5
+      ],
+      "result": -1
+    },
+    {
+      "function": "Remap",
+      "arguments": [
+        1,
+        1,
+        0,
+        1,
+        1
+      ],
+      "result": "NaN"
+    },
+    {
+      "function": "RemapClamped",
+      "arguments": [
+        0,
+        10,
+        -2,
+        2,
+        20
+      ],
+      "result": 2
+    },
+    {
+      "function": "RemapClamped",
+      "arguments": [
+        1,
+        1,
+        0,
+        1,
+        1
+      ],
+      "result": "NaN"
+    }
+  ]
+}

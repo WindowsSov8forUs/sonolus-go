@@ -20,6 +20,7 @@
 允许的标准库仅包括：
 
 - `_ "embed"`：使用 `//go:embed` 时由 Go 语言要求导入；`sonolus.ROMFile` 不直接使用 `embed` 包类型，因此采用空白导入。
+- `iter`：仅用于编译期内联的 range-over-func、容器与 stream iterator，不生成运行时函数对象。
 - `math`：仅允许 catalog 已登记的常量和函数。
 - `math/rand`：仅允许 `Float64` 和 `Intn`。
 

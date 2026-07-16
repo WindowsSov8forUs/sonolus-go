@@ -7,6 +7,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 )
 
 func allocatedFunction(slots int) *ir.Function {
@@ -70,6 +71,28 @@ func TestDeadCodeEliminationPreservesIndexedLocalInitialization(t *testing.T) {
 		if got := len(function.Blocks[0].Instructions); got != 3 {
 			t.Fatalf("%s retained %d instructions, want 3", pass.Name(), got)
 		}
+	}
+}
+
+func TestDeadCodeEliminationPreservesDynamicStoreAddress(t *testing.T) {
+	index := ir.LocalPlace{ID: 0, Name: "entity"}
+	function := &ir.Function{
+		Name: "dynamic-store-address", Entry: 0, Result: ir.Type{},
+		Locals: []ir.Type{{Name: "entity", Slots: 1}},
+		Blocks: []*ir.Block{{
+			ID: 0,
+			Instructions: []ir.Instruction{
+				ir.Store{Place: index, Value: ir.Const{Value: 2}},
+				ir.Store{Place: ir.MemoryPlace{Storage: "EntitySharedMemoryArray", Index: ir.Load{Place: index}, Stride: 32, Write: true}, Value: ir.Const{Value: -1}},
+			},
+			Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}},
+		}},
+	}
+	if err := (DeadCodeElimination{}).Run(Context{}, function); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(function.Blocks[0].Instructions); got != 2 {
+		t.Fatalf("DCE retained %d instructions, want the address definition and semantic store", got)
 	}
 }
 
@@ -212,5 +235,177 @@ func TestCoalesceFlowMaterializesSinglePredecessorPhi(t *testing.T) {
 	}
 	if err := ir.Validate(fn); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLICMHoistsReadonlyMemoryWithInvariantIndex(t *testing.T) {
+	number := ir.Type{Name: "number", Slots: 1}
+	index := ir.SSAPlace{ID: 1, Name: "index"}
+	value := ir.SSAPlace{ID: 2, Name: "value"}
+	readonly := ir.MemoryPlace{Storage: "EngineRom", Index: ir.Load{Place: index}, Read: true, Write: false}
+	function := &ir.Function{Name: "licm-readonly", Entry: 0, Result: ir.Type{}, Blocks: []*ir.Block{
+		{ID: 0, Instructions: []ir.Instruction{ir.Store{Place: index, Value: ir.Const{Value: 3}}}, Terminator: ir.Jump{Target: 1}},
+		{ID: 1, Terminator: ir.Branch{Condition: ir.Load{Place: parityMemory(0)}, True: 2, False: 3}},
+		{ID: 2, Instructions: []ir.Instruction{ir.Store{Place: value, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Load{Place: readonly}, ir.Const{Value: 1}}, Result: number, Pure: true}}}, Terminator: ir.Jump{Target: 1}},
+		{ID: 3, Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}}},
+	}}
+	if err := (LoopInvariantCodeMotion{}).Run(Context{}, function); err != nil {
+		t.Fatal(err)
+	}
+	if len(function.Blocks[0].Instructions) != 2 || len(function.Blocks[2].Instructions) != 1 {
+		t.Fatalf("readonly invariant was not hoisted: preheader=%#v body=%#v", function.Blocks[0].Instructions, function.Blocks[2].Instructions)
+	}
+	bodyStore := function.Blocks[2].Instructions[0].(ir.Store)
+	load, ok := bodyStore.Value.(ir.Load)
+	if !ok {
+		t.Fatalf("loop body still recomputes invariant expression: %#v", bodyStore.Value)
+	}
+	if _, ok := load.Place.(ir.SSAPlace); !ok {
+		t.Fatalf("loop body does not reuse hoisted SSA value: %#v", load.Place)
+	}
+	writableFunction := CloneFunction(function)
+	writableFunction.Blocks[0].Instructions = writableFunction.Blocks[0].Instructions[:1]
+	writableFunction.Blocks[2].Instructions = []ir.Instruction{ir.Store{Place: value, Value: ir.Load{Place: ir.MemoryPlace{Storage: "shared", Index: ir.Const{}, Read: true, Write: true}}}}
+	if err := (LoopInvariantCodeMotion{}).Run(Context{}, writableFunction); err != nil {
+		t.Fatal(err)
+	}
+	if len(writableFunction.Blocks[2].Instructions) != 1 {
+		t.Fatal("writable memory load was hoisted")
+	}
+}
+
+func TestLICMHandlesMultipleLatchesWhenTheCandidateDominatesAll(t *testing.T) {
+	number := ir.Type{Name: "number", Slots: 1}
+	value := ir.SSAPlace{ID: 1, Name: "value"}
+	readonly := ir.MemoryPlace{Storage: "EngineRom", Index: ir.Const{Value: 3}, Read: true, Write: false}
+	function := &ir.Function{Name: "licm-multiple-latches", Entry: 0, Result: ir.Type{}, Blocks: []*ir.Block{
+		{ID: 0, Terminator: ir.Jump{Target: 1}},
+		{ID: 1, Instructions: []ir.Instruction{ir.Store{Place: value, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Load{Place: readonly}, ir.Const{Value: 1}}, Result: number, Pure: true}}}, Terminator: ir.Branch{Condition: ir.Load{Place: parityMemory(0)}, True: 2, False: 4}},
+		{ID: 2, Terminator: ir.Branch{Condition: ir.Load{Place: parityMemory(1)}, True: 1, False: 3}},
+		{ID: 3, Terminator: ir.Jump{Target: 1}},
+		{ID: 4, Terminator: emptyReturn()},
+	}}
+	if err := (LoopInvariantCodeMotion{}).Run(Context{}, function); err != nil {
+		t.Fatal(err)
+	}
+	if len(function.Blocks[0].Instructions) != 1 {
+		t.Fatalf("multi-latch invariant was not hoisted: %#v", function.Blocks[0].Instructions)
+	}
+	store := function.Blocks[1].Instructions[0].(ir.Store)
+	if _, ok := store.Value.(ir.Load); !ok {
+		t.Fatalf("multi-latch body still recomputes invariant: %#v", store.Value)
+	}
+	if err := ir.Validate(function); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLICMDoesNotHoistExpressionDependingOnLoopPhi(t *testing.T) {
+	number := ir.Type{Name: "number", Slots: 1}
+	index := ir.SSAPlace{ID: 1, Name: "index"}
+	next := ir.SSAPlace{ID: 2, Name: "next"}
+	value := ir.SSAPlace{ID: 3, Name: "value"}
+	readonly := ir.MemoryPlace{Storage: "EngineRom", Index: ir.Load{Place: index}, Read: true, Write: false}
+	function := &ir.Function{Name: "licm-loop-phi", Entry: 0, Result: ir.Type{}, Blocks: []*ir.Block{
+		{ID: 0, Terminator: ir.Jump{Target: 1}},
+		{ID: 1, Phis: []ir.Phi{{Target: index, Args: []ir.PhiArg{{Predecessor: 0, Value: ir.SSAPlace{ID: 0}}, {Predecessor: 2, Value: next}}}}, Terminator: ir.Branch{Condition: ir.RuntimeCall{Function: resource.RuntimeFunctionLess, Args: []ir.Expr{ir.Load{Place: index}, ir.Const{Value: 3}}, Result: number, Pure: true}, True: 2, False: 3}},
+		{ID: 2, Instructions: []ir.Instruction{
+			ir.Store{Place: value, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Load{Place: readonly}, ir.Const{Value: 1}}, Result: number, Pure: true}},
+			ir.Store{Place: next, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Load{Place: index}, ir.Const{Value: 1}}, Result: number, Pure: true}},
+		}, Terminator: ir.Jump{Target: 1}},
+		{ID: 3, Terminator: emptyReturn()},
+	}}
+	if err := (LoopInvariantCodeMotion{}).Run(Context{Mode: mode.ModePlay, Callback: "updateParallel"}, function); err != nil {
+		t.Fatal(err)
+	}
+	if len(function.Blocks[0].Instructions) != 0 {
+		t.Fatalf("loop-phi-dependent expression was hoisted: %#v", function.Blocks[0].Instructions)
+	}
+}
+
+func TestLICMCreatesPreheaderAndMergesOutsidePhiValues(t *testing.T) {
+	number := ir.Type{Name: "number", Slots: 1}
+	left := ir.SSAPlace{ID: 0, Name: "left"}
+	right := ir.SSAPlace{ID: 1, Name: "right"}
+	current := ir.SSAPlace{ID: 2, Name: "current"}
+	next := ir.SSAPlace{ID: 3, Name: "next"}
+	value := ir.SSAPlace{ID: 4, Name: "value"}
+	readonly := ir.MemoryPlace{Storage: "EngineRom", Index: ir.Const{}, Read: true, Write: false}
+	function := &ir.Function{Name: "licm-create-preheader", Entry: 0, Result: ir.Type{}, Locals: []ir.Type{number}, Blocks: []*ir.Block{
+		{ID: 0, Terminator: ir.Branch{Condition: ir.Load{Place: parityMemory(0)}, True: 1, False: 2}},
+		{ID: 1, Instructions: []ir.Instruction{ir.Store{Place: left, Value: ir.Const{Value: 1}}}, Terminator: ir.Jump{Target: 3}},
+		{ID: 2, Instructions: []ir.Instruction{ir.Store{Place: right, Value: ir.Const{Value: 2}}}, Terminator: ir.Jump{Target: 3}},
+		{ID: 3, Phis: []ir.Phi{{Target: current, Local: ir.LocalPlace{ID: 0}, Args: []ir.PhiArg{{Predecessor: 1, Value: left}, {Predecessor: 2, Value: right}, {Predecessor: 4, Value: next}}}}, Instructions: []ir.Instruction{
+			ir.Store{Place: value, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Load{Place: readonly}, ir.Const{Value: 1}}, Result: number, Pure: true}},
+		}, Terminator: ir.Branch{Condition: ir.RuntimeCall{Function: resource.RuntimeFunctionLess, Args: []ir.Expr{ir.Load{Place: current}, ir.Const{Value: 3}}, Result: number, Pure: true}, True: 4, False: 5}},
+		{ID: 4, Instructions: []ir.Instruction{ir.Store{Place: next, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Load{Place: current}, ir.Const{Value: 1}}, Result: number, Pure: true}}}, Terminator: ir.Jump{Target: 3}},
+		{ID: 5, Terminator: emptyReturn()},
+	}}
+	if err := (LoopInvariantCodeMotion{}).Run(Context{Mode: mode.ModePlay, Callback: "updateParallel"}, function); err != nil {
+		t.Fatal(err)
+	}
+	if len(function.Blocks) != 7 {
+		t.Fatalf("blocks = %d, want 7", len(function.Blocks))
+	}
+	preheader := function.Blocks[6]
+	if len(preheader.Phis) != 1 || len(preheader.Phis[0].Args) != 2 {
+		t.Fatalf("preheader phis = %#v", preheader.Phis)
+	}
+	if len(preheader.Instructions) != 1 {
+		t.Fatalf("preheader instructions = %#v", preheader.Instructions)
+	}
+	for _, predecessor := range []int{1, 2} {
+		jump, ok := function.Blocks[predecessor].Terminator.(ir.Jump)
+		if !ok || jump.Target != preheader.ID {
+			t.Fatalf("block %d terminator = %#v", predecessor, function.Blocks[predecessor].Terminator)
+		}
+	}
+	headerPhi := function.Blocks[3].Phis[0]
+	if len(headerPhi.Args) != 2 || headerPhi.Args[0].Predecessor != 4 || headerPhi.Args[1].Predecessor != preheader.ID || headerPhi.Args[1].Value != preheader.Phis[0].Target {
+		t.Fatalf("header phi args = %#v", headerPhi.Args)
+	}
+	if _, ok := function.Blocks[3].Instructions[0].(ir.Store).Value.(ir.Load); !ok {
+		t.Fatalf("loop body still recomputes invariant: %#v", function.Blocks[3].Instructions[0])
+	}
+	if err := ir.Validate(function); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCSEExtractsNestedReadonlyAndCanonicalizesSafeCommutativeOps(t *testing.T) {
+	number := ir.Type{Name: "number", Slots: 1}
+	left, right := ir.SSAPlace{ID: 1, Name: "left"}, ir.SSAPlace{ID: 2, Name: "right"}
+	equal := func(a, b ir.Expr) ir.Expr {
+		return ir.RuntimeCall{Function: resource.RuntimeFunctionEqual, Args: []ir.Expr{a, b}, Result: number, Pure: true}
+	}
+	function := &ir.Function{Name: "cse-nested", Entry: 0, Result: number, Blocks: []*ir.Block{{ID: 0, Instructions: []ir.Instruction{ir.Store{Place: left, Value: ir.Const{Value: 1}}, ir.Store{Place: right, Value: ir.Const{Value: 2}}}, Terminator: ir.Return{Value: ir.Value{Type: number, Slots: []ir.Expr{ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{equal(ir.Load{Place: left}, ir.Load{Place: right}), equal(ir.Load{Place: right}, ir.Load{Place: left})}, Result: number, Pure: true}}}}}}}
+	if err := (CommonSubexpressionElimination{}).Run(Context{}, function); err != nil {
+		t.Fatal(err)
+	}
+	if len(function.Blocks[0].Instructions) < 3 {
+		t.Fatalf("nested expression was not extracted: %#v", function.Blocks[0].Instructions)
+	}
+	returned := function.Blocks[0].Terminator.(ir.Return).Value.Slots[0]
+	call, ok := returned.(ir.Load)
+	if !ok {
+		t.Fatalf("top-level CSE result = %#v, want extracted load", returned)
+	}
+	if _, ok := call.Place.(ir.SSAPlace); !ok {
+		t.Fatalf("CSE result place = %#v", call.Place)
+	}
+	if err := ir.Validate(function); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadonlyMemoryOracleBlocksWritableFacadeStorage(t *testing.T) {
+	context := Context{Mode: "play", Callback: "preprocess"}
+	ui := ir.Load{Place: ir.MemoryPlace{Storage: "RuntimeUI", Index: ir.Const{}, Read: true, Write: false}}
+	rom := ir.Load{Place: ir.MemoryPlace{Storage: "EngineRom", Index: ir.Const{}, Read: true, Write: false}}
+	if movableExpression(context, ui) {
+		t.Fatal("RuntimeUI load was considered movable across preprocess setters")
+	}
+	if !movableExpression(context, rom) {
+		t.Fatal("EngineRom load was not considered readonly")
 	}
 }

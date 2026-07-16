@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/catalog"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
 
@@ -14,24 +15,28 @@ func (DeadCodeElimination) Run(_ Context, function *ir.Function) error {
 	indexed := indexedLocalIDs(function)
 	for changed := true; changed; {
 		changed = false
-		uses := map[string]int{}
+		uses := map[temporaryPlaceKey]int{}
 		visit := func(expr ir.Expr) {
 			walkExpr(expr, func(e ir.Expr) {
 				if l, ok := e.(ir.Load); ok {
-					uses[placeKey(l.Place)]++
+					if key, valid := placeKey(l.Place); valid {
+						uses[key]++
+					}
 				}
 			})
 		}
 		for _, b := range function.Blocks {
 			for _, p := range b.Phis {
 				for _, a := range p.Args {
-					uses[placeKey(a.Value)]++
+					key, _ := placeKey(a.Value)
+					uses[key]++
 				}
 			}
 			for _, in := range b.Instructions {
 				switch v := in.(type) {
 				case ir.Store:
 					visit(v.Value)
+					addPlaceExpressions(v.Place, visit)
 				case ir.Eval:
 					visit(v.Value)
 				}
@@ -46,7 +51,8 @@ func (DeadCodeElimination) Run(_ Context, function *ir.Function) error {
 				if place, local := store.Place.(ir.LocalPlace); local {
 					addressTaken = indexed[place.ID]
 				}
-				if ok && isTemporaryPlace(store.Place) && !addressTaken && uses[placeKey(store.Place)] == 0 && !expressionHasEffects(store.Value) {
+				key, temporary := placeKey(store.Place)
+				if ok && temporary && !addressTaken && uses[key] == 0 && !expressionHasEffects(store.Value) {
 					changed = true
 					continue
 				}
@@ -60,18 +66,22 @@ func (DeadCodeElimination) Run(_ Context, function *ir.Function) error {
 
 type AdvancedDeadCodeElimination struct{}
 
+func (AdvancedDeadCodeElimination) Requires() []Analysis  { return nil }
+func (AdvancedDeadCodeElimination) Preserves() []Analysis { return []Analysis{AnalysisLiveness} }
+func (AdvancedDeadCodeElimination) Destroys() []Analysis  { return nil }
+
 func (AdvancedDeadCodeElimination) Name() string { return "AdvancedDeadCodeElimination" }
 func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 	indexed := indexedLocalIDs(f)
-	use := make([]map[string]bool, len(f.Blocks))
-	def := make([]map[string]bool, len(f.Blocks))
+	use := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
+	def := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
 	for i := range f.Blocks {
-		use[i], def[i] = map[string]bool{}, map[string]bool{}
+		use[i], def[i] = map[temporaryPlaceKey]bool{}, map[temporaryPlaceKey]bool{}
 		add := func(expr ir.Expr) {
 			walkExpr(expr, func(value ir.Expr) {
 				if load, ok := value.(ir.Load); ok {
-					key := placeKey(load.Place)
-					if key != "" && !def[i][key] {
+					key, valid := placeKey(load.Place)
+					if valid && !def[i][key] {
 						use[i][key] = true
 					}
 				}
@@ -82,7 +92,7 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 			case ir.Store:
 				add(value.Value)
 				addPlaceExpressions(value.Place, add)
-				if key := placeKey(value.Place); key != "" {
+				if key, valid := placeKey(value.Place); valid {
 					def[i][key] = true
 				}
 			case ir.Eval:
@@ -91,20 +101,20 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 		}
 		visitTerminator(f.Blocks[i].Terminator, add)
 	}
-	liveIn := make([]map[string]bool, len(f.Blocks))
-	liveOut := make([]map[string]bool, len(f.Blocks))
+	liveIn := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
+	liveOut := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
 	for i := range f.Blocks {
-		liveIn[i], liveOut[i] = map[string]bool{}, map[string]bool{}
+		liveIn[i], liveOut[i] = map[temporaryPlaceKey]bool{}, map[temporaryPlaceKey]bool{}
 	}
 	for changed := true; changed; {
 		changed = false
 		for i := len(f.Blocks) - 1; i >= 0; i-- {
-			out := map[string]bool{}
-			for _, successor := range terminatorTargets(f.Blocks[i].Terminator) {
+			out := map[temporaryPlaceKey]bool{}
+			forEachTerminatorTarget(f.Blocks[i].Terminator, func(successor int) {
 				for key := range liveIn[successor] {
 					out[key] = true
 				}
-			}
+			})
 			in := cloneStringSet(use[i])
 			for key := range out {
 				if !def[i][key] {
@@ -123,15 +133,15 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 		for i := len(block.Instructions) - 1; i >= 0; i-- {
 			instruction := block.Instructions[i]
 			if store, ok := instruction.(ir.Store); ok {
-				key := placeKey(store.Place)
+				key, temporary := placeKey(store.Place)
 				addressTaken := false
 				if place, local := store.Place.(ir.LocalPlace); local {
 					addressTaken = indexed[place.ID]
 				}
-				if key != "" && !addressTaken && !live[key] && !expressionHasEffects(store.Value) {
+				if temporary && !addressTaken && !live[key] && !expressionHasEffects(store.Value) {
 					continue
 				}
-				if key != "" {
+				if temporary {
 					delete(live, key)
 				}
 				addExpressionKeys(store.Value, live)
@@ -186,25 +196,25 @@ func addPlaceExpressions(place ir.Place, fn func(ir.Expr)) {
 	}
 }
 
-func addExpressionKeys(expr ir.Expr, values map[string]bool) {
+func addExpressionKeys(expr ir.Expr, values map[temporaryPlaceKey]bool) {
 	walkExpr(expr, func(value ir.Expr) {
 		if load, ok := value.(ir.Load); ok {
-			if key := placeKey(load.Place); key != "" {
+			if key, valid := placeKey(load.Place); valid {
 				values[key] = true
 			}
 		}
 	})
 }
 
-func cloneStringSet(input map[string]bool) map[string]bool {
-	result := make(map[string]bool, len(input))
+func cloneStringSet(input map[temporaryPlaceKey]bool) map[temporaryPlaceKey]bool {
+	result := make(map[temporaryPlaceKey]bool, len(input))
 	for key := range input {
 		result[key] = true
 	}
 	return result
 }
 
-func sameStringSet(a, b map[string]bool) bool {
+func sameStringSet(a, b map[temporaryPlaceKey]bool) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -223,14 +233,17 @@ func isTemporaryPlace(p ir.Place) bool {
 	}
 	return false
 }
-func placeKey(p ir.Place) string {
+
+type temporaryPlaceKey uint64
+
+func placeKey(p ir.Place) (temporaryPlaceKey, bool) {
 	switch v := p.(type) {
 	case ir.LocalPlace:
-		return "l:" + itoa(v.ID) + ":" + itoa(v.Offset)
+		return temporaryPlaceKey(uint64(uint32(v.ID))<<32 | uint64(uint32(v.Offset))), true
 	case ir.SSAPlace:
-		return "s:" + itoa(v.ID)
+		return temporaryPlaceKey(uint64(1)<<63 | uint64(uint32(v.ID))), true
 	}
-	return ""
+	return 0, false
 }
 func itoa(v int) string {
 	if v == 0 {
@@ -314,12 +327,12 @@ func (SparseConditionalConstantPropagation) Run(_ Context, function *ir.Function
 					}
 				}
 			}
-			for _, successor := range executableTargets(block.Terminator, states) {
+			forEachExecutableTarget(block.Terminator, states, func(successor int) {
 				if !reachable[successor] {
 					reachable[successor] = true
 					changed = true
 				}
-			}
+			})
 		}
 		if changed {
 			continue
@@ -341,7 +354,20 @@ func (SparseConditionalConstantPropagation) Run(_ Context, function *ir.Function
 			constants[id] = ir.Const{Value: state.value}
 		}
 	}
-	rewriteFunctionExpressions(function, func(expr ir.Expr) ir.Expr { return foldExpr(expr, constants) })
+	rewriteFunctionExpressionsChanged(function, func(expr ir.Expr) (ir.Expr, bool) {
+		folded := foldExpr(expr, constants)
+		switch value := expr.(type) {
+		case ir.Load:
+			if place, ok := value.Place.(ir.SSAPlace); ok {
+				_, changed := constants[place.ID]
+				return folded, changed
+			}
+		case ir.RuntimeCall:
+			_, changed := folded.(ir.Const)
+			return folded, changed
+		}
+		return folded, false
+	})
 	return (FoldConstantControl{}).Run(Context{}, function)
 }
 
@@ -414,38 +440,43 @@ func updateConstantState(states map[int]constantState, id int, next constantStat
 	return true
 }
 
-func executableTargets(terminator ir.Terminator, states map[int]constantState) []int {
+func forEachExecutableTarget(terminator ir.Terminator, states map[int]constantState, visit func(int)) {
 	switch value := terminator.(type) {
 	case ir.Jump:
-		return []int{value.Target}
+		visit(value.Target)
 	case ir.Branch:
 		state := evaluateConstantState(value.Condition, states)
 		if state.kind == constantUnknown {
-			return nil
+			return
 		}
 		if state.kind == constantValue {
 			if state.value != 0 {
-				return []int{value.True}
+				visit(value.True)
+				return
 			}
-			return []int{value.False}
+			visit(value.False)
+			return
 		}
-		return []int{value.True, value.False}
+		visit(value.True)
+		if value.False != value.True {
+			visit(value.False)
+		}
 	case ir.Switch:
 		state := evaluateConstantState(value.Value, states)
 		if state.kind == constantUnknown {
-			return nil
+			return
 		}
 		if state.kind == constantValue {
 			for _, item := range value.Cases {
 				if item.Value == state.value {
-					return []int{item.Target}
+					visit(item.Target)
+					return
 				}
 			}
-			return []int{value.Default}
+			visit(value.Default)
+			return
 		}
-		return terminatorTargets(terminator)
-	default:
-		return nil
+		forEachTerminatorTarget(terminator, visit)
 	}
 }
 
@@ -453,12 +484,13 @@ func edgeExecutable(predecessor *ir.Block, successor int, states map[int]constan
 	if predecessor == nil || !reachable[predecessor.ID] {
 		return false
 	}
-	for _, target := range executableTargets(predecessor.Terminator, states) {
+	found := false
+	forEachExecutableTarget(predecessor.Terminator, states, func(target int) {
 		if target == successor {
-			return true
+			found = true
 		}
-	}
-	return false
+	})
+	return found
 }
 
 func referencedSSA(function *ir.Function) map[int]bool {
@@ -725,14 +757,14 @@ func (p InlineVars) Name() string {
 	}
 	return "InlineVars"
 }
-func (p InlineVars) Run(_ Context, f *ir.Function) error {
-	defs := map[string]ir.Expr{}
-	defCounts := map[string]int{}
-	uses := map[string]int{}
+func (p InlineVars) Run(context Context, f *ir.Function) error {
+	defs := map[temporaryPlaceKey]ir.Expr{}
+	defCounts := map[temporaryPlaceKey]int{}
+	uses := map[temporaryPlaceKey]int{}
 	for _, b := range f.Blocks {
 		for _, in := range b.Instructions {
 			if s, ok := in.(ir.Store); ok && isTemporaryPlace(s.Place) {
-				k := placeKey(s.Place)
+				k, _ := placeKey(s.Place)
 				defs[k] = s.Value
 				defCounts[k]++
 			}
@@ -749,42 +781,53 @@ func (p InlineVars) Run(_ Context, f *ir.Function) error {
 		}
 		visitTerminator(block.Terminator, func(expr ir.Expr) { countLoads(expr, uses) })
 	}
-	rewriteFunctionExpressions(f, func(e ir.Expr) ir.Expr {
+	rewriteFunctionExpressionsChanged(f, func(e ir.Expr) (ir.Expr, bool) {
 		l, ok := e.(ir.Load)
 		if !ok {
-			return e
+			return e, false
 		}
-		k := placeKey(l.Place)
+		k, valid := placeKey(l.Place)
+		if !valid {
+			return e, false
+		}
 		v, ok := defs[k]
-		if !ok || defCounts[k] != 1 || !movableExpression(v) || (!p.Aggressive && uses[k] != 1) {
-			return e
+		if !ok || defCounts[k] != 1 || !movableExpression(context, v) || (!p.Aggressive && uses[k] != 1) {
+			return e, false
 		}
-		return cloneExpr(v)
+		return cloneExpr(v), true
 	})
 	return nil
 }
 
-func countLoads(expr ir.Expr, counts map[string]int) {
+func countLoads(expr ir.Expr, counts map[temporaryPlaceKey]int) {
 	walkExpr(expr, func(value ir.Expr) {
 		if load, ok := value.(ir.Load); ok {
-			counts[placeKey(load.Place)]++
+			if key, valid := placeKey(load.Place); valid {
+				counts[key]++
+			}
 		}
 	})
 }
 
-func movableExpression(expr ir.Expr) bool {
+func movableExpression(context Context, expr ir.Expr) bool {
 	switch value := expr.(type) {
 	case ir.Const:
 		return true
 	case ir.Load:
-		_, ok := value.Place.(ir.SSAPlace)
-		return ok
+		switch place := value.Place.(type) {
+		case ir.SSAPlace:
+			return true
+		case ir.MemoryPlace:
+			return place.Read && !place.Write && catalog.MemoryReadonly(context.Mode, context.Callback, place.Storage) && movableExpression(context, place.Index)
+		default:
+			return false
+		}
 	case ir.RuntimeCall:
 		if !value.Pure {
 			return false
 		}
 		for _, arg := range value.Args {
-			if !movableExpression(arg) {
+			if !movableExpression(context, arg) {
 				return false
 			}
 		}
@@ -802,28 +845,51 @@ func (CommonSubexpressionElimination) Preserves() []Analysis { return []Analysis
 func (CommonSubexpressionElimination) Destroys() []Analysis  { return nil }
 func (CommonSubexpressionElimination) Run(context Context, f *ir.Function) error {
 	dom := dominanceFor(context, f)
-	var visit func(int, map[string]ir.Place)
-	visit = func(id int, inherited map[string]ir.Place) {
-		available := make(map[string]ir.Place, len(inherited))
+	nextSSA := maxSSAID(f) + 1
+	var visit func(int, map[string]ir.SSAPlace)
+	visit = func(id int, inherited map[string]ir.SSAPlace) {
+		available := make(map[string]ir.SSAPlace, len(inherited))
 		for key, place := range inherited {
 			available[key] = place
 		}
 		block := f.Blocks[id]
-		for i, instruction := range block.Instructions {
-			store, ok := instruction.(ir.Store)
-			if !ok {
-				continue
+		original := block.Instructions
+		block.Instructions = nil
+		for _, instruction := range original {
+			switch value := instruction.(type) {
+			case ir.Store:
+				value.Place = rewritePlace(value.Place, func(expr ir.Expr) ir.Expr {
+					return cseExpression(context, expr, block, available, &nextSSA, true)
+				})
+				value.Value = cseExpression(context, value.Value, block, available, &nextSSA, true)
+				if target, ok := value.Place.(ir.SSAPlace); ok && movableExpression(context, value.Value) {
+					key := exprKey(value.Value)
+					if previous, exists := available[key]; exists {
+						value.Value = ir.Load{Place: previous}
+					} else {
+						available[key] = target
+					}
+				}
+				block.Instructions = append(block.Instructions, value)
+			case ir.Eval:
+				value.Value = cseExpression(context, value.Value, block, available, &nextSSA, true)
+				block.Instructions = append(block.Instructions, value)
+			default:
+				block.Instructions = append(block.Instructions, instruction)
 			}
-			if !movableExpression(store.Value) || !isTemporaryPlace(store.Place) {
-				continue
+		}
+		switch value := block.Terminator.(type) {
+		case ir.Branch:
+			value.Condition = cseExpression(context, value.Condition, block, available, &nextSSA, true)
+			block.Terminator = value
+		case ir.Switch:
+			value.Value = cseExpression(context, value.Value, block, available, &nextSSA, true)
+			block.Terminator = value
+		case ir.Return:
+			for index, slot := range value.Value.Slots {
+				value.Value.Slots[index] = cseExpression(context, slot, block, available, &nextSSA, true)
 			}
-			key := exprKey(store.Value)
-			if previous, exists := available[key]; exists {
-				store.Value = ir.Load{Place: previous}
-				block.Instructions[i] = store
-			} else {
-				available[key] = store.Place
-			}
+			block.Terminator = value
 		}
 		for _, child := range dom.Children[id] {
 			visit(child, available)
@@ -832,20 +898,143 @@ func (CommonSubexpressionElimination) Run(context Context, f *ir.Function) error
 	visit(f.Entry, nil)
 	return nil
 }
+
+func maxSSAID(function *ir.Function) int {
+	maximum := 0
+	walk := func(expression ir.Expr) {
+		walkExpr(expression, func(value ir.Expr) {
+			if load, ok := value.(ir.Load); ok {
+				if place, ok := load.Place.(ir.SSAPlace); ok && place.ID > maximum {
+					maximum = place.ID
+				}
+			}
+		})
+	}
+	for _, block := range function.Blocks {
+		for _, phi := range block.Phis {
+			if phi.Target.ID > maximum {
+				maximum = phi.Target.ID
+			}
+			for _, argument := range phi.Args {
+				if argument.Value.ID > maximum {
+					maximum = argument.Value.ID
+				}
+			}
+		}
+		for _, instruction := range block.Instructions {
+			switch value := instruction.(type) {
+			case ir.Store:
+				if place, ok := value.Place.(ir.SSAPlace); ok && place.ID > maximum {
+					maximum = place.ID
+				}
+				walk(value.Value)
+			case ir.Eval:
+				walk(value.Value)
+			}
+		}
+		visitTerminator(block.Terminator, walk)
+	}
+	return maximum
+}
+
+func cseExpression(context Context, expression ir.Expr, block *ir.Block, available map[string]ir.SSAPlace, next *int, extract bool) ir.Expr {
+	switch value := expression.(type) {
+	case ir.Load:
+		value.Place = rewritePlace(value.Place, func(index ir.Expr) ir.Expr {
+			return cseExpression(context, index, block, available, next, true)
+		})
+		expression = value
+	case ir.RuntimeCall:
+		for index, argument := range value.Args {
+			value.Args[index] = cseExpression(context, argument, block, available, next, true)
+		}
+		if isCSECommutative(value.Function) && len(value.Args) == 2 && exprKey(value.Args[1]) < exprKey(value.Args[0]) {
+			value.Args[0], value.Args[1] = value.Args[1], value.Args[0]
+		}
+		expression = value
+	}
+	if !movableExpression(context, expression) {
+		return expression
+	}
+	key := exprKey(expression)
+	if previous, exists := available[key]; exists {
+		return ir.Load{Place: previous}
+	}
+	if !extract || expressionCost(expression) < 4 {
+		return expression
+	}
+	place := ir.SSAPlace{ID: *next, Name: "cse"}
+	*next++
+	block.Instructions = append(block.Instructions, ir.Store{Place: place, Value: expression})
+	available[key] = place
+	return ir.Load{Place: place}
+}
+
+func expressionCost(expression ir.Expr) int {
+	switch value := expression.(type) {
+	case ir.Const:
+		return 1
+	case ir.Load:
+		switch place := value.Place.(type) {
+		case ir.SSAPlace:
+			return 3
+		case ir.MemoryPlace:
+			return 2 + expressionCost(place.Index)
+		default:
+			return 1
+		}
+	case ir.RuntimeCall:
+		cost := 1
+		for _, argument := range value.Args {
+			cost += expressionCost(argument)
+		}
+		return cost
+	default:
+		return 1
+	}
+}
+
+func isCSECommutative(function resource.RuntimeFunction) bool {
+	switch function {
+	case resource.RuntimeFunctionEqual, resource.RuntimeFunctionNotEqual, resource.RuntimeFunctionMin, resource.RuntimeFunctionMax:
+		return true
+	default:
+		return false
+	}
+}
 func exprKey(e ir.Expr) string {
 	switch v := e.(type) {
 	case ir.Const:
 		return "c:" + fmtFloat(v.Value)
 	case ir.Load:
-		return "g:" + placeKey(v.Place)
+		return "g:" + csePlaceKey(v.Place)
 	case ir.RuntimeCall:
 		s := "f:" + string(v.Function)
-		for _, a := range v.Args {
+		arguments := v.Args
+		if isCSECommutative(v.Function) && len(arguments) == 2 && exprKey(arguments[1]) < exprKey(arguments[0]) {
+			arguments = []ir.Expr{arguments[1], arguments[0]}
+		}
+		for _, a := range arguments {
 			s += "|" + exprKey(a)
 		}
 		return s
 	}
 	return "?"
+}
+
+func csePlaceKey(place ir.Place) string {
+	switch value := place.(type) {
+	case ir.LocalPlace:
+		return "local:" + itoa(value.ID) + ":" + itoa(value.Offset)
+	case ir.SSAPlace:
+		return "ssa:" + itoa(value.ID)
+	case ir.IndexedLocalPlace:
+		return "indexed:" + itoa(value.ID) + ":" + exprKey(value.Index) + ":" + itoa(value.Base) + ":" + itoa(value.Length) + ":" + itoa(value.Stride) + ":" + itoa(value.Offset)
+	case ir.MemoryPlace:
+		return "memory:" + value.Storage + ":" + exprKey(value.Index) + ":" + itoa(value.Stride) + ":" + itoa(value.Offset)
+	default:
+		return "unknown"
+	}
 }
 func fmtFloat(v float64) string {
 	return itoa(int(math.Float64bits(v)>>32)) + ":" + itoa(int(uint32(math.Float64bits(v))))

@@ -12,18 +12,14 @@ Temporary Memory allocation is owned by this package. Minimal allocates locals s
 
 Backend SNode peephole rules follow `sonolus.js-compiler` commit `37b0eee`, `src/snode/optimize`. They run bottom-up after IR finalization and preserve evaluation of eliminated dynamic arithmetic arguments with `Execute`.
 
-The pinned Python optimizer golden and regeneration harness live under this
-package's `testdata` directory. The Python snapshot uses an SNode-like text
-format, while the Go compiler uses typed CFG blocks, values, places, and Phi
-edges. It therefore remains provenance for pass behavior and ordering rather
-than a byte-for-byte IR interchange format. The compiler verifies the shared
-observable contract by compiling the same four-mode fixture at Minimal, Fast,
-and Standard and interpreting every emitted callback tree across multiple
-runtime-memory seeds.
+The pinned Python optimizer golden and regeneration harness live under
+`internal/compiler/testdata/optimize`. Schema v3 uses one neutral JSON CFG
+fixture parsed independently by Go and Python. Tests compare normalized RPO CFG
+snapshots after ToSSA, first SCCP cleanup, second SCCP, FromSSA, Allocate, and
+the final Standard EngineData tree.
 
-The compiler parity tests also consume that Python-generated golden
-directly. ToSSA and SCCP use a shared reverse-postorder/first-definition
-canonical form. FromSSA and allocation use final-form invariants because the
-Python block-object CFG and Go explicit-edge CFG split Phi critical edges into
-different but equivalent block shapes. Any other structural difference must be
-listed by exact snapshot with a reason; unknown differences fail the tests.
+Equivalent private CFG differences are listed by exact case, checkpoint, JSON
+pointer, Go value, Python value, and reason in `py_pass_allowlist.json`.
+Unknown differences and stale entries both fail. A fixed input matrix executes
+both final trees through `internal/simexec` and compares semantic memory and
+ordered effects; Temporary Memory remains non-observable.

@@ -52,7 +52,7 @@ func TestLoadPreservesImportValidation(t *testing.T) {
 	}
 	if _, err := Load("../testdata/source/stdlibmain"); err == nil ||
 		!strings.Contains(err.Error(), `could not import "fmt"`) ||
-		!strings.Contains(err.Error(), "only embed, math, and math/rand are allowed") {
+		!strings.Contains(err.Error(), "only embed, iter, math, and math/rand are allowed") {
 		t.Fatalf("standard library error = %v", err)
 	}
 	if _, err := Load("../testdata/source/thirdpartymain"); err == nil || !strings.Contains(err.Error(), "invalid third party lib") {

@@ -20,9 +20,18 @@ import (
 )
 
 type Options struct {
-	Optimization optimize.Level
-	FallbackROM  []byte
+	Optimization  optimize.Level
+	FallbackROM   []byte
+	RuntimeChecks RuntimeChecks
 }
+
+type RuntimeChecks = frontend.RuntimeChecks
+
+const (
+	RuntimeChecksNone      = frontend.RuntimeChecksNone
+	RuntimeChecksTerminate = frontend.RuntimeChecksTerminate
+	RuntimeChecksNotify    = frontend.RuntimeChecksNotify
+)
 
 type ModeStats struct {
 	Load     time.Duration
@@ -48,12 +57,14 @@ type Compiler struct {
 	result         *Artifacts
 	stats          CompileStats
 	files          []string
+	runtimeChecks  RuntimeChecks
 }
 
 func NewCompiler(options Options, patterns ...string) *Compiler {
 	return &Compiler{
 		optimizer:      optimize.NewOptimizer(options.Optimization),
 		fallbackROM:    append([]byte(nil), options.FallbackROM...),
+		runtimeChecks:  options.RuntimeChecks,
 		patterns:       append([]string(nil), patterns...),
 		packages:       make(map[mode.Mode]*packages.Package, len(orderedModes)),
 		schemaPackages: make(map[mode.Mode]*packages.Package, 3),
@@ -68,6 +79,9 @@ func (c *Compiler) Compile(requested ...mode.Mode) (*Artifacts, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.runtimeChecks < RuntimeChecksNone || c.runtimeChecks > RuntimeChecksNotify {
+		return nil, fmt.Errorf("compiler: invalid runtime checks level %d", c.runtimeChecks)
+	}
 	stats := CompileStats{Modes: make(map[mode.Mode]ModeStats, len(orderedModes))}
 	defer func() {
 		stats.Total = time.Since(started)
@@ -106,7 +120,7 @@ func (c *Compiler) Compile(requested ...mode.Mode) (*Artifacts, error) {
 	}
 	maps.Copy(candidate, loaded)
 
-	parser := frontend.NewParser()
+	parser := frontend.NewParser(frontend.Options{RuntimeChecks: c.runtimeChecks})
 	frontendStarted := time.Now()
 	for _, m := range orderedModes {
 		if pkg := candidate[m]; pkg != nil {
@@ -123,6 +137,9 @@ func (c *Compiler) Compile(requested ...mode.Mode) (*Artifacts, error) {
 	project, err := parser.GetProject()
 	if err != nil {
 		return nil, fmt.Errorf("compiler: merge frontend project: %w", err)
+	}
+	if err := frontend.ResolveDiagnostics(project); err != nil {
+		return nil, fmt.Errorf("compiler: resolve runtime diagnostics: %w", err)
 	}
 	if len(project.ROM) == 0 && len(c.fallbackROM) != 0 {
 		project.ROM = append([]byte(nil), c.fallbackROM...)

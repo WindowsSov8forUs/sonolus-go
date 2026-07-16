@@ -1,0 +1,882 @@
+[
+  {
+    "Case": "allocation_4095",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/allocation_4095/structuredCheckpoints/toSSA/blocks/0/instructions/0/place/kind",
+    "Go": "\"ssa\"",
+    "Python": "\"local\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "allocation_4095",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/allocation_4095/structuredCheckpoints/toSSA/blocks/0/instructions/1/value/place/kind",
+    "Go": "\"ssa\"",
+    "Python": "\"local\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "allocation_4095",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/allocation_4095/structuredCheckpoints/firstSCCPCleanup/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "allocation_4095",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/allocation_4095/structuredCheckpoints/secondSCCP/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "allocation_4095",
+    "Checkpoint": "fromSSA",
+    "Path": "/pipelineCases/allocation_4095/structuredCheckpoints/fromSSA/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "allocation_4095",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/allocation_4095/structuredCheckpoints/allocate/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "allocation_4096",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/allocation_4096/structuredCheckpoints/toSSA/blocks/0/instructions/0/place/kind",
+    "Go": "\"ssa\"",
+    "Python": "\"local\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "allocation_4096",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/allocation_4096/structuredCheckpoints/toSSA/blocks/0/instructions/1/value/place/kind",
+    "Go": "\"ssa\"",
+    "Python": "\"local\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "allocation_4096",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/allocation_4096/structuredCheckpoints/firstSCCPCleanup/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "allocation_4096",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/allocation_4096/structuredCheckpoints/secondSCCP/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "allocation_4096",
+    "Checkpoint": "fromSSA",
+    "Path": "/pipelineCases/allocation_4096/structuredCheckpoints/fromSSA/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "allocation_4096",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/allocation_4096/structuredCheckpoints/allocate/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "diamond_constant",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/diamond_constant/structuredCheckpoints/firstSCCPCleanup/blocks/length",
+    "Go": "1",
+    "Python": "3",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "diamond_constant",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/diamond_constant/structuredCheckpoints/secondSCCP/blocks/length",
+    "Go": "1",
+    "Python": "3",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "diamond_constant",
+    "Checkpoint": "fromSSA",
+    "Path": "/pipelineCases/diamond_constant/structuredCheckpoints/fromSSA/blocks/length",
+    "Go": "1",
+    "Python": "5",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "diamond_constant",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/diamond_constant/structuredCheckpoints/allocate/blocks/length",
+    "Go": "1",
+    "Python": "3",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "diamond_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/diamond_memory/structuredCheckpoints/secondSCCP/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "0",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "diamond_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/diamond_memory/structuredCheckpoints/secondSCCP/blocks/0/terminator/value/arguments/0/place/kind",
+    "Go": "\"ssa\"",
+    "Python": "\"memory\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "diamond_memory",
+    "Checkpoint": "fromSSA",
+    "Path": "/pipelineCases/diamond_memory/structuredCheckpoints/fromSSA/blocks/length",
+    "Go": "3",
+    "Python": "5",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "diamond_memory",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/diamond_memory/structuredCheckpoints/allocate/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "0",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "diamond_memory",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/diamond_memory/structuredCheckpoints/allocate/blocks/0/terminator/value/arguments/0/place/storage",
+    "Go": "\"10000\"",
+    "Python": "\"2000\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/0/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/1/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/1/value/arguments/0/place/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/1/value/arguments/1/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/2/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/2/value/arguments/0/place/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/0/target/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/1/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/1/target/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/2/arguments/0/value/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/2/target/version",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/terminator/value/arguments/0/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/1/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/2/arguments/0/value/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/0/terminator/edges/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/0/terminator/value/kind",
+    "Go": "\"const\"",
+    "Python": "\"call\"",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/0/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/1/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/1/value/arguments/0/place/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/1/value/arguments/1/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/2/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/2/value/arguments/0/place/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/length",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/terminator/value/arguments/0/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/2/phis/length",
+    "Go": "3",
+    "Python": "1",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/0/terminator/edges/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/0/terminator/value/kind",
+    "Go": "\"const\"",
+    "Python": "\"call\"",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/instructions/length",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/phis/length",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/terminator/value/arguments/0/kind",
+    "Go": "\"call\"",
+    "Python": "\"load\"",
+    "Reason": "Go keeps the loop increment expression inline in the condition while Py loads an equivalent SSA temporary; later allocation and execution verify equivalence"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/2/phis/length",
+    "Go": "3",
+    "Python": "1",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "fromSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/fromSSA/blocks/length",
+    "Go": "5",
+    "Python": "9",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/length",
+    "Go": "4",
+    "Python": "3",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/0/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/1/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/2/value/arguments/0/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/2/value/arguments/1/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/3/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/3/value/arguments/0/place/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/0/target/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/1/arguments/0/value/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/1/target/version",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/2/arguments/0/value/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/2/target/version",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/terminator/value/arguments/0/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/1/arguments/0/value/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/2/arguments/0/value/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/0/terminator/edges/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/0/terminator/value/kind",
+    "Go": "\"const\"",
+    "Python": "\"call\"",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/0/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/1/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/2/value/arguments/0/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/2/value/arguments/1/place/version",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/3/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/instructions/3/value/arguments/0/place/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/length",
+    "Go": "3",
+    "Python": "1",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/terminator/value/arguments/0/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/2/phis/length",
+    "Go": "3",
+    "Python": "0",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/0/terminator/edges/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/0/terminator/value/kind",
+    "Go": "\"const\"",
+    "Python": "\"call\"",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/instructions/length",
+    "Go": "4",
+    "Python": "2",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/phis/length",
+    "Go": "3",
+    "Python": "1",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/terminator/value/arguments/0/kind",
+    "Go": "\"call\"",
+    "Python": "\"load\"",
+    "Reason": "Go keeps the loop increment expression inline in the condition while Py loads an equivalent SSA temporary; later allocation and execution verify equivalence"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/2/phis/length",
+    "Go": "3",
+    "Python": "0",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "fromSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/fromSSA/blocks/length",
+    "Go": "5",
+    "Python": "9",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/length",
+    "Go": "4",
+    "Python": "3",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/secondSCCP/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "0",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/secondSCCP/blocks/0/terminator/value/arguments/0/place/kind",
+    "Go": "\"ssa\"",
+    "Python": "\"memory\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/secondSCCP/blocks/2/terminator/value/arguments/0/place/kind",
+    "Go": "\"ssa\"",
+    "Python": "\"memory\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "fromSSA",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/fromSSA/blocks/length",
+    "Go": "4",
+    "Python": "7",
+    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/allocate/blocks/0/instructions/length",
+    "Go": "1",
+    "Python": "0",
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/allocate/blocks/0/terminator/edges/0/target",
+    "Go": "1",
+    "Python": "3",
+    "Reason": "Go and Py normalize equivalent switch case block ordering differently; all switch inputs are compared by final execution"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/allocate/blocks/0/terminator/edges/2/target",
+    "Go": "3",
+    "Python": "1",
+    "Reason": "Go and Py normalize equivalent switch case block ordering differently; all switch inputs are compared by final execution"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/allocate/blocks/0/terminator/value/arguments/0/place/storage",
+    "Go": "\"10000\"",
+    "Python": "\"2000\"",
+    "Reason": "Go promotes or materializes this scalar through a temporary where Py accesses semantic memory directly; final allocation and execution verify equivalence"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/allocate/blocks/1/instructions/0/value/value",
+    "Go": "10",
+    "Python": "30",
+    "Reason": "Go and Py normalize equivalent switch case block ordering differently; all switch inputs are compared by final execution"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/switch_chain/structuredCheckpoints/allocate/blocks/3/instructions/0/value/value",
+    "Go": "30",
+    "Python": "10",
+    "Reason": "Go and Py normalize equivalent switch case block ordering differently; all switch inputs are compared by final execution"
+  },
+  {
+    "Case": "allocation_4095",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/allocation_4095/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#2000,#0,#9),Break(#1,#0)),#0))",
+    "Python": "Block(JumpLoop(Execute(Set(#10000,#4094,#9),Set(#2000,#0,Get(#10000,#4094)),#1),#0))",
+    "Reason": "Go removes the final temporary copy after allocation; the returned semantic-memory value and 4096-slot boundary are identical"
+  },
+  {
+    "Case": "allocation_4096",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/allocation_4096/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#2000,#0,#10),Break(#1,#0)),#0))",
+    "Python": "Block(JumpLoop(Execute(Set(#10000,#4095,#10),Set(#2000,#0,Get(#10000,#4095)),#1),#0))",
+    "Reason": "Go removes the final temporary copy after allocation; the returned semantic-memory value and 4096-slot boundary are identical"
+  },
+  {
+    "Case": "diamond_constant",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/diamond_constant/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#2000,#0,#1),Break(#1,#0)),#0))",
+    "Python": "Block(JumpLoop(Execute(If(Greater(#5,#3),#1,#2)),Execute(Set(#2000,#0,#1),#3),Execute(Set(#2000,#0,#2),#3),#0))",
+    "Reason": "Go folds constant control flow before backend emission; the fixed execution matrix verifies the same result and effects"
+  },
+  {
+    "Case": "diamond_memory",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/diamond_memory/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,Get(#2000,#0)),If(Greater(Get(#10000,#0),#5),#2,#1)),Execute(Set(#2000,#1,#2),Break(#1,#0)),Execute(Set(#2000,#1,#1),Break(#1,#0)),#0))",
+    "Python": "Block(JumpLoop(Execute(If(Greater(Get(#2000,#0),#5),#1,#2)),Execute(Set(#2000,#1,#1),#3),Execute(Set(#2000,#1,#2),#3),#0))",
+    "Reason": "Go materializes the runtime discriminant and orders equivalent CFG exits differently; the fixed execution matrix covers every branch"
+  },
+  {
+    "Case": "impure_effect",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/impure_effect/nodes",
+    "Go": "Block(JumpLoop(Execute(DebugLog(#7),Set(#2000,#0,#1),Break(#1,#0)),#0))",
+    "Python": "Block(JumpLoop(Execute(DebugLog(#7),Set(#2000,#0,#1),#1),#0))",
+    "Reason": "Go emits an explicit callback break after the impure effect; effect order and callback result are identical"
+  },
+  {
+    "Case": "linear_constant",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/linear_constant/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#2000,#0,#3),Break(#1,#0)),#0))",
+    "Python": "Block(JumpLoop(Execute(Set(#2000,#0,#3),#1),#0))",
+    "Reason": "Go folds constant control flow before backend emission; the fixed execution matrix verifies the same result and effects"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/loop_memory/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#1,Get(#10000,#0)),Set(#10000,#2,Get(#10000,#0)),#1),Execute(Set(#10000,#3,Get(#2000,Get(#10000,#0))),SetAdd(#10000,#2,Get(#10000,#3)),Set(#10000,#4,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#4)),If(Less(Get(#10000,#4),#10),#3,#2)),Execute(Set(#2000,#1,Get(#10000,#2)),Break(#1,#0)),Execute(#1),#0))",
+    "Python": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#2,#0),If(Less(#0,#10),#1,#2)),Execute(Set(#10000,#0,Add(Get(#10000,#0),Get(#2000,#0))),Set(#10000,#1,Add(Get(#10000,#2),#1)),Set(#10000,#2,Get(#10000,#1)),If(Less(Get(#10000,#1),#10),#1,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),#3),#0))",
+    "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/readonly_cse_loop/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#1,Get(#10000,#0)),#1),Execute(Set(#10000,#4,Add(#1,Get(#3000,Get(#10000,#0)))),Set(#2000,#1,Add(Get(#10000,#4),Get(#10000,#4))),Set(#10000,#4,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#4)),If(Less(Get(#10000,#4),#3),#3,#2)),Execute(Break(#1,#0)),Execute(#1),#0))",
+    "Python": "Block(JumpLoop(Execute(Set(#10000,#1,#0),If(Less(#0,#3),#1,#2)),Execute(Set(#2000,#1,Add(Get(#3000,#0),#1,Add(Get(#3000,#0),#1))),Set(#10000,#0,Add(Get(#10000,#1),#1)),Set(#10000,#1,Get(#10000,#0)),If(Less(Get(#10000,#0),#3),#1,#2)),Execute(#3),#0))",
+    "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
+  },
+  {
+    "Case": "switch_chain",
+    "Checkpoint": "standard",
+    "Path": "/pipelineCases/switch_chain/nodes",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,Get(#2000,#0)),SwitchIntegerWithDefault(Subtract(Get(#10000,#0),#1),#2,#1,#3)),Execute(Set(#2000,#1,#20),Break(#1,#0)),Execute(Set(#2000,#1,#10),Break(#1,#0)),Execute(Set(#2000,#1,#30),Break(#1,#0)),#0))",
+    "Python": "Block(JumpLoop(Execute(SwitchIntegerWithDefault(Subtract(Get(#2000,#0),#1),#3,#2,#1)),Execute(Set(#2000,#1,#30),#4),Execute(Set(#2000,#1,#20),#4),Execute(Set(#2000,#1,#10),#4),#0))",
+    "Reason": "Go materializes the runtime discriminant and orders equivalent CFG exits differently; the fixed execution matrix covers every branch"
+  }
+]

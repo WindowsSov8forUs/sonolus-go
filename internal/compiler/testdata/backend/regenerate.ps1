@@ -17,6 +17,12 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot "../../../..")
 Push-Location $repo
 try {
     go test ./internal/compiler -run TestReferenceEngineDataGolden -update-reference -count=1
+	$nativeSource = Join-Path $JavaScriptRepo "src/ir/optimize/transform/Native.ts"
+	$nativeGolden = Join-Path $PSScriptRoot "runtime_native_golden.json"
+	node (Join-Path $PSScriptRoot "runtime_native_harness.mjs") $nativeSource $nativeGolden $jsCommit
+	if ($LASTEXITCODE -ne 0) {
+		throw "runtime native golden generation failed with exit code $LASTEXITCODE"
+	}
 } finally {
     Pop-Location
 }

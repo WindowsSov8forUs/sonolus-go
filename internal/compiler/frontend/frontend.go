@@ -16,12 +16,25 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
-func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error) {
+type RuntimeChecks int
+
+const (
+	RuntimeChecksNone RuntimeChecks = iota
+	RuntimeChecksTerminate
+	RuntimeChecksNotify
+)
+
+type Options struct {
+	RuntimeChecks RuntimeChecks
+}
+
+func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDeclarations, error) {
 	out := &ModeDeclarations{Mode: m, Resources: ModeResources{SpriteIDs: map[string]int{}, EffectIDs: map[string]int{}, ParticleIDs: map[string]int{}, FieldIDs: map[*types.Var][]int{}}}
 	var errs []error
 	names := map[string]bool{}
 	resources := map[string]bool{}
 	configurationFound := false
+	streamFound := false
 	globalFound := false
 	type globalPackage struct {
 		pkg       *packages.Package
@@ -99,7 +112,36 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 				continue
 			}
 			id, marker := primary.id, primary.tag
-			if id != rootID("Configuration") && id != markerID(m, "Archetype") && id != markerID(m, "GlobalCallbacks") {
+			if id != rootID("Configuration") && id != rootID("StreamResource") && id != markerID(m, "Archetype") && id != markerID(m, "GlobalCallbacks") {
+				continue
+			}
+			if id == rootID("StreamResource") {
+				if m != mode.ModePlay && m != mode.ModeWatch {
+					errs = append(errs, fmt.Errorf("%s: stream resources are only available in play and watch modes", named.Obj().Name()))
+					continue
+				}
+				vars := markerVariables(p, named)
+				if len(vars) != 1 {
+					errs = append(errs, fmt.Errorf("%s: stream resource marker requires exactly one singleton variable", named.Obj().Name()))
+					continue
+				}
+				initializer, ok := variableInitializer(p, vars[0])
+				if !ok || !validStreamInitializer(p, named, initializer) {
+					errs = append(errs, fmt.Errorf("%s: stream resource singleton must have one explicit initializer", vars[0].Name()))
+					continue
+				}
+				if streamFound {
+					errs = append(errs, fmt.Errorf("duplicate stream resource declaration"))
+					continue
+				}
+				streamFound = true
+				streams, ids, streamErrs := parseStreams(named, vars[0])
+				errs = append(errs, streamErrs...)
+				out.Streams = streams
+				out.Resources.StreamSize = streams.Size
+				for field, values := range ids {
+					out.Resources.FieldIDs[field] = values
+				}
 				continue
 			}
 			if id == markerID(m, "Archetype") {
@@ -154,7 +196,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 		globalPackages = append(globalPackages, globalPackage{pkg: p, hasMarker: hasGlobals})
 	}
 	for _, candidate := range globalPackages {
-		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, m, candidate.hasMarker)
+		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, m, candidate.hasMarker, options.RuntimeChecks)
 		errs = append(errs, globalErrs...)
 		out.Globals = append(out.Globals, globals...)
 	}
@@ -164,6 +206,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 		}
 		return out.Archetypes[i].Name < out.Archetypes[j].Name
 	})
+	errs = append(errs, resolveArchetypeInheritance(out.Archetypes)...)
 	archetypes := make(map[*types.Named]archetypeBinding, len(out.Archetypes))
 	for id, declaration := range out.Archetypes {
 		archetypes[declaration.Named] = archetypeBinding{id: id, declaration: declaration}
@@ -174,7 +217,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode) (*ModeDeclarations, error)
 			errs = append(errs, fmt.Errorf("%s: archetype source package is unavailable", declaration.Name))
 			continue
 		}
-		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, archetypes, m)...)
+		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, archetypes, m, options.RuntimeChecks)...)
 	}
 	if len(errs) > 0 {
 		messages := make([]string, len(errs))
@@ -195,13 +238,18 @@ var orderedModes = []mode.Mode{
 }
 
 type Parser struct {
-	mu    sync.RWMutex
-	modes map[mode.Mode]*ModeDeclarations
+	mu      sync.RWMutex
+	modes   map[mode.Mode]*ModeDeclarations
+	options Options
 }
 
 // NewParser creates an empty frontend parser. Call Parse once for each loaded mode.
-func NewParser() *Parser {
-	return &Parser{modes: make(map[mode.Mode]*ModeDeclarations, len(orderedModes))}
+func NewParser(options ...Options) *Parser {
+	var value Options
+	if len(options) != 0 {
+		value = options[0]
+	}
+	return &Parser{modes: make(map[mode.Mode]*ModeDeclarations, len(orderedModes)), options: value}
 }
 
 // Parse converts one already loaded mode package into frontend declarations.
@@ -218,7 +266,7 @@ func (p *Parser) Parse(m mode.Mode, pkg *packages.Package) error {
 	if exists {
 		return fmt.Errorf("%s mode has already been parsed", m)
 	}
-	decl, err := parsePackage(pkg, m)
+	decl, err := parsePackage(pkg, m, p.options)
 	if err != nil {
 		return err
 	}
@@ -275,6 +323,23 @@ func validateShared(declarations []*ModeDeclarations) error {
 			return err
 		}
 		if err := compareROM(base.ROM, current.ROM); err != nil {
+			return err
+		}
+	}
+	var playStreams, watchStreams *StreamDeclaration
+	var hasPlay, hasWatch bool
+	for _, declaration := range declarations {
+		switch declaration.Mode {
+		case mode.ModePlay:
+			hasPlay = true
+			playStreams = declaration.Streams
+		case mode.ModeWatch:
+			hasWatch = true
+			watchStreams = declaration.Streams
+		}
+	}
+	if hasPlay && hasWatch && (playStreams != nil || watchStreams != nil) {
+		if err := compareStreams(playStreams, watchStreams); err != nil {
 			return err
 		}
 	}
