@@ -8,6 +8,18 @@
 
 四种模式使用 build tag `play`、`watch`、`preview`、`tutorial` 独立加载。未带模式 tag 的文件会进入每种模式。
 
+## Development Level
+
+`sonolus.LevelFile` 是 `dev` 命令识别的 embed 声明桩，不进入 callback lowering 或 `compiler.Artifacts`：
+
+```go
+//sonolus:level basic
+//go:embed basic.json
+var BasicLevel sonolus.LevelFile
+```
+
+每个变量必须恰好 embed 一个 LevelData JSON。可以声明多个开发关卡；多关卡时每个 `//sonolus:level` 必须带一个唯一 item name，显示标题由变量名拆分生成。单个无参数声明继续映射为 `dev` / `Dev Level`。全部声明必须同时对 Play、Watch、Preview 可见，变量、item name 与 embed 文件在三个模式中必须一致；加载器按变量名稳定排序，并逐个执行三模式 archetype/import 和实体引用校验。任一关卡失败都不会替换 `dev` 当前提供的完整成功快照。
+
 ## 名称型资源
 
 资源由嵌入强类型 marker 的结构和唯一 singleton 变量声明：

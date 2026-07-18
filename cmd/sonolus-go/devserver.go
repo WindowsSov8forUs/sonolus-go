@@ -60,14 +60,18 @@ func (s *devServer) recompile() error {
 	if err != nil {
 		return err
 	}
-	if err := level.Validate(development.Data, artifacts); err != nil {
-		return err
+	levels := make([]developmentserver.Level, len(development.Levels))
+	for index, developmentLevel := range development.Levels {
+		if err := level.Validate(developmentLevel.Data, artifacts); err != nil {
+			return fmt.Errorf("validate development level %q: %w", developmentLevel.Name, err)
+		}
+		levelData, err := level.Package(developmentLevel.Data)
+		if err != nil {
+			return fmt.Errorf("package development level %q: %w", developmentLevel.Name, err)
+		}
+		levels[index] = developmentserver.Level{Name: developmentLevel.Name, Title: developmentLevel.Title, Data: levelData}
 	}
-	levelData, err := level.Package(development.Data)
-	if err != nil {
-		return fmt.Errorf("package development level: %w", err)
-	}
-	handler, err := developmentserver.New(s.name, artifacts, packaged, levelData)
+	handler, err := developmentserver.New(s.name, artifacts, packaged, levels)
 	if err != nil {
 		return err
 	}

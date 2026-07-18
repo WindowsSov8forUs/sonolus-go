@@ -214,6 +214,20 @@ import _ "embed"
 var DevelopmentLevel sonolus.LevelFile
 ```
 
+单关卡声明可以省略名称，此时开发服务器保持兼容并提供 `dev` / `Dev Level`。需要多个开发关卡时，每个声明必须通过 directive 参数提供唯一的 Sonolus item 名称；显示标题由 Go 变量名稳定生成：
+
+```go
+//sonolus:level basic
+//go:embed basic.json
+var BasicLevel sonolus.LevelFile
+
+//sonolus:level stress
+//go:embed stress.json
+var StressTest sonolus.LevelFile
+```
+
+上例分别生成 `basic` / `Basic Level` 与 `stress` / `Stress Test`。声明按 Go 变量名稳定排序；每个 LevelData 独立解码和校验，任一关卡失败时开发服务器继续提供上一份完整成功快照。
+
 `dev-level.json` 使用 Sonolus LevelData schema：
 
 ```json
@@ -229,13 +243,13 @@ var DevelopmentLevel sonolus.LevelFile
 }
 ```
 
-同一文件必须对 Play、Watch 和 Preview 可见。实体 archetype 和每个 data name 必须存在于三个模式对应的声明中；实体引用必须指向同一关卡内的命名实体。未声明时使用空开发关卡。
+所有声明必须对 Play、Watch 和 Preview 可见，并在三个模式中保持相同的变量、名称参数和 embed 文件。每个实体 archetype 和 data name 必须存在于三个模式对应的声明中；实体引用必须指向同一关卡内的命名实体。未声明时使用空开发关卡。
 
 ```bash
 sonolus-go dev .
 ```
 
-开发服务器提供完整 Sonolus 路由和内置开发资源，可由客户端直接打开 `Dev Level`。它监听 Go 源文件和 embed 文件并自动重编译；重编译失败时继续提供上一次成功快照。开发关卡只供 `dev` 使用，不会写入 `build` 产物。
+开发服务器提供完整 Sonolus 路由、开发关卡列表和内置开发资源。它监听 Go 源文件和所有 LevelData embed 文件并自动重编译；重编译失败时继续提供上一次完整成功快照。开发关卡只供 `dev` 使用，不会写入 `build` 产物。
 
 ## 下一步
 
