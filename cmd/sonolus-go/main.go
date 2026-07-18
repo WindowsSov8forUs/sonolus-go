@@ -35,10 +35,28 @@ func runCLI(args []string) error {
 
 	command, args := args[0], args[1:]
 	switch command {
+	case "mod":
+		if len(args) == 0 || args[0] != "init" {
+			return fmt.Errorf("mod requires the init subcommand")
+		}
+		flags := commandFlags("mod init")
+		dependencyVersion := flags.String("sonolus-version", defaultSonolusVersion(), "sonolus-go module version")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() == 0 {
+			return fmt.Errorf("mod init requires a module name")
+		}
+		if flags.NArg() > 2 {
+			return fmt.Errorf("mod init accepts a module name and at most one project directory")
+		}
+		directory := "."
+		if flags.NArg() == 2 {
+			directory = flags.Arg(1)
+		}
+		return cmdModInit(directory, flags.Arg(0), *dependencyVersion)
 	case "init":
 		flags := commandFlags(command)
-		modulePath := flags.String("module", "", "module path for a new Go module")
-		dependencyVersion := flags.String("sonolus-version", defaultSonolusVersion(), "sonolus-go module version for a new Go module")
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
@@ -49,7 +67,7 @@ func runCLI(args []string) error {
 		if flags.NArg() == 1 {
 			directory = flags.Arg(0)
 		}
-		return cmdInit(directory, *modulePath, *dependencyVersion)
+		return cmdInit(directory)
 	case "build":
 		flags := commandFlags(command)
 		out := flags.String("o", "", "output engine name (requires exactly one engine)")
@@ -104,7 +122,8 @@ func commandFlags(command string) *flag.FlagSet {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: sonolus-go init [-module <path>] [-sonolus-version <v2.x.y>] [directory]")
+	fmt.Fprintln(os.Stderr, "usage: sonolus-go mod init [-sonolus-version <v2.x.y>] <module-name> [project-directory]")
+	fmt.Fprintln(os.Stderr, "       sonolus-go init [engine-directory]")
 	fmt.Fprintln(os.Stderr, "       sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] [-runtime-checks <level>] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go vet [-m <mode>] [-O 0|1|2] [-rom <file>] [-runtime-checks <level>] [-stats] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go list <package-pattern>...")

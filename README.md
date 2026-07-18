@@ -35,10 +35,11 @@ sonolus-go version
 初始化最小四模式引擎：
 
 ```bash
-sonolus-go init -module example-engine example-engine
+sonolus-go mod init example.com/example-engine example-engine
 cd example-engine
+sonolus-go init ./engine
 go mod tidy
-sonolus-go vet .
+sonolus-go vet ./engine
 ```
 
 编译全部四种模式：

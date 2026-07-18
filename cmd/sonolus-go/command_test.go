@@ -138,18 +138,53 @@ func TestRunCLIParsesSubcommandFlags(t *testing.T) {
 }
 
 func TestRunCLIInitCommand(t *testing.T) {
-	directory := filepath.Join(t.TempDir(), "engine")
-	err := runCLI([]string{"init", "-module", "example.com/engine", "-sonolus-version", "v2.0.1", directory})
+	project := filepath.Join(t.TempDir(), "project")
+	err := runCLI([]string{"mod", "init", "-sonolus-version", "v2.0.1", "example.com/project", project})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"go.mod", "main.go", "play.go", "watch.go", "preview.go", "tutorial.go", ".vscode/settings.json"} {
-		if _, err := os.Stat(filepath.Join(directory, filepath.FromSlash(name))); err != nil {
+	for _, name := range []string{"go.mod", "go.sum", ".vscode/settings.json"} {
+		if _, err := os.Stat(filepath.Join(project, filepath.FromSlash(name))); err != nil {
+			t.Errorf("missing %s: %v", name, err)
+		}
+	}
+	directory := filepath.Join(project, "engines", "first")
+	if err := runCLI([]string{"init", directory}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"main.go", "play.go", "watch.go", "preview.go", "tutorial.go"} {
+		if _, err := os.Stat(filepath.Join(directory, name)); err != nil {
 			t.Errorf("missing %s: %v", name, err)
 		}
 	}
 	if err := runCLI([]string{"init", "first", "second"}); err == nil || !strings.Contains(err.Error(), "at most one target directory") {
 		t.Fatalf("extra argument error = %v", err)
+	}
+	if err := runCLI([]string{"mod", "init", "example.com/project", "first", "second"}); err == nil || !strings.Contains(err.Error(), "at most one project directory") {
+		t.Fatalf("extra module argument error = %v", err)
+	}
+	if err := runCLI([]string{"mod", "init"}); err == nil || !strings.Contains(err.Error(), "requires a module name") {
+		t.Fatalf("missing module name error = %v", err)
+	}
+	if err := runCLI([]string{"mod"}); err == nil || !strings.Contains(err.Error(), "requires the init subcommand") {
+		t.Fatalf("missing mod subcommand error = %v", err)
+	}
+	if err := runCLI([]string{"mod", "init", "-module", "example.com/engine"}); err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
+		t.Fatalf("legacy mod init module flag error = %v", err)
+	}
+	if err := runCLI([]string{"init", "-module", "example.com/engine"}); err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
+		t.Fatalf("legacy init module flag error = %v", err)
+	}
+
+	single := filepath.Join(t.TempDir(), "single")
+	if err := runCLI([]string{"mod", "init", "-sonolus-version", "v2.0.1", "example.com/single", single}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCLI([]string{"init", single}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(single, "main.go")); err != nil {
+		t.Fatal(err)
 	}
 }
 

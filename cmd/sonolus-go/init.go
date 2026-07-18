@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -20,8 +21,8 @@ func defaultSonolusVersion() string {
 	return value
 }
 
-func cmdInit(directory, modulePath, dependencyVersion string) error {
-	result, err := scaffold.Init(scaffold.Options{
+func cmdModInit(directory, modulePath, dependencyVersion string) error {
+	result, err := scaffold.InitModule(scaffold.ModuleOptions{
 		Directory:         directory,
 		ModulePath:        modulePath,
 		DependencyVersion: dependencyVersion,
@@ -29,13 +30,33 @@ func cmdInit(directory, modulePath, dependencyVersion string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("initialized Sonolus engine in %s\n", result.Directory)
-	if result.CreatedModule && dependencyVersion == "" {
+	fmt.Printf("initialized Sonolus engine module in %s\n", result.Directory)
+	if dependencyVersion == "" {
 		fmt.Println("sonolus-go dependency was not pinned because this is a development build")
 	}
 	fmt.Println("next:")
 	fmt.Printf("  cd %s\n", result.Directory)
+	fmt.Println("  sonolus-go init ./engine")
+	return nil
+}
+
+func cmdInit(directory string) error {
+	result, err := scaffold.Init(scaffold.Options{Directory: directory})
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(result.ModuleRoot, result.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve engine package relative path: %w", err)
+	}
+	fmt.Printf("initialized Sonolus engine package in %s\n", result.Directory)
+	fmt.Println("next:")
+	fmt.Printf("  cd %s\n", result.ModuleRoot)
 	fmt.Println("  go mod tidy")
-	fmt.Println("  sonolus-go vet .")
+	pattern := "."
+	if relative != "." {
+		pattern = "./" + filepath.ToSlash(relative)
+	}
+	fmt.Printf("  sonolus-go vet %s\n", pattern)
 	return nil
 }

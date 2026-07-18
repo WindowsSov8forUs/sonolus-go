@@ -1,19 +1,29 @@
 # 命令行参考
 
-## init
+## mod init
 
 ```text
-sonolus-go init [-module <path>] [-sonolus-version <v2.x.y>] [directory]
+sonolus-go mod init [-sonolus-version <v2.x.y>] <module-name> [project-directory]
 ```
 
-`init` 创建一个能通过四模式编译的最小引擎 package。目标目录默认为当前目录；目录必须不存在、为空，或只包含 `.git`、`go.mod` 和 `go.sum`，命令不会覆盖已有源码。
+`mod init` 创建引擎工程的 Go module 根目录。`module-name` 必选；目标目录可选并默认为当前目录，必须不存在、为空或只包含 `.git`。命令不会覆盖现有 module 或源码。
 
 参数：
 
-- `-module`：创建新 `go.mod` 并使用指定 module path。未指定时优先复用目标目录上层的现有 module；找不到时使用目录名创建新 module。
-- `-sonolus-version`：新 module 使用的 `sonolus-go/v2` 依赖版本。发布版 CLI 默认使用自身版本；开发版可显式指定 `v2.x.y`。
+- `module-name`：写入 `go.mod` 的必选 module path，例如 `example.com/sirius`。
+- `-sonolus-version`：写入 `go.mod` 的 `sonolus-go/v2` 依赖版本。发布版 CLI 默认使用自身版本；开发版可显式指定 `v2.x.y`。
 
-生成文件包括 `main.go`、四个带准确 build tag 的模式文件、`.gitignore` 和 `.vscode/settings.json`。命令不访问网络；完成后运行 `go mod tidy` 获取依赖，再运行 `sonolus-go vet .` 验证引擎。若目标位于现有 module 内，依赖版本继续由该 module 的 `go.mod` 管理。
+生成文件固定为 `go.mod`、空的 `go.sum`、`.gitignore` 和 `.vscode/settings.json`。命令不创建引擎 package，也不访问网络；先使用 `init` 创建至少一个引擎，再运行 `go mod tidy` 解析依赖。
+
+## init
+
+```text
+sonolus-go init [engine-directory]
+```
+
+`init` 在已有引擎工程中创建一个能通过四模式编译的最小 `package main`。目标目录默认为当前目录。多引擎工程中，目标必须是最近 module 根下不存在或为空的子目录；单引擎工程可以直接使用 module 根。
+
+最近的 module 根必须同时包含有效的普通文件 `go.mod` 和 `go.sum`。module 根只有在除 `.git`、`.gitignore`、`.vscode` 和 module metadata 外为空时才能就地初始化为单引擎；若已经存在共享目录、其他源码或引擎，则必须改用子目录。缺少任一 metadata 文件、`go.mod` 无法解析或目标结构不符合契约时，`init` 都会稳定报错；它不再隐式创建或猜测 module。生成文件只包括 `main.go` 及四个带准确 build tag 的模式文件，依赖和编辑器配置统一由工程根管理。
 
 ## 通用输入
 

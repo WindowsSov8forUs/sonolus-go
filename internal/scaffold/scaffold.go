@@ -7,23 +7,87 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 )
 
 const SonolusModulePath = "github.com/WindowsSov8forUs/sonolus-go/v2"
 
-type Options struct {
+type ModuleOptions struct {
 	Directory         string
 	ModulePath        string
 	DependencyVersion string
 }
 
+type ModuleResult struct {
+	Directory  string
+	ModulePath string
+	Files      []string
+}
+
+type Options struct {
+	Directory string
+}
+
 type Result struct {
-	Directory     string
-	ModulePath    string
-	CreatedModule bool
-	Files         []string
+	Directory  string
+	ModuleRoot string
+	Files      []string
+}
+
+func InitModule(options ModuleOptions) (*ModuleResult, error) {
+	directory := options.Directory
+	if directory == "" {
+		directory = "."
+	}
+	directory, err := filepath.Abs(directory)
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: resolve target directory: %w", err)
+	}
+
+	info, err := os.Stat(directory)
+	exists := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("scaffold: inspect target directory: %w", err)
+	}
+	if exists && !info.IsDir() {
+		return nil, fmt.Errorf("scaffold: target %q is not a directory", directory)
+	}
+
+	modulePath := options.ModulePath
+	if modulePath == "" {
+		return nil, fmt.Errorf("scaffold: module path is required")
+	}
+	if err := module.CheckImportPath(modulePath); err != nil {
+		return nil, fmt.Errorf("scaffold: invalid module path %q: %w", modulePath, err)
+	}
+	if options.DependencyVersion != "" {
+		if !semver.IsValid(options.DependencyVersion) || semver.Major(options.DependencyVersion) != "v2" {
+			return nil, fmt.Errorf("scaffold: invalid sonolus-go version %q; expected v2 semantic version", options.DependencyVersion)
+		}
+	}
+
+	files := moduleTemplateFiles(modulePath, options.DependencyVersion)
+	if exists {
+		if err := validateModuleDirectory(directory); err != nil {
+			return nil, err
+		}
+		if err := writeFiles(directory, files); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := writeNewDirectory(directory, files); err != nil {
+			return nil, err
+		}
+	}
+
+	paths := make([]string, 0, len(files))
+	for path := range files {
+		paths = append(paths, filepath.ToSlash(path))
+	}
+	sort.Strings(paths)
+	return &ModuleResult{Directory: directory, ModulePath: modulePath, Files: paths}, nil
 }
 
 func Init(options Options) (*Result, error) {
@@ -49,37 +113,27 @@ func Init(options Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	createModule := options.ModulePath != "" || moduleRoot == ""
-	modulePath := options.ModulePath
-	if createModule && modulePath == "" {
-		modulePath = filepath.Base(directory)
+	if moduleRoot == "" {
+		return nil, fmt.Errorf("scaffold: no Sonolus engine module found for %q; run sonolus-go mod init <project-directory> first", directory)
 	}
-	if createModule {
-		if err := module.CheckImportPath(modulePath); err != nil {
-			return nil, fmt.Errorf("scaffold: invalid module path %q: %w", modulePath, err)
-		}
-	}
-	if options.DependencyVersion != "" {
-		if !semver.IsValid(options.DependencyVersion) || semver.Major(options.DependencyVersion) != "v2" {
-			return nil, fmt.Errorf("scaffold: invalid sonolus-go version %q; expected v2 semantic version", options.DependencyVersion)
-		}
-	}
+	atModuleRoot := filepath.Clean(moduleRoot) == filepath.Clean(directory)
 
-	files := templateFiles()
-	if createModule {
-		files["go.mod"] = []byte(goMod(modulePath, options.DependencyVersion))
-	}
+	files := engineTemplateFiles()
 	if exists {
-		if err := validateExistingDirectory(directory, createModule); err != nil {
+		var err error
+		if atModuleRoot {
+			err = validateRootEngineDirectory(directory)
+		} else {
+			err = validateEngineDirectory(directory)
+		}
+		if err != nil {
 			return nil, err
 		}
 		if err := writeFiles(directory, files); err != nil {
 			return nil, err
 		}
-	} else {
-		if err := writeNewDirectory(directory, files); err != nil {
-			return nil, err
-		}
+	} else if err := writeNewDirectory(directory, files); err != nil {
+		return nil, err
 	}
 
 	paths := make([]string, 0, len(files))
@@ -87,7 +141,7 @@ func Init(options Options) (*Result, error) {
 		paths = append(paths, filepath.ToSlash(path))
 	}
 	sort.Strings(paths)
-	return &Result{Directory: directory, ModulePath: modulePath, CreatedModule: createModule, Files: paths}, nil
+	return &Result{Directory: directory, ModuleRoot: moduleRoot, Files: paths}, nil
 }
 
 func findModuleRoot(directory string, exists bool) (string, error) {
@@ -96,14 +150,41 @@ func findModuleRoot(directory string, exists bool) (string, error) {
 		current = filepath.Dir(directory)
 	}
 	for {
-		path := filepath.Join(current, "go.mod")
-		if info, err := os.Stat(path); err == nil {
-			if info.IsDir() {
-				return "", fmt.Errorf("scaffold: %q is a directory", path)
+		goModPath := filepath.Join(current, "go.mod")
+		goSumPath := filepath.Join(current, "go.sum")
+		goModInfo, goModErr := os.Stat(goModPath)
+		goSumInfo, goSumErr := os.Stat(goSumPath)
+		goModExists := goModErr == nil
+		goSumExists := goSumErr == nil
+		if goModErr != nil && !os.IsNotExist(goModErr) {
+			return "", fmt.Errorf("scaffold: inspect module file %q: %w", goModPath, goModErr)
+		}
+		if goSumErr != nil && !os.IsNotExist(goSumErr) {
+			return "", fmt.Errorf("scaffold: inspect checksum file %q: %w", goSumPath, goSumErr)
+		}
+		if goModExists || goSumExists {
+			if !goModExists || !goSumExists {
+				missing := goModPath
+				if goModExists {
+					missing = goSumPath
+				}
+				return "", fmt.Errorf("scaffold: invalid Sonolus engine module %q: missing %s", current, filepath.Base(missing))
+			}
+			if !goModInfo.Mode().IsRegular() || !goSumInfo.Mode().IsRegular() {
+				return "", fmt.Errorf("scaffold: go.mod and go.sum in %q must be regular files", current)
+			}
+			data, err := os.ReadFile(goModPath)
+			if err != nil {
+				return "", fmt.Errorf("scaffold: read module file %q: %w", goModPath, err)
+			}
+			parsed, err := modfile.Parse(goModPath, data, nil)
+			if err != nil || parsed.Module == nil || parsed.Module.Mod.Path == "" {
+				if err == nil {
+					err = fmt.Errorf("module directive is required")
+				}
+				return "", fmt.Errorf("scaffold: invalid module file %q: %w", goModPath, err)
 			}
 			return current, nil
-		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("scaffold: inspect module file %q: %w", path, err)
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
@@ -113,18 +194,40 @@ func findModuleRoot(directory string, exists bool) (string, error) {
 	}
 }
 
-func validateExistingDirectory(directory string, createModule bool) error {
+func validateModuleDirectory(directory string) error {
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return fmt.Errorf("scaffold: read target directory: %w", err)
 	}
-	allowed := map[string]bool{".git": true, "go.mod": true, "go.sum": true}
+	allowed := map[string]bool{".git": true}
 	for _, entry := range entries {
 		if !allowed[entry.Name()] {
-			return fmt.Errorf("scaffold: target directory %q is not empty; only .git, go.mod, and go.sum may already exist", directory)
+			return fmt.Errorf("scaffold: module target directory %q is not empty; only .git may already exist", directory)
 		}
-		if createModule && entry.Name() == "go.mod" {
-			return fmt.Errorf("scaffold: target directory %q already contains go.mod", directory)
+	}
+	return nil
+}
+
+func validateEngineDirectory(directory string) error {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return fmt.Errorf("scaffold: read target directory: %w", err)
+	}
+	if len(entries) != 0 {
+		return fmt.Errorf("scaffold: engine target directory %q is not empty", directory)
+	}
+	return nil
+}
+
+func validateRootEngineDirectory(directory string) error {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return fmt.Errorf("scaffold: read module root: %w", err)
+	}
+	allowed := map[string]bool{".git": true, ".gitignore": true, ".vscode": true, "go.mod": true, "go.sum": true}
+	for _, entry := range entries {
+		if !allowed[entry.Name()] {
+			return fmt.Errorf("scaffold: module root %q already contains %q; initialize engine packages in subdirectories", directory, entry.Name())
 		}
 	}
 	return nil
@@ -160,7 +263,9 @@ func writeFiles(directory string, files map[string][]byte) error {
 		for i := len(created) - 1; i >= 0; i-- {
 			_ = os.Remove(created[i])
 		}
-		_ = os.Remove(filepath.Join(directory, ".vscode"))
+		if _, createsSettings := files[".vscode/settings.json"]; createsSettings {
+			_ = os.Remove(filepath.Join(directory, ".vscode"))
+		}
 	}
 	for _, relative := range paths {
 		path := filepath.Join(directory, filepath.FromSlash(relative))
@@ -196,7 +301,7 @@ func goMod(modulePath, dependencyVersion string) string {
 	return builder.String()
 }
 
-func templateFiles() map[string][]byte {
+func moduleTemplateFiles(modulePath, dependencyVersion string) map[string][]byte {
 	return map[string][]byte{
 		".gitignore": []byte("/dist/\n"),
 		".vscode/settings.json": []byte(`{
@@ -218,6 +323,13 @@ func templateFiles() map[string][]byte {
   }
 }
 `),
+		"go.mod": []byte(goMod(modulePath, dependencyVersion)),
+		"go.sum": {},
+	}
+}
+
+func engineTemplateFiles() map[string][]byte {
+	return map[string][]byte{
 		"main.go": []byte(`package main
 
 import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
