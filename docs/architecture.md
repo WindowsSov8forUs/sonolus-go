@@ -25,7 +25,7 @@ development LevelFile declarations
 
 CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
 
-`init` 不进入 Compiler 链路。`internal/scaffold` 负责无覆盖地生成最小四模式 package、新 module metadata 和编辑器配置；CLI 只解析目标目录、module path 与依赖版本。生成过程不访问网络，依赖解析由用户随后执行的 `go mod tidy` 完成。
+`mod init` 与 `init` 不进入 Compiler 链路。`internal/scaffold` 将职责拆成 module 根和引擎 package 两层：前者无覆盖地生成 `go.mod`、`go.sum`、`.gitignore` 与编辑器配置，后者在有效 module 中生成最小四模式 `package main`。metadata-only 的 module 根可就地成为单引擎 package；已有共享目录或其他源码时只能在子目录创建引擎。向上遇到的第一组 module metadata 必须同时包含可解析的普通文件 `go.mod` 和 `go.sum`，不得跳过损坏或不完整的内层 module 去复用外层 module。生成过程不访问网络，依赖解析由用户随后执行的 `go mod tidy` 完成。
 
 Development Level 集合是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析按变量名稳定排序的共享 embed 声明集合，要求 Play、Watch、Preview 看到相同声明，并逐关卡执行 schema 校验；`internal/devserver` 将成功的引擎与全部关卡作为一个原子快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
 

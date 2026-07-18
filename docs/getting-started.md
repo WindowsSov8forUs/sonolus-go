@@ -6,32 +6,54 @@
 - `sonolus-go` 可执行文件，或直接使用 `go run ./cmd/sonolus-go`。
 - 引擎源码必须属于一个 Go module，入口 package 必须为 `main`。
 
-## 创建 module
+## 创建引擎工程
 
-推荐使用 `init` 创建最小四模式引擎：
+先使用 `mod init` 创建包含 module metadata 的引擎工程根，再在其中创建一个或多个引擎 package：
 
 ```bash
-sonolus-go init -module example-engine example-engine
-cd example-engine
+sonolus-go mod init example.com/sirius sirius
+cd sirius
+sonolus-go init ./engines/first
+sonolus-go init ./engines/second
+go mod tidy
+sonolus-go vet ./engines/first ./engines/second
+```
+
+`mod init` 在 `sirius/` 生成共同的 `go.mod`、`go.sum`、`.gitignore` 和推荐的 gopls 配置；`init` 只在各引擎目录生成共享入口和四个模式文件。两条命令都不联网，也不会覆盖已有源码；创建引擎后由 `go mod tidy` 下载与当前 CLI 发布版本匹配的 `sonolus-go` module。开发版 CLI 无法自动确定依赖版本时，对 `mod init` 使用 `-sonolus-version v2.x.y` 显式指定。
+
+`go.mod` 与 `go.sum` 属于 module 根。多引擎工程中它们位于所有引擎 package 的共同祖先；单引擎工程也可以让 module 根同时作为唯一的引擎 package：
+
+```bash
+sonolus-go mod init example.com/single single
+cd single
+sonolus-go init .
 go mod tidy
 sonolus-go vet .
 ```
 
-`init` 会生成共享入口、四个模式文件、`.gitignore` 和推荐的 gopls 配置。它不联网，也不会覆盖已有源码；`go mod tidy` 负责下载与当前 CLI 发布版本匹配的 `sonolus-go` module。开发版 CLI 无法自动确定依赖版本时，使用 `-sonolus-version v2.x.y` 显式指定。
+`init` 会从目标目录向上查找最近的 module metadata，两者必须同时存在且为普通文件。module 根只有在除 `.git`、`.gitignore`、`.vscode`、`go.mod` 和 `go.sum` 外为空时才能就地初始化；一旦已有共享目录或其他源码，就必须在子目录创建引擎。缺失文件、损坏的 `go.mod` 或不符合该结构都会报错。
 
-在已有 module 中可以直接创建额外引擎 package，不会生成嵌套 `go.mod`：
+工程结构示例：
 
-```bash
-sonolus-go init ./engines/second
+```text
+sirius/
+├─ go.mod
+├─ go.sum
+├─ internal/shared/
+└─ engines/
+   ├─ first/
+   └─ second/
 ```
 
-也可以手动创建 module：
+也可以手动建立相同结构，但必须先准备完整的 module metadata：
 
 ```bash
-mkdir example-engine
-cd example-engine
-go mod init example-engine
+mkdir sirius
+cd sirius
+go mod init example.com/sirius
 go get github.com/WindowsSov8forUs/sonolus-go/v2
+sonolus-go init ./engines/first
+go mod tidy
 ```
 
 推荐用 build tags 隔离四种模式。同名资源和 archetype 可以分别出现在 `play.go`、`watch.go`、`preview.go`、`tutorial.go` 中。
