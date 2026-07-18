@@ -34,12 +34,11 @@ type GameConfiguration struct {
 var Configuration = GameConfiguration{Speed: sonolus.SliderOption(sonolus.SliderOptionConfig{
 	Name: "Speed", Default: 1, Min: 0.5, Max: 2, Step: 0.1,
 })}
-var ROM = sonolus.ROMValues{}
 
 func main() {}
 ```
 
-Configuration 和 ROM 是引擎级共享产物。四种模式分别加载后，compiler 会比较它们的规范化结果；不同模式下的声明必须语义一致。缺失声明等价于空声明。
+Configuration 和 ROM 是引擎级共享产物。四种模式分别加载后，compiler 会比较它们的规范化结果；不同模式下的声明必须语义一致。ROM 声明不是必需的；不需要 ROM 时不要声明，compiler 会省略 `EngineRom`。缺失声明与显式空声明在跨模式比较中等价，但显式空声明仍会要求生成 ROM。
 
 ## Play 模式
 

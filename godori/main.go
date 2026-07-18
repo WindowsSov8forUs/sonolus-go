@@ -91,8 +91,6 @@ var Config = GodoriConfiguration{
 	},
 }
 
-var ROM = sonolus.ROMValues{}
-
 //go:generate go run ./levelgen -o dev-level.json
 
 //sonolus:level

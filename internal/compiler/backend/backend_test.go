@@ -20,6 +20,38 @@ func TestCompileRejectsMisalignedROM(t *testing.T) {
 	}
 }
 
+func TestCompileOmitsUnusedUndeclaredROM(t *testing.T) {
+	artifacts, err := Compile(&frontend.Project{Modes: map[mode.Mode]*frontend.ModeDeclarations{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifacts.ROM != nil {
+		t.Fatalf("ROM = %v, want nil", artifacts.ROM)
+	}
+}
+
+func TestNeedsROMForDeclarationAndIRUsage(t *testing.T) {
+	callback := func(expression ir.Expr) *frontend.CallbackDeclaration {
+		return &frontend.CallbackDeclaration{IR: &ir.Function{Blocks: []*ir.Block{{Terminator: ir.Return{Value: ir.Value{Slots: []ir.Expr{expression}}}}}}}
+	}
+	tests := []struct {
+		name    string
+		project *frontend.Project
+	}{
+		{"declared", &frontend.Project{ROMDeclared: true}},
+		{"user values", &frontend.Project{ROM: make([]byte, 4)}},
+		{"non-finite constant", &frontend.Project{Modes: map[mode.Mode]*frontend.ModeDeclarations{mode.ModePlay: {Globals: []*frontend.CallbackDeclaration{callback(ir.Const{Value: math.Inf(1)})}}}}},
+		{"EngineRom load", &frontend.Project{Modes: map[mode.Mode]*frontend.ModeDeclarations{mode.ModePlay: {Globals: []*frontend.CallbackDeclaration{callback(ir.Load{Place: ir.MemoryPlace{Storage: "EngineRom", Index: ir.Const{}, Read: true}})}}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if !needsROM(test.project) {
+				t.Fatal("needsROM = false, want true")
+			}
+		})
+	}
+}
+
 func TestFinalizeIndexedLocalUsesShiftedRuntimeFunctions(t *testing.T) {
 	builder := ir.NewBuilder("indexed", ir.Type{})
 	entry := builder.NewBlock()

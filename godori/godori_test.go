@@ -285,7 +285,7 @@ func compileStandard(t *testing.T) *compiler.Artifacts {
 
 func assertArtifacts(t *testing.T, artifacts *compiler.Artifacts) {
 	t.Helper()
-	if artifacts.Configuration == nil || len(artifacts.Configuration.Options) != 13 || len(artifacts.ROM) == 0 {
+	if artifacts.Configuration == nil || len(artifacts.Configuration.Options) != 13 || artifacts.ROM != nil {
 		t.Fatalf("shared artifacts are incomplete: configuration=%#v rom=%d", artifacts.Configuration, len(artifacts.ROM))
 	}
 	assertStaticResources(t, artifacts)
