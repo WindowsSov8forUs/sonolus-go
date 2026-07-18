@@ -204,6 +204,9 @@ func templateFiles() map[string][]byte {
     "buildFlags": ["-tags=play"],
     "standaloneTags": ["ignore"],
     "staticcheck": true,
+    "analyses": {
+      "SA4017": false
+    },
     "gofumpt": false
   },
   "[go]": {

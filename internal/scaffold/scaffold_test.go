@@ -36,7 +36,7 @@ func TestInitCreatesDeterministicModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(settings), `"buildFlags": ["-tags=play"]`) || !strings.Contains(string(settings), `"standaloneTags": ["ignore"]`) {
+	if !strings.Contains(string(settings), `"buildFlags": ["-tags=play"]`) || !strings.Contains(string(settings), `"standaloneTags": ["ignore"]`) || !strings.Contains(string(settings), `"SA4017": false`) {
 		t.Fatalf("settings.json = %s", settings)
 	}
 }
