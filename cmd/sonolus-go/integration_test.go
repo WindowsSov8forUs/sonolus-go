@@ -30,6 +30,10 @@ func godoriPattern() string {
 	return filepath.Join("..", "..", "godori")
 }
 
+func multiLevelPattern() string {
+	return filepath.Join("..", "..", "internal", "level", "testdata", "development")
+}
+
 func compilerFixturePattern(name string) string {
 	return filepath.Join("..", "..", "internal", "compiler", "testdata", name)
 }
@@ -387,6 +391,34 @@ func TestDevServerRecompileIsAtomic(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("Sonolus level list status = %d", response.StatusCode)
+	}
+}
+
+func TestDevServerServesMultipleDevelopmentLevels(t *testing.T) {
+	srv := &devServer{patterns: []string{multiLevelPattern()}, name: "multilevel", watched: map[string]bool{}}
+	if err := srv.recompile(); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(srv.serveSonolus))
+	defer server.Close()
+	response, err := http.Get(server.URL + "/sonolus/levels/list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	var list struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 2 || list.Items[0].Name != "alternate" || list.Items[1].Name != "basic" {
+		t.Fatalf("levels = %#v", list.Items)
 	}
 }
 

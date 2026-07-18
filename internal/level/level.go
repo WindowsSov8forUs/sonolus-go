@@ -27,11 +27,18 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
-// Development is a normalized development level and its source files.
-type Development struct {
+// DevelopmentLevel is one normalized development level.
+type DevelopmentLevel struct {
+	Name  string
+	Title string
 	Data  *resource.LevelData
 	File  string
-	Files []string
+}
+
+// Development is the ordered development level collection and its source files.
+type Development struct {
+	Levels []DevelopmentLevel
+	Files  []string
 }
 
 // CompileLevel strictly decodes a JSON LevelData document.
@@ -73,6 +80,7 @@ type declaration struct {
 	mode        mode.Mode
 	packagePath string
 	variable    string
+	name        string
 	position    string
 	file        string
 	sourceFiles []string
@@ -80,9 +88,9 @@ type declaration struct {
 
 var developmentModes = []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview}
 
-// LoadDevelopment loads the shared development level declaration in all level modes.
+// LoadDevelopment loads the shared development level declarations in all level modes.
 func LoadDevelopment(patterns ...string) (*Development, error) {
-	declarations := make([]*declaration, 0, len(developmentModes))
+	declarations := make([][]*declaration, 0, len(developmentModes))
 	for _, currentMode := range developmentModes {
 		pkgs, err := source.LoadMode(currentMode, patterns...)
 		if err != nil {
@@ -91,49 +99,66 @@ func LoadDevelopment(patterns ...string) (*Development, error) {
 		if len(pkgs) != 1 || pkgs[0].Name != "main" {
 			return nil, fmt.Errorf("development level: %s mode expected exactly one main package, found %d", currentMode, len(pkgs))
 		}
-		found, err := scanDeclaration(currentMode, pkgs[0])
+		found, err := scanDeclarations(currentMode, pkgs[0])
 		if err != nil {
 			return nil, err
 		}
 		declarations = append(declarations, found)
 	}
 
-	present := 0
-	for _, item := range declarations {
-		if item != nil {
-			present++
-		}
-	}
-	if present == 0 {
-		return &Development{Data: emptyLevel()}, nil
-	}
-	if present != len(declarations) {
-		return nil, errors.New("development level: //sonolus:level must be visible in play, watch, and preview modes")
+	if len(declarations[0]) == 0 && len(declarations[1]) == 0 && len(declarations[2]) == 0 {
+		return &Development{Levels: []DevelopmentLevel{{Name: "dev", Title: "Dev Level", Data: emptyLevel()}}}, nil
 	}
 	first := declarations[0]
-	for _, item := range declarations[1:] {
-		if item.packagePath != first.packagePath || item.variable != first.variable || item.file != first.file {
-			return nil, fmt.Errorf("development level: declarations differ between %s (%s) and %s (%s)", first.mode, first.position, item.mode, item.position)
+	for modeIndex, items := range declarations[1:] {
+		if len(items) != len(first) {
+			return nil, errors.New("development level: //sonolus:level declarations must all be visible in play, watch, and preview modes")
+		}
+		for index, item := range items {
+			reference := first[index]
+			if item.packagePath != reference.packagePath || item.variable != reference.variable || item.name != reference.name || item.file != reference.file {
+				return nil, fmt.Errorf("development level: declarations differ between %s (%s) and %s (%s)", reference.mode, reference.position, developmentModes[modeIndex+1], item.position)
+			}
 		}
 	}
 
-	data, err := os.ReadFile(first.file)
-	if err != nil {
-		return nil, fmt.Errorf("development level: read %s: %w", first.file, err)
+	levels := make([]DevelopmentLevel, len(first))
+	files := []string{}
+	names := map[string]bool{}
+	for index, item := range first {
+		name := item.name
+		title := splitIdentifier(item.variable)
+		if name == "" {
+			if len(first) != 1 {
+				return nil, fmt.Errorf("%s: multiple sonolus:level declarations require a unique level name argument", item.position)
+			}
+			name = "dev"
+			title = "Dev Level"
+		}
+		if names[name] {
+			return nil, fmt.Errorf("%s: duplicate development level name %q", item.position, name)
+		}
+		names[name] = true
+		data, err := os.ReadFile(item.file)
+		if err != nil {
+			return nil, fmt.Errorf("development level %q: read %s: %w", name, item.file, err)
+		}
+		level, err := decodeStrict(data)
+		if err != nil {
+			return nil, fmt.Errorf("development level %q: decode %s: %w", name, item.file, err)
+		}
+		levels[index] = DevelopmentLevel{Name: name, Title: title, Data: level, File: item.file}
+		files = append(files, item.sourceFiles...)
+		files = append(files, item.file)
 	}
-	level, err := decodeStrict(data)
-	if err != nil {
-		return nil, fmt.Errorf("development level: decode %s: %w", first.file, err)
-	}
-	files := append([]string(nil), first.sourceFiles...)
-	files = append(files, first.file)
 	sort.Strings(files)
 	files = compact(files)
-	return &Development{Data: level, File: first.file, Files: files}, nil
+	return &Development{Levels: levels, Files: files}, nil
 }
 
-func scanDeclaration(currentMode mode.Mode, pkg *packages.Package) (*declaration, error) {
-	var found *declaration
+func scanDeclarations(currentMode mode.Mode, pkg *packages.Package) ([]*declaration, error) {
+	var found []*declaration
+	variables := map[string]bool{}
 	var errs []error
 	for _, file := range pkg.Syntax {
 		for _, node := range file.Decls {
@@ -155,8 +180,8 @@ func scanDeclaration(currentMode mode.Mode, pkg *packages.Package) (*declaration
 						continue
 					}
 					where := pkg.Fset.Position(dir.Pos).String()
-					if len(dir.Args) != 0 {
-						errs = append(errs, fmt.Errorf("%s: sonolus:level does not accept arguments", where))
+					if len(dir.Args) > 1 {
+						errs = append(errs, fmt.Errorf("%s: sonolus:level accepts at most one level name argument", where))
 						continue
 					}
 					if gen.Tok.String() != "var" || len(spec.Names) != 1 {
@@ -183,11 +208,16 @@ func scanDeclaration(currentMode mode.Mode, pkg *packages.Package) (*declaration
 						errs = append(errs, fmt.Errorf("%s: embedded development level must be a regular file", where))
 						continue
 					}
-					if found != nil {
-						errs = append(errs, fmt.Errorf("%s: multiple sonolus:level declarations", where))
+					if variables[name.Name] {
+						errs = append(errs, fmt.Errorf("%s: duplicate sonolus:level declaration for %s", where, name.Name))
 						continue
 					}
-					found = &declaration{mode: currentMode, packagePath: pkg.PkgPath, variable: name.Name, position: where, file: files[0], sourceFiles: append([]string(nil), pkg.GoFiles...)}
+					variables[name.Name] = true
+					levelName := ""
+					if len(dir.Args) == 1 {
+						levelName = dir.Args[0]
+					}
+					found = append(found, &declaration{mode: currentMode, packagePath: pkg.PkgPath, variable: name.Name, name: levelName, position: where, file: files[0], sourceFiles: append([]string(nil), pkg.GoFiles...)})
 				}
 			}
 		}
@@ -195,7 +225,22 @@ func scanDeclaration(currentMode mode.Mode, pkg *packages.Package) (*declaration
 	if len(errs) != 0 {
 		return nil, errors.Join(errs...)
 	}
+	sort.Slice(found, func(i, j int) bool { return found[i].variable < found[j].variable })
 	return found, nil
+}
+
+func splitIdentifier(value string) string {
+	var result strings.Builder
+	for index, current := range value {
+		if index > 0 && current >= 'A' && current <= 'Z' {
+			previous := value[index-1]
+			if previous >= 'a' && previous <= 'z' {
+				result.WriteByte(' ')
+			}
+		}
+		result.WriteRune(current)
+	}
+	return result.String()
 }
 
 func isLevelFile(value types.Type) bool {

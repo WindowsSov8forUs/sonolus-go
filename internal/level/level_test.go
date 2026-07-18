@@ -155,11 +155,24 @@ func TestLoadDevelopment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if development.File == "" || filepath.Base(development.File) != "level.json" {
-		t.Fatalf("file = %q", development.File)
+	if len(development.Levels) != 2 {
+		t.Fatalf("levels = %d, want 2", len(development.Levels))
 	}
-	if development.Data.Entities == nil || len(development.Files) == 0 {
+	if development.Levels[0].Name != "alternate" || development.Levels[0].Title != "Alternate Level" || filepath.Base(development.Levels[0].File) != "alternate.json" {
+		t.Fatalf("levels[0] = %#v", development.Levels[0])
+	}
+	if development.Levels[1].Name != "basic" || development.Levels[1].Title != "Basic Level" || filepath.Base(development.Levels[1].File) != "level.json" {
+		t.Fatalf("levels[1] = %#v", development.Levels[1])
+	}
+	if development.Levels[0].Data.BGMOffset != 1 || development.Levels[1].Data.Entities == nil || len(development.Files) < 3 {
 		t.Fatalf("development = %#v", development)
+	}
+}
+
+func TestLoadDevelopmentRejectsUnnamedMultipleLevels(t *testing.T) {
+	_, err := LoadDevelopment("./testdata/invaliddevelopment")
+	if err == nil || !strings.Contains(err.Error(), "multiple sonolus:level declarations require a unique level name argument") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

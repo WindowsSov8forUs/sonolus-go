@@ -71,7 +71,7 @@ sonolus-go list ./godori
 sonolus-go dev -o godori ./godori
 ```
 
-`dev` 提供可由 Sonolus 客户端直接打开的 Dev Level。可选的嵌入式开发 LevelData 声明见[快速开始](docs/getting-started.md#开发服务器)。
+`dev` 提供可由 Sonolus 客户端直接打开的开发关卡列表。可选的嵌入式 Development Level 声明见[快速开始](docs/getting-started.md#开发服务器)。
 
 命令输入直接使用 Go package patterns。未指定 `-o` 时可一次编译多个引擎，各引擎名称取其 module path 的最后一段；指定 `-o` 时只允许匹配一个引擎。产物固定写入 `dist/<name>`。完整参数见[命令行参考](docs/cli.md)。
 

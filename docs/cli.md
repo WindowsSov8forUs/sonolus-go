@@ -76,7 +76,7 @@ sonolus-go dev [-o <name>] [-addr <:8080>]
                  [-rom <file>] [-stats] <pattern>...
 ```
 
-`dev` 总是编译四种模式且要求 patterns 恰好匹配一个引擎；`-o` 可覆盖开发服务器显示的引擎名称。它启动完整 Sonolus 开发服务器，提供一个 engine item、一个 `Dev Level` 和内置的有效开发资源。Sonolus 客户端可直接连接 `-addr` 对应的地址。
+`dev` 总是编译四种模式且要求 patterns 恰好匹配一个引擎；`-o` 可覆盖开发服务器显示的引擎名称。它启动完整 Sonolus 开发服务器，提供一个 engine item、源码声明的全部 Development Level 和内置的有效开发资源；没有声明时提供空的 `Dev Level`。Sonolus 客户端可直接连接 `-addr` 对应的地址。
 
 `dev` 的 runtime checks 默认 `notify`。终端输入 `decode <code>` 可查询当前成功快照的诊断消息，输入 `help` 查看命令；失败重编译不会替换诊断表。
 
@@ -90,7 +90,7 @@ sonolus-go dev [-o <name>] [-addr <:8080>]
 - `/sonolus/engine/tutorial-data`
 - `/sonolus/engine/rom`（存在 ROM 时）
 
-它监听成功快照中的 Go 和 embed 文件，包括 `//sonolus:level` 绑定的 LevelData JSON。文件变化后创建新的 Compiler 并重新编译；失败时记录错误并继续服务上一次成功快照。开发 LevelData 不属于 `build` 输出。
+它监听成功快照中的 Go 和 embed 文件，包括所有 `//sonolus:level [name]` 绑定的 LevelData JSON。文件变化后创建新的 Compiler 并重新编译；引擎或任一开发关卡失败时记录错误并继续服务上一份完整成功快照。开发 LevelData 不属于 `build` 输出。
 
 ## version
 

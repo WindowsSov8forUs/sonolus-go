@@ -13,9 +13,9 @@ package patterns
     -> compiler.Artifacts
     -> build
 
-development LevelFile
+development LevelFile declarations
     -> level loader (play/watch/preview)
-    -> archetype/import validation
+    -> per-level archetype/import validation
     -> Sonolus dev server
 ```
 
@@ -27,7 +27,7 @@ CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排
 
 `init` 不进入 Compiler 链路。`internal/scaffold` 负责无覆盖地生成最小四模式 package、新 module metadata 和编辑器配置；CLI 只解析目标目录、module path 与依赖版本。生成过程不访问网络，依赖解析由用户随后执行的 `go mod tidy` 完成。
 
-开发 LevelData 是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析共享 embed 声明并对三种普通关卡模式校验；`internal/devserver` 将成功的引擎与关卡快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
+Development Level 集合是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析按变量名稳定排序的共享 embed 声明集合，要求 Play、Watch、Preview 看到相同声明，并逐关卡执行 schema 校验；`internal/devserver` 将成功的引擎与全部关卡作为一个原子快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
 
 Godori 的 checked-in `dev-level.json` 由示例内部的 `godori/levelgen` 和 `godori/internal/levelbuilder` 生成；这些实现不属于公开 API。生成与加载是两条独立路径：本地生成器负责构造，`internal/level` 仍以最终 JSON 和三模式声明契约为权威校验。
 

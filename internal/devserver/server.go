@@ -31,10 +31,27 @@ func init() {
 	gin.SetMode(gin.ReleaseMode)
 }
 
+// Level is one packaged development level served by the current snapshot.
+type Level struct {
+	Name  string
+	Title string
+	Data  []byte
+}
+
 // New creates a complete Sonolus handler backed by one immutable compile snapshot.
-func New(name string, artifacts *compiler.Artifacts, packaged *build.PackagedEngine, levelData []byte) (http.Handler, error) {
-	if artifacts == nil || packaged == nil || len(levelData) == 0 {
+func New(name string, artifacts *compiler.Artifacts, packaged *build.PackagedEngine, levels []Level) (http.Handler, error) {
+	if artifacts == nil || packaged == nil || len(levels) == 0 {
 		return nil, fmt.Errorf("dev server: complete engine and level artifacts are required")
+	}
+	levelNames := map[string]bool{}
+	for _, level := range levels {
+		if level.Name == "" || level.Title == "" || len(level.Data) == 0 {
+			return nil, fmt.Errorf("dev server: development levels require name, title, and data")
+		}
+		if levelNames[level.Name] {
+			return nil, fmt.Errorf("dev server: duplicate development level name %q", level.Name)
+		}
+		levelNames[level.Name] = true
 	}
 	dir, err := embeddedPackDir()
 	if err != nil {
@@ -61,8 +78,6 @@ func New(name string, artifacts *compiler.Artifacts, packaged *build.PackagedEng
 	watchData := server.AddBytes(packaged.WatchData, "")
 	previewData := server.AddBytes(packaged.PreviewData, "")
 	tutorialData := server.AddBytes(packaged.TutorialData, "")
-	level := server.AddBytes(levelData, "")
-
 	engine := database.DatabaseEngineItem{
 		Name: name, Version: database.DatabaseEngineItemVersion,
 		Title: text(name), Subtitle: text("Development Engine"), Author: text("sonolus-go"), Tags: []database.DatabaseTag{},
@@ -74,13 +89,16 @@ func New(name string, artifacts *compiler.Artifacts, packaged *build.PackagedEng
 		engine.ROM = &rom
 	}
 	server.Engine.Items = append(server.Engine.Items, sonolusserver.EngineItemModel{DatabaseEngineItem: engine})
-	server.Level.Items = append(server.Level.Items, sonolusserver.LevelItemModel{DatabaseLevelItem: database.DatabaseLevelItem{
-		Name: "dev", Version: database.DatabaseLevelItemVersion, Rating: 0,
-		Title: text("Dev Level"), Artists: text("Unknown"), Author: text("sonolus-go"), Tags: []database.DatabaseTag{}, Engine: name,
-		UseSkin: database.DatabaseUseItem{UseDefault: true}, UseBackground: database.DatabaseUseItem{UseDefault: true},
-		UseEffect: database.DatabaseUseItem{UseDefault: true}, UseParticle: database.DatabaseUseItem{UseDefault: true},
-		Cover: thumbnailSRL, BGM: bgmSRL, Data: level,
-	}})
+	for _, level := range levels {
+		data := server.AddBytes(level.Data, "")
+		server.Level.Items = append(server.Level.Items, sonolusserver.LevelItemModel{DatabaseLevelItem: database.DatabaseLevelItem{
+			Name: level.Name, Version: database.DatabaseLevelItemVersion, Rating: 0,
+			Title: text(level.Title), Artists: text("Unknown"), Author: text("sonolus-go"), Tags: []database.DatabaseTag{}, Engine: name,
+			UseSkin: database.DatabaseUseItem{UseDefault: true}, UseBackground: database.DatabaseUseItem{UseDefault: true},
+			UseEffect: database.DatabaseUseItem{UseDefault: true}, UseParticle: database.DatabaseUseItem{UseDefault: true},
+			Cover: thumbnailSRL, BGM: bgmSRL, Data: data,
+		}})
+	}
 	return server.Handler(), nil
 }
 

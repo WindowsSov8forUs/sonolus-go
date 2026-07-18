@@ -109,21 +109,25 @@ func TestGodoriDevelopmentLevel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if development.File == "" || len(development.Data.Entities) != 42 {
+	if len(development.Levels) != 1 {
+		t.Fatalf("development levels = %d, want 1", len(development.Levels))
+	}
+	developmentLevel := development.Levels[0]
+	if developmentLevel.Name != "dev" || developmentLevel.Title != "Dev Level" || developmentLevel.File == "" || len(developmentLevel.Data.Entities) != 42 {
 		t.Fatalf("development level = %#v", development)
 	}
-	if err := level.Validate(development.Data, artifacts); err != nil {
+	if err := level.Validate(developmentLevel.Data, artifacts); err != nil {
 		t.Fatal(err)
 	}
-	assertDevelopmentChart(t, development.Data)
-	assertDevelopmentFlick(t, development.Data)
-	assertDevelopmentDirectionalFlick(t, development.Data)
-	assertDevelopmentHold(t, development.Data)
-	assertDevelopmentHoldConnector(t, development.Data)
-	assertDevelopmentSimLine(t, development.Data)
-	assertDevelopmentHoldTick(t, development.Data)
-	assertDevelopmentBPM(t, development.Data)
-	assertDevelopmentTimescale(t, development.Data)
+	assertDevelopmentChart(t, developmentLevel.Data)
+	assertDevelopmentFlick(t, developmentLevel.Data)
+	assertDevelopmentDirectionalFlick(t, developmentLevel.Data)
+	assertDevelopmentHold(t, developmentLevel.Data)
+	assertDevelopmentHoldConnector(t, developmentLevel.Data)
+	assertDevelopmentSimLine(t, developmentLevel.Data)
+	assertDevelopmentHoldTick(t, developmentLevel.Data)
+	assertDevelopmentBPM(t, developmentLevel.Data)
+	assertDevelopmentTimescale(t, developmentLevel.Data)
 }
 
 func TestGodoriDevelopmentLevelIsGeneratedDeterministically(t *testing.T) {
