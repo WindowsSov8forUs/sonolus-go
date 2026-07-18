@@ -17,6 +17,34 @@ go get github.com/WindowsSov8forUs/sonolus-go/v2
 
 推荐用 build tags 隔离四种模式。同名资源和 archetype 可以分别出现在 `play.go`、`watch.go`、`preview.go`、`tutorial.go` 中。
 
+## 编辑器配置
+
+gopls 一次只能按一种模式的 build tag 分析引擎 package。使用 VS Code 时，建议在引擎项目的本地 `.vscode/settings.json` 中选择当前主要编辑的模式：
+
+```json
+{
+  "gopls": {
+    "buildFlags": ["-tags=play"],
+    "standaloneTags": ["ignore"],
+    "staticcheck": true,
+    "gofumpt": false
+  },
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  }
+}
+```
+
+编辑其他模式时，将 `play` 替换为 `watch`、`preview` 或 `tutorial`，然后执行 `Go: Restart Language Server`。不要同时启用四个 tag；互斥模式文件中允许存在同名声明，同时加载会产生重复定义。
+
+`standaloneTags` 不用于选择 Sonolus 模式。它会把带指定 tag 的单个 `package main` 文件视为完整的独立程序，无法与无 tag 的共享文件组成引擎 package；应保持默认的 `ignore`。也不要通过全局 `GOFLAGS` 设置模式 tag，否则终端中的 `go test`、`go generate` 等命令也会受到影响。
+
+需要频繁同时编辑多种模式时，可以为每种模式准备一个本地 `.code-workspace` 文件，并在独立窗口中为各自的 `gopls.buildFlags` 固定对应 tag。
+
 ## 共享声明
 
 创建 `main.go`：
