@@ -8,7 +8,7 @@
 
 - [快速开始](getting-started.md)：建立一个可编译的四模式引擎包。
 - [DSL 参考](dsl-reference.md)：资源、Configuration、ROM、Archetype、callback 和受支持 Go 子集。
-- [命令行](cli.md)：`build`、`vet`、`list`、`dev`、`version` 的参数和输出。
+- [命令行](cli.md)：`init`、`build`、`vet`、`list`、`dev`、`version` 的参数和输出。
 - [编译器架构](architecture.md)：`Package -> Frontend -> IR -> Optimize -> Backend` 数据流。
 - [优化器](optimization.md)：Minimal、Fast、Standard 的语义和适用场景。
 - [性能](performance.md)：编译耗时、节点规模、Temporary Memory 和开发期实践。

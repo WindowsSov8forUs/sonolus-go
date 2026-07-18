@@ -35,6 +35,21 @@ func runCLI(args []string) error {
 
 	command, args := args[0], args[1:]
 	switch command {
+	case "init":
+		flags := commandFlags(command)
+		modulePath := flags.String("module", "", "module path for a new Go module")
+		dependencyVersion := flags.String("sonolus-version", defaultSonolusVersion(), "sonolus-go module version for a new Go module")
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		if flags.NArg() > 1 {
+			return fmt.Errorf("init accepts at most one target directory")
+		}
+		directory := "."
+		if flags.NArg() == 1 {
+			directory = flags.Arg(0)
+		}
+		return cmdInit(directory, *modulePath, *dependencyVersion)
 	case "build":
 		flags := commandFlags(command)
 		out := flags.String("o", "", "output engine name (requires exactly one engine)")
@@ -89,7 +104,8 @@ func commandFlags(command string) *flag.FlagSet {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] [-runtime-checks <level>] <package-pattern>...")
+	fmt.Fprintln(os.Stderr, "usage: sonolus-go init [-module <path>] [-sonolus-version <v2.x.y>] [directory]")
+	fmt.Fprintln(os.Stderr, "       sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] [-runtime-checks <level>] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go vet [-m <mode>] [-O 0|1|2] [-rom <file>] [-runtime-checks <level>] [-stats] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go list <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go dev [-o <name>] [-addr <:8080>] [-O 0|1|2] [-rom <file>] [-runtime-checks <level>] <package-pattern>...")

@@ -8,6 +8,25 @@
 
 ## 创建 module
 
+推荐使用 `init` 创建最小四模式引擎：
+
+```bash
+sonolus-go init -module example-engine example-engine
+cd example-engine
+go mod tidy
+sonolus-go vet .
+```
+
+`init` 会生成共享入口、四个模式文件、`.gitignore` 和推荐的 gopls 配置。它不联网，也不会覆盖已有源码；`go mod tidy` 负责下载与当前 CLI 发布版本匹配的 `sonolus-go` module。开发版 CLI 无法自动确定依赖版本时，使用 `-sonolus-version v2.x.y` 显式指定。
+
+在已有 module 中可以直接创建额外引擎 package，不会生成嵌套 `go.mod`：
+
+```bash
+sonolus-go init ./engines/second
+```
+
+也可以手动创建 module：
+
 ```bash
 mkdir example-engine
 cd example-engine
@@ -170,14 +189,13 @@ sonolus-go build -m all .
 
 ```text
 EngineConfiguration
-EngineRom
 EnginePlayData
 EngineWatchData
 EnginePreviewData
 EngineTutorialData
 ```
 
-这些文件是 gzip 数据。仅编译单模式时，只写该模式的 EngineData。
+这些文件是 gzip 数据。仅编译单模式时，只写该模式的 EngineData；只有源码声明 ROM、提供 fallback 或 callback 实际读取 ROM 时才额外写出 `EngineRom`。
 
 ## 开发服务器
 
