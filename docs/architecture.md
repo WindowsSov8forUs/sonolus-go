@@ -29,7 +29,7 @@ CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排
 
 开发 LevelData 是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析共享 embed 声明并对三种普通关卡模式校验；`internal/devserver` 将成功的引擎与关卡快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
 
-`sonolus/level` 是宿主侧类型化 LevelData builder，与 `sonolus/sim` 一样不属于 callback catalog。它把普通 Go struct、定长数组和类型化实体引用展开为 `resource.LevelData`；Godori 的 `levelgen` 使用它生成 checked-in `dev-level.json`。生成与加载是两条独立路径：builder 负责构造，`internal/level` 仍以最终 JSON 和三模式声明契约为权威校验。
+Godori 的 checked-in `dev-level.json` 由示例内部的 `godori/levelgen` 和 `godori/internal/levelbuilder` 生成；这些实现不属于公开 API。生成与加载是两条独立路径：本地生成器负责构造，`internal/level` 仍以最终 JSON 和三模式声明契约为权威校验。
 
 `list` 使用独立的 declaration-only frontend 路径读取 Play、Watch、Preview archetype 字段，不 lower callback。字段来源 Contract 同时供 Py 兼容 schema 投影和 Development Level 的逐模式 imports 校验使用。
 
@@ -144,6 +144,6 @@ type Artifacts struct {
 
 `internal/build` 将存在的模式产物 gzip 后原子写入目录。
 
-`sonolus/sim` 消费相同最终 Artifacts，并通过不依赖 compiler 门面的 `internal/simexec` 直接解释各模式 EngineData node pool；reference tests、Py final-tree 差分和公开 simulator 共用这一个 executor。它不绕过 optimizer/backend，因此用于比较三个优化等级的 callback 返回值、semantic memory、streams 与副作用顺序。Temporary Memory 的物理编号与内容不属于跨优化等级的可观察语义。
+`internal/compiler/sim` 和 `internal/simexec` 只作为 compiler 的内部语义验证设施，解释最终 Artifacts 的 EngineData node pool，不构成公开产品能力。reference tests、Py final-tree 差分和内部 simulator 共用同一 executor；它不绕过 optimizer/backend，因此用于比较三个优化等级的 callback 返回值、semantic memory、streams 与副作用顺序。Temporary Memory 的物理编号与内容不属于跨优化等级的可观察语义。
 
-Catalog generator 为完整 core RuntimeFunction inventory 生成唯一 simulation metadata，包括 class、arity/result slots、effect、strategy、特殊 shape 标记与 memory/stream 参数角色；同一 RuntimeFunction 的 facade recipe 不得产生写入语义冲突。Simulator 在访问参数节点前按该生成策略验证 arity/shape 和参数，保留 IEEE NaN/Inf，并对非法 node、argument/state、memory/stream index、缺失 handler 与 step limit 返回可由 `errors.As` 获取的 `sim.ExecutionError`，不得因畸形 EngineData panic。
+Catalog generator 为完整 core RuntimeFunction inventory 生成唯一 simulation metadata，包括 class、arity/result slots、effect、strategy、特殊 shape 标记与 memory/stream 参数角色；同一 RuntimeFunction 的 facade recipe 不得产生写入语义冲突。内部 executor 在访问参数节点前按该生成策略验证 arity/shape 和参数，保留 IEEE NaN/Inf，并对非法 node、argument/state、memory/stream index、缺失 handler 与 step limit 返回结构化 `simexec.ExecutionError`，不得因畸形 EngineData panic。

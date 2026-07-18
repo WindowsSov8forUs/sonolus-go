@@ -209,7 +209,7 @@ func TestRuntimeSimulationArgumentContracts(t *testing.T) {
 }
 
 func TestPinnedJavaScriptNativeResults(t *testing.T) {
-	data, err := os.ReadFile("../../internal/compiler/testdata/backend/runtime_native_golden.json")
+	data, err := os.ReadFile("../testdata/backend/runtime_native_golden.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +388,7 @@ func TestEasingSimulationRelationships(t *testing.T) {
 func TestFinalEngineDataExecution(t *testing.T) {
 	var reference Result
 	for index, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -425,7 +425,7 @@ func TestFiniteVariantsAndContainersMatchAcrossOptimizations(t *testing.T) {
 		}
 		var reference Result
 		for index, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -477,7 +477,7 @@ func TestStaticLanguageExtensionsMatchAcrossOptimizations(t *testing.T) {
 	for selector, expected := range []float64{16287, 16321} {
 		var reference Result
 		for index, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 			if err != nil {
 				t.Fatalf("selector %d optimization %d: %v", selector, optimization, err)
 			}
@@ -505,7 +505,7 @@ func TestStaticLanguageExtensionsMatchAcrossOptimizations(t *testing.T) {
 func TestPackageCallableArraysMatchAcrossOptimizations(t *testing.T) {
 	for selector, expected := range []float64{11, 9} {
 		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 			if err != nil {
 				t.Fatalf("selector %d optimization %d: %v", selector, optimization, err)
 			}
@@ -526,7 +526,7 @@ func TestPackageCallableArraysMatchAcrossOptimizations(t *testing.T) {
 func TestPackageStaticArraysMatchAcrossOptimizations(t *testing.T) {
 	for selector, expected := range []float64{27, 33, 32} {
 		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 			if err != nil {
 				t.Fatalf("selector %d optimization %d: %v", selector, optimization, err)
 			}
@@ -547,7 +547,7 @@ func TestPackageStaticArraysMatchAcrossOptimizations(t *testing.T) {
 func TestRangeOperationsMatchAcrossOptimizations(t *testing.T) {
 	for _, input := range []float64{2, 9} {
 		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-			engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+			engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 			if err != nil {
 				t.Fatalf("input %v optimization %d: %v", input, optimization, err)
 			}
@@ -581,7 +581,7 @@ func TestProjectiveGeometryMatchesAcrossOptimizations(t *testing.T) {
 		1.0 / 3.0,
 	}
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("optimization %d: %v", optimization, err)
 		}
@@ -603,7 +603,7 @@ func TestProjectiveGeometryMatchesAcrossOptimizations(t *testing.T) {
 
 func TestTypedLevelGlobalsMatchAcrossOptimizations(t *testing.T) {
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/levelglobals")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/levelglobals")
 		if err != nil {
 			t.Fatalf("optimization %d: %v", optimization, err)
 		}
@@ -642,7 +642,7 @@ func TestTouchIteratorMatchesAcrossOptimizations(t *testing.T) {
 	touches[0], touches[13] = 2, 5
 	touches[15], touches[28] = 3, 7
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("optimization %d: %v", optimization, err)
 		}
@@ -661,7 +661,7 @@ func TestTouchIteratorMatchesAcrossOptimizations(t *testing.T) {
 
 func TestEntityRefRuntimeKeyMatchesAcrossOptimizations(t *testing.T) {
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("optimization %d: %v", optimization, err)
 		}
@@ -691,7 +691,7 @@ func TestEntityRefRuntimeKeyMatchesAcrossOptimizations(t *testing.T) {
 
 func TestNilPointerDereferenceTerminatesAtEveryCheckLevel(t *testing.T) {
 	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate, RuntimeChecksNotify} {
-		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("checks %d: %v", checks, err)
 		}
@@ -727,7 +727,7 @@ func TestNilPointerDereferenceTerminatesAtEveryCheckLevel(t *testing.T) {
 
 func TestNilCallableTerminatesAtEveryCheckLevel(t *testing.T) {
 	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate, RuntimeChecksNotify} {
-		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("checks %d: %v", checks, err)
 		}
@@ -763,7 +763,7 @@ func TestNilCallableTerminatesAtEveryCheckLevel(t *testing.T) {
 
 func TestDiagnosticControlHelpersMatchRuntimeCheckLevels(t *testing.T) {
 	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate, RuntimeChecksNotify} {
-		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("checks %d: %v", checks, err)
 		}
@@ -798,7 +798,7 @@ func TestDiagnosticControlHelpersMatchRuntimeCheckLevels(t *testing.T) {
 
 func TestIntegerZeroDivisionTerminatesAtEveryCheckLevel(t *testing.T) {
 	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate, RuntimeChecksNotify} {
-		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("checks %d: %v", checks, err)
 		}
@@ -837,7 +837,7 @@ func TestIntegerZeroDivisionTerminatesAtEveryCheckLevel(t *testing.T) {
 
 func TestDynamicRandIntnBoundTerminatesAtEveryCheckLevel(t *testing.T) {
 	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate, RuntimeChecksNotify} {
-		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: checks}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("checks %d: %v", checks, err)
 		}
@@ -881,7 +881,7 @@ func TestDynamicRandIntnBoundTerminatesAtEveryCheckLevel(t *testing.T) {
 
 func TestGoMathAndSonolusNumberSemanticsStayDistinct(t *testing.T) {
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatalf("optimization %d: %v", optimization, err)
 		}
@@ -914,7 +914,7 @@ func TestRuntimeChecksEnabledIsCompileTimeAndUnreachableIsPruned(t *testing.T) {
 		{RuntimeChecksTerminate, 31},
 		{RuntimeChecksNotify, 31},
 	} {
-		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: test.checks}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: OptimizationStandard, RuntimeChecks: test.checks}, "../testdata/simulator")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -930,7 +930,7 @@ func TestRuntimeChecksEnabledIsCompileTimeAndUnreachableIsPruned(t *testing.T) {
 
 func TestLabeledControlFlowFallthroughAndGotoAcrossOptimizations(t *testing.T) {
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -953,7 +953,7 @@ func TestLabeledControlFlowFallthroughAndGotoAcrossOptimizations(t *testing.T) {
 
 func TestNestedDynamicMemoryRangeAcrossOptimizations(t *testing.T) {
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -991,7 +991,7 @@ func TestLinkedEntitySortIsStableAcrossOptimizations(t *testing.T) {
 	shared[32], shared[33] = 2, 0
 	shared[64], shared[65] = -1, 1
 	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
-		engine, err := Compile(Options{Optimization: optimization}, "../../internal/compiler/testdata/simulator")
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/simulator")
 		if err != nil {
 			t.Fatal(err)
 		}

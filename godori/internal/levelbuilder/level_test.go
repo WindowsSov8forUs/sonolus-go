@@ -1,4 +1,4 @@
-package level
+package levelbuilder
 
 import (
 	"math"
