@@ -25,7 +25,7 @@
 - `math`：仅允许 catalog 已登记的常量和函数。
 - `math/rand`：仅允许 `Float64` 和 `Intn`。
 
-其他标准库、第三方包、dot import 和动态 Go 特性会在加载或 frontend 阶段被拒绝。用户主 module 内的普通包可以递归导入并用于静态 helper。
+其他标准库、第三方包、dot import 和动态 Go 特性会在加载或 frontend 阶段被拒绝。编译器会递归扫描从引擎入口可达且属于用户主 module 的普通 package；其中的静态 helper、resource、Configuration、ROM、Stream、level global、archetype 和 callback 都会参与当前引擎编译。将顶层模式声明保留在入口 package 只是一种便于导航、减少隐式聚合的代码组织建议，不是编译要求；需要在多个引擎间复用声明时，可以将 archetype 和 resource 放在双方共同导入的主 module 子包中。
 
 ## 稳定性
 
