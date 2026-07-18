@@ -46,6 +46,9 @@ gopls 一次只能按一种模式的 build tag 分析引擎 package。使用 VS 
     "buildFlags": ["-tags=play"],
     "standaloneTags": ["ignore"],
     "staticcheck": true,
+    "analyses": {
+      "SA4017": false
+    },
     "gofumpt": false
   },
   "[go]": {
@@ -61,6 +64,8 @@ gopls 一次只能按一种模式的 build tag 分析引擎 package。使用 VS 
 编辑其他模式时，将 `play` 替换为 `watch`、`preview` 或 `tutorial`，然后执行 `Go: Restart Language Server`。不要同时启用四个 tag；互斥模式文件中允许存在同名声明，同时加载会产生重复定义。
 
 `standaloneTags` 不用于选择 Sonolus 模式。它会把带指定 tag 的单个 `package main` 文件视为完整的独立程序，无法与无 tag 的共享文件组成引擎 package；应保持默认的 `ignore`。也不要通过全局 `GOFLAGS` 设置模式 tag，否则终端中的 `go test`、`go generate` 等命令也会受到影响。
+
+`SA4017` 会把“忽略无副作用函数的返回值”报告为问题，但 `sonolus` 公开包中的函数体只是供 Go 类型检查使用的声明桩。例如 `particle.Spawn(...)` 在普通 Go 分析中看似只返回零值，compiler 实际会将它 lower 为有写副作用的 `SpawnParticleEffect`；非循环粒子不需要后续移动或销毁时可以直接忽略返回的 handle。因此推荐保留其他 Staticcheck 分析，只单独关闭 `SA4017`。如果不想修改分析配置，也可以用 `_ = particle.Spawn(...)` 显式丢弃 handle。
 
 需要频繁同时编辑多种模式时，可以为每种模式准备一个本地 `.code-workspace` 文件，并在独立窗口中为各自的 `gopls.buildFlags` 固定对应 tag。
 
