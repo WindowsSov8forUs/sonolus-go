@@ -1,5 +1,20 @@
 # 命令行参考
 
+## init
+
+```text
+sonolus-go init [-module <path>] [-sonolus-version <v2.x.y>] [directory]
+```
+
+`init` 创建一个能通过四模式编译的最小引擎 package。目标目录默认为当前目录；目录必须不存在、为空，或只包含 `.git`、`go.mod` 和 `go.sum`，命令不会覆盖已有源码。
+
+参数：
+
+- `-module`：创建新 `go.mod` 并使用指定 module path。未指定时优先复用目标目录上层的现有 module；找不到时使用目录名创建新 module。
+- `-sonolus-version`：新 module 使用的 `sonolus-go/v2` 依赖版本。发布版 CLI 默认使用自身版本；开发版可显式指定 `v2.x.y`。
+
+生成文件包括 `main.go`、四个带准确 build tag 的模式文件、`.gitignore` 和 `.vscode/settings.json`。命令不访问网络；完成后运行 `go mod tidy` 获取依赖，再运行 `sonolus-go vet .` 验证引擎。若目标位于现有 module 内，依赖版本继续由该 module 的 `go.mod` 管理。
+
 ## 通用输入
 
 引擎命令直接接受一个或多个 `packages.Load` pattern：

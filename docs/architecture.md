@@ -25,6 +25,8 @@ development LevelFile
 
 CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
 
+`init` 不进入 Compiler 链路。`internal/scaffold` 负责无覆盖地生成最小四模式 package、新 module metadata 和编辑器配置；CLI 只解析目标目录、module path 与依赖版本。生成过程不访问网络，依赖解析由用户随后执行的 `go mod tidy` 完成。
+
 开发 LevelData 是 `dev` 的独立输入，不进入 Compiler IR 或 `compiler.Artifacts`。`internal/level` 解析共享 embed 声明并对三种普通关卡模式校验；`internal/devserver` 将成功的引擎与关卡快照装配到 `sonolus-server-go`，并使用内置 free-pack 资源提供完整开发路由。
 
 `sonolus/level` 是宿主侧类型化 LevelData builder，与 `sonolus/sim` 一样不属于 callback catalog。它把普通 Go struct、定长数组和类型化实体引用展开为 `resource.LevelData`；Godori 的 `levelgen` 使用它生成 checked-in `dev-level.json`。生成与加载是两条独立路径：builder 负责构造，`internal/level` 仍以最终 JSON 和三模式声明契约为权威校验。

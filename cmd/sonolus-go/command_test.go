@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -133,6 +134,22 @@ func TestRunCLIParsesSubcommandFlags(t *testing.T) {
 	err := runCLI([]string{"build", "-o", "fixture", "-O", "3", "./testdata/multimode"})
 	if err == nil || !strings.Contains(err.Error(), "invalid optimization level 3") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCLIInitCommand(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "engine")
+	err := runCLI([]string{"init", "-module", "example.com/engine", "-sonolus-version", "v2.0.1", directory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"go.mod", "main.go", "play.go", "watch.go", "preview.go", "tutorial.go", ".vscode/settings.json"} {
+		if _, err := os.Stat(filepath.Join(directory, filepath.FromSlash(name))); err != nil {
+			t.Errorf("missing %s: %v", name, err)
+		}
+	}
+	if err := runCLI([]string{"init", "first", "second"}); err == nil || !strings.Contains(err.Error(), "at most one target directory") {
+		t.Fatalf("extra argument error = %v", err)
 	}
 }
 
