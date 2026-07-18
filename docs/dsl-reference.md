@@ -130,6 +130,8 @@ var Config = GameConfiguration{
 
 ## ROM
 
+ROM 声明不是必需的。不需要读取 ROM 时建议不要声明；当源码没有 ROM 声明、没有提供 fallback，且优化后的 callback IR 不读取 ROM 时，compiler 不生成 `EngineRom`。
+
 静态 ROM：
 
 ```go
@@ -147,7 +149,7 @@ var ROM sonolus.ROMFile
 
 Go 要求包含 `//go:embed` directive 的源文件导入 `embed`。这里没有直接使用 `embed.FS` 等包内标识符，所以使用空白导入；它只负责让 Go 接受并处理 directive，实际 ROM 变量仍使用 `sonolus.ROMFile` marker。
 
-只允许一个 ROM 声明。`ROMFile` 必须精确绑定一个文件，文件长度必须是 4 的倍数。用户 ROM 按 little-endian float32 保存；backend 会在前面添加 NaN、`+Inf`、`-Inf` 三个固定值。
+只允许一个 ROM 声明。`ROMFile` 必须精确绑定一个文件，文件长度必须是 4 的倍数。用户 ROM 按 little-endian float32 保存；需要生成 ROM 时，backend 会在前面添加 NaN、`+Inf`、`-Inf` 三个固定值。显式的空 `ROMValues{}` 仍视为 ROM 声明并生成只含这三个固定值的 `EngineRom`。
 
 ## Archetype
 

@@ -28,6 +28,7 @@ func optimizeProject(optimizer *optimize.Optimizer, project *frontend.Project) (
 	result := &frontend.Project{
 		Configuration: project.Configuration,
 		ROM:           append([]byte(nil), project.ROM...),
+		ROMDeclared:   project.ROMDeclared,
 		Modes:         make(map[mode.Mode]*frontend.ModeDeclarations, len(project.Modes)),
 	}
 	var jobs []*callbackOptimization

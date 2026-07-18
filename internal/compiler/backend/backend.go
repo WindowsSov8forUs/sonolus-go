@@ -26,7 +26,10 @@ func Compile(project *frontend.Project) (*Artifacts, error) {
 	if len(project.ROM)%4 != 0 {
 		return nil, fmt.Errorf("backend: ROM length %d is not divisible by 4", len(project.ROM))
 	}
-	result := &Artifacts{Configuration: project.Configuration, ROM: buildROM(project.ROM), Diagnostics: map[int]string{}}
+	result := &Artifacts{Configuration: project.Configuration, Diagnostics: map[int]string{}}
+	if needsROM(project) {
+		result.ROM = buildROM(project.ROM)
+	}
 	for _, m := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
 		declarations := project.Modes[m]
 		if declarations == nil {

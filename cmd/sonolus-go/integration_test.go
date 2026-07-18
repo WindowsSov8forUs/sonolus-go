@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,10 +43,13 @@ func TestBuildCompilesGodori(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(out, "godori")
-	for _, name := range []string{build.FileConfiguration, build.FileROM, build.FilePlayData, build.FileWatchData, build.FilePreviewData, build.FileTutorialData} {
+	for _, name := range []string{build.FileConfiguration, build.FilePlayData, build.FileWatchData, build.FilePreviewData, build.FileTutorialData} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("missing %s: %v", name, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, build.FileROM)); !os.IsNotExist(err) {
+		t.Fatalf("build unexpectedly wrote %s: %v", build.FileROM, err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "LevelData")); !os.IsNotExist(err) {
 		t.Fatalf("build unexpectedly wrote LevelData: %v", err)
@@ -56,17 +57,6 @@ func TestBuildCompilesGodori(t *testing.T) {
 	play, err := codec.Decompress[resource.EnginePlayData](mustRead(t, filepath.Join(dir, build.FilePlayData)))
 	if err != nil || len(play.Skin.Sprites) == 0 {
 		t.Fatalf("play round trip: sprites=%d err=%v", len(play.Skin.Sprites), err)
-	}
-	reader, err := gzip.NewReader(strings.NewReader(string(mustRead(t, filepath.Join(dir, build.FileROM)))))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rom, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rom) != 12 {
-		t.Fatalf("raw ROM length = %d", len(rom))
 	}
 }
 

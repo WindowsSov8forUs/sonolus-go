@@ -1,6 +1,6 @@
 # sonolus-go 文档
 
-`sonolus-go` 将受限的 Go DSL 编译为 Sonolus EngineData。编译器支持 Play、Watch、Preview、Tutorial 四种模式，生成 EngineConfiguration、Engine ROM 和对应模式的 EngineData。
+`sonolus-go` 将受限的 Go DSL 编译为 Sonolus EngineData。编译器支持 Play、Watch、Preview、Tutorial 四种模式，生成 EngineConfiguration、按需生成的 Engine ROM 和对应模式的 EngineData。
 
 项目提供引擎编译和开发期数据服务。
 

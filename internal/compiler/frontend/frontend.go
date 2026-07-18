@@ -347,6 +347,9 @@ func (p *Parser) GetProject() (*Project, error) {
 	}
 	for i, decl := range declarations {
 		project.Modes[decl.Mode] = decl
+		if decl.ROM != nil {
+			project.ROMDeclared = true
+		}
 		if i == 0 {
 			if decl.Configuration != nil {
 				project.Configuration = decl.Configuration.Value

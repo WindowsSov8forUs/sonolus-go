@@ -125,8 +125,8 @@ func TestParserTreatsMissingAndExplicitEmptySharedValuesAsEqual(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(project.Configuration.Options) != 0 || len(project.ROM) != 0 {
-		t.Fatalf("shared outputs: configuration=%#v ROM=%v", project.Configuration, project.ROM)
+	if len(project.Configuration.Options) != 0 || len(project.ROM) != 0 || !project.ROMDeclared {
+		t.Fatalf("shared outputs: configuration=%#v ROM=%v declared=%t", project.Configuration, project.ROM, project.ROMDeclared)
 	}
 }
 

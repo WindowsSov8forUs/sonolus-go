@@ -29,7 +29,7 @@ sonolus-go build [-o <name>] [-m <mode>]
 - `-stats`：输出各模式 load/frontend 和共享 optimize/backend/total 时间。
 - `-runtime-checks`：动态检查策略，默认 `none`。
 
-源码声明 ROM 优先。源码 ROM 缺失或显式为空时使用 `-rom` fallback。fallback 长度必须是 4 的倍数。
+源码声明 ROM 优先。源码 ROM 缺失或显式为空时使用 `-rom` fallback。fallback 长度必须是 4 的倍数。未声明 ROM、未提供 fallback 且 callback 不读取 ROM 时，输出中省略 `EngineRom`。
 
 输出固定位于 `dist/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
 
@@ -73,7 +73,7 @@ sonolus-go dev [-o <name>] [-addr <:8080>]
 - `/sonolus/engine/watch-data`
 - `/sonolus/engine/preview-data`
 - `/sonolus/engine/tutorial-data`
-- `/sonolus/engine/rom`
+- `/sonolus/engine/rom`（存在 ROM 时）
 
 它监听成功快照中的 Go 和 embed 文件，包括 `//sonolus:level` 绑定的 LevelData JSON。文件变化后创建新的 Compiler 并重新编译；失败时记录错误并继续服务上一次成功快照。开发 LevelData 不属于 `build` 输出。
 

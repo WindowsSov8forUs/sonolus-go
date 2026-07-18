@@ -13,6 +13,7 @@ import (
 type Project struct {
 	Configuration *resource.EngineConfiguration
 	ROM           []byte
+	ROMDeclared   bool
 	Modes         map[mode.Mode]*ModeDeclarations
 }
 

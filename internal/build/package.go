@@ -43,9 +43,12 @@ func PackageArtifacts(artifacts *compiler.Artifacts) (*PackagedEngine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("package configuration: %w", err)
 	}
-	rom, err := compressBytes(artifacts.ROM)
-	if err != nil {
-		return nil, fmt.Errorf("package ROM: %w", err)
+	var rom []byte
+	if artifacts.ROM != nil {
+		rom, err = compressBytes(artifacts.ROM)
+		if err != nil {
+			return nil, fmt.Errorf("package ROM: %w", err)
+		}
 	}
 	result := &PackagedEngine{Configuration: configuration, ROM: rom}
 	values := []struct {

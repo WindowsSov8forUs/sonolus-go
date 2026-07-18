@@ -61,15 +61,19 @@ func New(name string, artifacts *compiler.Artifacts, packaged *build.PackagedEng
 	watchData := server.AddBytes(packaged.WatchData, "")
 	previewData := server.AddBytes(packaged.PreviewData, "")
 	tutorialData := server.AddBytes(packaged.TutorialData, "")
-	rom := server.AddBytes(packaged.ROM, "")
 	level := server.AddBytes(levelData, "")
 
-	server.Engine.Items = append(server.Engine.Items, sonolusserver.EngineItemModel{DatabaseEngineItem: database.DatabaseEngineItem{
+	engine := database.DatabaseEngineItem{
 		Name: name, Version: database.DatabaseEngineItemVersion,
 		Title: text(name), Subtitle: text("Development Engine"), Author: text("sonolus-go"), Tags: []database.DatabaseTag{},
 		Skin: "pixel", Background: "darkblue", Effect: "8bit", Particle: "pixel", Thumbnail: thumbnailSRL,
-		PlayData: playData, WatchData: watchData, PreviewData: previewData, TutorialData: tutorialData, ROM: &rom, Configuration: configuration,
-	}})
+		PlayData: playData, WatchData: watchData, PreviewData: previewData, TutorialData: tutorialData, Configuration: configuration,
+	}
+	if packaged.ROM != nil {
+		rom := server.AddBytes(packaged.ROM, "")
+		engine.ROM = &rom
+	}
+	server.Engine.Items = append(server.Engine.Items, sonolusserver.EngineItemModel{DatabaseEngineItem: engine})
 	server.Level.Items = append(server.Level.Items, sonolusserver.LevelItemModel{DatabaseLevelItem: database.DatabaseLevelItem{
 		Name: "dev", Version: database.DatabaseLevelItemVersion, Rating: 0,
 		Title: text("Dev Level"), Artists: text("Unknown"), Author: text("sonolus-go"), Tags: []database.DatabaseTag{}, Engine: name,

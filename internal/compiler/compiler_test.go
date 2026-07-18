@@ -210,6 +210,23 @@ func TestCompilerFallbackROMAndSourcePriority(t *testing.T) {
 	}
 }
 
+func TestCompilerOmitsUnusedUndeclaredROM(t *testing.T) {
+	artifacts, err := NewCompiler(Options{}, "./testdata/lowering").Compile(mode.ModePlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifacts.ROM != nil {
+		t.Fatalf("ROM = %v, want nil", artifacts.ROM)
+	}
+	explicit, err := NewCompiler(Options{}, "./testdata/emptyshared").Compile(mode.ModePlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(explicit.ROM) != 12 {
+		t.Fatalf("explicit empty ROM length = %d, want 12", len(explicit.ROM))
+	}
+}
+
 func TestCompilerStatsAndSourceFiles(t *testing.T) {
 	compiler := NewCompiler(Options{}, "./testdata/multimode")
 	if _, err := compiler.Compile(mode.ModePlay); err != nil {

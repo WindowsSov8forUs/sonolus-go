@@ -207,6 +207,26 @@ func TestPackageArtifactsRawROMAndSelectedModes(t *testing.T) {
 	}
 }
 
+func TestPackageArtifactsOmitsAbsentROM(t *testing.T) {
+	packaged, err := PackageArtifacts(&compiler.Artifacts{
+		Configuration: &resource.EngineConfiguration{},
+		Play:          &resource.EnginePlayData{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packaged.ROM != nil {
+		t.Fatalf("ROM = %v, want nil", packaged.ROM)
+	}
+	dir := t.TempDir()
+	if err := packaged.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, FileROM)); !os.IsNotExist(err) {
+		t.Fatalf("EngineRom was written: %v", err)
+	}
+}
+
 func TestWriteAtomicReplacesCompleteSnapshot(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "engine")
 	first := &PackagedEngine{Configuration: []byte("old-config"), ROM: []byte("old-rom"), PlayData: []byte("old-play")}
