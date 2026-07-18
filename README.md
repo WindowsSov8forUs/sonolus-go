@@ -30,6 +30,8 @@ sonolus-go version
 
 引擎源码必须位于 Go module 中，入口 package 为 `main`。本仓库的 [`godori/`](godori/) 是一个可游玩的四模式引擎，也是公开示例和端到端验收工程。其声明方式和项目结构见[快速开始](docs/getting-started.md)。
 
+引擎 package 是 `sonolus-go` compiler 的源码输入，不是通过 `go run` 执行玩法逻辑的普通 Go 程序。`sonolus` 及其子包只提供编译期 API 桩；其中的零值函数体和空操作不代表 Sonolus Runtime 行为。
+
 初始化最小四模式引擎：
 
 ```bash

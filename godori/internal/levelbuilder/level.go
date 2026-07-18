@@ -1,5 +1,5 @@
-// Package level constructs Sonolus LevelData from typed Go values.
-package level
+// Package levelbuilder constructs Godori LevelData from typed Go values.
+package levelbuilder
 
 import (
 	"encoding/json"

@@ -4,6 +4,8 @@
 
 编译器接受的是静态可分析的 Go 子集，而不是任意合法 Go 程序。所有 Sonolus API 通过 `go/types.Object` 身份与 catalog 项匹配，因此 import alias 合法，同名用户函数不能伪造 intrinsic 或资源 constructor。
 
+引擎 `package main` 只是 compiler 输入，不是可通过普通 Go 执行来观察玩法行为的程序。`sonolus` 目录及其模式子包全部是 API 声明桩；函数体只用于 Go 类型检查，实际语义由 frontend lowering 与 catalog 决定。即使引擎源码能够被 `go build` 或 `go run` 接受，零值返回和空操作也不代表最终 EngineData 或 Sonolus Runtime 行为。
+
 四种模式使用 build tag `play`、`watch`、`preview`、`tutorial` 独立加载。未带模式 tag 的文件会进入每种模式。
 
 ## 名称型资源
@@ -326,10 +328,8 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 
 Go 运算符与标准库遵循 Go 数值规则：`int(x)` 与整数 `/` 向零截断，`%` 和 `math.Mod` 使用 remainder，`math.Round` 的半数远离零。需要 Sonolus/Python modulo 或 JS `Math.round` 时分别显式调用 `native.Mod`、`native.Round`。非 `int` 固定宽度整数与 unsigned runtime 运算不属于 DSL；超出 float32 精确整数范围的 Go overflow 行为不作承诺。
 
-## Runtime checks 与 simulator
+## Runtime checks
 
 `Assert` 遵循 Compiler runtime-check 等级，`Require` 始终检查，`StaticAssert` 必须在编译期成立。静态为 false 的 `Assert`/`Require` 仍生成 callback termination，而不是编译错误；`StaticAssert` 与 `Unreachable` 才用于要求编译期证明。`Terminate(message)` 可从任意内联 helper 终止当前 callback，`Notify(message)` 仅在 `notify` 等级发出诊断并继续执行。`RuntimeChecksEnabled()` 是当前编译选项的编译期常量，可用于裁剪仅在检查开启时需要的代码；`Unreachable(message)` 只允许位于被常量裁剪的不可达路径，任何实际 lowering 到的调用都会稳定报错。`none` 移除动态检查，`terminate` 失败时退出 callback，`notify` 还会依次发出诊断码的 `DebugLog` 与 `DebugPause`。诊断码在完整 Project 聚合后按 mode、global/archetype、callback、RPO/instruction、源码位置和 inline stack 稳定编号，并只保证在相同源码快照内稳定。诊断表保存在 `compiler.Artifacts.Diagnostics`，不进入 EngineData wire schema。
 
 动态 `int`（含底层类型为 `int` 的 named type）除法和 remainder 会先物化除数，并始终执行非零 `Require` guard；`none` 与 `terminate` 失败时终止 callback，`notify` 额外发出稳定诊断。float 除零继续遵循 IEEE NaN/Inf。
-
-公开包 `sonolus/sim` 编译并解释最终 EngineData node tree，可注入初始 block memory、规范化 stream state、随机 seed、step limit 与自定义 RuntimeFunction handler，并返回 callback 结果、最终 memory、按 ID/key 排序的 stream state 和有序副作用日志。执行失败返回 `*sim.ExecutionError`；调用方可用 `errors.As` 检查 `invalid-request`、`invalid-node`、`invalid-arity`、`invalid-argument`、`invalid-state`、`missing-handler` 或 `step-limit`。Simulator 对 control、pure、memory、stream、random、effect 与 handler-required RuntimeFunction 做生成式穷举分类；未知函数不会静默当作自定义函数执行。

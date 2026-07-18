@@ -229,27 +229,6 @@ var DevelopmentLevel sonolus.LevelFile
 }
 ```
 
-开发关卡也可以使用宿主侧 `sonolus/level` 包从类型化 Go 值生成，再将生成的 JSON 保持为 checked-in embed 文件：
-
-```go
-type NoteData struct {
-    Beat float64 `level:"#BEAT"`
-    Lane float64 `level:"lane"`
-    Next level.Ref[NoteData] `level:"next,omitempty"`
-}
-
-var Note = level.MustDefine[NoteData]("Note")
-
-func buildLevel() (*resource.LevelData, error) {
-    first := Note.New(NoteData{Beat: 1, Lane: -1})
-    second := Note.New(NoteData{Beat: 2, Lane: 1})
-    first.Data.Next = second.Ref()
-    return level.NewBuilder().Add(first, second).Build()
-}
-```
-
-`sonolus/level` 在普通 Go 进程中运行，不属于 callback DSL，也不进入 Compiler IR。它会稳定自动命名实体、验证同关卡引用，并按与 Archetype imports 相同的数组/record 规则展开字段。Godori 使用 `go generate ./godori` 更新 `godori/dev-level.json`，测试会逐字节确认生成结果没有过期。
-
 同一文件必须对 Play、Watch 和 Preview 可见。实体 archetype 和每个 data name 必须存在于三个模式对应的声明中；实体引用必须指向同一关卡内的命名实体。未声明时使用空开发关卡。
 
 ```bash

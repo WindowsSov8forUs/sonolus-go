@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
-	level "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/level"
+	level "github.com/WindowsSov8forUs/sonolus-go/v2/godori/internal/levelbuilder"
 )
 
 type stageData struct{}
