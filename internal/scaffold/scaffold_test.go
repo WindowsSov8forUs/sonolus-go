@@ -45,6 +45,55 @@ func TestInitModuleCreatesDeterministicProject(t *testing.T) {
 	}
 }
 
+func TestInitWorkspaceCreatesDeterministicWorkFile(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"sirius", "shared"} {
+		if _, err := InitModule(ModuleOptions{Directory: filepath.Join(root, name), ModulePath: "example.com/" + name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := InitWorkspace(WorkspaceOptions{
+		Directory:         root,
+		ModuleDirectories: []string{"./sirius", "./shared"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result.Modules, []string{"./sirius", "./shared"}) || !reflect.DeepEqual(result.Files, []string{"go.work"}) {
+		t.Fatalf("result = %#v", result)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "go.work"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "go 1.25.12\n\nuse (\n\t./shared\n\t./sirius\n)\n"
+	if string(data) != want {
+		t.Fatalf("go.work = %q, want %q", data, want)
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.work.sum")); !os.IsNotExist(err) {
+		t.Fatalf("work init unexpectedly created go.work.sum: %v", err)
+	}
+}
+
+func TestInitWorkspaceRejectsInvalidModulesAndExistingWorkFile(t *testing.T) {
+	root := t.TempDir()
+	if _, err := InitWorkspace(WorkspaceOptions{Directory: root, ModuleDirectories: []string{"./missing"}}); err == nil || !strings.Contains(err.Error(), "inspect workspace module") {
+		t.Fatalf("missing module error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.work")); !os.IsNotExist(err) {
+		t.Fatalf("failed work init wrote go.work: %v", err)
+	}
+	if _, err := InitModule(ModuleOptions{Directory: filepath.Join(root, "sirius"), ModulePath: "example.com/sirius"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InitWorkspace(WorkspaceOptions{Directory: root, ModuleDirectories: []string{"./sirius"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InitWorkspace(WorkspaceOptions{Directory: root}); err == nil || !strings.Contains(err.Error(), "create \"go.work\"") {
+		t.Fatalf("existing workspace error = %v", err)
+	}
+}
+
 func TestInitCreatesEngineBelowModuleRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "project")
 	if _, err := InitModule(ModuleOptions{Directory: root, ModulePath: "example.com/project"}); err != nil {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/scaffold"
 	"go/parser"
 	"go/token"
 	"path/filepath"
@@ -185,6 +186,28 @@ func TestRunCLIInitCommand(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(single, "main.go")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRunCLIWorkInitCommand(t *testing.T) {
+	root := t.TempDir()
+	module := filepath.Join(root, "sirius")
+	if _, err := scaffold.InitModule(scaffold.ModuleOptions{Directory: module, ModulePath: "example.com/sirius"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	if err := runCLI([]string{"work", "init", "./sirius"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "go.work"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "use ./sirius") {
+		t.Fatalf("go.work = %q", data)
+	}
+	if err := runCLI([]string{"work"}); err == nil || !strings.Contains(err.Error(), "requires the init subcommand") {
+		t.Fatalf("missing work subcommand error = %v", err)
 	}
 }
 

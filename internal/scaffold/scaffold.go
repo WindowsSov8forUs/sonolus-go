@@ -26,6 +26,17 @@ type ModuleResult struct {
 	Files      []string
 }
 
+type WorkspaceOptions struct {
+	Directory         string
+	ModuleDirectories []string
+}
+
+type WorkspaceResult struct {
+	Directory string
+	Modules   []string
+	Files     []string
+}
+
 type Options struct {
 	Directory string
 }
@@ -88,6 +99,83 @@ func InitModule(options ModuleOptions) (*ModuleResult, error) {
 	}
 	sort.Strings(paths)
 	return &ModuleResult{Directory: directory, ModulePath: modulePath, Files: paths}, nil
+}
+
+func InitWorkspace(options WorkspaceOptions) (*WorkspaceResult, error) {
+	directory := options.Directory
+	if directory == "" {
+		directory = "."
+	}
+	directory, err := filepath.Abs(directory)
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: resolve workspace directory: %w", err)
+	}
+	info, err := os.Stat(directory)
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: inspect workspace directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("scaffold: workspace target %q is not a directory", directory)
+	}
+
+	work, err := modfile.ParseWork("go.work", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: initialize workspace file: %w", err)
+	}
+	if err := work.AddGoStmt("1.25.12"); err != nil {
+		return nil, fmt.Errorf("scaffold: initialize workspace: %w", err)
+	}
+	modules := make([]string, 0, len(options.ModuleDirectories))
+	for _, moduleDirectory := range options.ModuleDirectories {
+		if moduleDirectory == "" {
+			return nil, fmt.Errorf("scaffold: workspace module directory is empty")
+		}
+		modulePath, err := workspaceModulePath(directory, moduleDirectory)
+		if err != nil {
+			return nil, err
+		}
+		usePath := filepath.Clean(moduleDirectory)
+		if !filepath.IsAbs(usePath) && usePath != "." && usePath != ".." && !strings.HasPrefix(usePath, "."+string(filepath.Separator)) {
+			usePath = "." + string(filepath.Separator) + usePath
+		}
+		usePath = filepath.ToSlash(usePath)
+		if err := work.AddUse(usePath, modulePath); err != nil {
+			return nil, fmt.Errorf("scaffold: add workspace module %q: %w", moduleDirectory, err)
+		}
+		modules = append(modules, usePath)
+	}
+	work.SortBlocks()
+	if err := writeFiles(directory, map[string][]byte{"go.work": modfile.Format(work.Syntax)}); err != nil {
+		return nil, err
+	}
+	return &WorkspaceResult{Directory: directory, Modules: modules, Files: []string{"go.work"}}, nil
+}
+
+func workspaceModulePath(workspaceDirectory, moduleDirectory string) (string, error) {
+	directory := moduleDirectory
+	if !filepath.IsAbs(directory) {
+		directory = filepath.Join(workspaceDirectory, directory)
+	}
+	info, err := os.Stat(directory)
+	if err != nil {
+		return "", fmt.Errorf("scaffold: inspect workspace module %q: %w", moduleDirectory, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("scaffold: workspace module %q is not a directory", moduleDirectory)
+	}
+	goModPath := filepath.Join(directory, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return "", fmt.Errorf("scaffold: read workspace module file %q: %w", goModPath, err)
+	}
+	parsed, err := modfile.Parse(goModPath, data, nil)
+	if err != nil || parsed.Module == nil || parsed.Module.Mod.Path == "" {
+		if err == nil {
+			err = fmt.Errorf("module directive is required")
+		}
+		return "", fmt.Errorf("scaffold: invalid workspace module file %q: %w", goModPath, err)
+	}
+	return parsed.Module.Mod.Path, nil
 }
 
 func Init(options Options) (*Result, error) {
