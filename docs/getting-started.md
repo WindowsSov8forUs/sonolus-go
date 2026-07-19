@@ -12,16 +12,18 @@
 
 ```bash
 sonolus-go mod init example.com/sirius sirius
-cd sirius
-sonolus-go init ./engines/first
-sonolus-go init ./engines/second
-go mod tidy
-sonolus-go vet ./engines/first ./engines/second
+sonolus-go work init ./sirius
+sonolus-go init ./sirius/engines/first
+sonolus-go init ./sirius/engines/second
+go -C sirius mod tidy
+sonolus-go vet ./sirius/engines/first ./sirius/engines/second
 ```
 
-`mod init` 在 `sirius/` 生成共同的 `go.mod`、`go.sum`、`.gitignore` 和推荐的 gopls 配置；`init` 只在各引擎目录生成共享入口和四个模式文件。两条命令都不联网，也不会覆盖已有源码；创建引擎后由 `go mod tidy` 下载与当前 CLI 发布版本匹配的 `sonolus-go` module。开发版 CLI 无法自动确定依赖版本时，对 `mod init` 使用 `-sonolus-version v2.x.y` 显式指定。
+`mod init` 在 `sirius/` 生成共同的 `go.mod`、`go.sum`、`.gitignore` 和推荐的 gopls 配置；`work init` 在项目根生成引用 `./sirius` 的 `go.work`；`init` 只在各引擎目录生成共享入口和四个模式文件。这些命令都不联网，也不会覆盖已有源码；创建引擎后由 `go mod tidy` 下载与当前 CLI 发布版本匹配的 `sonolus-go` module。开发版 CLI 无法自动确定依赖版本时，对 `mod init` 使用 `-sonolus-version v2.x.y` 显式指定。
 
-`go.mod` 与 `go.sum` 属于 module 根。多引擎工程中它们位于所有引擎 package 的共同祖先；单引擎工程也可以让 module 根同时作为唯一的引擎 package：
+项目根不是 Go module 时，`go.work` 是从项目根使用 `./sirius` pattern 的 workspace 入口。pattern 不会让 Go 自动进入子 module。`go.work.sum` 由 Go 按需生成，不需要由 `sonolus-go` 预先建立。
+
+`go.mod` 与 `go.sum` 属于 module 根；`go.work` 与按需生成的 `go.work.sum` 属于包含各 module 的项目根。多引擎工程中 module metadata 位于所有引擎 package 的共同祖先；单引擎工程也可以让 module 根同时作为唯一的引擎 package，此时进入 module 根执行命令便不需要 workspace：
 
 ```bash
 sonolus-go mod init example.com/single single
@@ -36,24 +38,28 @@ sonolus-go vet .
 工程结构示例：
 
 ```text
-sirius/
-├─ go.mod
-├─ go.sum
-├─ internal/shared/
-└─ engines/
-   ├─ first/
-   └─ second/
+project/
+├─ go.work
+├─ go.work.sum            # Go 按需生成
+├─ dist/                  # 从 project/ 执行 build 时生成
+└─ sirius/
+   ├─ go.mod
+   ├─ go.sum
+   ├─ internal/shared/
+   └─ engines/
+      ├─ first/
+      └─ second/
 ```
 
 也可以手动建立相同结构，但必须先准备完整的 module metadata：
 
 ```bash
 mkdir sirius
-cd sirius
-go mod init example.com/sirius
-go get github.com/WindowsSov8forUs/sonolus-go/v2
-sonolus-go init ./engines/first
-go mod tidy
+go -C sirius mod init example.com/sirius
+sonolus-go work init ./sirius
+go -C sirius get github.com/WindowsSov8forUs/sonolus-go/v2
+sonolus-go init ./sirius/engines/first
+go -C sirius mod tidy
 ```
 
 推荐用 build tags 隔离四种模式。同名资源和 archetype 可以分别出现在 `play.go`、`watch.go`、`preview.go`、`tutorial.go` 中。

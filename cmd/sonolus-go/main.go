@@ -55,6 +55,15 @@ func runCLI(args []string) error {
 			directory = flags.Arg(1)
 		}
 		return cmdModInit(directory, flags.Arg(0), *dependencyVersion)
+	case "work":
+		if len(args) == 0 || args[0] != "init" {
+			return fmt.Errorf("work requires the init subcommand")
+		}
+		flags := commandFlags("work init")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		return cmdWorkInit(flags.Args())
 	case "init":
 		flags := commandFlags(command)
 		if err := flags.Parse(args); err != nil {
@@ -123,6 +132,7 @@ func commandFlags(command string) *flag.FlagSet {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: sonolus-go mod init [-sonolus-version <v2.x.y>] <module-name> [project-directory]")
+	fmt.Fprintln(os.Stderr, "       sonolus-go work init [module-directory...]")
 	fmt.Fprintln(os.Stderr, "       sonolus-go init [engine-directory]")
 	fmt.Fprintln(os.Stderr, "       sonolus-go build [-o <name>] [-m <mode>] [-O 0|1|2] [-runtime-checks <level>] <package-pattern>...")
 	fmt.Fprintln(os.Stderr, "       sonolus-go vet [-m <mode>] [-O 0|1|2] [-rom <file>] [-runtime-checks <level>] [-stats] <package-pattern>...")

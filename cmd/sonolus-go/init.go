@@ -40,6 +40,20 @@ func cmdModInit(directory, modulePath, dependencyVersion string) error {
 	return nil
 }
 
+func cmdWorkInit(moduleDirectories []string) error {
+	result, err := scaffold.InitWorkspace(scaffold.WorkspaceOptions{
+		ModuleDirectories: moduleDirectories,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("initialized Sonolus workspace in %s\n", result.Directory)
+	if len(result.Modules) == 0 {
+		fmt.Println("next: go work use <module-directory>")
+	}
+	return nil
+}
+
 func cmdInit(directory string) error {
 	result, err := scaffold.Init(scaffold.Options{Directory: directory})
 	if err != nil {

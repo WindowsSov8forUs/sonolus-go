@@ -15,6 +15,16 @@ sonolus-go mod init [-sonolus-version <v2.x.y>] <module-name> [project-directory
 
 生成文件固定为 `go.mod`、空的 `go.sum`、`.gitignore` 和 `.vscode/settings.json`。命令不创建引擎 package，也不访问网络；先使用 `init` 创建至少一个引擎，再运行 `go mod tidy` 解析依赖。
 
+## work init
+
+```text
+sonolus-go work init [module-directory...]
+```
+
+`work init` 在当前目录创建 `go.work`，并将参数中的 module 目录写入 `use`。它用于项目根不是 Go module、引擎 module 位于 `sirius/` 等子目录，但仍希望从项目根执行 `sonolus-go build ./sirius` 的布局。每个目录必须存在并包含可解析的 `go.mod`；已有 `go.work` 时命令拒绝覆盖。
+
+命令只创建 `go.work`。`go.work.sum` 由 Go 在 workspace 需要额外校验和时按需生成，`sonolus-go` 不预先创建或强制要求它。无参数调用会创建空 workspace，之后可使用原生 `go work use <module-directory>` 添加 module。
+
 ## init
 
 ```text
@@ -34,6 +44,8 @@ sonolus-go build ./engine
 sonolus-go build ./engines/...
 sonolus-go build -o game ./engine
 ```
+
+Go module/workspace 从命令的当前工作目录发现。若当前目录不是 module 根，而 pattern 指向子目录中的独立 module，必须先在当前目录建立包含该 module 的 `go.work`；package pattern 本身不会切换 Go 的 module 上下文。
 
 未指定 `-o` 时，所有匹配到的 `main` package 都会作为独立引擎编译，名称取各自主 module path 的最后一段。多个 module 导出相同名称时报错。指定 `-o` 时，该值覆盖引擎名称，且 patterns 必须恰好匹配一个引擎，这与 `go build -o` 对多 package 的限制一致。不支持旧式单 `.go` 文件 prelude 输入。
 
@@ -56,7 +68,7 @@ sonolus-go build [-o <name>] [-m <mode>]
 
 源码声明 ROM 优先。源码 ROM 缺失或显式为空时使用 `-rom` fallback。fallback 长度必须是 4 的倍数。未声明 ROM、未提供 fallback 且 callback 不读取 ROM 时，输出中省略 `EngineRom`。
 
-输出固定位于 `dist/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。
+输出固定位于命令当前工作目录的 `dist/<name>`，采用原子目录替换；编译或序列化失败不会留下部分新产物。在包含 `go.work` 的项目根执行时，产物因此位于项目根的 `dist/`。
 
 ## vet
 
