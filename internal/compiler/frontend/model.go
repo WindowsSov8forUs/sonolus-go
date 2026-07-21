@@ -120,6 +120,7 @@ type ArchetypeDeclaration struct {
 
 type FieldDeclaration struct {
 	GoName         string
+	SourcePath     string
 	ExternalName   string
 	ExternalNames  []string
 	Storage        string
