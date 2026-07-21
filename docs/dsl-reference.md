@@ -198,6 +198,28 @@ Storage：
 
 Archetype 支持一个直接匿名嵌入的基类，例如匿名字段 `Base` 使用 `archetype:"base"` tag。基类必须在当前模式中声明；字段按 storage 分区成为派生布局前缀，callback method、order 与 runtime 类型关系沿单继承链继承，派生直接方法和显式 order 会覆盖基类。
 
+无 Sonolus declaration marker 的普通具名 struct 可不带 tag 匿名嵌入 Archetype，作为 structural mixin 复用字段与 callback：
+
+```go
+// package shared
+type BasicNote struct {
+    Beat float64 `archetype:"imported,name=#BEAT"`
+    Time float64 `archetype:"data"`
+}
+
+func (note *BasicNote) Preprocess() {
+    note.Time = note.Beat
+}
+
+// package main
+type TapNote struct {
+    play.Archetype `archetype:"name=TapNote,hasInput=true"`
+    shared.BasicNote
+}
+```
+
+structural mixin 按匿名嵌入位置递归、深度优先展开其中带 storage tag 的字段，promoted callback 在每个使用它的具体 Archetype 和模式中分别校验与 lowering；未带 storage tag 的普通字段不进入 runtime layout。同一个 mixin 可被不同 Archetype 或不同模式复用，但同一具体 Archetype 中不得经多条嵌入路径重复出现。mixin 不进入 Archetype declaration 或 MRO，不取得 runtime ID/key，不继承 callback order，也不能作为 `EntityRef[T]`、`CurrentEntityRef[T]`、`ArchetypeID[T]` 或 `ArchetypeKey[T]` 的 Archetype 目标。需要这些 runtime 类型关系时仍应使用当前模式的 `archetype:"base"` 单继承。
+
 只作为字段/callback 模板而不进入 EngineData 的基类使用 `archetype:"abstract"`：
 
 ```go

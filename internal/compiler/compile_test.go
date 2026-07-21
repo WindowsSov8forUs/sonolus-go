@@ -416,6 +416,63 @@ func TestPromotedCallbackLowersBodyFromDefiningPackage(t *testing.T) {
 	}
 }
 
+func TestStructuralMixinFieldsAndCallbacksAcrossModes(t *testing.T) {
+	for _, currentMode := range []mode.Mode{mode.ModePlay, mode.ModeWatch} {
+		declarations, err := parseMode(currentMode, "./testdata/structmixin")
+		if err != nil {
+			t.Fatalf("parse %s: %v", currentMode, err)
+		}
+		if len(declarations.Archetypes) != 1 {
+			t.Fatalf("%s archetypes = %+v", currentMode, declarations.Archetypes)
+		}
+		archetype := declarations.Archetypes[0]
+		if archetype.Base == nil || len(archetype.MRO) != 2 {
+			t.Fatalf("%s mixin changed archetype MRO: %+v", currentMode, archetype)
+		}
+		gotFields := make([]string, len(archetype.Fields))
+		for index, field := range archetype.Fields {
+			gotFields[index] = field.GoName
+		}
+		wantFields := []string{"BaseValue", "Beat", "Time", "Seen", "Local"}
+		if !reflect.DeepEqual(gotFields, wantFields) {
+			t.Fatalf("%s fields = %v, want %v", currentMode, gotFields, wantFields)
+		}
+		if len(archetype.Imports) != 1 || archetype.Imports[0].Name != "#BEAT" || archetype.Imports[0].Index != 0 {
+			t.Fatalf("%s imports = %+v", currentMode, archetype.Imports)
+		}
+		if len(archetype.Callbacks) != 1 || archetype.Callbacks[0].Name != "preprocess" {
+			t.Fatalf("%s callbacks = %+v", currentMode, archetype.Callbacks)
+		}
+	}
+	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+		artifacts, err := NewCompiler(Options{Optimization: level}, "./testdata/structmixin").Compile(mode.ModePlay, mode.ModeWatch)
+		if err != nil {
+			t.Fatalf("level %d: %v", level, err)
+		}
+		if artifacts.Play == nil || artifacts.Watch == nil {
+			t.Fatalf("level %d did not produce play and watch artifacts", level)
+		}
+	}
+}
+
+func TestStructuralMixinRejectsInvalidLayoutsAndCallbacks(t *testing.T) {
+	_, err := NewCompiler(Options{}, "./testdata/invalidstructmixin").Compile(mode.ModePlay)
+	if err == nil {
+		t.Fatal("invalid structural mixins compiled successfully")
+	}
+	for _, message := range []string{
+		"structural mixin Leaf is embedded more than once",
+		"structural mixin field DuplicateThroughBase.Leaf.Value is embedded more than once",
+		`duplicate external field name "duplicate"`,
+		"data storage exceeds capacity 32",
+		"InvalidCallbackMixin.Preprocess: callback must not have parameters",
+	} {
+		if !strings.Contains(err.Error(), message) {
+			t.Errorf("missing %q in error:\n%v", message, err)
+		}
+	}
+}
+
 func TestArchetypeInheritanceAndReferenceMatching(t *testing.T) {
 	declarations, err := parseMode(mode.ModePlay, "./testdata/archetypemro")
 	if err != nil {

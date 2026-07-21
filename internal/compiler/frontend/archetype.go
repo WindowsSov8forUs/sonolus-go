@@ -168,168 +168,216 @@ func parseArchetype(packagesByTypes map[*types.Package]*packages.Package, pkg *p
 		}
 	}
 	result := &ArchetypeDeclaration{PackagePath: pkg.PkgPath, TypeName: named.Obj().Name(), Name: name, Abstract: abstract, Key: key, HasKey: hasKey, HasInput: hasInput, Named: named, CallbackOrders: map[string]int{}}
+	collector := archetypeFieldCollector{
+		packagesByTypes: packagesByTypes,
+		mode:            m,
+		result:          result,
+		offsets:         map[string]int{"data": 0, "memory": 0, "shared": 0, "exported": 0},
+		external:        map[string]bool{},
+		mixins:          map[*types.Named]string{},
+	}
+	collector.collect(pkg, named, named.Obj().Name(), true)
+	errs = append(errs, collector.errs...)
+
+	return result, errs
+}
+
+type archetypeFieldCollector struct {
+	packagesByTypes map[*types.Package]*packages.Package
+	mode            mode.Mode
+	result          *ArchetypeDeclaration
+	offsets         map[string]int
+	receiverOffset  int
+	external        map[string]bool
+	mixins          map[*types.Named]string
+	errs            []error
+}
+
+func (c *archetypeFieldCollector) collect(pkg *packages.Package, named *types.Named, path string, declaration bool) {
 	st := named.Underlying().(*types.Struct)
-	offsets := map[string]int{"data": 0, "memory": 0, "shared": 0, "exported": 0}
-	receiverOffset := 0
-	external := map[string]bool{}
 	for i := 0; i < st.NumFields(); i++ {
 		field := st.Field(i)
 		id := typeID(field.Type())
+		fieldPath := path + "." + field.Name()
 		if _, ok := sonolusTag(st.Tag(i)); ok {
 			replacement := `archetype:"memory"`
 			switch id {
-			case markerID(m, "Archetype"):
+			case markerID(c.mode, "Archetype"):
 				replacement = `archetype:"name=Note,hasInput=true"`
-			case markerID(m, "CallbackOrders"):
+			case markerID(c.mode, "CallbackOrders"):
 				replacement = `archetype:"preprocess=-10"`
 			}
-			errs = append(errs, fmt.Errorf("%s: %s.%s: sonolus struct tags are no longer supported for archetypes; use %s", pkg.Fset.Position(field.Pos()), named.Obj().Name(), field.Name(), replacement))
+			c.errs = append(c.errs, fmt.Errorf("%s: %s: sonolus struct tags are no longer supported for archetypes; use %s", pkg.Fset.Position(field.Pos()), fieldPath, replacement))
 		}
 		if field.Embedded() {
 			if tag, ok := archetypeTag(st.Tag(i)); ok && tag.Flags["base"] {
-				errs = append(errs, validateTag(named.Obj().Name()+"."+field.Name(), tag, []string{"base"}, nil)...)
+				c.errs = append(c.errs, validateTag(fieldPath, tag, []string{"base"}, nil)...)
+				if !declaration {
+					c.errs = append(c.errs, fmt.Errorf("%s: archetype base is only allowed directly on an archetype declaration", fieldPath))
+					continue
+				}
 				base, ok := types.Unalias(field.Type()).(*types.Named)
 				if !ok || field.Type() != base {
-					errs = append(errs, fmt.Errorf("%s.%s: archetype base must be a directly embedded named struct type", named.Obj().Name(), field.Name()))
-				} else if result.BaseNamed != nil {
-					errs = append(errs, fmt.Errorf("%s: multiple archetype bases are not allowed", named.Obj().Name()))
+					c.errs = append(c.errs, fmt.Errorf("%s: archetype base must be a directly embedded named struct type", fieldPath))
+				} else if c.result.BaseNamed != nil {
+					c.errs = append(c.errs, fmt.Errorf("%s: multiple archetype bases are not allowed", named.Obj().Name()))
 				} else {
-					result.BaseNamed = base
+					c.result.BaseNamed = base
 				}
 				continue
 			}
-			if id == markerID(m, "CallbackOrders") {
+			if declaration && id == markerID(c.mode, "CallbackOrders") {
 				tag, _ := archetypeTag(st.Tag(i))
 				for key, raw := range tag.Items {
 					order, err := strconv.Atoi(raw)
 					if err != nil {
-						errs = append(errs, fmt.Errorf("%s.%s: invalid callback order %q", named.Obj().Name(), key, raw))
+						c.errs = append(c.errs, fmt.Errorf("%s.%s: invalid callback order %q", named.Obj().Name(), key, raw))
 						continue
 					}
-					result.CallbackOrders[key] = order
+					c.result.CallbackOrders[key] = order
 				}
-			}
-			continue
-		}
-		tag, ok := archetypeTag(st.Tag(i))
-		if !ok {
-			continue
-		}
-		errs = append(errs, validateTag(named.Obj().Name()+"."+field.Name(), tag,
-			[]string{"imported", "data", "memory", "shared", "exported"}, []string{"name", "default", "cap"})...)
-		storage := ""
-		for _, candidate := range []string{"imported", "data", "memory", "shared", "exported"} {
-			if tag.Flags[candidate] {
-				if storage != "" {
-					errs = append(errs, fmt.Errorf("%s.%s: multiple storage classes", named.Obj().Name(), field.Name()))
-				}
-				storage = candidate
-			}
-		}
-		if storage == "" {
-			errs = append(errs, fmt.Errorf("%s.%s: missing storage class", named.Obj().Name(), field.Name()))
-			continue
-		}
-		offsetStorage := storage
-		if storage == "imported" || storage == "data" {
-			offsetStorage = "data"
-		}
-		if storage == "exported" && m != mode.ModePlay {
-			errs = append(errs, fmt.Errorf("%s.%s: exports are only available in play mode", named.Obj().Name(), field.Name()))
-			continue
-		}
-		size, err := layoutSize(field.Type())
-		containerKind, keyType, elementType, isContainer := containerTypes(field.Type())
-		capacity, keySize, elementSize := 0, 0, 0
-		if isContainer {
-			raw, exists := tag.Items["cap"]
-			if !exists {
-				errs = append(errs, fmt.Errorf("%s.%s: container field requires cap", named.Obj().Name(), field.Name()))
 				continue
 			}
-			capacity, err = strconv.Atoi(raw)
-			if err != nil || capacity <= 0 {
-				errs = append(errs, fmt.Errorf("%s.%s: container cap must be a positive integer", named.Obj().Name(), field.Name()))
+			mixin, ok := types.Unalias(field.Type()).(*types.Named)
+			if !ok || field.Type() != mixin {
 				continue
 			}
-			if keyType != nil {
-				keySize, err = layoutSize(keyType)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("%s.%s key: %w", named.Obj().Name(), field.Name(), err))
-					continue
-				}
-			}
-			elementSize, err = layoutSize(elementType)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s.%s element: %w", named.Obj().Name(), field.Name(), err))
+			if _, marker, _ := primaryDeclarationMarker(mixin); marker {
 				continue
 			}
-			size = 1 + capacity*(keySize+elementSize)
-		} else if _, exists := tag.Items["cap"]; exists {
-			errs = append(errs, fmt.Errorf("%s.%s: cap is only valid for container fields", named.Obj().Name(), field.Name()))
-		}
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s.%s: %w", named.Obj().Name(), field.Name(), err))
+			if first, exists := c.mixins[mixin]; exists {
+				c.errs = append(c.errs, fmt.Errorf("%s: structural mixin %s is embedded more than once; first via %s", fieldPath, mixin.Obj().Name(), first))
+				continue
+			}
+			mixinPkg := c.packagesByTypes[mixin.Obj().Pkg()]
+			if mixinPkg == nil {
+				continue
+			}
+			c.mixins[mixin] = fieldPath
+			c.collect(mixinPkg, mixin, fieldPath, false)
 			continue
 		}
-		externalName := tag.Items["name"]
-		if externalName == "" {
-			externalName = field.Name()
-		}
-		externalNames := []string(nil)
-		if storage == "imported" || storage == "exported" {
-			externalNames, err = flattenedFieldNames(field.Type(), externalName)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s.%s: %w", named.Obj().Name(), field.Name(), err))
-				continue
+		c.collectField(named, field, st.Tag(i), fieldPath)
+	}
+}
+
+func (c *archetypeFieldCollector) collectField(owner *types.Named, field *types.Var, rawTag, fieldPath string) {
+	tag, ok := archetypeTag(rawTag)
+	if !ok {
+		return
+	}
+	c.errs = append(c.errs, validateTag(fieldPath, tag,
+		[]string{"imported", "data", "memory", "shared", "exported"}, []string{"name", "default", "cap"})...)
+	storage := ""
+	for _, candidate := range []string{"imported", "data", "memory", "shared", "exported"} {
+		if tag.Flags[candidate] {
+			if storage != "" {
+				c.errs = append(c.errs, fmt.Errorf("%s: multiple storage classes", fieldPath))
 			}
-			duplicate := false
-			for _, name := range externalNames {
-				if external[name] {
-					errs = append(errs, fmt.Errorf("%s: duplicate external field name %q", named.Obj().Name(), name))
-					duplicate = true
-				}
-			}
-			if duplicate {
-				continue
-			}
-			for _, name := range externalNames {
-				external[name] = true
-			}
-		}
-		def := 0.0
-		if raw, ok := tag.Items["default"]; ok {
-			if storage != "imported" {
-				errs = append(errs, fmt.Errorf("%s.%s: default is only valid for imported fields", named.Obj().Name(), field.Name()))
-			} else if size != 1 {
-				errs = append(errs, fmt.Errorf("%s.%s: default is only valid for single-slot imported fields", named.Obj().Name(), field.Name()))
-			} else if value, err := strconv.ParseFloat(raw, 64); err != nil {
-				errs = append(errs, fmt.Errorf("%s.%s: invalid default %q", named.Obj().Name(), field.Name(), raw))
-			} else {
-				def = value
-			}
-		}
-		fd := &FieldDeclaration{GoName: field.Name(), ExternalName: externalName, ExternalNames: externalNames, Storage: storage, Offset: offsets[offsetStorage], Size: size, Default: def, Type: field.Type(), Object: field, ReceiverOffset: receiverOffset, ContainerKind: containerKind, Capacity: capacity, KeySize: keySize, ElementSize: elementSize}
-		result.Fields = append(result.Fields, fd)
-		receiverOffset += size
-		if storage == "imported" {
-			for index, name := range externalNames {
-				result.Imports = append(result.Imports, resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(name), Index: offsets[offsetStorage] + index, Def: def})
-			}
-		}
-		if storage == "exported" {
-			for _, name := range externalNames {
-				result.Exports = append(result.Exports, resource.EngineArchetypeDataName(name))
-			}
-		}
-		offsets[offsetStorage] += size
-		capacityLimit := map[string]int{"data": 32, "memory": 64, "shared": 32, "exported": 32}[offsetStorage]
-		if offsets[offsetStorage] > capacityLimit {
-			errs = append(errs, fmt.Errorf("%s.%s: %s storage exceeds capacity %d", named.Obj().Name(), field.Name(), offsetStorage, capacityLimit))
+			storage = candidate
 		}
 	}
-
-	return result, errs
+	if storage == "" {
+		c.errs = append(c.errs, fmt.Errorf("%s: missing storage class", fieldPath))
+		return
+	}
+	offsetStorage := storage
+	if storage == "imported" || storage == "data" {
+		offsetStorage = "data"
+	}
+	if storage == "exported" && c.mode != mode.ModePlay {
+		c.errs = append(c.errs, fmt.Errorf("%s: exports are only available in play mode", fieldPath))
+		return
+	}
+	size, err := layoutSize(field.Type())
+	containerKind, keyType, elementType, isContainer := containerTypes(field.Type())
+	capacity, keySize, elementSize := 0, 0, 0
+	if isContainer {
+		raw, exists := tag.Items["cap"]
+		if !exists {
+			c.errs = append(c.errs, fmt.Errorf("%s: container field requires cap", fieldPath))
+			return
+		}
+		capacity, err = strconv.Atoi(raw)
+		if err != nil || capacity <= 0 {
+			c.errs = append(c.errs, fmt.Errorf("%s: container cap must be a positive integer", fieldPath))
+			return
+		}
+		if keyType != nil {
+			keySize, err = layoutSize(keyType)
+			if err != nil {
+				c.errs = append(c.errs, fmt.Errorf("%s key: %w", fieldPath, err))
+				return
+			}
+		}
+		elementSize, err = layoutSize(elementType)
+		if err != nil {
+			c.errs = append(c.errs, fmt.Errorf("%s element: %w", fieldPath, err))
+			return
+		}
+		size = 1 + capacity*(keySize+elementSize)
+	} else if _, exists := tag.Items["cap"]; exists {
+		c.errs = append(c.errs, fmt.Errorf("%s: cap is only valid for container fields", fieldPath))
+	}
+	if err != nil {
+		c.errs = append(c.errs, fmt.Errorf("%s: %w", fieldPath, err))
+		return
+	}
+	externalName := tag.Items["name"]
+	if externalName == "" {
+		externalName = field.Name()
+	}
+	externalNames := []string(nil)
+	if storage == "imported" || storage == "exported" {
+		externalNames, err = flattenedFieldNames(field.Type(), externalName)
+		if err != nil {
+			c.errs = append(c.errs, fmt.Errorf("%s: %w", fieldPath, err))
+			return
+		}
+		duplicate := false
+		for _, name := range externalNames {
+			if c.external[name] {
+				c.errs = append(c.errs, fmt.Errorf("%s: duplicate external field name %q", owner.Obj().Name(), name))
+				duplicate = true
+			}
+		}
+		if duplicate {
+			return
+		}
+		for _, name := range externalNames {
+			c.external[name] = true
+		}
+	}
+	def := 0.0
+	if raw, ok := tag.Items["default"]; ok {
+		if storage != "imported" {
+			c.errs = append(c.errs, fmt.Errorf("%s: default is only valid for imported fields", fieldPath))
+		} else if size != 1 {
+			c.errs = append(c.errs, fmt.Errorf("%s: default is only valid for single-slot imported fields", fieldPath))
+		} else if value, err := strconv.ParseFloat(raw, 64); err != nil {
+			c.errs = append(c.errs, fmt.Errorf("%s: invalid default %q", fieldPath, raw))
+		} else {
+			def = value
+		}
+	}
+	declaration := &FieldDeclaration{GoName: field.Name(), SourcePath: fieldPath, ExternalName: externalName, ExternalNames: externalNames, Storage: storage, Offset: c.offsets[offsetStorage], Size: size, Default: def, Type: field.Type(), Object: field, ReceiverOffset: c.receiverOffset, ContainerKind: containerKind, Capacity: capacity, KeySize: keySize, ElementSize: elementSize}
+	c.result.Fields = append(c.result.Fields, declaration)
+	c.receiverOffset += size
+	if storage == "imported" {
+		for index, name := range externalNames {
+			c.result.Imports = append(c.result.Imports, resource.EngineDataArchetypeImport{Name: resource.EngineArchetypeDataName(name), Index: c.offsets[offsetStorage] + index, Def: def})
+		}
+	}
+	if storage == "exported" {
+		for _, name := range externalNames {
+			c.result.Exports = append(c.result.Exports, resource.EngineArchetypeDataName(name))
+		}
+	}
+	c.offsets[offsetStorage] += size
+	capacityLimit := map[string]int{"data": 32, "memory": 64, "shared": 32, "exported": 32}[offsetStorage]
+	if c.offsets[offsetStorage] > capacityLimit {
+		c.errs = append(c.errs, fmt.Errorf("%s: %s storage exceeds capacity %d", fieldPath, offsetStorage, capacityLimit))
+	}
 }
 
 func resolveArchetypeInheritance(declarations []*ArchetypeDeclaration) []error {
@@ -411,6 +459,10 @@ func inheritArchetypeLayout(derived, base *ArchetypeDeclaration, errs *[]error) 
 	}
 	for _, field := range derived.Fields {
 		for _, inherited := range base.Fields {
+			if field.Object == inherited.Object {
+				*errs = append(*errs, fmt.Errorf("%s: structural mixin field %s is embedded more than once; first via %s", derived.TypeName, field.SourcePath, inherited.SourcePath))
+				return false
+			}
 			if field.GoName == inherited.GoName {
 				*errs = append(*errs, fmt.Errorf("%s: field %q duplicates inherited archetype field", derived.TypeName, field.GoName))
 				return false
