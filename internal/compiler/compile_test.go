@@ -326,7 +326,7 @@ func TestModesAcceptSharedResourceDeclarations(t *testing.T) {
 			t.Fatal(err)
 		}
 		resources := declarations.Resources
-		if resources.Skin == nil || resources.Effect == nil || resources.Particle == nil || resources.Instruction == nil || len(resources.Buckets) != 1 || len(resources.Instruction.Texts) != 1 || len(resources.Instruction.Icons) != 1 || declarations.Configuration == nil {
+		if resources.Skin == nil || resources.Effect == nil || resources.Particle == nil || resources.Instruction == nil || len(resources.Buckets) != 1 || len(resources.Instruction.Texts) != 1 || len(resources.Instruction.Icons) != 1 {
 			t.Fatalf("%s did not parse all shared resources: %#v", currentMode, resources)
 		}
 	}

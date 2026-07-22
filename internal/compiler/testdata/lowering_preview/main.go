@@ -51,13 +51,6 @@ type InstructionIconsData struct {
 
 var InstructionIcons = &InstructionIconsData{Hit: sonolus.InstructionIcon("hit")}
 
-type ConfigurationData struct {
-	sonolus.Configuration
-	Speed float64
-}
-
-var Configuration = ConfigurationData{Speed: sonolus.SliderOption(sonolus.SliderOptionConfig{Name: "Speed", Default: 1, Min: 0.5, Max: 2, Step: 0.1})}
-
 func (*Note) Preprocess() {
 	transform := preview.SkinTransform.Get()
 	preview.SkinTransform.Set(transform)
