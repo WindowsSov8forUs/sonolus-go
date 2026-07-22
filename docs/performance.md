@@ -30,7 +30,7 @@ sonolus-go build -stats -O 2 -m all ./engine
 
 四模式必须分别执行 `packages.Load`，因为 build tags 决定参与类型检查的文件集合。首次 `CompileAll` 会并行加载缺失模式，但 frontend、共享合并和最终提交保持确定性顺序。
 
-将真正共享的 Configuration、ROM 和 helper 放在无模式 tag 文件中；将模式资源与 archetype 放在对应 tag 文件中。这样既保持声明一致，也避免单个模式加载无关声明。
+资源、Configuration、ROM 和 helper 位于无模式 tag 文件；模式专属的 archetype 与 callback 位于对应 tag 文件。Frontend 在每种模式中解析共享资源，backend 按目标 EngineData 选择输出。
 
 ## Callback 结构
 

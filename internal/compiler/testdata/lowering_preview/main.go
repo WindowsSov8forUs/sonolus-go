@@ -16,6 +16,41 @@ type SkinData struct {
 
 var Skin = &SkinData{Note: sonolus.SkinSprite("note")}
 
+type EffectsData struct {
+	sonolus.EffectResource
+	Hit sonolus.Clip
+}
+
+var Effects = &EffectsData{Hit: sonolus.EffectClip("hit")}
+
+type ParticlesData struct {
+	sonolus.ParticleResource
+	Hit sonolus.Effect
+}
+
+var Particles = &ParticlesData{Hit: sonolus.ParticleEffect("hit")}
+
+type BucketsData struct {
+	sonolus.BucketsResource
+	Tap sonolus.Bucket
+}
+
+var Buckets = &BucketsData{Tap: sonolus.JudgmentBucket("#MILLISECONDS", sonolus.JudgmentBucketSprite(Skin.Note, 0, 0, 1, 1, 0))}
+
+type InstructionsData struct {
+	sonolus.InstructionResource
+	Hit sonolus.Text
+}
+
+var Instructions = &InstructionsData{Hit: sonolus.InstructionText("hit")}
+
+type InstructionIconsData struct {
+	sonolus.InstructionIconResource
+	Hit sonolus.Icon
+}
+
+var InstructionIcons = &InstructionIconsData{Hit: sonolus.InstructionIcon("hit")}
+
 func (*Note) Preprocess() {
 	transform := preview.SkinTransform.Get()
 	preview.SkinTransform.Set(transform)

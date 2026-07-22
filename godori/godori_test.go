@@ -376,7 +376,7 @@ func assertStaticResources(t *testing.T, artifacts *compiler.Artifacts) {
 	if err := json.Unmarshal(encodedConfiguration, &decodedConfiguration); err != nil {
 		t.Fatalf("configuration does not satisfy core wire schema: %v", err)
 	}
-	if len(artifacts.Play.Skin.Sprites) != 19 || len(artifacts.Play.Effect.Clips) != 8 || len(artifacts.Play.Particle.Effects) != 12 || len(artifacts.Play.Buckets) != 6 {
+	if len(artifacts.Play.Skin.Sprites) != 23 || len(artifacts.Play.Effect.Clips) != 8 || len(artifacts.Play.Particle.Effects) != 12 || len(artifacts.Play.Buckets) != 6 {
 		t.Fatalf("unexpected Play resources: skin=%#v effect=%#v particle=%#v buckets=%#v", artifacts.Play.Skin, artifacts.Play.Effect, artifacts.Play.Particle, artifacts.Play.Buckets)
 	}
 	if artifacts.Play.Skin.RenderMode != resource.EngineRenderModeLightweight || artifacts.Play.Skin.Sprites[2].Name != sonolus.StandardSpriteNoteHeadCyan {
@@ -402,15 +402,18 @@ func assertStaticResources(t *testing.T, artifacts *compiler.Artifacts) {
 		!reflect.DeepEqual(clipNames(artifacts.Play.Effect.Clips), clipNames(artifacts.Watch.Effect.Clips)) {
 		t.Fatalf("unexpected Hold clips: play=%#v watch=%#v", artifacts.Play.Effect.Clips, artifacts.Watch.Effect.Clips)
 	}
-	if len(artifacts.Watch.Skin.Sprites) != 19 || len(artifacts.Watch.Particle.Effects) != 12 || len(artifacts.Watch.Buckets) != 6 ||
-		len(artifacts.Preview.Skin.Sprites) != 22 || len(artifacts.Tutorial.Skin.Sprites) != 18 || len(artifacts.Tutorial.Particle.Effects) != 12 {
+	if len(artifacts.Watch.Skin.Sprites) != 23 || len(artifacts.Watch.Particle.Effects) != 12 || len(artifacts.Watch.Buckets) != 6 ||
+		len(artifacts.Preview.Skin.Sprites) != 23 || len(artifacts.Tutorial.Skin.Sprites) != 23 || len(artifacts.Tutorial.Particle.Effects) != 12 {
 		t.Fatalf("Flick resources are incomplete across modes")
 	}
-	if artifacts.Preview.Skin.Sprites[10].Name != sonolus.StandardSpriteGridNeutral {
-		t.Fatalf("unexpected Preview measure sprite: %#v", artifacts.Preview.Skin.Sprites[10])
+	if !reflect.DeepEqual(artifacts.Watch.Skin, artifacts.Play.Skin) || !reflect.DeepEqual(artifacts.Preview.Skin, artifacts.Play.Skin) || !reflect.DeepEqual(artifacts.Tutorial.Skin, artifacts.Play.Skin) {
+		t.Fatalf("shared skin differs across modes: play=%#v watch=%#v preview=%#v tutorial=%#v", artifacts.Play.Skin, artifacts.Watch.Skin, artifacts.Preview.Skin, artifacts.Tutorial.Skin)
 	}
-	if artifacts.Preview.Skin.Sprites[11].Name != sonolus.StandardSpriteGridCyan {
-		t.Fatalf("unexpected Preview time sprite: %#v", artifacts.Preview.Skin.Sprites[11])
+	if artifacts.Preview.Skin.Sprites[16].Name != sonolus.StandardSpriteGridNeutral {
+		t.Fatalf("unexpected Preview measure sprite: %#v", artifacts.Preview.Skin.Sprites[16])
+	}
+	if artifacts.Preview.Skin.Sprites[17].Name != sonolus.StandardSpriteGridCyan {
+		t.Fatalf("unexpected Preview time sprite: %#v", artifacts.Preview.Skin.Sprites[17])
 	}
 	if len(artifacts.Tutorial.Effect.Clips) != 8 || len(artifacts.Tutorial.Instruction.Texts) != 6 || len(artifacts.Tutorial.Instruction.Icons) != 1 {
 		t.Fatalf("unexpected Tutorial instructions: %#v", artifacts.Tutorial.Instruction)
@@ -419,16 +422,8 @@ func assertStaticResources(t *testing.T, artifacts *compiler.Artifacts) {
 		artifacts.Tutorial.Effect.Clips[7].Name != sonolus.StandardClipHold {
 		t.Fatalf("unexpected Tutorial hold clip: %#v", artifacts.Tutorial.Effect.Clips)
 	}
-	if got := particleNames(artifacts.Tutorial.Particle.Effects); !reflect.DeepEqual(got, []string{
-		sonolus.StandardEffectLaneLinear,
-		sonolus.StandardEffectNoteLinearTapCyan, sonolus.StandardEffectNoteCircularTapCyan,
-		sonolus.StandardEffectNoteLinearTapGreen, sonolus.StandardEffectNoteCircularTapGreen,
-		sonolus.StandardEffectNoteCircularHoldGreen,
-		sonolus.StandardEffectNoteLinearAlternativeRed, sonolus.StandardEffectNoteCircularAlternativeRed,
-		sonolus.StandardEffectNoteLinearAlternativeYellow, sonolus.StandardEffectNoteCircularAlternativeYellow,
-		sonolus.StandardEffectNoteLinearAlternativePurple, sonolus.StandardEffectNoteCircularAlternativePurple,
-	}) {
-		t.Fatalf("unexpected Tutorial particle order: %v", got)
+	if !reflect.DeepEqual(artifacts.Watch.Particle, artifacts.Play.Particle) || !reflect.DeepEqual(artifacts.Tutorial.Particle, artifacts.Play.Particle) {
+		t.Fatalf("shared particles differ across modes: play=%#v watch=%#v tutorial=%#v", artifacts.Play.Particle, artifacts.Watch.Particle, artifacts.Tutorial.Particle)
 	}
 	tutorialTexts := make([]string, len(artifacts.Tutorial.Instruction.Texts))
 	for i, instruction := range artifacts.Tutorial.Instruction.Texts {
@@ -459,9 +454,9 @@ func assertStaticResources(t *testing.T, artifacts *compiler.Artifacts) {
 	if artifacts.Play.Skin.Sprites[12].Name != sonolus.StandardSpriteSimultaneousConnectionNeutralSeamless {
 		t.Fatalf("unexpected SimLine sprite: %#v", artifacts.Play.Skin.Sprites[12])
 	}
-	if artifacts.Play.Skin.Sprites[14].Name != sonolus.StandardSpriteStageMiddle ||
-		artifacts.Play.Skin.Sprites[17].Name != sonolus.StandardSpriteNoteSlot ||
-		artifacts.Play.Skin.Sprites[18].Name != sonolus.StandardSpriteStageCover ||
+	if artifacts.Play.Skin.Sprites[18].Name != sonolus.StandardSpriteStageMiddle ||
+		artifacts.Play.Skin.Sprites[21].Name != sonolus.StandardSpriteNoteSlot ||
+		artifacts.Play.Skin.Sprites[22].Name != sonolus.StandardSpriteStageCover ||
 		artifacts.Play.Particle.Effects[5].Name != sonolus.StandardEffectLaneLinear {
 		t.Fatalf("unexpected Stage resources: skin=%#v particle=%#v", artifacts.Play.Skin, artifacts.Play.Particle)
 	}
@@ -1073,14 +1068,6 @@ func clipNames(clips []resource.EngineEffectDataClip) []string {
 	names := make([]string, len(clips))
 	for i, clip := range clips {
 		names[i] = string(clip.Name)
-	}
-	return names
-}
-
-func particleNames(effects []resource.EngineParticleDataEffect) []string {
-	names := make([]string, len(effects))
-	for i, effect := range effects {
-		names[i] = string(effect.Name)
 	}
 	return names
 }
