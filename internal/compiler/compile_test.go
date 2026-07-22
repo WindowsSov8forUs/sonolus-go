@@ -319,6 +319,33 @@ func TestEveryPublicNativeLowersThroughPackageToIR(t *testing.T) {
 	}
 }
 
+func TestModesAcceptSharedResourceDeclarations(t *testing.T) {
+	for _, currentMode := range []mode.Mode{mode.ModePlay, mode.ModeWatch, mode.ModePreview, mode.ModeTutorial} {
+		declarations, err := parseMode(currentMode, "./testdata/lowering_preview")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resources := declarations.Resources
+		if resources.Skin == nil || resources.Effect == nil || resources.Particle == nil || resources.Instruction == nil || len(resources.Buckets) != 1 || len(resources.Instruction.Texts) != 1 || len(resources.Instruction.Icons) != 1 || declarations.Configuration == nil {
+			t.Fatalf("%s did not parse all shared resources: %#v", currentMode, resources)
+		}
+	}
+
+	artifacts, err := NewCompiler(Options{}, "./testdata/lowering_preview").CompileAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifacts.Configuration == nil || artifacts.Play == nil || artifacts.Watch == nil || artifacts.Preview == nil || artifacts.Tutorial == nil {
+		t.Fatalf("shared declarations did not compile for all modes: %#v", artifacts)
+	}
+	if len(artifacts.Play.Effect.Clips) != 1 || len(artifacts.Play.Particle.Effects) != 1 || len(artifacts.Play.Buckets) != 1 || len(artifacts.Watch.Effect.Clips) != 1 || len(artifacts.Watch.Particle.Effects) != 1 || len(artifacts.Watch.Buckets) != 1 {
+		t.Fatalf("play/watch resources were not selected: play=%#v watch=%#v", artifacts.Play, artifacts.Watch)
+	}
+	if len(artifacts.Preview.Skin.Sprites) != 1 || len(artifacts.Tutorial.Effect.Clips) != 1 || len(artifacts.Tutorial.Particle.Effects) != 1 || len(artifacts.Tutorial.Instruction.Texts) != 1 || len(artifacts.Tutorial.Instruction.Icons) != 1 {
+		t.Fatalf("preview/tutorial resources were not selected: preview=%#v tutorial=%#v", artifacts.Preview, artifacts.Tutorial)
+	}
+}
+
 func TestEveryCallbackRecipeHasSuccessfulPackageToBackendFixture(t *testing.T) {
 	fixtures := []struct {
 		mode    mode.Mode

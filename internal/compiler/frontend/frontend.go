@@ -67,14 +67,6 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 			errs = append(errs, fmt.Errorf("%s: duplicate %s resource", spec.pos, strings.ToLower(spec.kind)))
 			continue
 		}
-		allowed := spec.kind == "Skin" ||
-			((spec.kind == "Effect" || spec.kind == "Particle") && m != mode.ModePreview) ||
-			(spec.kind == "Buckets" && (m == mode.ModePlay || m == mode.ModeWatch)) ||
-			((spec.kind == "Instruction" || spec.kind == "InstructionIcon") && m == mode.ModeTutorial)
-		if !allowed {
-			errs = append(errs, fmt.Errorf("%s: %s resources are not available in %s mode", spec.pos, strings.ToLower(spec.kind), m))
-			continue
-		}
 		resources[spec.kind] = true
 		switch spec.kind {
 		case "Skin":
