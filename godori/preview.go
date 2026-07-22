@@ -98,32 +98,6 @@ func previewConnectorQuad(firstLane, secondLane, firstTime, secondTime float64, 
 	}
 }
 
-type PreviewSkin struct {
-	sonolus.SkinResource
-	Lane, Note, Flick, FlickArrow, RightFlick, RightFlickArrow, LeftFlick, LeftFlickArrow, BPM, Timescale, Measure, Time sonolus.Sprite
-	HoldHead, HoldTail, HoldConnector, SimLine, HoldTick                                                                 sonolus.Sprite
-	StageMiddle, LeftBorder, RightBorder, Slot, Cover                                                                    sonolus.Sprite
-}
-
-var Skin = &PreviewSkin{
-	SkinResource: sonolus.SkinResource{RenderMode: sonolus.RenderModeLightweight},
-	Lane:         sonolus.SkinSprite(sonolus.StandardSpriteLane), Note: sonolus.SkinSprite(sonolus.StandardSpriteNoteHeadCyan),
-	Flick: sonolus.SkinSprite(sonolus.StandardSpriteNoteHeadRed), FlickArrow: sonolus.SkinSprite(sonolus.StandardSpriteDirectionalMarkerRed),
-	RightFlick: sonolus.SkinSprite(sonolus.StandardSpriteNoteHeadYellow), RightFlickArrow: sonolus.SkinSprite(sonolus.StandardSpriteDirectionalMarkerYellow),
-	LeftFlick: sonolus.SkinSprite(sonolus.StandardSpriteNoteHeadPurple), LeftFlickArrow: sonolus.SkinSprite(sonolus.StandardSpriteDirectionalMarkerPurple),
-	HoldHead: sonolus.SkinSprite(sonolus.StandardSpriteNoteHeadGreen), HoldTail: sonolus.SkinSprite(sonolus.StandardSpriteNoteTailGreen),
-	HoldConnector: sonolus.SkinSprite(sonolus.StandardSpriteNoteConnectionGreenSeamless),
-	SimLine:       sonolus.SkinSprite(sonolus.StandardSpriteSimultaneousConnectionNeutralSeamless),
-	HoldTick:      sonolus.SkinSprite(sonolus.StandardSpriteNoteTickGreen),
-	BPM:           sonolus.SkinSprite(sonolus.StandardSpriteGridPurple),
-	Timescale:     sonolus.SkinSprite(sonolus.StandardSpriteGridYellow),
-	Measure:       sonolus.SkinSprite(sonolus.StandardSpriteGridNeutral),
-	Time:          sonolus.SkinSprite(sonolus.StandardSpriteGridCyan),
-	StageMiddle:   sonolus.SkinSprite(sonolus.StandardSpriteStageMiddle), LeftBorder: sonolus.SkinSprite(sonolus.StandardSpriteStageLeftBorder),
-	RightBorder: sonolus.SkinSprite(sonolus.StandardSpriteStageRightBorder), Slot: sonolus.SkinSprite(sonolus.StandardSpriteNoteSlot),
-	Cover: sonolus.SkinSprite(sonolus.StandardSpriteStageCover),
-}
-
 type PreviewStage struct {
 	preview.Archetype      `archetype:"name=Stage"`
 	preview.CallbackOrders `archetype:"preprocess=1"`
