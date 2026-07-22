@@ -72,6 +72,8 @@ Frontend 分为：
 4. 校验 Configuration 与 ROM。
 5. 识别 callback，并将 callback body lower 为强类型 CFG IR。
 
+资源与 Configuration 位于无模式 build tag 的共享文件中。每个模式 session 都解析完整资源声明并建立稳定 ID lookup；backend 只将目标 EngineData schema 包含的资源类别写入产物。Archetype 与 callback 保持模式隔离。
+
 `frontend.Parser.GetProject()` 比较所有已解析模式的 Configuration 和 ROM。Configuration 按规范化语义比较，ROM 按最终用户 float32 字节比较；声明变量名和文件路径不影响相等性。
 
 ## Catalog

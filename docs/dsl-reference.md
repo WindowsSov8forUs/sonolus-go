@@ -54,7 +54,9 @@ var Skin = &SkinData{
 
 Handle 是空结构，用户无法直接指定 ID。名称只从准确 constructor 调用的静态字符串参数中提取。字段顺序和定长数组元素顺序决定连续资源 ID。
 
-模式资源支持范围：
+资源与 Configuration 是引擎共享声明，应放在不带模式 build tag 的文件中。带 `play`、`watch`、`preview` 或 `tutorial` build tag 的文件用于对应模式的 archetype 与 callback。
+
+四种模式的 frontend 都解析并校验完整资源声明，backend 按目标 EngineData 的字段选择输出：
 
 | 模式 | 资源 |
 |---|---|
@@ -62,6 +64,8 @@ Handle 是空结构，用户无法直接指定 ID。名称只从准确 construct
 | Watch | skin、effect、particle、buckets |
 | Preview | skin |
 | Tutorial | skin、effect、particle、instruction、instructionIcon |
+
+资源 ID 由共享声明中的字段顺序确定。目标 EngineData 没有对应字段时，backend 不输出该类资源。
 
 ## Bucket
 
