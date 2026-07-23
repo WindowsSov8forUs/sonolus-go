@@ -91,14 +91,18 @@ func (input *persistentAutoInputOther) Apply(value float64) float64 {
 
 type PersistentMemory struct {
 	sonolus.LevelMemoryResource
-	Unit      persistentUnit
-	Pair      persistentPair
-	TempPair  *persistentPair
-	Selected  *persistentUnit
-	AutoValue persistentAutoInputImpl
-	AutoOther persistentAutoInputOther
-	AutoInput persistentAutoInput
-	Result    float64
+	Unit                persistentUnit
+	Pair                persistentPair
+	TempPair            *persistentPair
+	Selected            *persistentUnit
+	AutoValue           persistentAutoInputImpl
+	AutoOther           persistentAutoInputOther
+	AutoInput           persistentAutoInput
+	Result              float64
+	ProviderValue       shared.AggregateProvider
+	Provider            *shared.AggregateProvider
+	AggregateInputValue shared.AggregateInput
+	AggregateInput      *shared.AggregateInput
 }
 
 type PersistentWrapperMemory struct {
@@ -116,6 +120,8 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	Persistent.Provider = &Persistent.ProviderValue
+	Persistent.AggregateInput = &Persistent.AggregateInputValue
 	shared.InputWrapper.Ref = &shared.InputWrapper.Input
 	wrappedInput := shared.GetWrappedInput()
 	wrappedInput.LaneCount = 6
@@ -202,6 +208,12 @@ func (*PersistentNote) Preprocess() {
 }
 
 func (*PersistentNote) UpdateSequential() {
+	var callbackValues [4]shared.CallbackAggregate
+	callbackValues[0].FingerIndex = 11
+	Persistent.Provider.Update(Persistent.AggregateInput, callbackValues, 1)
+	if Persistent.AggregateInput.CurrentMusicTimeMs != 11 {
+		sonolus.Terminate("callback aggregate parameter lost")
+	}
 	packageInitialPair.Unit.Value++
 	packagePair := packageTempPair
 	packagePair.Set(packagePair.Unit, packagePair.Other)

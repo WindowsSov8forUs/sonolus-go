@@ -5087,7 +5087,13 @@ func (l *lowerer) callReceiver(selector *ast.SelectorExpr, fn *types.Func) lower
 		return receiver
 	}
 	if pointer, ok := types.Unalias(receiver.type_).(*types.Pointer); ok {
-		if receiver.aggregatePointer != nil {
+		if receiver.persistentPointer != nil {
+			receiver = l.loadPersistentPointer(receiver, pointer, selector.X)
+			receiver.type_ = pointer.Elem()
+			if l.containsAggregateDescriptor(receiver.type_) {
+				receiver = l.attachLevelGlobalAggregate(receiver, selector.X)
+			}
+		} else if receiver.aggregatePointer != nil {
 			receiver = l.loadAggregatePointer(receiver, pointer, selector.X)
 			return l.copyAggregate("call.receiver", receiver, selector.X)
 		}

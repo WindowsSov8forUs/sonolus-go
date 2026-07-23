@@ -2,6 +2,34 @@ package shared
 
 import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 
+type CallbackAggregate struct {
+	Started     bool
+	Ended       bool
+	Time        float64
+	Position    sonolus.Vec2
+	Delta       sonolus.Vec2
+	DeltaTime   float64
+	FingerIndex int
+}
+
+type AggregateProvider struct {
+	LaneCount          int
+	FlickDistance      float64
+	Positions          [24]sonolus.Vec2
+	PositionCount      int
+	JudgementMaxOffset sonolus.Vec2
+}
+
+type AggregateInput struct {
+	CurrentMusicTimeMs int
+}
+
+func (AggregateProvider) Update(input *AggregateInput, values [4]CallbackAggregate, count int) {
+	for index := 0; index < count; index++ {
+		input.CurrentMusicTimeMs = values[index].FingerIndex
+	}
+}
+
 type Unit struct {
 	Value float64
 }
