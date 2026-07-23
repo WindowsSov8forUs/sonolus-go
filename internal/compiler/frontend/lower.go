@@ -496,6 +496,20 @@ func (l *lowerer) persistentPointerAddress(value lowerValue, storage string, nod
 		}
 		return l.pure(resource.RuntimeFunctionAdd, node, value.levelGlobal.base, ir.Const{Value: 1}), true
 	}
+	if value.pointer != nil && len(value.pointer.finiteVariant.tag.slots) == 1 {
+		return l.selectPersistentPointerAddress(value.pointer.finiteVariant.tag.slots[0], value.pointer.finiteVariant.alternatives, storage, node)
+	}
+	if value.aggregatePointer != nil && len(value.aggregatePointer.tag.slots) == 1 {
+		addresses := make([]ir.Expr, len(value.aggregatePointer.alternatives))
+		for index, alternative := range value.aggregatePointer.alternatives {
+			address, ok := l.persistentPointerAddress(alternative, storage, node)
+			if !ok {
+				return nil, false
+			}
+			addresses[index] = address
+		}
+		return l.selectPersistentPointerAddress(value.aggregatePointer.tag.slots[0], addresses, storage, node)
+	}
 	if len(value.places) == 0 {
 		l.errorAt(node, "persistent pointer assignment requires a level global address or nil")
 		return nil, false
@@ -517,6 +531,48 @@ func (l *lowerer) persistentPointerAddress(value lowerValue, storage string, nod
 		address = l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: float64(first.Offset)})
 	}
 	return l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: 1}), true
+}
+
+func (l *lowerer) selectPersistentPointerAddress(tag ir.Expr, alternatives any, storage string, node ast.Node) (ir.Expr, bool) {
+	var addresses []ir.Expr
+	switch values := alternatives.(type) {
+	case [][]ir.Place:
+		addresses = make([]ir.Expr, len(values))
+		for index, places := range values {
+			if len(places) == 0 {
+				addresses[index] = ir.Const{}
+				continue
+			}
+			first, ok := places[0].(ir.MemoryPlace)
+			if !ok || first.Storage != storage || first.Stride != 1 {
+				l.errorAt(node, "persistent pointer target must use one contiguous %s layout", storage)
+				return nil, false
+			}
+			for _, raw := range places {
+				place, ok := raw.(ir.MemoryPlace)
+				if !ok || place.Storage != storage || place.Stride != 1 {
+					l.errorAt(node, "persistent pointer target must use one contiguous %s layout", storage)
+					return nil, false
+				}
+			}
+			address := ir.Expr(first.Index)
+			if first.Offset != 0 {
+				address = l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: float64(first.Offset)})
+			}
+			addresses[index] = l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: 1})
+		}
+	case []ir.Expr:
+		addresses = values
+	default:
+		l.errorAt(node, "persistent pointer target has unsupported dynamic alternatives")
+		return nil, false
+	}
+	result := ir.Expr(ir.Const{})
+	for index := len(addresses) - 1; index >= 0; index-- {
+		result = l.pure(resource.RuntimeFunctionIf, node,
+			l.pure(resource.RuntimeFunctionEqual, node, tag, ir.Const{Value: float64(index)}), addresses[index], result)
+	}
+	return result, true
 }
 
 func (l *lowerer) storePersistentPointer(destination, source lowerValue, node ast.Node) {
@@ -1811,7 +1867,11 @@ func (l *lowerer) containsAggregateDescriptor(t types.Type) bool {
 }
 
 func (l *lowerer) attachAggregate(value lowerValue, node ast.Node) lowerValue {
-	if !l.containsAggregateDescriptor(value.type_) {
+	return l.attachAggregateShape(value, node, false)
+}
+
+func (l *lowerer) attachAggregateShape(value lowerValue, node ast.Node, full bool) lowerValue {
+	if !full && !l.containsAggregateDescriptor(value.type_) {
 		return value
 	}
 	var itemTypes []types.Type
@@ -1874,7 +1934,7 @@ func (l *lowerer) attachAggregate(value lowerValue, node ast.Node) lowerValue {
 				field.interface_ = &interfaceValue{finiteVariant: variant}
 				l.store(variant.tag, scalarValue(ir.Const{Value: -1}, types.Typ[types.Int]), node)
 			default:
-				field = l.attachAggregate(field, node)
+				field = l.attachAggregateShape(field, node, full)
 			}
 		}
 		fields[index] = field
@@ -1888,8 +1948,20 @@ func (l *lowerer) newAggregateCell(name string, t types.Type, node ast.Node) low
 	return l.attachAggregate(l.allocZeroed(name, t, node), node)
 }
 
+func (l *lowerer) newFullAggregateCell(name string, t types.Type, node ast.Node) lowerValue {
+	return l.attachAggregateShape(l.allocZeroed(name, t, node), node, true)
+}
+
 func (l *lowerer) storeAggregate(destination, source lowerValue, node ast.Node) {
-	if destination.aggregate == nil || source.aggregate == nil || len(destination.aggregate.fields) != len(source.aggregate.fields) {
+	if destination.aggregate == nil || source.aggregate == nil {
+		if destination.type_ != nil && source.type_ != nil && types.Identical(destination.type_, source.type_) && len(destination.slots) == len(source.slots) {
+			l.store(destination, source, node)
+			return
+		}
+		l.errorAt(node, "aggregate descriptor assignment requires identical struct types")
+		return
+	}
+	if len(destination.aggregate.fields) != len(source.aggregate.fields) {
 		l.errorAt(node, "aggregate descriptor assignment requires identical struct types")
 		return
 	}
@@ -2183,6 +2255,9 @@ func (l *lowerer) indexAggregateArray(base lowerValue, array *types.Array, index
 		l.pure(resource.RuntimeFunctionLess, node, index.slots[0], ir.Const{Value: float64(array.Len())}))
 	l.guard(node, condition)
 	result := l.newDescriptorCell("aggregate.array.value", array.Elem(), node)
+	if base.aggregateLoad != nil {
+		result = l.newFullAggregateCell("aggregate.array.value", array.Elem(), node)
+	}
 	merge, invalid := l.newBlock(), l.newBlock()
 	blocks := make([]*ir.Block, len(base.aggregate.fields))
 	cases := make([]ir.SwitchCase, len(blocks))
@@ -2208,7 +2283,12 @@ func (l *lowerer) loadAggregatePointer(value lowerValue, pointer *types.Pointer,
 		l.errorAt(node, "dynamic aggregate pointer has no target tag")
 		return zeroValue(pointer.Elem())
 	}
-	result := l.newAggregateCell("aggregate.pointer.load", pointer.Elem(), node)
+	if len(value.aggregatePointer.alternatives) == 1 && value.aggregatePointer.alternatives[0].persistentPointer != nil {
+		l.guardWith(node, l.pure(resource.RuntimeFunctionEqual, node, value.aggregatePointer.tag.slots[0], ir.Const{}), "invalid aggregate pointer target", true)
+		loaded := l.loadPersistentPointer(value.aggregatePointer.alternatives[0], pointer, node)
+		return l.attachLevelGlobalAggregate(loaded, node)
+	}
+	result := l.newFullAggregateCell("aggregate.pointer.load", pointer.Elem(), node)
 	merge, invalid := l.newBlock(), l.newBlock()
 	blocks := make([]*ir.Block, len(value.aggregatePointer.alternatives))
 	cases := make([]ir.SwitchCase, len(blocks))
@@ -2264,7 +2344,7 @@ func (l *lowerer) storeAggregatePointerLoad(load *aggregatePointerLoadValue, sou
 			l.terminateRuntime(node, "nil pointer dereference")
 			continue
 		}
-		l.storeAggregatePointerPath(target, load.path, source, node)
+		l.storeAggregatePointerPath(target, load.path, source, node, true)
 		l.jump(merge)
 	}
 	l.setCurrent(invalid)
@@ -2272,8 +2352,8 @@ func (l *lowerer) storeAggregatePointerLoad(load *aggregatePointerLoadValue, sou
 	l.setCurrent(merge)
 }
 
-func (l *lowerer) storeAggregatePointerPath(value lowerValue, path []aggregatePointerPathStep, source lowerValue, node ast.Node) {
-	if value.persistentPointer != nil {
+func (l *lowerer) storeAggregatePointerPath(value lowerValue, path []aggregatePointerPathStep, source lowerValue, node ast.Node, dereference bool) {
+	if value.persistentPointer != nil && (dereference || len(path) != 0) {
 		pointer, ok := types.Unalias(value.type_).(*types.Pointer)
 		if !ok {
 			l.errorAt(node, "persistent aggregate pointer target has invalid type")
@@ -2296,7 +2376,7 @@ func (l *lowerer) storeAggregatePointerPath(value lowerValue, path []aggregatePo
 			l.errorAt(node, "dynamic aggregate pointer assignment path is out of bounds")
 			return
 		}
-		l.storeAggregatePointerPath(value.aggregate.fields[step.index], path[1:], source, node)
+		l.storeAggregatePointerPath(value.aggregate.fields[step.index], path[1:], source, node, false)
 		return
 	}
 	if len(step.dynamic.slots) != 1 {
@@ -2313,12 +2393,81 @@ func (l *lowerer) storeAggregatePointerPath(value lowerValue, path []aggregatePo
 	_ = l.builder.Switch(step.dynamic.slots[0], cases, invalid)
 	for index, block := range blocks {
 		l.setCurrent(block)
-		l.storeAggregatePointerPath(value.aggregate.fields[index], path[1:], source, node)
+		l.storeAggregatePointerPath(value.aggregate.fields[index], path[1:], source, node, false)
 		l.jump(merge)
 	}
 	l.setCurrent(invalid)
 	_ = l.builder.MarkUnreachable()
 	l.setCurrent(merge)
+}
+
+func (l *lowerer) addressAggregatePointerLoad(load *aggregatePointerLoadValue, pointerType types.Type, node ast.Node) lowerValue {
+	if load == nil || load.pointer == nil || len(load.pointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic aggregate pointer address has no target tag")
+		return zeroValue(pointerType)
+	}
+	alternatives := make([]lowerValue, len(load.pointer.alternatives))
+	for index, target := range load.pointer.alternatives {
+		alternatives[index] = l.addressAggregatePointerPath(target, load.path, pointerType, node, true)
+	}
+	return lowerValue{type_: pointerType, aggregatePointer: &finiteVariant[lowerValue]{
+		alternatives: alternatives,
+		tag:          load.pointer.tag,
+	}}
+}
+
+func (l *lowerer) addressAggregatePointerPath(value lowerValue, path []aggregatePointerPathStep, pointerType types.Type, node ast.Node, dereference bool) lowerValue {
+	if value.nilPointer {
+		return lowerValue{type_: pointerType, nilPointer: true}
+	}
+	if value.persistentPointer != nil && (dereference || len(path) != 0) {
+		pointer, ok := types.Unalias(value.type_).(*types.Pointer)
+		if !ok {
+			l.errorAt(node, "persistent aggregate pointer target has invalid type")
+			return zeroValue(pointerType)
+		}
+		value = l.loadPersistentPointer(value, pointer, node)
+		value = l.attachLevelGlobalAggregate(value, node)
+	}
+	if len(path) == 0 {
+		if value.levelGlobal != nil {
+			handle := scalarValue(l.pure(resource.RuntimeFunctionAdd, node, value.levelGlobal.base, ir.Const{Value: 1}), types.Typ[types.Int])
+			return lowerValue{type_: pointerType, persistentPointer: &persistentPointerValue{
+				handle: handle, storage: value.levelGlobal.storage, target: value.levelGlobal.declaration,
+				read: value.levelGlobal.read, write: value.levelGlobal.write,
+			}}
+		}
+		if value.persistentPointer != nil {
+			l.errorAt(node, "address of a persistent pointer field is not supported")
+			return zeroValue(pointerType)
+		}
+		value.type_ = pointerType
+		return l.freezePointerValue(value, node)
+	}
+	step := path[0]
+	if value.aggregate == nil {
+		l.errorAt(node, "dynamic aggregate pointer address path is invalid")
+		return zeroValue(pointerType)
+	}
+	if !step.isDynamic {
+		if step.index < 0 || step.index >= len(value.aggregate.fields) {
+			l.errorAt(node, "dynamic aggregate pointer address path is out of bounds")
+			return zeroValue(pointerType)
+		}
+		return l.addressAggregatePointerPath(value.aggregate.fields[step.index], path[1:], pointerType, node, false)
+	}
+	if len(step.dynamic.slots) != 1 {
+		l.errorAt(node, "dynamic aggregate pointer address array path has no index")
+		return zeroValue(pointerType)
+	}
+	alternatives := make([]lowerValue, len(value.aggregate.fields))
+	for index := range value.aggregate.fields {
+		alternatives[index] = l.addressAggregatePointerPath(value.aggregate.fields[index], path[1:], pointerType, node, false)
+	}
+	return lowerValue{type_: pointerType, aggregatePointer: &finiteVariant[lowerValue]{
+		alternatives: alternatives,
+		tag:          step.dynamic,
+	}}
 }
 
 func (l *lowerer) zeroRuntimeValue(t types.Type) lowerValue {
@@ -3264,8 +3413,18 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				l.errorAt(n, "EntityRef.Get fields cannot be addressed")
 				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 			}
+			if v.levelGlobal != nil {
+				handle := scalarValue(l.pure(resource.RuntimeFunctionAdd, n, v.levelGlobal.base, ir.Const{Value: 1}), types.Typ[types.Int])
+				return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), persistentPointer: &persistentPointerValue{
+					handle: handle, storage: v.levelGlobal.storage, target: v.levelGlobal.declaration,
+					read: v.levelGlobal.read, write: v.levelGlobal.write,
+				}}
+			}
 			if v.pointerLoad != nil {
 				return l.addressPointerLoad(v.pointerLoad, l.pkg.TypesInfo.TypeOf(n), n)
+			}
+			if v.aggregateLoad != nil {
+				return l.addressAggregatePointerLoad(v.aggregateLoad, l.pkg.TypesInfo.TypeOf(n), n)
 			}
 			v = l.materializeAddressable("address", v, n.X)
 			if len(v.places) != len(v.slots) || len(v.places) == 0 {
@@ -3617,7 +3776,7 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		if base.type_ == nil || index.type_ == nil {
 			return lowerValue{}
 		}
-		if base.aggregate != nil {
+		if base.aggregate != nil && base.levelGlobal == nil {
 			arrayType := base.type_
 			if pointer, ok := types.Unalias(arrayType).(*types.Pointer); ok {
 				arrayType = pointer.Elem()

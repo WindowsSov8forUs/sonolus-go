@@ -3,6 +3,7 @@
 package main
 
 import (
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/testdata/persistentglobals/shared"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
@@ -35,6 +36,23 @@ var packageInput = &persistentPackageInput{
 	Units:    [2]persistentUnit{{Value: 1}, {Value: 2}},
 	Auto:     &persistentAutoInputImpl{Bias: 3},
 	Current:  4,
+}
+
+func setPackagePair(index int) {
+	packageInput.TempPair.Set(&packageInput.Units[index], nil)
+}
+
+func packageInputRoot() *persistentPackageInput { return packageInput }
+
+type persistentWrapper struct {
+	Input persistentPackageInput
+	Ref   *persistentPackageInput
+}
+
+var packageWrapper = &persistentWrapper{}
+
+func bindWrapperInput() {
+	packageWrapper.Ref = &packageWrapper.Input
 }
 
 func (pair *persistentPair) Set(unit, other *persistentUnit) *persistentPair {
@@ -83,6 +101,14 @@ type PersistentMemory struct {
 	Result    float64
 }
 
+type PersistentWrapperMemory struct {
+	sonolus.LevelMemoryResource
+	Input persistentPackageInput
+	Ref   *persistentPackageInput
+}
+
+var PersistentWrapper = PersistentWrapperMemory{}
+
 var Persistent = PersistentMemory{}
 
 type PersistentNote struct {
@@ -90,10 +116,39 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	shared.InputWrapper.Ref = &shared.InputWrapper.Input
+	wrappedInput := shared.GetWrappedInput()
+	wrappedInput.LaneCount = 6
+	if shared.InputWrapper.Ref != wrappedInput || shared.InputWrapper.Ref.LaneCount != 6 {
+		sonolus.Terminate("nested persistent input address lost identity")
+	}
+	sharedInput := shared.GetInputRoot()
+	sharedIndex := sharedInput.LaneCount - 1
+	sharedInput.InputStateArray[sharedIndex].Lane = 7
+	sharedInput.CurrentFrameFlickStateArray[sharedIndex].BeginLane = 8
+	sharedInput.TempPair.Set(
+		&sharedInput.InputStateArray[sharedIndex],
+		&sharedInput.CurrentFrameFlickStateArray[sharedIndex],
+	)
+	if sharedInput.TempPair.InputUnit.Lane != 7 || sharedInput.TempPair.FlickInputUnit.BeginLane != 8 {
+		sonolus.Terminate("dynamic persistent input address lost identity")
+	}
+	sharedInput.CurrentMusicTimeMs = int(sharedInput.AutoInput.Apply(2))
+	if sharedInput.CurrentMusicTimeMs != 5 {
+		sonolus.Terminate("cross-package persistent input interface dispatch failed")
+	}
+	PersistentWrapper.Ref = &PersistentWrapper.Input
+	bindWrapperInput()
+	if shared.Root == nil || shared.Root.Unit == nil || shared.Root.Unit.Value != 9 {
+		sonolus.Terminate("cross-package persistent graph was not initialized")
+	}
+	if packageInputRoot() != packageInput {
+		sonolus.Terminate("package root helper identity changed")
+	}
 	if packageInput.TempPair == nil || packageInput.Auto == nil || packageInput.Units[1].Value != 2 || packageInput.Current != 4 {
 		sonolus.Terminate("package pointer-rich graph was not initialized")
 	}
-	packageInput.TempPair.Set(&packageInput.Units[1], nil)
+	setPackagePair(1)
 	if packageInput.Auto.Apply(packageInput.TempPair.Unit.Value) != 5 {
 		sonolus.Terminate("package pointer-rich graph dispatch failed")
 	}
