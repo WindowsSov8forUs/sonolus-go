@@ -871,6 +871,86 @@ func (l *lowerer) lowerPersistentPackagePointer(declaration *LevelGlobalFieldDec
 	}}
 }
 
+func (l *lowerer) initializePackageGlobals(node ast.Node) {
+	if l.phase != "preprocess" {
+		return
+	}
+	seen := map[*LevelGlobalFieldDeclaration]bool{}
+	var visit func(*LevelGlobalFieldDeclaration)
+	visit = func(declaration *LevelGlobalFieldDeclaration) {
+		if declaration == nil || seen[declaration] {
+			return
+		}
+		seen[declaration] = true
+		if declaration.PersistentKind == "pointer" && declaration.InitialTarget != nil {
+			if target := l.packageGlobals[declaration.InitialTarget]; target != nil {
+				place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset, false, true, node)
+				l.store(lowerValue{type_: types.Typ[types.Int], places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, scalarValue(ir.Const{Value: float64(target.Offset + 1)}, types.Typ[types.Int]), node)
+			}
+		}
+		if declaration.PersistentKind == "interface" && declaration.InitialInterfaceTarget != nil {
+			interfaceType, ok := types.Unalias(declaration.InitialInterfaceType).Underlying().(*types.Interface)
+			if ok {
+				type candidate struct {
+					name  string
+					type_ types.Type
+				}
+				var candidates []candidate
+				seenTypes := map[string]bool{}
+				for _, pkg := range l.packages {
+					for _, named := range packageNamedTypes(pkg) {
+						pointer := types.NewPointer(named)
+						if !types.Implements(pointer, interfaceType) {
+							continue
+						}
+						name := types.TypeString(pointer, func(owner *types.Package) string { return owner.Path() })
+						if !seenTypes[name] {
+							seenTypes[name] = true
+							candidates = append(candidates, candidate{name: name, type_: pointer})
+						}
+					}
+				}
+				sort.Slice(candidates, func(i, j int) bool { return candidates[i].name < candidates[j].name })
+				targetType := types.NewPointer(declaration.InitialInterfaceTarget.Type)
+				tag := 0
+				for _, candidate := range candidates {
+					pointer := candidate.type_.(*types.Pointer)
+					if _, err := persistentLevelGlobalTypeNode(pointer.Elem(), declaration.GoName+"."+candidate.name, declaration.Kind, declaration.Storage); err != nil {
+						continue
+					}
+					tag++
+					if types.Identical(candidate.type_, targetType) {
+						break
+					}
+				}
+				if tag > 0 {
+					if target := l.packageGlobals[declaration.InitialInterfaceTarget]; target != nil {
+						for offset, value := range []float64{float64(tag), float64(target.Offset + 1)} {
+							place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset+offset, false, true, node)
+							l.store(lowerValue{type_: types.Typ[types.Int], places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, scalarValue(ir.Const{Value: value}, types.Typ[types.Int]), node)
+						}
+					}
+				}
+			}
+		}
+		if declaration.HasInitialValue && declaration.InitialValue.Exact != nil {
+			if expression, ok := constantExpr(declaration.InitialValue.Exact); ok {
+				place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset, false, true, node)
+				l.store(lowerValue{type_: declaration.Type, places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, lowerValue{type_: declaration.Type, slots: []ir.Expr{expression}}, node)
+			}
+		}
+		for _, child := range declaration.Fields {
+			visit(child)
+		}
+		for _, child := range declaration.Elements {
+			visit(child)
+		}
+	}
+	for _, declaration := range l.packageGlobals {
+		visit(declaration)
+	}
+}
+
 type entityReferenceValue struct {
 	binding archetypeBinding
 }
@@ -10181,6 +10261,7 @@ func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *pa
 	entry := l.newBlock()
 	_ = builder.SetEntry(entry)
 	l.setCurrent(entry)
+	l.initializePackageGlobals(decl)
 	frame := &lowerFrame{pkg: pkg, vars: map[types.Object]lowerValue{}, callables: map[types.Object]*staticCallable{}, returnBlock: l.newBlock()}
 	l.prepareGotoTargets(frame, decl.Body)
 	l.prepareDeferredCalls(frame, decl.Body)
