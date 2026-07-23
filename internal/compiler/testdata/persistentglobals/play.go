@@ -116,6 +116,27 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	shared.InputWrapper.Ref = &shared.InputWrapper.Input
+	wrappedInput := shared.GetWrappedInput()
+	wrappedInput.LaneCount = 6
+	if shared.InputWrapper.Ref != wrappedInput || shared.InputWrapper.Ref.LaneCount != 6 {
+		sonolus.Terminate("nested persistent input address lost identity")
+	}
+	sharedInput := shared.GetInputRoot()
+	sharedIndex := sharedInput.LaneCount - 1
+	sharedInput.InputStateArray[sharedIndex].Lane = 7
+	sharedInput.CurrentFrameFlickStateArray[sharedIndex].BeginLane = 8
+	sharedInput.TempPair.Set(
+		&sharedInput.InputStateArray[sharedIndex],
+		&sharedInput.CurrentFrameFlickStateArray[sharedIndex],
+	)
+	if sharedInput.TempPair.InputUnit.Lane != 7 || sharedInput.TempPair.FlickInputUnit.BeginLane != 8 {
+		sonolus.Terminate("dynamic persistent input address lost identity")
+	}
+	sharedInput.CurrentMusicTimeMs = int(sharedInput.AutoInput.Apply(2))
+	if sharedInput.CurrentMusicTimeMs != 5 {
+		sonolus.Terminate("cross-package persistent input interface dispatch failed")
+	}
 	PersistentWrapper.Ref = &PersistentWrapper.Input
 	bindWrapperInput()
 	if shared.Root == nil || shared.Root.Unit == nil || shared.Root.Unit.Value != 9 {
