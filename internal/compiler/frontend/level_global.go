@@ -116,6 +116,9 @@ func staticZeroObjectGraph(value source.StaticValue, seen map[*source.StaticObje
 		}
 		return true
 	}
+	if value.Kind == source.StaticConstant {
+		return value.Exact != nil
+	}
 	return staticZero(value)
 }
 
@@ -337,7 +340,10 @@ func parseLevelGlobalNode(value source.StaticValue, t types.Type, object *types.
 			return declaration, errs
 		}
 	}
-	if !staticZero(value) {
+	if kind == "package" && value.Kind == source.StaticConstant && value.Exact != nil {
+		declaration.InitialValue = value
+		declaration.HasInitialValue = true
+	} else if !staticZero(value) {
 		return declaration, []error{fmt.Errorf("%s: runtime level global fields must have zero initial values", name)}
 	}
 	size, err := layoutSize(t)

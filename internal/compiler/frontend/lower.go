@@ -888,6 +888,12 @@ func (l *lowerer) initializePackageGlobals(node ast.Node) {
 				l.store(lowerValue{type_: types.Typ[types.Int], places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, scalarValue(ir.Const{Value: float64(target.Offset + 1)}, types.Typ[types.Int]), node)
 			}
 		}
+		if declaration.HasInitialValue && declaration.InitialValue.Exact != nil {
+			if expression, ok := constantExpr(declaration.InitialValue.Exact); ok {
+				place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset, false, true, node)
+				l.store(lowerValue{type_: declaration.Type, places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, lowerValue{type_: declaration.Type, slots: []ir.Expr{expression}}, node)
+			}
+		}
 		for _, child := range declaration.Fields {
 			visit(child)
 		}
