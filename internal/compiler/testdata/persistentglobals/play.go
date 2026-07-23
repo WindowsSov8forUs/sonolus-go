@@ -16,6 +16,27 @@ type persistentPair struct {
 	Other *persistentUnit
 }
 
+var packageTempPair = new(persistentPair)
+var packageInitialPair = &persistentPair{Unit: &persistentUnit{Value: 7}}
+
+type persistentPackageHolder struct{ Input persistentAutoInput }
+
+var packageHolder = &persistentPackageHolder{Input: &persistentAutoInputImpl{Bias: 5}}
+
+type persistentPackageInput struct {
+	TempPair *persistentPair
+	Units    [2]persistentUnit
+	Auto     persistentAutoInput
+	Current  int
+}
+
+var packageInput = &persistentPackageInput{
+	TempPair: &persistentPair{},
+	Units:    [2]persistentUnit{{Value: 1}, {Value: 2}},
+	Auto:     &persistentAutoInputImpl{Bias: 3},
+	Current:  4,
+}
+
 func (pair *persistentPair) Set(unit, other *persistentUnit) *persistentPair {
 	pair.Unit = unit
 	pair.Other = other
@@ -69,6 +90,20 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	if packageInput.TempPair == nil || packageInput.Auto == nil || packageInput.Units[1].Value != 2 || packageInput.Current != 4 {
+		sonolus.Terminate("package pointer-rich graph was not initialized")
+	}
+	packageInput.TempPair.Set(&packageInput.Units[1], nil)
+	if packageInput.Auto.Apply(packageInput.TempPair.Unit.Value) != 5 {
+		sonolus.Terminate("package pointer-rich graph dispatch failed")
+	}
+	if packageHolder.Input == nil || packageHolder.Input.Apply(1) != 6 {
+		sonolus.Terminate("package initial interface graph was not initialized")
+	}
+	if packageInitialPair.Unit == nil || packageInitialPair.Unit.Value != 7 {
+		sonolus.Terminate("package initial pointer graph was not initialized")
+	}
+	packageTempPair.Set(&Persistent.Unit, nil)
 	if Persistent.AutoInput != nil {
 		sonolus.Terminate("persistent interface zero value is not nil")
 	}
@@ -88,6 +123,12 @@ func (*PersistentNote) Preprocess() {
 }
 
 func (*PersistentNote) UpdateSequential() {
+	packageInitialPair.Unit.Value++
+	packagePair := packageTempPair
+	packagePair.Set(packagePair.Unit, packagePair.Other)
+	if packagePair != packageTempPair {
+		sonolus.Terminate("package persistent pair identity changed")
+	}
 	pair := Persistent.TempPair
 	if pair != Persistent.TempPair {
 		sonolus.Terminate("persistent pair identity changed")

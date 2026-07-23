@@ -8,6 +8,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 type Project struct {
@@ -18,14 +19,16 @@ type Project struct {
 }
 
 type ModeDeclarations struct {
-	Mode          mode.Mode
-	Configuration *ConfigurationDeclaration
-	Resources     ModeResources
-	Archetypes    []*ArchetypeDeclaration
-	Globals       []*CallbackDeclaration
-	ROM           *ROMDeclaration
-	Streams       *StreamDeclaration
-	LevelGlobals  []*LevelGlobalDeclaration
+	Mode            mode.Mode
+	Configuration   *ConfigurationDeclaration
+	Resources       ModeResources
+	Archetypes      []*ArchetypeDeclaration
+	Globals         []*CallbackDeclaration
+	ROM             *ROMDeclaration
+	Streams         *StreamDeclaration
+	LevelGlobals    []*LevelGlobalDeclaration
+	PackageGlobals  map[*source.StaticObject]*LevelGlobalFieldDeclaration
+	PackagePointers map[*types.Var]*LevelGlobalFieldDeclaration
 }
 
 type LevelGlobalDeclaration struct {
@@ -40,23 +43,28 @@ type LevelGlobalDeclaration struct {
 }
 
 type LevelGlobalFieldDeclaration struct {
-	GoName         string
-	Kind           string
-	Storage        string
-	Offset         int
-	Size           int
-	Type           types.Type
-	Object         *types.Var
-	ContainerKind  string
-	Capacity       int
-	KeySize        int
-	ElementSize    int
-	RelativeOffset int
-	PersistentKind string
-	Target         *LevelGlobalFieldDeclaration
-	Fields         []*LevelGlobalFieldDeclaration
-	Elements       []*LevelGlobalFieldDeclaration
-	ElementStride  int
+	GoName                 string
+	Kind                   string
+	Storage                string
+	Offset                 int
+	Size                   int
+	Type                   types.Type
+	Object                 *types.Var
+	ContainerKind          string
+	Capacity               int
+	KeySize                int
+	ElementSize            int
+	RelativeOffset         int
+	PersistentKind         string
+	InitialTarget          *source.StaticObject
+	InitialValue           source.StaticValue
+	HasInitialValue        bool
+	InitialInterfaceType   types.Type
+	InitialInterfaceTarget *source.StaticObject
+	Target                 *LevelGlobalFieldDeclaration
+	Fields                 []*LevelGlobalFieldDeclaration
+	Elements               []*LevelGlobalFieldDeclaration
+	ElementStride          int
 }
 
 type StreamDeclaration struct {

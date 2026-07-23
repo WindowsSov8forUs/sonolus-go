@@ -252,6 +252,10 @@ func (l *lowerer) packageCallableArray(object types.Object, node ast.Node) (lowe
 	if !ok || variable.Pkg() == nil || variable.IsField() {
 		return lowerValue{}, false
 	}
+	if declaration := l.packagePointers[variable]; declaration != nil {
+		storage, read, write := levelGlobalStorageAccess(declaration, l.mode, l.phase)
+		return l.lowerPersistentPackagePointer(declaration, storage, read, write), true
+	}
 	if _, ok := callableArrayType(l.resolveType(variable.Type())); !ok {
 		return lowerValue{}, false
 	}
@@ -357,6 +361,12 @@ func (l *lowerer) packageStaticValue(object types.Object, node ast.Node) (lowerV
 	if err != nil {
 		l.errorAt(node, "package value %s requires a pure static initializer", variable.Name())
 		return lowerValue{}, true
+	}
+	if binding.Value.Kind == source.StaticPointer && binding.Value.Pointer != nil && binding.Value.Pointer.Object != nil {
+		if declaration := l.packageGlobals[binding.Value.Pointer.Object]; declaration != nil && len(binding.Value.Pointer.Path) == 0 {
+			storage, read, write := levelGlobalStorageAccess(declaration, l.mode, l.phase)
+			return l.lowerPersistentPackagePointer(declaration, storage, read, write), true
+		}
 	}
 	value, ok := l.lowerStaticRuntimeValue(binding.Value, target, node)
 	if !ok {
@@ -854,6 +864,93 @@ func (l *lowerer) lowerLevelGlobalValue(node ast.Node, declaration *LevelGlobalF
 	return value
 }
 
+func (l *lowerer) lowerPersistentPackagePointer(declaration *LevelGlobalFieldDeclaration, storage string, read, write bool) lowerValue {
+	return lowerValue{type_: types.NewPointer(declaration.Type), persistentPointer: &persistentPointerValue{
+		handle:  lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: float64(declaration.Offset + 1)}}},
+		storage: storage, target: declaration, read: read, write: write,
+	}}
+}
+
+func (l *lowerer) initializePackageGlobals(node ast.Node) {
+	if l.phase != "preprocess" {
+		return
+	}
+	seen := map[*LevelGlobalFieldDeclaration]bool{}
+	var visit func(*LevelGlobalFieldDeclaration)
+	visit = func(declaration *LevelGlobalFieldDeclaration) {
+		if declaration == nil || seen[declaration] {
+			return
+		}
+		seen[declaration] = true
+		if declaration.PersistentKind == "pointer" && declaration.InitialTarget != nil {
+			if target := l.packageGlobals[declaration.InitialTarget]; target != nil {
+				place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset, false, true, node)
+				l.store(lowerValue{type_: types.Typ[types.Int], places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, scalarValue(ir.Const{Value: float64(target.Offset + 1)}, types.Typ[types.Int]), node)
+			}
+		}
+		if declaration.PersistentKind == "interface" && declaration.InitialInterfaceTarget != nil {
+			interfaceType, ok := types.Unalias(declaration.InitialInterfaceType).Underlying().(*types.Interface)
+			if ok {
+				type candidate struct {
+					name  string
+					type_ types.Type
+				}
+				var candidates []candidate
+				seenTypes := map[string]bool{}
+				for _, pkg := range l.packages {
+					for _, named := range packageNamedTypes(pkg) {
+						pointer := types.NewPointer(named)
+						if !types.Implements(pointer, interfaceType) {
+							continue
+						}
+						name := types.TypeString(pointer, func(owner *types.Package) string { return owner.Path() })
+						if !seenTypes[name] {
+							seenTypes[name] = true
+							candidates = append(candidates, candidate{name: name, type_: pointer})
+						}
+					}
+				}
+				sort.Slice(candidates, func(i, j int) bool { return candidates[i].name < candidates[j].name })
+				targetType := types.NewPointer(declaration.InitialInterfaceTarget.Type)
+				tag := 0
+				for _, candidate := range candidates {
+					pointer := candidate.type_.(*types.Pointer)
+					if _, err := persistentLevelGlobalTypeNode(pointer.Elem(), declaration.GoName+"."+candidate.name, declaration.Kind, declaration.Storage); err != nil {
+						continue
+					}
+					tag++
+					if types.Identical(candidate.type_, targetType) {
+						break
+					}
+				}
+				if tag > 0 {
+					if target := l.packageGlobals[declaration.InitialInterfaceTarget]; target != nil {
+						for offset, value := range []float64{float64(tag), float64(target.Offset + 1)} {
+							place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset+offset, false, true, node)
+							l.store(lowerValue{type_: types.Typ[types.Int], places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, scalarValue(ir.Const{Value: value}, types.Typ[types.Int]), node)
+						}
+					}
+				}
+			}
+		}
+		if declaration.HasInitialValue && declaration.InitialValue.Exact != nil {
+			if expression, ok := constantExpr(declaration.InitialValue.Exact); ok {
+				place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset, false, true, node)
+				l.store(lowerValue{type_: declaration.Type, places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, lowerValue{type_: declaration.Type, slots: []ir.Expr{expression}}, node)
+			}
+		}
+		for _, child := range declaration.Fields {
+			visit(child)
+		}
+		for _, child := range declaration.Elements {
+			visit(child)
+		}
+	}
+	for _, declaration := range l.packageGlobals {
+		visit(declaration)
+	}
+}
+
 type entityReferenceValue struct {
 	binding archetypeBinding
 }
@@ -1086,6 +1183,8 @@ type lowerer struct {
 	streamSize        int
 	configuration     *ConfigurationDeclaration
 	levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration
+	packageGlobals    map[*source.StaticObject]*LevelGlobalFieldDeclaration
+	packagePointers   map[*types.Var]*LevelGlobalFieldDeclaration
 	currentArchetype  *ArchetypeDeclaration
 	archetypeFields   map[*types.Var]*FieldDeclaration
 	archetypes        map[*types.Named]archetypeBinding
@@ -10140,7 +10239,7 @@ func (l *lowerer) assignRangeValue(target ast.Expr, op token.Token, value lowerV
 	l.store(local, value, target)
 }
 
-func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, currentArchetype *ArchetypeDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string, checks RuntimeChecks) (*ir.Function, []error) {
+func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, currentArchetype *ArchetypeDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string, checks RuntimeChecks) (*ir.Function, []error) {
 	if decl == nil {
 		return nil, nil
 	}
@@ -10158,10 +10257,11 @@ func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *pa
 	for _, field := range fields {
 		archetypeFields[field.Object] = field
 	}
-	l := &lowerer{mode: m, phase: phase, checks: checks, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, streamSize: resources.StreamSize, configuration: configuration, levelGlobalFields: levelGlobalFields, currentArchetype: currentArchetype, archetypeFields: archetypeFields, archetypes: archetypes}
+	l := &lowerer{mode: m, phase: phase, checks: checks, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, streamSize: resources.StreamSize, configuration: configuration, levelGlobalFields: levelGlobalFields, packageGlobals: packageGlobals, packagePointers: packagePointers, currentArchetype: currentArchetype, archetypeFields: archetypeFields, archetypes: archetypes}
 	entry := l.newBlock()
 	_ = builder.SetEntry(entry)
 	l.setCurrent(entry)
+	l.initializePackageGlobals(decl)
 	frame := &lowerFrame{pkg: pkg, vars: map[types.Object]lowerValue{}, callables: map[types.Object]*staticCallable{}, returnBlock: l.newBlock()}
 	l.prepareGotoTargets(frame, decl.Body)
 	l.prepareDeferredCalls(frame, decl.Body)

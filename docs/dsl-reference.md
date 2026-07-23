@@ -353,6 +353,7 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 - Go 多返回会逐项保留 callback-local descriptor，而不是按 pointee runtime layout 展平。多个 aggregate pointer 可经动态重绑、命名裸返回、helper 转发或立即调用闭包返回；调用端多重赋值继续保持每个对象的独立身份、nil 状态与写回路径。
 - 静态 interface concrete type 传播、有限 concrete-type variant、helper 参数/返回、method devirtualization、type switch/type assertion，以及泛型实例中的同类静态分派。
 - Static interface 可保存到 callback-local 普通 struct/定长数组字段；aggregate 复制会快照 concrete-type tag 与 payload descriptor。Pointer concrete payload 保留 aggregate 身份，因此接口字段重绑不会改变既有副本，而接口方法对所选对象的修改继续通过原别名可见。
+- package-scope `new(T)` 或零值固定地址复合初始化在 `T` 为编译期有限、固定对象图时分配到当前模式的 semantic memory；预处理阶段写入初始 pointer handles，同一指针可跨 callback 保持对象身份并通过 pointer receiver/helper 读写。动态堆分配、动态长度数组、container backing 和循环对象图仍拒绝。
 - callable helper 的有限 runtime 返回目标、variadic callable 参数包的转发/索引/range、保持静态目标身份与泛型实例环境的 named function type 转换（包括 `iter.Seq[T](func...)`）、`min`、`max`、`Zero[T]`、`SlotsOf[T]`。泛型函数值和离开创建 frame 的闭包会携带其具体 type substitution；`Zero[*T]()` 返回准确的 nil pointer，compile-time-only function/interface/container/resource 类型不接受 `Zero`。
 - `VarArray` 支持 checked/unchecked 读写与追加、查询、删除、交换、重排、正反向 values/items iterator、稳定排序、原子 `Extend`、稳定 min/max；`ArrayMap` 与 `ArraySet` 支持容量查询，map 还提供 key/value/item iterator。容器变量、参数、helper 返回值与 callback-local 普通 struct 字段可在有限 runtime 分支中选择不同 backing/capacity；descriptor 按值快照，mutation 继续作用于被选中的原 backing。包含 container 字段的局部 struct 支持 pointer receiver、整值复制、嵌套 struct、值参数与 helper 返回。零槽可比较 element/key 也合法，容器只保留 size 与必要的非零槽 backing。
 - `SortLinkedEntities` 与 `SortDoublyLinkedEntities` 使用稳定 bottom-up merge sort，仅重排链接。链表输入必须无环。

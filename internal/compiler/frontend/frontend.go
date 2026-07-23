@@ -29,7 +29,7 @@ type Options struct {
 }
 
 func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDeclarations, error) {
-	out := &ModeDeclarations{Mode: m, Resources: ModeResources{SpriteIDs: map[string]int{}, EffectIDs: map[string]int{}, ParticleIDs: map[string]int{}, FieldIDs: map[*types.Var][]int{}}}
+	out := &ModeDeclarations{Mode: m, Resources: ModeResources{SpriteIDs: map[string]int{}, EffectIDs: map[string]int{}, ParticleIDs: map[string]int{}, FieldIDs: map[*types.Var][]int{}}, PackageGlobals: map[*source.StaticObject]*LevelGlobalFieldDeclaration{}, PackagePointers: map[*types.Var]*LevelGlobalFieldDeclaration{}}
 	var errs []error
 	names := map[string]bool{}
 	resources := map[string]bool{}
@@ -217,8 +217,82 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 		}
 		globalPackages = append(globalPackages, globalPackage{pkg: p, hasMarker: hasGlobals})
 	}
+	packageGlobalOffset := levelGlobalOffsets["LevelMemory"]
+	packageStorage, packageStorageOK := levelGlobalStorage("memory", m)
+	if m == mode.ModePreview {
+		packageGlobalOffset = levelGlobalOffsets["PreviewData"]
+		packageStorage, packageStorageOK = levelGlobalStorage("data", m)
+	}
+	if packageStorageOK {
+		userTypes := map[*types.Package]bool{}
+		var registerPackageObject func(*source.StaticObject, string)
+		registerPackageObject = func(targetObject *source.StaticObject, name string) {
+			if targetObject == nil {
+				return
+			}
+			if _, exists := out.PackageGlobals[targetObject]; exists {
+				return
+			}
+			named, namedType := targetObject.Type.(*types.Named)
+			if !namedType || named == nil || !userTypes[named.Obj().Pkg()] {
+				return
+			}
+			if !staticZeroObjectGraph(targetObject.Value, map[*source.StaticObject]bool{}) {
+				return
+			}
+			declaration, declarationErrs := parseLevelGlobalNode(targetObject.Value, targetObject.Type, nil, name+".$new", "package", packageStorage, packageGlobalOffset)
+			errs = append(errs, declarationErrs...)
+			if len(declarationErrs) != 0 {
+				return
+			}
+			out.PackageGlobals[targetObject] = declaration
+			packageGlobalOffset += declaration.Size
+			var walk func(source.StaticValue)
+			walk = func(value source.StaticValue) {
+				switch value.Kind {
+				case source.StaticPointer:
+					if value.Pointer != nil && len(value.Pointer.Path) == 0 {
+						registerPackageObject(value.Pointer.Object, name+".$target")
+					}
+				case source.StaticInterface:
+					if value.Dynamic != nil {
+						walk(*value.Dynamic)
+					}
+				case source.StaticStruct:
+					for _, field := range value.Fields {
+						walk(field.Value)
+					}
+				case source.StaticArray:
+					for _, element := range value.Elements {
+						walk(element)
+					}
+				}
+			}
+			walk(targetObject.Value)
+		}
+		for _, p := range userPackages {
+			userTypes[p.Types] = true
+		}
+		for _, p := range userPackages {
+			for _, name := range p.Types.Scope().Names() {
+				variable, ok := p.Types.Scope().Lookup(name).(*types.Var)
+				if !ok || variable.IsField() {
+					continue
+				}
+				binding, err := tracer.EvalObject(variable)
+				if err != nil || binding.Value.Kind != source.StaticPointer || binding.Value.Pointer == nil || binding.Value.Pointer.Object == nil || len(binding.Value.Pointer.Path) != 0 {
+					continue
+				}
+				targetObject := binding.Value.Pointer.Object
+				registerPackageObject(targetObject, name)
+				if declaration := out.PackageGlobals[targetObject]; declaration != nil {
+					out.PackagePointers[variable] = declaration
+				}
+			}
+		}
+	}
 	for _, candidate := range globalPackages {
-		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, levelGlobalFields, m, candidate.hasMarker, options.RuntimeChecks)
+		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, levelGlobalFields, out.PackageGlobals, out.PackagePointers, m, candidate.hasMarker, options.RuntimeChecks)
 		errs = append(errs, globalErrs...)
 		out.Globals = append(out.Globals, globals...)
 	}
@@ -248,7 +322,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 			errs = append(errs, fmt.Errorf("%s: archetype source package is unavailable", declaration.Name))
 			continue
 		}
-		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, levelGlobalFields, archetypes, m, options.RuntimeChecks)...)
+		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, levelGlobalFields, out.PackageGlobals, out.PackagePointers, archetypes, m, options.RuntimeChecks)...)
 	}
 	concrete := out.Archetypes[:0]
 	for _, declaration := range out.Archetypes {

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 var callbacks = map[mode.Mode]map[string]string{
@@ -95,7 +96,7 @@ func calledObject(pkg *packages.Package, expr ast.Expr) types.Object {
 	}
 }
 
-func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, m mode.Mode, hasMarker bool, checks RuntimeChecks) ([]*CallbackDeclaration, []error) {
+func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, m mode.Mode, hasMarker bool, checks RuntimeChecks) ([]*CallbackDeclaration, []error) {
 	if !hasMarker {
 		return nil, nil
 	}
@@ -158,7 +159,7 @@ func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *
 		go func(i int, job callbackJob) {
 			defer wg.Done()
 			key := callbackKey(job.name)
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, configuration, levelGlobalFields, nil, nil, m, key, checks)
+			bodyIR, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, configuration, levelGlobalFields, packageGlobals, packagePointers, nil, nil, m, key, checks)
 			callbacks[i] = &CallbackDeclaration{Name: key, Function: job.fn, Decl: job.decl, IR: bodyIR}
 			jobErrs[i] = lowerErrs
 		}(i, job)
