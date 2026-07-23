@@ -4528,7 +4528,11 @@ func (l *lowerer) staticCallable(expr ast.Expr) (*staticCallable, bool) {
 			if isContainerValue(receiverValue) {
 				receiverValue = l.copyContainerValue("bound.container", receiverValue, selector)
 			} else if isStaticPointer(receiverValue) {
-				receiverValue = l.copyPointerValue("bound.pointer", receiverValue, selector)
+				if receiverValue.aggregatePointer != nil || receiverValue.aggregate != nil && isPointerType(receiverValue.type_) {
+					receiverValue = l.copyAggregatePointerValue("bound.aggregate.pointer", receiverValue, selector)
+				} else {
+					receiverValue = l.copyPointerValue("bound.pointer", receiverValue, selector)
+				}
 			}
 			if symbol, exists := catalog.LookupObject(fn); exists {
 				return l.catalogCallable(symbol, &receiverValue), true
@@ -5100,6 +5104,14 @@ func (l *lowerer) callReceiver(selector *ast.SelectorExpr, fn *types.Func) lower
 	declared := types.Unalias(signature.Recv().Type())
 	if pointer, ok := declared.(*types.Pointer); ok {
 		if _, alreadyPointer := types.Unalias(receiver.type_).(*types.Pointer); !alreadyPointer {
+			if receiver.levelGlobal != nil {
+				handle := scalarValue(l.pure(resource.RuntimeFunctionAdd, selector.X, receiver.levelGlobal.base, ir.Const{Value: 1}), types.Typ[types.Int])
+				receiver = lowerValue{type_: pointer, persistentPointer: &persistentPointerValue{
+					handle: handle, storage: receiver.levelGlobal.storage, target: receiver.levelGlobal.declaration,
+					read: receiver.levelGlobal.read, write: receiver.levelGlobal.write,
+				}}
+				return receiver
+			}
 			receiver = l.materializeAddressable("call.receiver", receiver, selector.X)
 			receiver.type_ = pointer
 		}
