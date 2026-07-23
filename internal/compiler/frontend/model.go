@@ -56,6 +56,7 @@ type LevelGlobalFieldDeclaration struct {
 	ElementSize    int
 	RelativeOffset int
 	PersistentKind string
+	InitialTarget  *source.StaticObject
 	Target         *LevelGlobalFieldDeclaration
 	Fields         []*LevelGlobalFieldDeclaration
 	Elements       []*LevelGlobalFieldDeclaration

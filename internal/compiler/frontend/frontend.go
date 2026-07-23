@@ -219,13 +219,56 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 	}
 	packageGlobalOffset := levelGlobalOffsets["LevelMemory"]
 	packageStorage, packageStorageOK := levelGlobalStorage("memory", m)
-	packageKind := "memory"
 	if m == mode.ModePreview {
 		packageGlobalOffset = levelGlobalOffsets["PreviewData"]
 		packageStorage, packageStorageOK = levelGlobalStorage("data", m)
-		packageKind = "data"
 	}
 	if packageStorageOK {
+		userTypes := map[*types.Package]bool{}
+		var registerPackageObject func(*source.StaticObject, string)
+		registerPackageObject = func(targetObject *source.StaticObject, name string) {
+			if targetObject == nil {
+				return
+			}
+			if _, exists := out.PackageGlobals[targetObject]; exists {
+				return
+			}
+			named, namedType := targetObject.Type.(*types.Named)
+			if !namedType || named == nil || !userTypes[named.Obj().Pkg()] {
+				return
+			}
+			if !staticZeroObjectGraph(targetObject.Value, map[*source.StaticObject]bool{}) {
+				return
+			}
+			declaration, declarationErrs := parseLevelGlobalNode(targetObject.Value, targetObject.Type, nil, name+".$new", "package", packageStorage, packageGlobalOffset)
+			errs = append(errs, declarationErrs...)
+			if len(declarationErrs) != 0 {
+				return
+			}
+			out.PackageGlobals[targetObject] = declaration
+			packageGlobalOffset += declaration.Size
+			var walk func(source.StaticValue)
+			walk = func(value source.StaticValue) {
+				switch value.Kind {
+				case source.StaticPointer:
+					if value.Pointer != nil && len(value.Pointer.Path) == 0 {
+						registerPackageObject(value.Pointer.Object, name+".$target")
+					}
+				case source.StaticStruct:
+					for _, field := range value.Fields {
+						walk(field.Value)
+					}
+				case source.StaticArray:
+					for _, element := range value.Elements {
+						walk(element)
+					}
+				}
+			}
+			walk(targetObject.Value)
+		}
+		for _, p := range userPackages {
+			userTypes[p.Types] = true
+		}
 		for _, p := range userPackages {
 			for _, name := range p.Types.Scope().Names() {
 				variable, ok := p.Types.Scope().Lookup(name).(*types.Var)
@@ -237,18 +280,9 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 					continue
 				}
 				targetObject := binding.Value.Pointer.Object
-				if !staticZero(targetObject.Value) {
-					continue
-				}
-				if _, exists := out.PackageGlobals[targetObject]; exists {
-					continue
-				}
-				declaration, declarationErrs := parseLevelGlobalNode(targetObject.Value, targetObject.Type, nil, name+".$new", packageKind, packageStorage, packageGlobalOffset)
-				errs = append(errs, declarationErrs...)
-				if len(declarationErrs) == 0 {
-					out.PackageGlobals[targetObject] = declaration
+				registerPackageObject(targetObject, name)
+				if declaration := out.PackageGlobals[targetObject]; declaration != nil {
 					out.PackagePointers[variable] = declaration
-					packageGlobalOffset += declaration.Size
 				}
 			}
 		}

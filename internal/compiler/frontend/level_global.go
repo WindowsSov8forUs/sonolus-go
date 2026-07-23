@@ -39,6 +39,8 @@ func levelGlobalStorageAccess(declaration *LevelGlobalFieldDeclaration, currentM
 	storage, kind := declaration.Storage, declaration.Kind
 	write := false
 	switch kind {
+	case "package":
+		write = true
 	case "data":
 		write = phase == "preprocess"
 	case "memory":
@@ -88,6 +90,33 @@ func staticZero(value source.StaticValue) bool {
 	default:
 		return false
 	}
+}
+
+func staticZeroObjectGraph(value source.StaticValue, seen map[*source.StaticObject]bool) bool {
+	if value.Kind == source.StaticPointer && value.Pointer != nil && value.Pointer.Object != nil {
+		if seen[value.Pointer.Object] {
+			return true
+		}
+		seen[value.Pointer.Object] = true
+		return staticZeroObjectGraph(value.Pointer.Object.Value, seen)
+	}
+	if value.Kind == source.StaticStruct {
+		for _, field := range value.Fields {
+			if !staticZeroObjectGraph(field.Value, seen) {
+				return false
+			}
+		}
+		return true
+	}
+	if value.Kind == source.StaticArray {
+		for _, element := range value.Elements {
+			if !staticZeroObjectGraph(element, seen) {
+				return false
+			}
+		}
+		return true
+	}
+	return staticZero(value)
 }
 
 func levelGlobalContainerCapacity(value source.StaticValue, expected types.Type, name, kind string) (int, error) {
@@ -242,8 +271,11 @@ func parseLevelGlobalNode(value source.StaticValue, t types.Type, object *types.
 		rawValue := value
 		value = dereferenceStatic(value)
 		if pointer, ok := types.Unalias(t).(*types.Pointer); ok {
-			if rawValue.Kind != source.StaticNil {
+			if rawValue.Kind != source.StaticNil && kind != "package" {
 				return declaration, []error{fmt.Errorf("%s: persistent pointer fields must have nil initial values", name)}
+			}
+			if rawValue.Kind == source.StaticPointer && rawValue.Pointer != nil && len(rawValue.Pointer.Path) == 0 {
+				declaration.InitialTarget = rawValue.Pointer.Object
 			}
 			target, err := persistentLevelGlobalTypeNode(pointer.Elem(), name+".*", kind, storage)
 			if err != nil {
