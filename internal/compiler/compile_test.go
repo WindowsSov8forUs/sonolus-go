@@ -1381,7 +1381,7 @@ func TestParseDeclarationsRejectsRepeatedDefer(t *testing.T) {
 
 func TestParseDeclarationsRejectsUnsupportedBuiltin(t *testing.T) {
 	_, err := parseMode(mode.ModePlay, "./testdata/invalidunsupportedbuiltin")
-	if err == nil || !strings.Contains(err.Error(), "Go builtin complex is not supported") || !strings.Contains(err.Error(), "reachable path") || !strings.Contains(err.Error(), "Zero does not support compile-time-only type") || !strings.Contains(err.Error(), "Go builtin new does not support compile-time-only element type") {
+	if err == nil || !strings.Contains(err.Error(), "Go builtin complex is not supported") || !strings.Contains(err.Error(), "reachable path") || !strings.Contains(err.Error(), "Zero does not support compile-time-only type") || !strings.Contains(err.Error(), "Go builtin new does not support compile-time-only element type") || !strings.Contains(err.Error(), "cannot contain callback-local descriptors") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
