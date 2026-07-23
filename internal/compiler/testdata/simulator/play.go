@@ -572,6 +572,71 @@ func chooseSimulatorPointerAggregate(
 	return second
 }
 
+func chooseSimulatorPointerAggregatePair(
+	selector int,
+	first, second *simulatorPointerPair,
+) (*simulatorPointerPair, *simulatorPointerPair) {
+	left := first
+	right := second
+	if selector != 0 {
+		left = second
+		right = first
+	}
+	return left, right
+}
+
+func forwardSimulatorPointerAggregatePair(
+	selector int,
+	first, second *simulatorPointerPair,
+) (*simulatorPointerPair, *simulatorPointerPair) {
+	return chooseSimulatorPointerAggregatePair(selector, first, second)
+}
+
+func namedSimulatorPointerAggregatePair(
+	selector int,
+	first, second *simulatorPointerPair,
+) (left, right *simulatorPointerPair) {
+	left = first
+	right = second
+	if selector != 0 {
+		left = second
+		right = first
+	}
+	return
+}
+
+func simulatorMultiPointerAggregate(selector int) float64 {
+	values := [2]int{2, 3}
+	first := simulatorPointerPair{Input: &values[0]}
+	second := simulatorPointerPair{Input: &values[1]}
+	left, right := forwardSimulatorPointerAggregatePair(selector, &first, &second)
+	namedLeft, namedRight := namedSimulatorPointerAggregatePair(selector, &first, &second)
+	closureLeft, closureRight := func() (*simulatorPointerPair, *simulatorPointerPair) {
+		selectedLeft := &first
+		selectedRight := &second
+		if selector != 0 {
+			selectedLeft = &second
+			selectedRight = &first
+		}
+		return selectedLeft, selectedRight
+	}()
+	if namedLeft != left || namedRight != right || closureLeft != left || closureRight != right {
+		return -3
+	}
+	left.Flick = left.Input
+	right.Flick = right.Input
+	*left.Flick += 5
+	*right.Flick += 7
+	if selector == 0 {
+		if left != &first || right != &second {
+			return -1
+		}
+	} else if left != &second || right != &first {
+		return -2
+	}
+	return float64(values[0]*100 + values[1])
+}
+
 type simulatorPointerAggregateHolder struct {
 	Pair *simulatorPointerPair
 }
@@ -1170,6 +1235,7 @@ type VariantNote struct {
 	ReboundAggregatePtr   float64 `archetype:"memory"`
 	AggregateInterface    float64 `archetype:"memory"`
 	NestedAggregatePtr    float64 `archetype:"memory"`
+	MultiAggregatePtr     float64 `archetype:"memory"`
 	Value                 float64 `archetype:"memory"`
 }
 
@@ -1219,6 +1285,7 @@ func (note *VariantNote) Preprocess() {
 	note.ReboundAggregatePtr = simulatorReboundPointerAggregate(selector)
 	note.AggregateInterface = simulatorAggregateInterface(selector)
 	note.NestedAggregatePtr = simulatorNestedDynamicAggregatePointer(selector)
+	note.MultiAggregatePtr = simulatorMultiPointerAggregate(selector)
 	result += note.PointerValue + note.ContainerValue
 	note.Value = result
 }

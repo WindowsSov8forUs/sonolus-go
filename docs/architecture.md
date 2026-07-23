@@ -93,6 +93,8 @@ Frontend 按准确 `go/types.Object` 查 catalog，不依赖 import alias 或源
 
 Callable、pointer、catalog container 与 static interface 的 runtime 分支合并统一表示为有限变体：一槽 Temporary Memory tag 加按源码首次出现排序的静态 alternatives。各 alternative 保留独立 callable 捕获环境与具体泛型 type substitution、pointer place set、container backing descriptor、aggregate identity 或 concrete interface payload；helper 参数/返回与 dispatch 只生成 CFG，不在最终 IR 中留下 Go 函数、pointer、container descriptor 或 interface 对象。Callback-local 普通 struct 与定长数组若包含 pointer/container/interface 字段，Frontend 会递归保留 aggregate descriptor；aggregate 赋值、值参数、返回与 value range 创建新的 tag cell 并重映射静态 alternatives，pointer receiver 则共享原 aggregate。动态数组索引保留冻结 index 和原数组路径，使字段重绑写回准确元素；aggregate pointer 以有限 identity alternatives 表示，解引用代理同样把字段写回当前目标；static interface payload 可继续携带这些 descriptor。因此同时保持 Go 的值快照、对象身份与别名语义。这些隐藏 descriptor 不能逃逸到 semantic memory 或 EngineData schema。Callable cell 和一维固定 callable 数组在赋值、参数、返回与 value range 时复制当前 tag，而不是共享后续重绑；package callable 数组从静态 initializer 重建为不可变函数表。普通 package scalar、runtime record 与定长数组通过 ASTTracer 验证 pure static initializer，再按 runtime layout 重建不可变值；它们不占用长期 semantic memory。Static struct value 额外保留 literal 字段的显式性，使 Configuration 能在不吞掉显式零值的前提下应用 Py 默认 UI。Iterator 创建时冻结 descriptor tag，后续变量重绑不会改变既有 iterator 的目标。Entity view 在本地 aggregate 中同样只展开为一槽 entity index。单次注册的 defer 使用函数级 active cell 汇入统一 return block 并逆序内联；可能重复注册的 defer 不建立运行时栈。
 
+当 helper 或立即调用闭包的 Go 多返回包含 aggregate pointer 时，Frontend 使用逐结果 `lowerValue` 向量穿过 inline return block 与多重赋值；每个结果独立保存 finite tag 和 alternatives。只有纯 runtime 值继续使用 tuple slot 展平，因此 descriptor 不会被误解释为 pointee layout，也不要求 IR、backend 或 Sonolus Runtime 提供原生 pointer/tuple 对象。
+
 ## IR
 
 `internal/compiler/ir` 是与 Go frontend 解耦的强类型 CFG：
