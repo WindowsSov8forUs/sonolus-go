@@ -646,10 +646,19 @@ func TestPersistentLevelGlobalPointersAndInterfacesCompile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(declarations.LevelGlobals) != 1 {
+	if len(declarations.LevelGlobals) < 1 {
 		t.Fatalf("persistent level globals = %+v", declarations.LevelGlobals)
 	}
-	declaration := declarations.LevelGlobals[0]
+	var declaration *frontend.LevelGlobalDeclaration
+	for _, candidate := range declarations.LevelGlobals {
+		if candidate.TypeName == "PersistentMemory" {
+			declaration = candidate
+			break
+		}
+	}
+	if declaration == nil {
+		t.Fatalf("PersistentMemory declaration missing: %+v", declarations.LevelGlobals)
+	}
 	if declaration.Size != 11 || len(declaration.Fields) != 8 {
 		t.Fatalf("persistent level global layout = %+v", declaration)
 	}

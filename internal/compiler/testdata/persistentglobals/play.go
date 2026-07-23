@@ -44,6 +44,17 @@ func setPackagePair(index int) {
 
 func packageInputRoot() *persistentPackageInput { return packageInput }
 
+type persistentWrapper struct {
+	Input persistentPackageInput
+	Ref   *persistentPackageInput
+}
+
+var packageWrapper = &persistentWrapper{}
+
+func bindWrapperInput() {
+	packageWrapper.Ref = &packageWrapper.Input
+}
+
 func (pair *persistentPair) Set(unit, other *persistentUnit) *persistentPair {
 	pair.Unit = unit
 	pair.Other = other
@@ -90,6 +101,14 @@ type PersistentMemory struct {
 	Result    float64
 }
 
+type PersistentWrapperMemory struct {
+	sonolus.LevelMemoryResource
+	Input persistentPackageInput
+	Ref   *persistentPackageInput
+}
+
+var PersistentWrapper = PersistentWrapperMemory{}
+
 var Persistent = PersistentMemory{}
 
 type PersistentNote struct {
@@ -97,6 +116,8 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	PersistentWrapper.Ref = &PersistentWrapper.Input
+	bindWrapperInput()
 	if shared.Root == nil || shared.Root.Unit == nil || shared.Root.Unit.Value != 9 {
 		sonolus.Terminate("cross-package persistent graph was not initialized")
 	}
