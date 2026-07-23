@@ -3,6 +3,7 @@
 package main
 
 import (
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/testdata/persistentglobals/shared"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
@@ -96,6 +97,9 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	if shared.Root == nil || shared.Root.Unit == nil || shared.Root.Unit.Value != 9 {
+		sonolus.Terminate("cross-package persistent graph was not initialized")
+	}
 	if packageInputRoot() != packageInput {
 		sonolus.Terminate("package root helper identity changed")
 	}
