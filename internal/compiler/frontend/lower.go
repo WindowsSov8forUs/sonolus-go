@@ -23,28 +23,29 @@ import (
 )
 
 type lowerValue struct {
-	type_            types.Type
-	slots            []ir.Expr
-	places           []ir.Place
-	multi            []lowerValue
-	container        *containerValue
-	variadic         *variadicValue
-	entity           *entityReferenceValue
-	entityField      bool
-	callable         *staticCallable
-	callableArray    *callableArrayValue
-	stream           *streamValue
-	pointer          *pointerValue
-	pointerLoad      *pointerLoad
-	nilPointer       bool
-	interface_       *interfaceValue
-	containerVariant *finiteVariant[lowerValue]
-	aggregate        *aggregateValue
-	aggregateIndex   *aggregateIndexValue
-	aggregatePointer *finiteVariant[lowerValue]
-	aggregateLoad    *aggregatePointerLoadValue
-	levelGlobal      *levelGlobalValue
-	immutablePackage bool
+	type_             types.Type
+	slots             []ir.Expr
+	places            []ir.Place
+	multi             []lowerValue
+	container         *containerValue
+	variadic          *variadicValue
+	entity            *entityReferenceValue
+	entityField       bool
+	callable          *staticCallable
+	callableArray     *callableArrayValue
+	stream            *streamValue
+	pointer           *pointerValue
+	persistentPointer *persistentPointerValue
+	pointerLoad       *pointerLoad
+	nilPointer        bool
+	interface_        *interfaceValue
+	containerVariant  *finiteVariant[lowerValue]
+	aggregate         *aggregateValue
+	aggregateIndex    *aggregateIndexValue
+	aggregatePointer  *finiteVariant[lowerValue]
+	aggregateLoad     *aggregatePointerLoadValue
+	levelGlobal       *levelGlobalValue
+	immutablePackage  bool
 }
 
 type aggregateValue struct {
@@ -404,10 +405,58 @@ func (l *lowerer) indexImmutablePackageArray(base lowerValue, array *types.Array
 
 type interfaceValue struct {
 	finiteVariant[lowerValue]
+	persistent bool
+	rawTag     lowerValue
 }
 
 type pointerValue struct {
 	finiteVariant[[]ir.Place]
+}
+
+type persistentPointerValue struct {
+	handle  lowerValue
+	storage string
+	target  *LevelGlobalFieldDeclaration
+	read    bool
+	write   bool
+}
+
+func levelGlobalDeclarationHasDescriptors(declaration *LevelGlobalFieldDeclaration) bool {
+	if declaration == nil {
+		return false
+	}
+	if declaration.PersistentKind != "" || declaration.ContainerKind != "" {
+		return true
+	}
+	for _, child := range declaration.Fields {
+		if levelGlobalDeclarationHasDescriptors(child) {
+			return true
+		}
+	}
+	for _, child := range declaration.Elements {
+		if levelGlobalDeclarationHasDescriptors(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *lowerer) finitePersistentPointer(value lowerValue, node ast.Node) lowerValue {
+	persistent := value.persistentPointer
+	if persistent == nil || persistent.target == nil || len(persistent.handle.slots) != 1 {
+		return value
+	}
+	handle := l.materialize("persistent.pointer.snapshot", scalarValue(persistent.handle.slots[0], types.Typ[types.Int]), node)
+	base := l.pure(resource.RuntimeFunctionSubtract, node, handle.slots[0], ir.Const{Value: 1})
+	places := make([]ir.Place, persistent.target.Size)
+	for offset := range places {
+		places[offset] = l.memory(persistent.storage, base, 1, offset, persistent.read, persistent.write, node)
+	}
+	tag := scalarValue(l.pure(resource.RuntimeFunctionIf, node,
+		l.pure(resource.RuntimeFunctionEqual, node, handle.slots[0], ir.Const{}), ir.Const{}, ir.Const{Value: 1}), types.Typ[types.Int])
+	return lowerValue{type_: value.type_, pointer: &pointerValue{finiteVariant: finiteVariant[[]ir.Place]{
+		alternatives: [][]ir.Place{nil, places}, tag: tag,
+	}}}
 }
 
 type pointerLoad struct {
@@ -419,7 +468,87 @@ type pointerLoad struct {
 	stride      int
 }
 
+func (l *lowerer) persistentPointerAddress(value lowerValue, storage string, node ast.Node) (ir.Expr, bool) {
+	if value.nilPointer {
+		return ir.Const{}, true
+	}
+	if value.persistentPointer != nil {
+		if value.persistentPointer.storage != storage || len(value.persistentPointer.handle.slots) != 1 {
+			l.errorAt(node, "persistent pointer assignment requires the same semantic memory storage")
+			return nil, false
+		}
+		return value.persistentPointer.handle.slots[0], true
+	}
+	if value.levelGlobal != nil {
+		if value.levelGlobal.storage != storage {
+			l.errorAt(node, "persistent pointer assignment requires the same semantic memory storage")
+			return nil, false
+		}
+		return l.pure(resource.RuntimeFunctionAdd, node, value.levelGlobal.base, ir.Const{Value: 1}), true
+	}
+	if len(value.places) == 0 {
+		l.errorAt(node, "persistent pointer assignment requires a level global address or nil")
+		return nil, false
+	}
+	first, ok := value.places[0].(ir.MemoryPlace)
+	if !ok || first.Storage != storage || first.Stride != 1 {
+		l.errorAt(node, "persistent pointer assignment requires an address in %s", storage)
+		return nil, false
+	}
+	for _, raw := range value.places {
+		place, placeOK := raw.(ir.MemoryPlace)
+		if !placeOK || place.Storage != storage || place.Stride != 1 {
+			l.errorAt(node, "persistent pointer target must use one contiguous %s layout", storage)
+			return nil, false
+		}
+	}
+	address := ir.Expr(first.Index)
+	if first.Offset != 0 {
+		address = l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: float64(first.Offset)})
+	}
+	return l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: 1}), true
+}
+
+func (l *lowerer) storePersistentPointer(destination, source lowerValue, node ast.Node) {
+	if destination.persistentPointer == nil || len(destination.persistentPointer.handle.places) != 1 {
+		l.errorAt(node, "persistent pointer assignment target is not writable")
+		return
+	}
+	encoded, ok := l.persistentPointerAddress(source, destination.persistentPointer.storage, node)
+	if !ok {
+		return
+	}
+	l.store(destination.persistentPointer.handle, scalarValue(encoded, types.Typ[types.Int]), node)
+}
+
+func (l *lowerer) copyPersistentPointer(name string, source lowerValue, node ast.Node) lowerValue {
+	pointer := source.persistentPointer
+	if pointer == nil || len(pointer.handle.slots) != 1 {
+		return source
+	}
+	handle := l.alloc(name+".handle", types.Typ[types.Int])
+	l.store(handle, scalarValue(pointer.handle.slots[0], types.Typ[types.Int]), node)
+	return lowerValue{type_: source.type_, persistentPointer: &persistentPointerValue{
+		handle: handle, storage: pointer.storage, target: pointer.target, read: pointer.read, write: pointer.write,
+	}}
+}
+
+func (l *lowerer) loadPersistentPointer(value lowerValue, pointer *types.Pointer, node ast.Node) lowerValue {
+	persistent := value.persistentPointer
+	if persistent == nil || len(persistent.handle.slots) != 1 || persistent.target == nil {
+		l.errorAt(node, "persistent pointer has no target layout")
+		return zeroValue(pointer.Elem())
+	}
+	handle := l.materialize("persistent.pointer.handle", scalarValue(persistent.handle.slots[0], types.Typ[types.Int]), node)
+	l.guardWith(node, l.pure(resource.RuntimeFunctionNotEqual, node, handle.slots[0], ir.Const{}), "nil pointer dereference", true)
+	base := l.pure(resource.RuntimeFunctionSubtract, node, handle.slots[0], ir.Const{Value: 1})
+	return l.lowerLevelGlobalValue(node, persistent.target, persistent.storage, base, persistent.read, persistent.write)
+}
+
 func (l *lowerer) mergePointerValue(destination lowerValue, source lowerValue, node ast.Node) lowerValue {
+	if source.persistentPointer != nil {
+		source = l.finitePersistentPointer(source, node)
+	}
 	if destination.pointer == nil {
 		variant := newFiniteVariant[[]ir.Place](l, "pointer.variant", node)
 		index, ok := variant.add(append([]ir.Place(nil), destination.places...), samePlaces)
@@ -477,6 +606,9 @@ func (l *lowerer) newPointerCell(name string, pointerType types.Type, node ast.N
 }
 
 func (l *lowerer) copyPointerValue(name string, source lowerValue, node ast.Node) lowerValue {
+	if source.persistentPointer != nil {
+		return l.copyPersistentPointer(name, source, node)
+	}
 	destination := l.newPointerCell(name, source.type_, node)
 	if !isStaticPointer(source) {
 		l.errorAt(node, "pointer local requires a finite static target set")
@@ -490,11 +622,78 @@ func (l *lowerer) newInterfaceValue(name string, interfaceType types.Type, node 
 	return lowerValue{type_: interfaceType, interface_: &interfaceValue{finiteVariant: variant}}
 }
 
+func (l *lowerer) persistentInterfaceValue(node ast.Node, declaration *LevelGlobalFieldDeclaration, storage string, base ir.Expr, read, write bool) lowerValue {
+	placeAt := func(offset int) ir.Place {
+		index := base
+		if offset != 0 {
+			index = l.pure(resource.RuntimeFunctionAdd, node, base, ir.Const{Value: float64(offset)})
+		}
+		return l.memory(storage, index, 1, 0, read, write, node)
+	}
+	tagPlace, handlePlace := placeAt(0), placeAt(1)
+	rawTag := lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Load{Place: tagPlace}}, places: []ir.Place{tagPlace}}
+	rawHandle := lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Load{Place: handlePlace}}, places: []ir.Place{handlePlace}}
+	tag := lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{l.pure(resource.RuntimeFunctionSubtract, node, rawTag.slots[0], ir.Const{Value: 1})}}
+	interfaceType, _ := types.Unalias(declaration.Type).Underlying().(*types.Interface)
+	if interfaceType == nil {
+		l.errorAt(node, "persistent interface field has invalid type %s", declaration.Type)
+		return zeroValue(declaration.Type)
+	}
+	type candidate struct {
+		name  string
+		type_ types.Type
+	}
+	var candidates []candidate
+	seen := map[string]bool{}
+	for _, pkg := range l.packages {
+		for _, named := range packageNamedTypes(pkg) {
+			pointer := types.NewPointer(named)
+			if !types.Implements(pointer, interfaceType) {
+				continue
+			}
+			name := types.TypeString(pointer, func(owner *types.Package) string { return owner.Path() })
+			if !seen[name] {
+				seen[name] = true
+				candidates = append(candidates, candidate{name: name, type_: pointer})
+			}
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].name < candidates[j].name })
+	alternatives := make([]lowerValue, 0, len(candidates))
+	for _, candidate := range candidates {
+		pointer := candidate.type_.(*types.Pointer)
+		target, err := persistentLevelGlobalTypeNode(pointer.Elem(), declaration.GoName+"."+candidate.name, declaration.Kind, storage)
+		if err != nil {
+			continue
+		}
+		if len(alternatives) >= 256 {
+			l.errorAt(node, "persistent interface %s exceeds 256 concrete pointer alternatives", declaration.Type)
+			break
+		}
+		alternatives = append(alternatives, lowerValue{type_: candidate.type_, persistentPointer: &persistentPointerValue{
+			handle: rawHandle, storage: storage, target: target, read: read, write: write,
+		}})
+	}
+	return lowerValue{type_: declaration.Type, interface_: &interfaceValue{
+		finiteVariant: finiteVariant[lowerValue]{alternatives: alternatives, tag: tag}, persistent: true, rawTag: rawTag,
+	}}
+}
+
 func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.Node) lowerValue {
 	if destination.interface_ == nil {
 		destination = l.newInterfaceValue("interface", destination.type_, node)
 	}
 	variant := destination.interface_
+	if variant.persistent && source.nilPointer {
+		l.store(variant.rawTag, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+		for _, payload := range variant.alternatives {
+			if payload.persistentPointer != nil {
+				l.store(payload.persistentPointer.handle, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+				break
+			}
+		}
+		return destination
+	}
 	storeConcrete := func(value lowerValue) {
 		if value.type_ == nil || isInterfaceType(value.type_) || value.callable != nil || value.entity != nil || isContainerValue(value) || l.containsEntityView(value.type_) {
 			l.errorAt(node, "finite static interface requires a non-escaping concrete runtime value")
@@ -508,6 +707,10 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 			}
 		}
 		if index < 0 {
+			if variant.persistent {
+				l.errorAt(node, "persistent interface %s does not include concrete pointer type %s", destination.type_, value.type_)
+				return
+			}
 			payload := l.newDescriptorCell("interface.value", value.type_, node)
 			var ok bool
 			index, ok = variant.add(payload, func(left, right lowerValue) bool {
@@ -520,7 +723,11 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 		}
 		payload := variant.alternatives[index]
 		l.storeDescriptor(payload, value, node)
-		l.store(variant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		if variant.persistent {
+			l.store(variant.rawTag, scalarValue(ir.Const{Value: float64(index + 1)}, types.Typ[types.Int]), node)
+		} else {
+			l.store(variant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		}
 	}
 	if source.interface_ == nil {
 		storeConcrete(source)
@@ -541,7 +748,15 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 		l.jump(merge)
 	}
 	l.setCurrent(invalid)
-	_ = l.builder.MarkUnreachable()
+	if sourceVariant.persistent && variant.persistent {
+		l.store(variant.rawTag, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+		if len(variant.alternatives) != 0 && variant.alternatives[0].persistentPointer != nil {
+			l.store(variant.alternatives[0].persistentPointer.handle, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+		}
+		l.jump(merge)
+	} else {
+		_ = l.builder.MarkUnreachable()
+	}
 	l.setCurrent(merge)
 	return destination
 }
@@ -571,6 +786,31 @@ func levelGlobalChild(declaration *LevelGlobalFieldDeclaration, object *types.Va
 	return nil
 }
 
+func (l *lowerer) attachLevelGlobalAggregate(value lowerValue, node ast.Node) lowerValue {
+	global := value.levelGlobal
+	if global == nil {
+		return value
+	}
+	children := global.declaration.Fields
+	if len(children) == 0 {
+		children = global.declaration.Elements
+	}
+	if len(children) == 0 {
+		return value
+	}
+	fields := make([]lowerValue, len(children))
+	for index, child := range children {
+		base := global.base
+		if child.RelativeOffset != 0 {
+			base = l.pure(resource.RuntimeFunctionAdd, node, base, ir.Const{Value: float64(child.RelativeOffset)})
+		}
+		fields[index] = l.lowerLevelGlobalValue(node, child, global.storage, base, global.read, global.write)
+		fields[index] = l.attachLevelGlobalAggregate(fields[index], node)
+	}
+	value.aggregate = &aggregateValue{fields: fields}
+	return value
+}
+
 func (l *lowerer) lowerLevelGlobalValue(node ast.Node, declaration *LevelGlobalFieldDeclaration, storage string, base ir.Expr, read, write bool) lowerValue {
 	placeAt := func(offset int) ir.Place {
 		index := base
@@ -578,6 +818,16 @@ func (l *lowerer) lowerLevelGlobalValue(node ast.Node, declaration *LevelGlobalF
 			index = l.pure(resource.RuntimeFunctionAdd, node, base, ir.Const{Value: float64(offset)})
 		}
 		return l.memory(storage, index, 1, 0, read, write, node)
+	}
+	if declaration.PersistentKind == "pointer" {
+		place := placeAt(0)
+		handle := lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Load{Place: place}}, places: []ir.Place{place}}
+		return lowerValue{type_: declaration.Type, persistentPointer: &persistentPointerValue{
+			handle: handle, storage: storage, target: declaration.Target, read: read, write: write,
+		}}
+	}
+	if declaration.PersistentKind == "interface" {
+		return l.persistentInterfaceValue(node, declaration, storage, base, read, write)
 	}
 	if declaration.ContainerKind != "" {
 		place := placeAt(0)
@@ -1644,12 +1894,18 @@ func (l *lowerer) newDescriptorMultiResult(name string, t types.Type, node ast.N
 }
 
 func isAggregatePointerValue(value lowerValue) bool {
-	return value.aggregatePointer != nil || value.aggregate != nil && isPointerType(value.type_)
+	return value.persistentPointer != nil && levelGlobalDeclarationHasDescriptors(value.persistentPointer.target) || value.aggregatePointer != nil || value.aggregate != nil && isPointerType(value.type_)
 }
 
 func sameAggregatePointerTarget(left, right lowerValue) bool {
 	if left.nilPointer || right.nilPointer {
 		return left.nilPointer && right.nilPointer
+	}
+	if left.persistentPointer != nil || right.persistentPointer != nil {
+		return left.persistentPointer != nil && right.persistentPointer != nil &&
+			left.persistentPointer.storage == right.persistentPointer.storage &&
+			reflect.DeepEqual(left.persistentPointer.handle.slots, right.persistentPointer.handle.slots) &&
+			reflect.DeepEqual(left.persistentPointer.handle.places, right.persistentPointer.handle.places)
 	}
 	return left.aggregate != nil && left.aggregate == right.aggregate
 }
@@ -1686,7 +1942,7 @@ func (l *lowerer) mergeAggregatePointerValue(destination, source lowerValue, nod
 		return index
 	}
 	if source.aggregatePointer == nil {
-		if source.aggregate == nil && !source.nilPointer {
+		if source.aggregate == nil && source.persistentPointer == nil && !source.nilPointer {
 			l.errorAt(node, "aggregate pointer assignment requires an aggregate address or nil")
 			return destination
 		}
@@ -1748,6 +2004,8 @@ func (l *lowerer) newDescriptorCell(name string, t types.Type, node ast.Node) lo
 
 func (l *lowerer) storeDescriptor(destination, source lowerValue, node ast.Node) {
 	switch {
+	case destination.persistentPointer != nil:
+		l.storePersistentPointer(destination, source, node)
 	case destination.aggregatePointer != nil || isAggregatePointerValue(source):
 		if destination.aggregatePointer == nil || (!isAggregatePointerValue(source) && !source.nilPointer) {
 			l.errorAt(node, "descriptor aggregate pointer assignment requires an aggregate address or nil")
@@ -1866,7 +2124,15 @@ func (l *lowerer) loadAggregatePointer(value lowerValue, pointer *types.Pointer,
 			l.terminateRuntime(node, "nil pointer dereference")
 			continue
 		}
-		if target.aggregate == nil {
+		if target.persistentPointer != nil {
+			loaded := l.loadPersistentPointer(target, pointer, node)
+			if loaded.levelGlobal == nil {
+				l.errorAt(node, "persistent aggregate pointer target has no structured layout")
+			} else {
+				loaded = l.attachLevelGlobalAggregate(loaded, node)
+				l.storeAggregate(result, loaded, node)
+			}
+		} else if target.aggregate == nil {
 			l.errorAt(node, "dynamic aggregate pointer target has no aggregate descriptor")
 		} else {
 			l.storeAggregate(result, target, node)
@@ -1908,6 +2174,15 @@ func (l *lowerer) storeAggregatePointerLoad(load *aggregatePointerLoadValue, sou
 }
 
 func (l *lowerer) storeAggregatePointerPath(value lowerValue, path []aggregatePointerPathStep, source lowerValue, node ast.Node) {
+	if value.persistentPointer != nil {
+		pointer, ok := types.Unalias(value.type_).(*types.Pointer)
+		if !ok {
+			l.errorAt(node, "persistent aggregate pointer target has invalid type")
+			return
+		}
+		value = l.loadPersistentPointer(value, pointer, node)
+		value = l.attachLevelGlobalAggregate(value, node)
+	}
 	if len(path) == 0 {
 		l.storeDescriptor(value, source, node)
 		return
@@ -2710,7 +2985,7 @@ func isInterfaceType(t types.Type) bool {
 }
 
 func isStaticPointer(value lowerValue) bool {
-	return value.entity == nil && (value.nilPointer || isPointerType(value.type_) && (value.aggregate != nil || value.aggregatePointer != nil || value.pointer != nil || len(value.places) != 0 && len(value.places) == len(value.slots)))
+	return value.entity == nil && (value.nilPointer || isPointerType(value.type_) && (value.persistentPointer != nil || value.aggregate != nil || value.aggregatePointer != nil || value.pointer != nil || len(value.places) != 0 && len(value.places) == len(value.slots)))
 }
 
 func samePlaces(left, right []ir.Place) bool {
@@ -2828,6 +3103,14 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		l.errorAt(n, "unsupported identifier %s", n.Name)
 	case *ast.StarExpr:
 		v := l.expr(n.X)
+		if v.persistentPointer != nil {
+			pointer, ok := types.Unalias(v.type_).(*types.Pointer)
+			if !ok {
+				l.errorAt(n, "dereference operand is not a pointer")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			return l.loadPersistentPointer(v, pointer, n)
+		}
 		if v.aggregate != nil {
 			pointer, ok := types.Unalias(v.type_).(*types.Pointer)
 			if !ok {
@@ -2924,6 +3207,21 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 			b = l.allocEntityView("binary.right.entity", b, n.Y)
 		} else {
 			b = l.materialize("binary.right", b, n.Y)
+		}
+		if n.Op == token.EQL || n.Op == token.NEQ {
+			var variant *interfaceValue
+			if a.interface_ != nil && b.nilPointer {
+				variant = a.interface_
+			} else if b.interface_ != nil && a.nilPointer {
+				variant = b.interface_
+			}
+			if variant != nil {
+				equal := l.pure(resource.RuntimeFunctionEqual, n, variant.tag.slots[0], ir.Const{Value: -1})
+				if n.Op == token.NEQ {
+					equal = l.pure(resource.RuntimeFunctionNot, n, equal)
+				}
+				return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{equal}}
+			}
 		}
 		if (n.Op == token.EQL || n.Op == token.NEQ) && isStaticPointer(a) && isStaticPointer(b) {
 			var equal ir.Expr
@@ -3052,6 +3350,15 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				return l.lowerLevelGlobalValue(n, declaration, storage, ir.Const{Value: float64(declaration.Offset)}, read, write)
 			}
 			base := l.expr(n.X)
+			if base.persistentPointer != nil {
+				pointer, ok := types.Unalias(base.type_).(*types.Pointer)
+				if !ok {
+					l.errorAt(n, "persistent pointer selector requires a pointer receiver")
+					return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+				}
+				base = l.loadPersistentPointer(base, pointer, n.X)
+				base.type_ = pointer.Elem()
+			}
 			if base.levelGlobal != nil {
 				global := base.levelGlobal
 				declaration, baseExpr := global.declaration, global.base
@@ -3444,7 +3751,11 @@ func (l *lowerer) interfaceAssertion(node ast.Node, value lowerValue, target typ
 		l.jump(merge)
 	}
 	l.setCurrent(invalid)
-	_ = l.builder.MarkUnreachable()
+	if variant.persistent && commaOK {
+		l.jump(merge)
+	} else {
+		_ = l.builder.MarkUnreachable()
+	}
 	l.setCurrent(merge)
 	return result, ok
 }
@@ -3467,6 +3778,20 @@ func (l *lowerer) requireIntegerDivisor(node ast.Node, divisor ir.Expr, resultTy
 }
 
 func (l *lowerer) pointerEqual(left, right lowerValue, node ast.Node) ir.Expr {
+	if left.persistentPointer != nil || right.persistentPointer != nil {
+		storage := ""
+		if left.persistentPointer != nil {
+			storage = left.persistentPointer.storage
+		} else {
+			storage = right.persistentPointer.storage
+		}
+		leftAddress, leftOK := l.persistentPointerAddress(left, storage, node)
+		rightAddress, rightOK := l.persistentPointerAddress(right, storage, node)
+		if !leftOK || !rightOK {
+			return ir.Const{}
+		}
+		return l.pure(resource.RuntimeFunctionEqual, node, leftAddress, rightAddress)
+	}
 	leftTargets, rightTargets := [][]ir.Place{left.places}, [][]ir.Place{right.places}
 	var leftTag, rightTag ir.Expr
 	if left.pointer != nil {
@@ -3508,10 +3833,23 @@ func (l *lowerer) aggregatePointerEqual(left, right lowerValue, node ast.Node) i
 	result := ir.Expr(ir.Const{})
 	for leftIndex, leftTarget := range leftTargets {
 		for rightIndex, rightTarget := range rightTargets {
-			if !sameAggregatePointerTarget(leftTarget, rightTarget) {
+			condition := ir.Expr(ir.Const{Value: 1})
+			if leftTarget.persistentPointer != nil || rightTarget.persistentPointer != nil {
+				storage := ""
+				if leftTarget.persistentPointer != nil {
+					storage = leftTarget.persistentPointer.storage
+				} else {
+					storage = rightTarget.persistentPointer.storage
+				}
+				leftAddress, leftOK := l.persistentPointerAddress(leftTarget, storage, node)
+				rightAddress, rightOK := l.persistentPointerAddress(rightTarget, storage, node)
+				if !leftOK || !rightOK {
+					continue
+				}
+				condition = l.pure(resource.RuntimeFunctionEqual, node, leftAddress, rightAddress)
+			} else if !sameAggregatePointerTarget(leftTarget, rightTarget) {
 				continue
 			}
-			condition := ir.Expr(ir.Const{Value: 1})
 			if leftTag != nil {
 				condition = l.pure(resource.RuntimeFunctionAnd, node, condition, l.pure(resource.RuntimeFunctionEqual, node, leftTag, ir.Const{Value: float64(leftIndex)}))
 			}
@@ -4483,7 +4821,11 @@ func (l *lowerer) inlineInterfaceMethodAlternatives(call *ast.CallExpr, method *
 		l.jump(merge)
 	}
 	l.setCurrent(invalid)
-	_ = l.builder.MarkUnreachable()
+	if variant.persistent {
+		l.terminateRuntime(call, "nil interface method call")
+	} else {
+		_ = l.builder.MarkUnreachable()
+	}
 	l.setCurrent(merge)
 	return result
 }
@@ -8714,7 +9056,28 @@ func (l *lowerer) typeSwitchStmt(statement *ast.TypeSwitchStmt, label string) {
 			l.jump(exit)
 		}
 		l.setCurrent(invalid)
-		_ = l.builder.MarkUnreachable()
+		if variant.persistent {
+			var fallback *ast.CaseClause
+			for _, item := range statement.Body.List {
+				clause := item.(*ast.CaseClause)
+				if len(clause.List) == 0 {
+					fallback = clause
+					break
+				}
+			}
+			if fallback != nil {
+				frame := l.frames[len(l.frames)-1]
+				if implicit := l.pkg.TypesInfo.Implicits[fallback]; implicit != nil {
+					frame.vars[implicit] = value
+				}
+				l.breaks = append(l.breaks, exit)
+				l.dynamic(func() { l.stmts(fallback.Body) })
+				l.breaks = l.breaks[:len(l.breaks)-1]
+			}
+			l.jump(exit)
+		} else {
+			_ = l.builder.MarkUnreachable()
+		}
 		l.setCurrent(exit)
 		return
 	}
@@ -9278,6 +9641,10 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 		}
 		if destinations[i].interface_ != nil {
 			l.storeInterfaceValue(destinations[i], values[i], lhs)
+			continue
+		}
+		if destinations[i].persistentPointer != nil && isStaticPointer(values[i]) {
+			l.storePersistentPointer(destinations[i], values[i], lhs)
 			continue
 		}
 		if destinations[i].aggregatePointer != nil && (isAggregatePointerValue(values[i]) || values[i].nilPointer) {

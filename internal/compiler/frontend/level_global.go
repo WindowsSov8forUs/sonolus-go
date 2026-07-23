@@ -111,16 +111,19 @@ func levelGlobalContainerCapacity(value source.StaticValue, expected types.Type,
 	return capacity, nil
 }
 
-func containsLevelGlobalContainer(t types.Type) bool {
+func containsLevelGlobalSpecial(t types.Type) bool {
 	if _, _, _, ok := containerTypes(t); ok {
 		return true
 	}
+	if isPointerType(t) || isInterfaceType(t) {
+		return true
+	}
 	if array, ok := types.Unalias(t).Underlying().(*types.Array); ok {
-		return containsLevelGlobalContainer(array.Elem())
+		return containsLevelGlobalSpecial(array.Elem())
 	}
 	if record, ok := types.Unalias(t).Underlying().(*types.Struct); ok {
 		for index := 0; index < record.NumFields(); index++ {
-			if containsLevelGlobalContainer(record.Field(index).Type()) {
+			if containsLevelGlobalSpecial(record.Field(index).Type()) {
 				return true
 			}
 		}
@@ -128,8 +131,68 @@ func containsLevelGlobalContainer(t types.Type) bool {
 	return false
 }
 
+func persistentLevelGlobalTypeNode(t types.Type, name, kind, storage string) (*LevelGlobalFieldDeclaration, error) {
+	declaration := &LevelGlobalFieldDeclaration{GoName: name, Kind: kind, Storage: storage, Type: t}
+	if _, _, _, container := containerTypes(t); container {
+		return declaration, fmt.Errorf("persistent pointer target %s cannot contain catalog containers", t)
+	}
+	if pointer, ok := types.Unalias(t).(*types.Pointer); ok {
+		target, err := persistentLevelGlobalTypeNode(pointer.Elem(), name+".*", kind, storage)
+		if err != nil {
+			return declaration, err
+		}
+		declaration.PersistentKind = "pointer"
+		declaration.Target = target
+		declaration.Size = 1
+		return declaration, nil
+	}
+	if isInterfaceType(t) {
+		declaration.PersistentKind = "interface"
+		declaration.Size = 2
+		return declaration, nil
+	}
+	if array, ok := types.Unalias(t).Underlying().(*types.Array); ok {
+		for index := range int(array.Len()) {
+			child, err := persistentLevelGlobalTypeNode(array.Elem(), fmt.Sprintf("%s[%d]", name, index), kind, storage)
+			if err != nil {
+				return declaration, err
+			}
+			child.RelativeOffset = declaration.Size
+			declaration.Elements = append(declaration.Elements, child)
+			declaration.Size += child.Size
+		}
+		if len(declaration.Elements) != 0 {
+			declaration.ElementStride = declaration.Elements[0].Size
+		}
+		return declaration, nil
+	}
+	if record, ok := types.Unalias(t).Underlying().(*types.Struct); ok {
+		for index := 0; index < record.NumFields(); index++ {
+			field := record.Field(index)
+			child, err := persistentLevelGlobalTypeNode(field.Type(), name+"."+field.Name(), kind, storage)
+			if err != nil {
+				return declaration, err
+			}
+			child.Object = field
+			child.RelativeOffset = declaration.Size
+			declaration.Fields = append(declaration.Fields, child)
+			declaration.Size += child.Size
+		}
+		return declaration, nil
+	}
+	size, err := layoutSize(t)
+	if err != nil {
+		return declaration, err
+	}
+	declaration.Size = size
+	return declaration, nil
+}
+
 func sameLevelGlobalLayout(left, right *LevelGlobalFieldDeclaration) bool {
-	if left == nil || right == nil || left.Size != right.Size || left.ContainerKind != right.ContainerKind || left.Capacity != right.Capacity || left.KeySize != right.KeySize || left.ElementSize != right.ElementSize || left.ElementStride != right.ElementStride || len(left.Fields) != len(right.Fields) || len(left.Elements) != len(right.Elements) {
+	if left == nil || right == nil || left.Size != right.Size || left.ContainerKind != right.ContainerKind || left.Capacity != right.Capacity || left.KeySize != right.KeySize || left.ElementSize != right.ElementSize || left.ElementStride != right.ElementStride || left.PersistentKind != right.PersistentKind || len(left.Fields) != len(right.Fields) || len(left.Elements) != len(right.Elements) {
+		return false
+	}
+	if (left.Target == nil) != (right.Target == nil) || left.Target != nil && !sameLevelGlobalLayout(left.Target, right.Target) {
 		return false
 	}
 	for index := range left.Fields {
@@ -175,8 +238,30 @@ func parseLevelGlobalNode(value source.StaticValue, t types.Type, object *types.
 		declaration.Size = 1 + capacity*stride
 		return declaration, nil
 	}
-	if containsLevelGlobalContainer(t) {
+	if containsLevelGlobalSpecial(t) {
+		rawValue := value
 		value = dereferenceStatic(value)
+		if pointer, ok := types.Unalias(t).(*types.Pointer); ok {
+			if rawValue.Kind != source.StaticNil {
+				return declaration, []error{fmt.Errorf("%s: persistent pointer fields must have nil initial values", name)}
+			}
+			target, err := persistentLevelGlobalTypeNode(pointer.Elem(), name+".*", kind, storage)
+			if err != nil {
+				return declaration, []error{fmt.Errorf("%s: %w", name, err)}
+			}
+			declaration.PersistentKind = "pointer"
+			declaration.Target = target
+			declaration.Size = 1
+			return declaration, nil
+		}
+		if isInterfaceType(t) {
+			if rawValue.Kind != source.StaticNil {
+				return declaration, []error{fmt.Errorf("%s: persistent interface fields must have nil initial values", name)}
+			}
+			declaration.PersistentKind = "interface"
+			declaration.Size = 2
+			return declaration, nil
+		}
 		if record, ok := types.Unalias(t).Underlying().(*types.Struct); ok {
 			if value.Kind != source.StaticStruct {
 				return declaration, []error{fmt.Errorf("%s: nested level global record must be statically evaluable", name)}

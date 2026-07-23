@@ -43,3 +43,23 @@ var MismatchedNested = MismatchedNestedArray{Values: [2]sonolus.VarArray[int]{
 	sonolus.NewVarArray[int](2),
 	sonolus.NewVarArray[int](3),
 }}
+
+type PersistentContainerTarget struct {
+	Values sonolus.VarArray[int]
+}
+
+type InvalidPersistentTarget struct {
+	sonolus.LevelMemoryResource
+	Target PersistentContainerTarget
+	Ref    *PersistentContainerTarget
+}
+
+var InvalidPersistent = InvalidPersistentTarget{Target: PersistentContainerTarget{Values: sonolus.NewVarArray[int](2)}}
+
+type NonNilPersistentPointer struct {
+	sonolus.LevelMemoryResource
+	Value int
+	Ref   *int
+}
+
+var NonNilPersistent = NonNilPersistentPointer{Ref: new(int)}
