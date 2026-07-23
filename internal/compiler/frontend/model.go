@@ -52,6 +52,8 @@ type LevelGlobalFieldDeclaration struct {
 	KeySize        int
 	ElementSize    int
 	RelativeOffset int
+	PersistentKind string
+	Target         *LevelGlobalFieldDeclaration
 	Fields         []*LevelGlobalFieldDeclaration
 	Elements       []*LevelGlobalFieldDeclaration
 	ElementStride  int

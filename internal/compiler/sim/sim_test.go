@@ -677,6 +677,36 @@ func TestTypedLevelGlobalsMatchAcrossOptimizations(t *testing.T) {
 	}
 }
 
+func TestPersistentLevelGlobalPointersAndInterfacesMatchAcrossOptimizations(t *testing.T) {
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine, err := Compile(Options{Optimization: optimization}, "../testdata/persistentglobals")
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		preprocessed, err := engine.Run(Request{Mode: ModePlay, Archetype: "PersistentNote", Callback: "preprocess"})
+		if err != nil {
+			t.Fatalf("optimization %d preprocess: %v", optimization, err)
+		}
+		sequential, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "PersistentNote", Callback: "updateSequential",
+			Memory: preprocessed.Memory,
+		})
+		if err != nil {
+			t.Fatalf("optimization %d updateSequential: %v", optimization, err)
+		}
+		memory := sequential.Memory[2000]
+		want := []float64{4, 1, 0, 2, 1, 4, 4, 2, 2, 8, 12}
+		if len(memory) < len(want) {
+			t.Fatalf("optimization %d LevelMemory = %v", optimization, memory)
+		}
+		for index, value := range want {
+			if memory[index] != value {
+				t.Fatalf("optimization %d LevelMemory[%d] = %v, want %v; memory = %v", optimization, index, memory[index], value, memory)
+			}
+		}
+	}
+}
+
 func TestTouchIteratorMatchesAcrossOptimizations(t *testing.T) {
 	touches := make([]float64, 30)
 	touches[0], touches[13] = 2, 5

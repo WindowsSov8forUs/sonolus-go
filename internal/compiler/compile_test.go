@@ -641,6 +641,23 @@ func TestTypedLevelGlobalsAllocateAndLowerAcrossModes(t *testing.T) {
 	}
 }
 
+func TestPersistentLevelGlobalPointersAndInterfacesCompile(t *testing.T) {
+	declarations, err := parseMode(mode.ModePlay, "./testdata/persistentglobals")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(declarations.LevelGlobals) != 1 {
+		t.Fatalf("persistent level globals = %+v", declarations.LevelGlobals)
+	}
+	declaration := declarations.LevelGlobals[0]
+	if declaration.Size != 11 || len(declaration.Fields) != 8 {
+		t.Fatalf("persistent level global layout = %+v", declaration)
+	}
+	if declaration.Fields[2].PersistentKind != "pointer" || declaration.Fields[3].PersistentKind != "pointer" || declaration.Fields[6].PersistentKind != "interface" {
+		t.Fatalf("persistent field layouts = %+v", declaration.Fields)
+	}
+}
+
 func TestTypedLevelGlobalsRejectInvalidDeclarationsAndWrites(t *testing.T) {
 	_, err := NewCompiler(Options{}, "./testdata/invalidlevelglobals").Compile(mode.ModePlay)
 	for _, message := range []string{
@@ -649,6 +666,8 @@ func TestTypedLevelGlobalsRejectInvalidDeclarationsAndWrites(t *testing.T) {
 		"requires exactly one singleton variable",
 		"promoted level global markers are not allowed",
 		"array elements must use identical container layouts",
+		"persistent pointer target",
+		"persistent pointer fields must have nil initial values",
 	} {
 		if err == nil || !strings.Contains(err.Error(), message) {
 			t.Fatalf("invalid declarations error %q missing from: %v", message, err)
