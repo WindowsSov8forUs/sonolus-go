@@ -496,6 +496,20 @@ func (l *lowerer) persistentPointerAddress(value lowerValue, storage string, nod
 		}
 		return l.pure(resource.RuntimeFunctionAdd, node, value.levelGlobal.base, ir.Const{Value: 1}), true
 	}
+	if value.pointer != nil && len(value.pointer.finiteVariant.tag.slots) == 1 {
+		return l.selectPersistentPointerAddress(value.pointer.finiteVariant.tag.slots[0], value.pointer.finiteVariant.alternatives, storage, node)
+	}
+	if value.aggregatePointer != nil && len(value.aggregatePointer.tag.slots) == 1 {
+		addresses := make([]ir.Expr, len(value.aggregatePointer.alternatives))
+		for index, alternative := range value.aggregatePointer.alternatives {
+			address, ok := l.persistentPointerAddress(alternative, storage, node)
+			if !ok {
+				return nil, false
+			}
+			addresses[index] = address
+		}
+		return l.selectPersistentPointerAddress(value.aggregatePointer.tag.slots[0], addresses, storage, node)
+	}
 	if len(value.places) == 0 {
 		l.errorAt(node, "persistent pointer assignment requires a level global address or nil")
 		return nil, false
@@ -517,6 +531,48 @@ func (l *lowerer) persistentPointerAddress(value lowerValue, storage string, nod
 		address = l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: float64(first.Offset)})
 	}
 	return l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: 1}), true
+}
+
+func (l *lowerer) selectPersistentPointerAddress(tag ir.Expr, alternatives any, storage string, node ast.Node) (ir.Expr, bool) {
+	var addresses []ir.Expr
+	switch values := alternatives.(type) {
+	case [][]ir.Place:
+		addresses = make([]ir.Expr, len(values))
+		for index, places := range values {
+			if len(places) == 0 {
+				addresses[index] = ir.Const{}
+				continue
+			}
+			first, ok := places[0].(ir.MemoryPlace)
+			if !ok || first.Storage != storage || first.Stride != 1 {
+				l.errorAt(node, "persistent pointer target must use one contiguous %s layout", storage)
+				return nil, false
+			}
+			for _, raw := range places {
+				place, ok := raw.(ir.MemoryPlace)
+				if !ok || place.Storage != storage || place.Stride != 1 {
+					l.errorAt(node, "persistent pointer target must use one contiguous %s layout", storage)
+					return nil, false
+				}
+			}
+			address := ir.Expr(first.Index)
+			if first.Offset != 0 {
+				address = l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: float64(first.Offset)})
+			}
+			addresses[index] = l.pure(resource.RuntimeFunctionAdd, node, address, ir.Const{Value: 1})
+		}
+	case []ir.Expr:
+		addresses = values
+	default:
+		l.errorAt(node, "persistent pointer target has unsupported dynamic alternatives")
+		return nil, false
+	}
+	result := ir.Expr(ir.Const{})
+	for index := len(addresses) - 1; index >= 0; index-- {
+		result = l.pure(resource.RuntimeFunctionIf, node,
+			l.pure(resource.RuntimeFunctionEqual, node, tag, ir.Const{Value: float64(index)}), addresses[index], result)
+	}
+	return result, true
 }
 
 func (l *lowerer) storePersistentPointer(destination, source lowerValue, node ast.Node) {

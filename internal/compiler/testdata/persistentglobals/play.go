@@ -37,6 +37,10 @@ var packageInput = &persistentPackageInput{
 	Current:  4,
 }
 
+func setPackagePair(index int) {
+	packageInput.TempPair.Set(&packageInput.Units[index], nil)
+}
+
 func (pair *persistentPair) Set(unit, other *persistentUnit) *persistentPair {
 	pair.Unit = unit
 	pair.Other = other
@@ -93,7 +97,7 @@ func (*PersistentNote) Preprocess() {
 	if packageInput.TempPair == nil || packageInput.Auto == nil || packageInput.Units[1].Value != 2 || packageInput.Current != 4 {
 		sonolus.Terminate("package pointer-rich graph was not initialized")
 	}
-	packageInput.TempPair.Set(&packageInput.Units[1], nil)
+	setPackagePair(1)
 	if packageInput.Auto.Apply(packageInput.TempPair.Unit.Value) != 5 {
 		sonolus.Terminate("package pointer-rich graph dispatch failed")
 	}
