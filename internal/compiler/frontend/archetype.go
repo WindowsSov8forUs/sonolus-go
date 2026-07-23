@@ -15,6 +15,7 @@ import (
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 func layoutSize(t types.Type) (int, error) {
@@ -503,7 +504,7 @@ func inheritArchetypeLayout(derived, base *ArchetypeDeclaration, errs *[]error) 
 	return true
 }
 
-func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, checks RuntimeChecks) []error {
+func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, checks RuntimeChecks) []error {
 	var errs []error
 	methodSet := types.NewMethodSet(types.NewPointer(result.Named))
 	foundOrders := map[string]bool{}
@@ -543,7 +544,7 @@ func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Packag
 		wg.Add(1)
 		go func(i int, job callbackJob) {
 			defer wg.Done()
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, levelGlobalFields, result, archetypes, m, job.key, checks)
+			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, levelGlobalFields, packageGlobals, packagePointers, result, archetypes, m, job.key, checks)
 			callbacks[i] = &CallbackDeclaration{Name: job.key, Order: result.CallbackOrders[job.key], Function: job.fn, Decl: job.decl, IR: bodyIR}
 			jobErrs[i] = lowerErrs
 		}(i, job)

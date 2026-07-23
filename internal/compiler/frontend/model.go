@@ -8,6 +8,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
 
 type Project struct {
@@ -18,14 +19,16 @@ type Project struct {
 }
 
 type ModeDeclarations struct {
-	Mode          mode.Mode
-	Configuration *ConfigurationDeclaration
-	Resources     ModeResources
-	Archetypes    []*ArchetypeDeclaration
-	Globals       []*CallbackDeclaration
-	ROM           *ROMDeclaration
-	Streams       *StreamDeclaration
-	LevelGlobals  []*LevelGlobalDeclaration
+	Mode            mode.Mode
+	Configuration   *ConfigurationDeclaration
+	Resources       ModeResources
+	Archetypes      []*ArchetypeDeclaration
+	Globals         []*CallbackDeclaration
+	ROM             *ROMDeclaration
+	Streams         *StreamDeclaration
+	LevelGlobals    []*LevelGlobalDeclaration
+	PackageGlobals  map[*source.StaticObject]*LevelGlobalFieldDeclaration
+	PackagePointers map[*types.Var]*LevelGlobalFieldDeclaration
 }
 
 type LevelGlobalDeclaration struct {
