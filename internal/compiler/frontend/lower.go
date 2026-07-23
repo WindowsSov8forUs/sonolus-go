@@ -1967,38 +1967,7 @@ func (l *lowerer) storeAggregate(destination, source lowerValue, node ast.Node) 
 	}
 	for index := range destination.aggregate.fields {
 		dst, src := destination.aggregate.fields[index], source.aggregate.fields[index]
-		switch {
-		case dst.aggregatePointer != nil || isAggregatePointerValue(src):
-			if dst.aggregatePointer == nil || (!isAggregatePointerValue(src) && !src.nilPointer) {
-				l.errorAt(node, "aggregate pointer field assignment requires an aggregate address or nil")
-				continue
-			}
-			l.mergeAggregatePointerValue(dst, src, node)
-		case dst.aggregate != nil || src.aggregate != nil:
-			l.storeAggregate(dst, src, node)
-		case dst.entity != nil || src.entity != nil:
-			l.storeEntityView(dst, src, node)
-		case dst.interface_ != nil || src.interface_ != nil:
-			if dst.interface_ == nil {
-				l.errorAt(node, "aggregate interface field assignment requires an interface destination")
-				continue
-			}
-			l.storeInterfaceValue(dst, src, node)
-		case dst.pointer != nil || isStaticPointer(src):
-			if dst.pointer == nil || !isStaticPointer(src) {
-				l.errorAt(node, "aggregate pointer field assignment requires a finite pointer source")
-				continue
-			}
-			l.mergePointerValue(dst, src, node)
-		case dst.containerVariant != nil || isContainerValue(src):
-			if dst.containerVariant == nil || !isContainerValue(src) {
-				l.errorAt(node, "aggregate container field assignment requires a container source")
-				continue
-			}
-			l.mergeContainerValue(dst, src, node)
-		default:
-			l.store(dst, src, node)
-		}
+		l.storeDescriptor(dst, src, node)
 	}
 }
 
@@ -3357,7 +3326,7 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				l.errorAt(n, "dereference operand is not a pointer")
 				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 			}
-			return l.loadPersistentPointer(v, pointer, n)
+			return l.attachLevelGlobalAggregate(l.loadPersistentPointer(v, pointer, n), n)
 		}
 		if v.aggregate != nil {
 			pointer, ok := types.Unalias(v.type_).(*types.Pointer)

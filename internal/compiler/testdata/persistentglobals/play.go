@@ -122,6 +122,14 @@ func (*PersistentNote) Preprocess() {
 	if shared.InputWrapper.Ref != wrappedInput || shared.InputWrapper.Ref.LaneCount != 6 {
 		sonolus.Terminate("nested persistent input address lost identity")
 	}
+	packagePairBeforeReset := packageInput.TempPair
+	packageAutoBeforeReset := packageInput.Auto
+	*packageInput = persistentPackageInput{
+		TempPair: packagePairBeforeReset,
+		Units:    [2]persistentUnit{{Value: 1}, {Value: 2}},
+		Auto:     packageAutoBeforeReset,
+		Current:  4,
+	}
 	sharedInput := shared.GetInputRoot()
 	sharedIndex := sharedInput.LaneCount - 1
 	sharedInput.InputStateArray[sharedIndex].Lane = 7
