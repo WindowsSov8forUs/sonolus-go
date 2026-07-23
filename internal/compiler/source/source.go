@@ -43,7 +43,7 @@ func IsSonolusPkgPath(path string) bool {
 func packageFilterAllowedStandard() *goparse.PackageFilter {
 	return &goparse.PackageFilter{
 		Func: func(pkg *packages.Package) bool {
-			return pkg.Module != nil || intrinsic.IsAllowedStandardDependency(pkg.PkgPath)
+			return pkg.Module != nil || pkg.PkgPath != ""
 		},
 		ErrorMsg: intrinsic.StandardLibraryFilterError,
 	}

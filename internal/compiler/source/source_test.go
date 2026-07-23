@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 func TestLoadAndCrossPackageStaticValues(t *testing.T) {
@@ -57,6 +59,15 @@ func TestLoadPreservesImportValidation(t *testing.T) {
 	}
 	if _, err := Load("../testdata/source/thirdpartymain"); err == nil || !strings.Contains(err.Error(), "invalid third party lib") {
 		t.Fatalf("third-party error = %v", err)
+	}
+}
+
+func TestPackageFilterAllowsStandardDependencies(t *testing.T) {
+	filter := packageFilterAllowedStandard()
+	for _, path := range []string{"iter", "math", "internal/abi"} {
+		if !filter.Func(&packages.Package{PkgPath: path}) {
+			t.Fatalf("standard package %q was rejected", path)
+		}
 	}
 }
 func TestASTTracerConcurrentEntryPoints(t *testing.T) {

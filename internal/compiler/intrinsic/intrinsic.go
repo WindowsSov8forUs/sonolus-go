@@ -4,12 +4,10 @@ package intrinsic
 
 import (
 	"fmt"
-	"go/build"
 	"go/types"
 	"math"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"golang.org/x/tools/go/packages"
@@ -89,37 +87,6 @@ func LookupObject(obj types.Object) (Symbol, bool) {
 
 func IsAllowedPackage(path string) bool {
 	return path == "embed" || path == "iter" || path == "math" || path == "math/rand"
-}
-
-var (
-	standardDependencyOnce sync.Once
-	standardDependencies   map[string]bool
-)
-
-func IsAllowedStandardDependency(path string) bool {
-	standardDependencyOnce.Do(func() {
-		standardDependencies = map[string]bool{}
-		seen := map[string]bool{}
-		var visit func(string)
-		visit = func(path string) {
-			if seen[path] {
-				return
-			}
-			seen[path] = true
-			pkg, err := build.Default.Import(path, "", 0)
-			if err != nil {
-				return
-			}
-			standardDependencies[path] = true
-			for _, dep := range pkg.Imports {
-				visit(dep)
-			}
-		}
-		for _, path := range []string{"embed", "iter", "math", "math/rand"} {
-			visit(path)
-		}
-	})
-	return standardDependencies[path]
 }
 
 func ValidateStandardImports(roots ...*packages.Package) error {
