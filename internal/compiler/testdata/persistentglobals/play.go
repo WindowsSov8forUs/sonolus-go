@@ -41,6 +41,8 @@ func setPackagePair(index int) {
 	packageInput.TempPair.Set(&packageInput.Units[index], nil)
 }
 
+func packageInputRoot() *persistentPackageInput { return packageInput }
+
 func (pair *persistentPair) Set(unit, other *persistentUnit) *persistentPair {
 	pair.Unit = unit
 	pair.Other = other
@@ -94,6 +96,9 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	if packageInputRoot() != packageInput {
+		sonolus.Terminate("package root helper identity changed")
+	}
 	if packageInput.TempPair == nil || packageInput.Auto == nil || packageInput.Units[1].Value != 2 || packageInput.Current != 4 {
 		sonolus.Terminate("package pointer-rich graph was not initialized")
 	}
