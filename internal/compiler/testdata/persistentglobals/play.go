@@ -19,6 +19,10 @@ type persistentPair struct {
 var packageTempPair = new(persistentPair)
 var packageInitialPair = &persistentPair{Unit: &persistentUnit{Value: 7}}
 
+type persistentPackageHolder struct{ Input persistentAutoInput }
+
+var packageHolder = &persistentPackageHolder{Input: &persistentAutoInputImpl{Bias: 5}}
+
 func (pair *persistentPair) Set(unit, other *persistentUnit) *persistentPair {
 	pair.Unit = unit
 	pair.Other = other
@@ -72,6 +76,9 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	if packageHolder.Input == nil || packageHolder.Input.Apply(1) != 6 {
+		sonolus.Terminate("package initial interface graph was not initialized")
+	}
 	if packageInitialPair.Unit == nil || packageInitialPair.Unit.Value != 7 {
 		sonolus.Terminate("package initial pointer graph was not initialized")
 	}

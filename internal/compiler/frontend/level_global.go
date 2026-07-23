@@ -100,6 +100,9 @@ func staticZeroObjectGraph(value source.StaticValue, seen map[*source.StaticObje
 		seen[value.Pointer.Object] = true
 		return staticZeroObjectGraph(value.Pointer.Object.Value, seen)
 	}
+	if value.Kind == source.StaticInterface && value.Dynamic != nil {
+		return staticZeroObjectGraph(*value.Dynamic, seen)
+	}
 	if value.Kind == source.StaticStruct {
 		for _, field := range value.Fields {
 			if !staticZeroObjectGraph(field.Value, seen) {
@@ -270,7 +273,8 @@ func parseLevelGlobalNode(value source.StaticValue, t types.Type, object *types.
 		declaration.Size = 1 + capacity*stride
 		return declaration, nil
 	}
-	if containsLevelGlobalSpecial(t) {
+	packageAggregate := kind == "package" && (value.Kind == source.StaticStruct || value.Kind == source.StaticArray)
+	if containsLevelGlobalSpecial(t) || packageAggregate {
 		rawValue := value
 		value = dereferenceStatic(value)
 		if pointer, ok := types.Unalias(t).(*types.Pointer); ok {
@@ -290,8 +294,12 @@ func parseLevelGlobalNode(value source.StaticValue, t types.Type, object *types.
 			return declaration, nil
 		}
 		if isInterfaceType(t) {
-			if rawValue.Kind != source.StaticNil {
+			if rawValue.Kind != source.StaticNil && kind != "package" {
 				return declaration, []error{fmt.Errorf("%s: persistent interface fields must have nil initial values", name)}
+			}
+			if kind == "package" && rawValue.Kind == source.StaticInterface && rawValue.Dynamic != nil && rawValue.Dynamic.Kind == source.StaticPointer && rawValue.Dynamic.Pointer != nil && len(rawValue.Dynamic.Pointer.Path) == 0 {
+				declaration.InitialInterfaceType = t
+				declaration.InitialInterfaceTarget = rawValue.Dynamic.Pointer.Object
 			}
 			declaration.PersistentKind = "interface"
 			declaration.Size = 2

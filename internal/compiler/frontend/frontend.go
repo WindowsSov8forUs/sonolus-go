@@ -254,6 +254,10 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 					if value.Pointer != nil && len(value.Pointer.Path) == 0 {
 						registerPackageObject(value.Pointer.Object, name+".$target")
 					}
+				case source.StaticInterface:
+					if value.Dynamic != nil {
+						walk(*value.Dynamic)
+					}
 				case source.StaticStruct:
 					for _, field := range value.Fields {
 						walk(field.Value)
