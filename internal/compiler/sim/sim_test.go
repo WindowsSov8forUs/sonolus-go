@@ -466,7 +466,7 @@ func TestFiniteVariantsAndContainersMatchAcrossOptimizations(t *testing.T) {
 			if got := result.Memory[4000][5]; got != wantPointerAggregate {
 				t.Fatalf("optimization %d pointer aggregate = %v, want %v", optimization, got, wantPointerAggregate)
 			}
-			if len(result.Memory[4000]) <= 13 {
+			if len(result.Memory[4000]) <= 14 {
 				t.Fatalf("optimization %d omitted aggregate flow result memory: %+v", optimization, result)
 			}
 			if got := result.Memory[4000][6]; got != 721 {
@@ -497,6 +497,10 @@ func TestFiniteVariantsAndContainersMatchAcrossOptimizations(t *testing.T) {
 			wantNestedAggregatePointer := []float64{106, 502}[selector]
 			if got := result.Memory[4000][13]; got != wantNestedAggregatePointer {
 				t.Fatalf("optimization %d nested aggregate pointer = %v, want %v", optimization, got, wantNestedAggregatePointer)
+			}
+			wantMultiAggregatePointer := []float64{710, 908}[selector]
+			if got := result.Memory[4000][14]; got != wantMultiAggregatePointer {
+				t.Fatalf("optimization %d multi aggregate pointer = %v, want %v", optimization, got, wantMultiAggregatePointer)
 			}
 			if index == 0 {
 				reference = result

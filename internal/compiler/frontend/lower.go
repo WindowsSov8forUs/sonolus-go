@@ -26,6 +26,7 @@ type lowerValue struct {
 	type_            types.Type
 	slots            []ir.Expr
 	places           []ir.Place
+	multi            []lowerValue
 	container        *containerValue
 	variadic         *variadicValue
 	entity           *entityReferenceValue
@@ -1591,6 +1592,57 @@ func (l *lowerer) isAggregatePointerType(t types.Type) bool {
 	return ok && l.containsAggregateDescriptor(pointer.Elem())
 }
 
+func (l *lowerer) newHelperResultCell(name string, t types.Type, node ast.Node) lowerValue {
+	t = l.resolveType(t)
+	if isFunctionType(t) || isInterfaceType(t) {
+		if isInterfaceType(t) {
+			return l.newInterfaceValue(name+".interface", t, node)
+		}
+		return lowerValue{type_: t}
+	}
+	if _, callableArray := callableArrayType(t); callableArray {
+		return l.newCallableArray(name+".callable", t, node)
+	}
+	if binding, entityView := l.entityBinding(t); entityView {
+		return l.newEntityViewLocal(name+".entity", t, binding)
+	}
+	if l.isAggregatePointerType(t) {
+		return l.newAggregatePointerCell(name+".aggregate.pointer", t, node)
+	}
+	if isPointerType(t) {
+		return l.newPointerCell(name+".pointer", t, node)
+	}
+	if isContainerType(t) {
+		return l.newContainerCell(name+".container", t, node)
+	}
+	if l.containsAggregateDescriptor(t) {
+		return l.newAggregateCell(name+".aggregate", t, node)
+	}
+	return l.allocZeroed(name, t, node)
+}
+
+func (l *lowerer) newDescriptorMultiResult(name string, t types.Type, node ast.Node) (lowerValue, bool) {
+	tuple, ok := types.Unalias(l.resolveType(t)).(*types.Tuple)
+	if !ok {
+		return lowerValue{}, false
+	}
+	needsDescriptor := false
+	for index := 0; index < tuple.Len(); index++ {
+		if l.isAggregatePointerType(tuple.At(index).Type()) {
+			needsDescriptor = true
+			break
+		}
+	}
+	if !needsDescriptor {
+		return lowerValue{}, false
+	}
+	result := lowerValue{type_: t, multi: make([]lowerValue, tuple.Len())}
+	for index := range result.multi {
+		result.multi[index] = l.newHelperResultCell(fmt.Sprintf("%s.%d", name, index), tuple.At(index).Type(), node)
+	}
+	return result, true
+}
+
 func isAggregatePointerValue(value lowerValue) bool {
 	return value.aggregatePointer != nil || value.aggregate != nil && isPointerType(value.type_)
 }
@@ -2007,7 +2059,7 @@ func (l *lowerer) endInlineLocalScope(result lowerValue) {
 	last := len(l.localScopes) - 1
 	locals := l.localScopes[last]
 	l.localScopes = l.localScopes[:last]
-	if result.callable != nil || result.callableArray != nil || result.pointer != nil || result.pointerLoad != nil || result.container != nil || result.containerVariant != nil || result.interface_ != nil || result.entity != nil || result.variadic != nil || result.stream != nil || result.levelGlobal != nil || result.aggregate != nil || result.aggregatePointer != nil || result.aggregateLoad != nil || result.aggregateIndex != nil {
+	if len(result.multi) != 0 || result.callable != nil || result.callableArray != nil || result.pointer != nil || result.pointerLoad != nil || result.container != nil || result.containerVariant != nil || result.interface_ != nil || result.entity != nil || result.variadic != nil || result.stream != nil || result.levelGlobal != nil || result.aggregate != nil || result.aggregatePointer != nil || result.aggregateLoad != nil || result.aggregateIndex != nil {
 		return
 	}
 	escaped := map[int]bool{}
@@ -7654,7 +7706,9 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 	if resultType == nil {
 		resultType = oldPkg.TypesInfo.TypeOf(call)
 	}
-	if isFunctionType(resultType) {
+	if result, ok := l.newDescriptorMultiResult("closure.result", resultType, call); ok {
+		frame.result = result
+	} else if isFunctionType(resultType) {
 		frame.result = lowerValue{type_: resultType}
 	} else if isInterfaceType(resultType) {
 		frame.result = lowerValue{type_: resultType}
@@ -7728,7 +7782,10 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 			parameterIndex++
 		}
 	}
-	if literal.Type.Results != nil && frame.result.aggregatePointer != nil {
+	if literal.Type.Results != nil && len(frame.result.multi) != 0 {
+		tuple, _ := types.Unalias(l.resolveType(resultType)).(*types.Tuple)
+		l.bindNamedMultiResults(frame, literal.Type.Results, tuple)
+	} else if literal.Type.Results != nil && frame.result.aggregatePointer != nil {
 		if sig.Results().Len() != 1 {
 			l.errorAt(literal.Type.Results, "aggregate pointer helper result must be a single value")
 		} else if len(literal.Type.Results.List) == 1 && len(literal.Type.Results.List[0].Names) == 1 {
@@ -7851,6 +7908,120 @@ func (l *lowerer) inlineCall(n *ast.CallExpr, fn *types.Func, args []lowerValue)
 	return l.inlineCallArguments(n, fn, arguments)
 }
 
+func (l *lowerer) bindNamedMultiResults(frame *lowerFrame, fields *ast.FieldList, tuple *types.Tuple) {
+	if fields == nil {
+		return
+	}
+	resultIndex := 0
+	for _, field := range fields.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		for index := 0; index < count && resultIndex < len(frame.result.multi) && resultIndex < tuple.Len(); index++ {
+			value := frame.result.multi[resultIndex]
+			if len(field.Names) != 0 {
+				name := field.Names[index]
+				if value.aggregatePointer != nil {
+					value = l.mergeAggregatePointerValue(value, lowerValue{type_: tuple.At(resultIndex).Type(), nilPointer: true}, name)
+				} else if value.pointer != nil {
+					value = l.mergePointerValue(value, lowerValue{type_: tuple.At(resultIndex).Type(), nilPointer: true}, name)
+				}
+				frame.result.multi[resultIndex] = value
+				if object := l.pkg.TypesInfo.Defs[name]; object != nil {
+					frame.results[object] = true
+					frame.vars[object] = value
+				}
+			}
+			resultIndex++
+		}
+	}
+}
+
+func (l *lowerer) storeHelperResultCell(destination, source lowerValue, node ast.Node) lowerValue {
+	switch {
+	case destination.aggregatePointer != nil:
+		if !isAggregatePointerValue(source) && !source.nilPointer {
+			l.errorAt(node, "aggregate pointer helper must return an aggregate address or nil")
+			return destination
+		}
+		return l.mergeAggregatePointerValue(destination, source, node)
+	case destination.aggregate != nil:
+		if source.aggregate == nil {
+			l.errorAt(node, "aggregate helper must return a local struct with pointer or container fields")
+			return destination
+		}
+		l.storeAggregate(destination, source, node)
+		return destination
+	case destination.callableArray != nil:
+		if source.callableArray == nil {
+			l.errorAt(node, "callable array helper return requires a fixed callable array")
+			return destination
+		}
+		l.storeCallableArray(destination, source, node)
+		return destination
+	case destination.entity != nil:
+		if source.entity == nil {
+			l.errorAt(node, "EntityRef.Get view helper must return an entity view")
+			return destination
+		}
+		l.storeEntityView(destination, source, node)
+		return destination
+	case destination.pointer != nil:
+		if !isStaticPointer(source) {
+			l.errorAt(node, "pointer helper must return a statically known address")
+			return destination
+		}
+		return l.mergePointerValue(destination, source, node)
+	case destination.container != nil || destination.containerVariant != nil:
+		if !isContainerValue(source) {
+			l.errorAt(node, "container helper must return a catalog container with static backing storage")
+			return destination
+		}
+		return l.mergeContainerValue(destination, source, node)
+	case destination.interface_ != nil:
+		return l.storeInterfaceValue(destination, source, node)
+	case isFunctionType(destination.type_):
+		l.errorAt(node, "function values cannot be returned as part of a multi-value helper result")
+		return destination
+	default:
+		if len(source.multi) != 0 {
+			l.errorAt(node, "nested multi-value helper result is not supported")
+			return destination
+		}
+		source = l.materialize("return.value", source, node)
+		l.store(destination, source, node)
+		return destination
+	}
+}
+
+func (l *lowerer) storeMultiHelperReturn(frame *lowerFrame, statement *ast.ReturnStmt) {
+	if len(statement.Results) == 0 {
+		return
+	}
+	var values []lowerValue
+	if len(statement.Results) == 1 {
+		value := l.expr(statement.Results[0])
+		if len(value.multi) != 0 {
+			values = value.multi
+		} else {
+			values = []lowerValue{value}
+		}
+	} else {
+		values = make([]lowerValue, len(statement.Results))
+		for index, expression := range statement.Results {
+			values[index] = l.expr(expression)
+		}
+	}
+	if len(values) != len(frame.result.multi) {
+		l.errorAt(statement, "multi-value helper return produced %d values; expected %d", len(values), len(frame.result.multi))
+		return
+	}
+	for index := range values {
+		frame.result.multi[index] = l.storeHelperResultCell(frame.result.multi[index], values[index], statement.Results[0])
+	}
+}
+
 func (l *lowerer) inlineCallArguments(n *ast.CallExpr, fn *types.Func, args []callArgument) lowerValue {
 	return l.inlineCallArgumentsAs(n, fn, args, nil)
 }
@@ -7920,7 +8091,9 @@ func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []
 	defer func() { l.pkg = oldPkg }()
 	l.beginInlineLocalScope()
 	frame := &lowerFrame{pkg: pkg, vars: map[types.Object]lowerValue{}, callables: map[types.Object]*staticCallable{}, results: map[types.Object]bool{}}
-	if isFunctionType(resultType) {
+	if result, ok := l.newDescriptorMultiResult(fn.Name()+".result", resultType, n); ok {
+		frame.result = result
+	} else if isFunctionType(resultType) {
 		frame.result = lowerValue{type_: resultType}
 	} else if isInterfaceType(resultType) {
 		frame.result = lowerValue{type_: resultType}
@@ -8002,7 +8175,10 @@ func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []
 		}
 		arg++
 	}
-	if decl.Type.Results != nil && frame.result.aggregatePointer != nil {
+	if decl.Type.Results != nil && len(frame.result.multi) != 0 {
+		tuple, _ := types.Unalias(l.resolveType(resultType)).(*types.Tuple)
+		l.bindNamedMultiResults(frame, decl.Type.Results, tuple)
+	} else if decl.Type.Results != nil && frame.result.aggregatePointer != nil {
 		if callSig.Results().Len() != 1 {
 			l.errorAt(decl.Type.Results, "aggregate pointer helper result must be a single value")
 		} else if len(decl.Type.Results.List) == 1 && len(decl.Type.Results.List[0].Names) == 1 {
@@ -8276,6 +8452,11 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 			if len(l.frames) == redirect.depth {
 				frame = redirect.owner
 			}
+		}
+		if len(frame.result.multi) != 0 {
+			l.storeMultiHelperReturn(frame, n)
+			l.jump(frame.returnBlock)
+			return
 		}
 		if isFunctionType(frame.result.type_) {
 			if len(n.Results) != 1 {
@@ -8929,21 +9110,29 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 	}
 	if len(values) == 1 && len(n.Lhs) > 1 {
 		combined := values[0]
-		values = make([]lowerValue, len(n.Lhs))
-		offset := 0
-		for i, lhs := range n.Lhs {
-			typ := l.resolveType(l.pkg.TypesInfo.TypeOf(lhs))
-			size := l.runtimeTypeOf(typ).Slots
-			if offset+size > len(combined.slots) {
-				l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: result has %d slots, target %d requires slots [%d:%d]", len(combined.slots), i+1, offset, offset+size)
+		if len(combined.multi) != 0 {
+			if len(combined.multi) != len(n.Lhs) {
+				l.errorAt(n, "multiple assignment received %d descriptor values for %d targets", len(combined.multi), len(n.Lhs))
 				return
 			}
-			values[i] = lowerValue{type_: typ, slots: combined.slots[offset : offset+size]}
-			offset += size
-		}
-		if offset != len(combined.slots) {
-			l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: consumed %d of %d result slots", offset, len(combined.slots))
-			return
+			values = append([]lowerValue(nil), combined.multi...)
+		} else {
+			values = make([]lowerValue, len(n.Lhs))
+			offset := 0
+			for i, lhs := range n.Lhs {
+				typ := l.resolveType(l.pkg.TypesInfo.TypeOf(lhs))
+				size := l.runtimeTypeOf(typ).Slots
+				if offset+size > len(combined.slots) {
+					l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: result has %d slots, target %d requires slots [%d:%d]", len(combined.slots), i+1, offset, offset+size)
+					return
+				}
+				values[i] = lowerValue{type_: typ, slots: combined.slots[offset : offset+size]}
+				offset += size
+			}
+			if offset != len(combined.slots) {
+				l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: consumed %d of %d result slots", offset, len(combined.slots))
+				return
+			}
 		}
 	}
 	if len(values) != len(n.Lhs) {
