@@ -345,10 +345,11 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 - 一维固定 `[N]func(...) ...` 数组的 literal、零值、值复制、动态索引、元素重赋值、value range、helper 参数与返回。每个元素保存有限 target tag；数组赋值和 value range 复制当时目标，后续修改不会反向影响快照。具有静态 initializer 的 package 数组可作为不可变函数表使用，对应 pydori 的 `PHASES` 等 module-level callable tuple；callback 内不得修改其元素或整体值。
 - 普通 package scalar、record 与定长数组同样要求 pure static initializer，并在 callback 中保持不可变。常量索引直接选择对应 slot；动态索引生成带边界检查的有限 switch，只物化所选元素，不为每次访问复制完整 package array backing。
 - 具有 pure static initializer 的 package scalar、runtime record 与定长数组可在 callback 中读取；数组额外支持动态索引和 value range。值会在使用点按 runtime layout 重建且始终不可变，callback 不能修改 package 值整体、字段或数组元素。该能力对应 Py module-level 常量与常量表，但不把 package variable 变成 Sonolus runtime storage。
-- 静态 pointer alias、`new(T)` 非逃逸局部、nil pointer 零值/转换/比较、有限 runtime pointer target 重绑与 target-set 合并、pointer helper 参数/返回、runtime-selected 数组 pointer 的动态索引、解引用读写、pointer 比较、嵌套动态数组 place 和逐 slot comparable aggregate 比较。nil 解引用在所有 runtime-check 等级终止 callback，`notify` 额外发出诊断。
+- 静态 pointer alias、`new(T)` 非逃逸局部、nil pointer 零值/转换/比较、有限 runtime pointer target 重绑与 target-set 合并、pointer helper 参数/返回、runtime-selected 数组 pointer 的动态索引、解引用读写、pointer 比较、嵌套动态数组 place 和逐 slot comparable aggregate 比较。callback-local 普通 struct 可保存 pointer alias 字段；零值、字段重绑、pointer receiver、整 struct 赋值、嵌套 struct、值参数与 helper 返回都保持 Go 的别名和按值快照语义。包含 pointer/container descriptor 的局部定长数组支持零值/literal、整值复制、常量和动态索引、元素/字段重绑、value range、helper 参数与返回。`new(descriptorStruct)` 与 `&localStruct` 具有独立 aggregate 身份；其 pointer 可保存到局部变量或 struct 字段、动态重绑、比较、传参和返回，解引用写入继续作用于被选中的原对象。nil 解引用在所有 runtime-check 等级终止 callback，`notify` 额外发出诊断。
 - 静态 interface concrete type 传播、有限 concrete-type variant、helper 参数/返回、method devirtualization、type switch/type assertion，以及泛型实例中的同类静态分派。
+- Static interface 可保存到 callback-local 普通 struct/定长数组字段；aggregate 复制会快照 concrete-type tag 与 payload descriptor。Pointer concrete payload 保留 aggregate 身份，因此接口字段重绑不会改变既有副本，而接口方法对所选对象的修改继续通过原别名可见。
 - callable helper 的有限 runtime 返回目标、variadic callable 参数包的转发/索引/range、保持静态目标身份与泛型实例环境的 named function type 转换（包括 `iter.Seq[T](func...)`）、`min`、`max`、`Zero[T]`、`SlotsOf[T]`。泛型函数值和离开创建 frame 的闭包会携带其具体 type substitution；`Zero[*T]()` 返回准确的 nil pointer，compile-time-only function/interface/container/resource 类型不接受 `Zero`。
-- `VarArray` 支持 checked/unchecked 读写与追加、查询、删除、交换、重排、正反向 values/items iterator、稳定排序、原子 `Extend`、稳定 min/max；`ArrayMap` 与 `ArraySet` 支持容量查询，map 还提供 key/value/item iterator。容器变量、参数和 helper 返回值可在有限 runtime 分支中选择不同 backing/capacity；descriptor 按值快照，mutation 继续作用于被选中的原 backing。零槽可比较 element/key 也合法，容器只保留 size 与必要的非零槽 backing。
+- `VarArray` 支持 checked/unchecked 读写与追加、查询、删除、交换、重排、正反向 values/items iterator、稳定排序、原子 `Extend`、稳定 min/max；`ArrayMap` 与 `ArraySet` 支持容量查询，map 还提供 key/value/item iterator。容器变量、参数、helper 返回值与 callback-local 普通 struct 字段可在有限 runtime 分支中选择不同 backing/capacity；descriptor 按值快照，mutation 继续作用于被选中的原 backing。包含 container 字段的局部 struct 支持 pointer receiver、整值复制、嵌套 struct、值参数与 helper 返回。零槽可比较 element/key 也合法，容器只保留 size 与必要的非零槽 backing。
 - `SortLinkedEntities` 与 `SortDoublyLinkedEntities` 使用稳定 bottom-up merge sort，仅重排链接。链表输入必须无环。
 
 静态 variadic 参数只允许 `len/cap`、索引、`range` 和向另一个 variadic helper 静态转发。
@@ -359,6 +360,7 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 - 动态递归、重复递归状态、runtime-created closure、函数值逃逸到 aggregate/interface/storage。
 - 普通运行时 slice/map/string 操作和未登记 builtin。
 - 无法枚举有限 backing/target 集合的动态容器或调用，以及容器 descriptor 向 runtime storage 的逃逸。
+- pointer/container/interface descriptor 仍不能进入 package static、Archetype、LevelMemory、LevelData、replay 或其他跨 callback storage；它们只表示单次 callback lowering 中可枚举的有限身份与 backing，不会成为 EngineData 的持久对象引用。
 
 ## 标准库
 

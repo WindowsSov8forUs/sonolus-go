@@ -387,6 +387,289 @@ func simulatorNewPointerValue(selector int) float64 {
 	return float64(*selected + values[0] + values[1])
 }
 
+type simulatorPointerPair struct {
+	Input *int
+	Flick *int
+}
+
+func (pair *simulatorPointerPair) Set(input, flick *int) {
+	pair.Input = input
+	pair.Flick = flick
+}
+
+func (pair *simulatorPointerPair) Clear() {
+	pair.Input = nil
+	pair.Flick = nil
+}
+
+func newSimulatorPointerPair(values *[2]int) simulatorPointerPair {
+	pair := simulatorPointerPair{}
+	pair.Set(&values[0], &values[0])
+	return pair
+}
+
+func simulatorPointerAggregate(selector int) float64 {
+	values := [2]int{3, 5}
+	pair := newSimulatorPointerPair(&values)
+	if pair.Input == nil || pair.Flick == nil {
+		return -1
+	}
+	if selector != 0 {
+		pair.Input = &values[1]
+	}
+	pair.Flick = pair.Input
+	*pair.Input += 2
+	*pair.Flick += 3
+	snapshot := pair
+	if selector == 0 {
+		pair.Input = &values[1]
+	} else {
+		pair.Input = &values[0]
+	}
+	*snapshot.Input += 7
+	*pair.Input += 11
+	return float64(values[0]*100 + values[1])
+}
+
+func namedSimulatorPointerPair(values *[2]int) (pair simulatorPointerPair) {
+	pair.Input = &values[1]
+	pair.Flick = &values[0]
+	return
+}
+
+func mutateSimulatorPointerPair(pair simulatorPointerPair, values *[2]int) bool {
+	pair.Input = &values[0]
+	if pair.Flick == nil {
+		return false
+	}
+	*pair.Flick += 5
+	return true
+}
+
+type simulatorNestedPointerPair struct {
+	Pair simulatorPointerPair
+}
+
+func simulatorPointerAggregateFlows() float64 {
+	values := [2]int{2, 3}
+	pair := namedSimulatorPointerPair(&values)
+	if pair.Input == nil || pair.Flick == nil {
+		return -2
+	}
+	assigned := simulatorPointerPair{}
+	assigned = pair
+	if assigned.Input == nil {
+		return -5
+	}
+	*assigned.Input += 7
+	if !mutateSimulatorPointerPair(pair, &values) {
+		return -3
+	}
+	pair.Clear()
+	if pair.Input != nil || pair.Flick != nil || assigned.Input == nil || assigned.Flick == nil {
+		return -1
+	}
+	nested := simulatorNestedPointerPair{Pair: assigned}
+	nestedCopy := nested
+	nested.Pair.Input = &values[0]
+	if nestedCopy.Pair.Input == nil {
+		return -4
+	}
+	*nestedCopy.Pair.Input += 11
+	return float64(values[0]*100 + values[1])
+}
+
+type simulatorContainerHolder struct {
+	Values sonolus.VarArray[int]
+}
+
+func newSimulatorContainerHolder() simulatorContainerHolder {
+	return simulatorContainerHolder{Values: sonolus.NewVarArray[int](4)}
+}
+
+func appendSimulatorContainer(holder *simulatorContainerHolder, value int) {
+	holder.Values.Append(value)
+}
+
+func simulatorContainerAggregate() float64 {
+	holder := newSimulatorContainerHolder()
+	holder.Values.Append(3)
+	appendSimulatorContainer(&holder, 5)
+	copy := holder
+	holder.Values = sonolus.NewVarArray[int](2)
+	holder.Values.Append(9)
+	copy.Values.Append(7)
+	return float64(copy.Values.Get(2)*100 + holder.Values.Get(0))
+}
+
+func newSimulatorPointerPairArray(values *[2]int) [2]simulatorPointerPair {
+	return [2]simulatorPointerPair{
+		{Input: &values[0]},
+		{Input: &values[1]},
+	}
+}
+
+func simulatorPointerAggregateArray(selector int) float64 {
+	values := [2]int{4, 6}
+	pairs := newSimulatorPointerPairArray(&values)
+	copy := pairs
+	pairs[0].Input = &values[1]
+	*copy[0].Input += 3
+	if selector == 0 {
+		*pairs[0].Input += 5
+	} else {
+		pairs[1].Input = &values[0]
+		*pairs[1].Input += 5
+	}
+	assigned := [2]simulatorPointerPair{}
+	assigned = copy
+	*assigned[1].Input += 2
+	return float64(values[0]*100 + values[1])
+}
+
+func simulatorNewPointerAggregate() float64 {
+	values := [2]int{2, 3}
+	pair := new(simulatorPointerPair)
+	if pair.Input != nil || pair.Flick != nil {
+		return -1
+	}
+	pair.Input = &values[0]
+	alias := pair
+	alias.Flick = &values[1]
+	*pair.Flick += 4
+	local := simulatorPointerPair{}
+	pointer := &local
+	pointer.Input = &values[0]
+	*local.Input += 5
+	return float64(values[0]*10 + values[1])
+}
+
+func simulatorDynamicPointerAggregateArray(selector int) float64 {
+	values := [2]int{4, 6}
+	pairs := newSimulatorPointerPairArray(&values)
+	target := &values[1]
+	if selector != 0 {
+		target = &values[0]
+	}
+	pairs[selector].Input = target
+	*pairs[selector].Input += 5
+	sum := 0
+	for _, pair := range pairs {
+		if pair.Input != nil {
+			sum += *pair.Input
+		}
+	}
+	return float64(values[0]*100 + values[1] + sum)
+}
+
+func chooseSimulatorPointerAggregate(
+	selector int,
+	first, second *simulatorPointerPair,
+) *simulatorPointerPair {
+	if selector == 0 {
+		return first
+	}
+	return second
+}
+
+type simulatorPointerAggregateHolder struct {
+	Pair *simulatorPointerPair
+}
+
+func simulatorReboundPointerAggregate(selector int) float64 {
+	values := [2]int{2, 3}
+	first := simulatorPointerPair{Input: &values[0]}
+	second := simulatorPointerPair{Input: &values[1]}
+	var zero *simulatorPointerPair
+	if zero != nil {
+		return -6
+	}
+	zero = &first
+	if zero != &first {
+		return -7
+	}
+	holder := simulatorPointerAggregateHolder{Pair: &first}
+	alias := holder.Pair
+	if selector != 0 {
+		holder.Pair = &second
+	}
+	pointer := holder.Pair
+	pointer.Flick = pointer.Input
+	*pointer.Flick += 5
+	returned := chooseSimulatorPointerAggregate(selector, &first, &second)
+	if returned != pointer {
+		return -1
+	}
+	if selector == 0 && alias != pointer {
+		return -2
+	}
+	if selector != 0 && alias == pointer {
+		return -3
+	}
+	returned.Clear()
+	if selector == 0 {
+		if first.Input != nil || second.Input == nil {
+			return -4
+		}
+	} else if first.Input == nil || second.Input != nil {
+		return -5
+	}
+	return float64(values[0]*100 + values[1])
+}
+
+type simulatorAggregateAutoInput interface {
+	Add(int)
+}
+
+func (pair *simulatorPointerPair) Add(value int) {
+	*pair.Input += value
+}
+
+type simulatorAggregateInterfaceHolder struct {
+	AutoInput simulatorAggregateAutoInput
+}
+
+func simulatorAggregateInterface(selector int) float64 {
+	values := [2]int{2, 3}
+	first := simulatorPointerPair{Input: &values[0]}
+	second := simulatorPointerPair{Input: &values[1]}
+	holder := simulatorAggregateInterfaceHolder{AutoInput: &first}
+	copy := holder
+	if selector != 0 {
+		holder.AutoInput = &second
+	}
+	holder.AutoInput.Add(5)
+	copy.AutoInput.Add(2)
+	return float64(values[0]*100 + values[1])
+}
+
+type simulatorNestedAggregatePointer struct {
+	Pairs [2]simulatorPointerPair
+}
+
+func simulatorNestedDynamicAggregatePointer(selector int) float64 {
+	values := [2]int{1, 2}
+	first := simulatorNestedAggregatePointer{Pairs: [2]simulatorPointerPair{
+		{Input: &values[0]},
+		{Input: &values[0]},
+	}}
+	second := simulatorNestedAggregatePointer{Pairs: [2]simulatorPointerPair{
+		{Input: &values[1]},
+		{Input: &values[1]},
+	}}
+	pointer := &first
+	if selector != 0 {
+		pointer = &second
+	}
+	target := &values[1]
+	if selector != 0 {
+		target = &values[0]
+	}
+	pointer.Pairs[selector].Input = target
+	*pointer.Pairs[selector].Input += 4
+	return float64(values[0]*100 + values[1])
+}
+
 func simulatorAdder(delta float64) func(float64) float64 {
 	return func(value float64) float64 { return value + delta }
 }
@@ -878,6 +1161,15 @@ type VariantNote struct {
 	ContainerValue        float64 `archetype:"memory"`
 	ContainerVariantValue float64 `archetype:"memory"`
 	NewPointerValue       float64 `archetype:"memory"`
+	PointerAggregateValue float64 `archetype:"memory"`
+	PointerAggregateFlows float64 `archetype:"memory"`
+	ContainerAggregate    float64 `archetype:"memory"`
+	PointerAggregateArray float64 `archetype:"memory"`
+	NewPointerAggregate   float64 `archetype:"memory"`
+	DynamicAggregateArray float64 `archetype:"memory"`
+	ReboundAggregatePtr   float64 `archetype:"memory"`
+	AggregateInterface    float64 `archetype:"memory"`
+	NestedAggregatePtr    float64 `archetype:"memory"`
 	Value                 float64 `archetype:"memory"`
 }
 
@@ -918,6 +1210,15 @@ func (note *VariantNote) Preprocess() {
 	note.ContainerValue = simulatorContainerValue()
 	note.ContainerVariantValue = simulatorContainerVariantValue(selector)
 	note.NewPointerValue = simulatorNewPointerValue(selector)
+	note.PointerAggregateValue = simulatorPointerAggregate(selector)
+	note.PointerAggregateFlows = simulatorPointerAggregateFlows()
+	note.ContainerAggregate = simulatorContainerAggregate()
+	note.PointerAggregateArray = simulatorPointerAggregateArray(selector)
+	note.NewPointerAggregate = simulatorNewPointerAggregate()
+	note.DynamicAggregateArray = simulatorDynamicPointerAggregateArray(selector)
+	note.ReboundAggregatePtr = simulatorReboundPointerAggregate(selector)
+	note.AggregateInterface = simulatorAggregateInterface(selector)
+	note.NestedAggregatePtr = simulatorNestedDynamicAggregatePointer(selector)
 	result += note.PointerValue + note.ContainerValue
 	note.Value = result
 }

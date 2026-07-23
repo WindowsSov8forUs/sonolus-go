@@ -38,8 +38,33 @@ type lowerValue struct {
 	nilPointer       bool
 	interface_       *interfaceValue
 	containerVariant *finiteVariant[lowerValue]
+	aggregate        *aggregateValue
+	aggregateIndex   *aggregateIndexValue
+	aggregatePointer *finiteVariant[lowerValue]
+	aggregateLoad    *aggregatePointerLoadValue
 	levelGlobal      *levelGlobalValue
 	immutablePackage bool
+}
+
+type aggregateValue struct {
+	fields []lowerValue
+}
+
+type aggregateIndexValue struct {
+	array lowerValue
+	index lowerValue
+	path  []int
+}
+
+type aggregatePointerLoadValue struct {
+	pointer *finiteVariant[lowerValue]
+	path    []aggregatePointerPathStep
+}
+
+type aggregatePointerPathStep struct {
+	index     int
+	dynamic   lowerValue
+	isDynamic bool
 }
 
 type callableArrayValue struct {
@@ -309,6 +334,10 @@ func (l *lowerer) packageStaticValue(object types.Object, node ast.Node) (lowerV
 		return lowerValue{}, false
 	}
 	target := l.resolveType(variable.Type())
+	if l.containsAggregateDescriptor(target) {
+		l.errorAt(node, "package value %s cannot contain callback-local descriptors", variable.Name())
+		return lowerValue{}, true
+	}
 	switch underlying := types.Unalias(target).Underlying().(type) {
 	case *types.Basic, *types.Struct:
 	case *types.Array:
@@ -466,7 +495,7 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 	}
 	variant := destination.interface_
 	storeConcrete := func(value lowerValue) {
-		if value.type_ == nil || isInterfaceType(value.type_) || value.callable != nil || value.pointer != nil || value.entity != nil || isContainerValue(value) || l.containsEntityView(value.type_) {
+		if value.type_ == nil || isInterfaceType(value.type_) || value.callable != nil || value.entity != nil || isContainerValue(value) || l.containsEntityView(value.type_) {
 			l.errorAt(node, "finite static interface requires a non-escaping concrete runtime value")
 			return
 		}
@@ -478,7 +507,7 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 			}
 		}
 		if index < 0 {
-			payload := l.allocZeroed("interface.value", value.type_, node)
+			payload := l.newDescriptorCell("interface.value", value.type_, node)
 			var ok bool
 			index, ok = variant.add(payload, func(left, right lowerValue) bool {
 				return left.type_ != nil && right.type_ != nil && types.Identical(left.type_, right.type_)
@@ -489,7 +518,7 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 			}
 		}
 		payload := variant.alternatives[index]
-		l.store(payload, value, node)
+		l.storeDescriptor(payload, value, node)
 		l.store(variant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
 	}
 	if source.interface_ == nil {
@@ -767,6 +796,7 @@ type lowerFrame struct {
 	hasGoto          bool
 	mutableCallables map[types.Object]bool
 	mutableValues    map[types.Object]bool
+	reboundValues    map[types.Object]bool
 	valueReads       map[types.Object]int
 	result           lowerValue
 	callableResult   *staticCallable
@@ -948,6 +978,7 @@ func (l *lowerer) prepareCallableMutability(frame *lowerFrame, body *ast.BlockSt
 
 func (l *lowerer) prepareValueParameterUsage(frame *lowerFrame, body *ast.BlockStmt) {
 	frame.mutableValues = map[types.Object]bool{}
+	frame.reboundValues = map[types.Object]bool{}
 	frame.valueReads = map[types.Object]int{}
 	markMutable := func(expr ast.Expr) {
 		identifier := assignedRootIdentifier(expr)
@@ -965,6 +996,13 @@ func (l *lowerer) prepareValueParameterUsage(frame *lowerFrame, body *ast.BlockS
 		case *ast.AssignStmt:
 			for _, target := range node.Lhs {
 				markMutable(target)
+				if node.Tok == token.ASSIGN {
+					if identifier, ok := target.(*ast.Ident); ok {
+						if object := frame.pkg.TypesInfo.ObjectOf(identifier); object != nil {
+							frame.reboundValues[object] = true
+						}
+					}
+				}
 			}
 		case *ast.IncDecStmt:
 			markMutable(node.X)
@@ -1126,23 +1164,29 @@ func irTypeOf(t types.Type) ir.Type {
 }
 
 func (l *lowerer) runtimeTypeOf(t types.Type) ir.Type {
-	var build func(types.Type) ir.Type
-	build = func(value types.Type) ir.Type {
+	var build func(types.Type, bool) ir.Type
+	build = func(value types.Type, nested bool) ir.Type {
 		value = l.resolveType(value)
 		value = types.Unalias(value)
 		if _, pointer := value.(*types.Pointer); pointer {
 			if _, exists := l.entityBinding(value); exists {
 				return entityViewType(value)
 			}
+			if nested {
+				return ir.Type{Name: value.String(), Slots: 1}
+			}
+		}
+		if nested && isInterfaceType(value) {
+			return ir.Type{Name: value.String(), Slots: 1}
 		}
 		if array, ok := value.Underlying().(*types.Array); ok {
-			element := build(array.Elem())
+			element := build(array.Elem(), true)
 			return ir.Type{Name: value.String(), Slots: int(array.Len()) * element.Slots}
 		}
-		if structure, ok := value.Underlying().(*types.Struct); ok && l.containsEntityView(value) {
+		if structure, ok := value.Underlying().(*types.Struct); ok && (l.containsEntityView(value) || l.containsAggregateDescriptor(value)) {
 			result := ir.Type{Name: value.String()}
 			for index := 0; index < structure.NumFields(); index++ {
-				fieldType := build(structure.Field(index).Type())
+				fieldType := build(structure.Field(index).Type(), true)
 				result.Fields = append(result.Fields, ir.Field{Name: structure.Field(index).Name(), Offset: result.Slots, Type: fieldType})
 				result.Slots += fieldType.Slots
 			}
@@ -1150,7 +1194,7 @@ func (l *lowerer) runtimeTypeOf(t types.Type) ir.Type {
 		}
 		return irTypeOf(value)
 	}
-	return build(t)
+	return build(t, false)
 }
 
 func (l *lowerer) resolveType(t types.Type) types.Type {
@@ -1344,6 +1388,9 @@ func callableInstance(pkg *packages.Package, expression ast.Expr) (types.Instanc
 func (l *lowerer) containsEntityView(t types.Type) bool {
 	var inspect func(types.Type, map[types.Type]bool) bool
 	inspect = func(value types.Type, visiting map[types.Type]bool) bool {
+		if value == nil {
+			return false
+		}
 		value = types.Unalias(value)
 		if _, pointer := value.(*types.Pointer); pointer {
 			_, exists := l.entityBinding(value)
@@ -1367,6 +1414,485 @@ func (l *lowerer) containsEntityView(t types.Type) bool {
 		return false
 	}
 	return inspect(t, map[types.Type]bool{})
+}
+
+func (l *lowerer) containsAggregateDescriptor(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	root := types.Unalias(l.resolveType(t))
+	if _, pointer := root.(*types.Pointer); pointer || isContainerType(root) || isInterfaceType(root) {
+		return false
+	}
+	var inspect func(types.Type, map[types.Type]bool) bool
+	inspect = func(value types.Type, visiting map[types.Type]bool) bool {
+		if value == nil {
+			return false
+		}
+		value = types.Unalias(value)
+		if _, pointer := value.(*types.Pointer); pointer {
+			_, entity := l.entityBinding(value)
+			return !entity
+		}
+		if isContainerType(value) {
+			return true
+		}
+		if isInterfaceType(value) {
+			return true
+		}
+		if visiting[value] {
+			return false
+		}
+		visiting[value] = true
+		defer delete(visiting, value)
+		switch underlying := value.Underlying().(type) {
+		case *types.Array:
+			return inspect(underlying.Elem(), visiting)
+		case *types.Struct:
+			for index := 0; index < underlying.NumFields(); index++ {
+				if inspect(underlying.Field(index).Type(), visiting) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return inspect(t, map[types.Type]bool{})
+}
+
+func (l *lowerer) attachAggregate(value lowerValue, node ast.Node) lowerValue {
+	if !l.containsAggregateDescriptor(value.type_) {
+		return value
+	}
+	var itemTypes []types.Type
+	switch underlying := types.Unalias(value.type_).Underlying().(type) {
+	case *types.Struct:
+		itemTypes = make([]types.Type, underlying.NumFields())
+		for index := range itemTypes {
+			itemTypes[index] = underlying.Field(index).Type()
+		}
+	case *types.Array:
+		itemTypes = make([]types.Type, int(underlying.Len()))
+		for index := range itemTypes {
+			itemTypes[index] = underlying.Elem()
+		}
+	default:
+		return value
+	}
+	fields := make([]lowerValue, len(itemTypes))
+	offset := 0
+	for index, itemType := range itemTypes {
+		fieldType := l.resolveType(itemType)
+		size := l.runtimeTypeOf(fieldType).Slots
+		if isPointerType(fieldType) {
+			if _, entity := l.entityBinding(fieldType); !entity {
+				size = 1
+			}
+		}
+		field := lowerValue{type_: fieldType, slots: value.slots[offset : offset+size]}
+		if len(value.places) != 0 {
+			field.places = value.places[offset : offset+size]
+		}
+		if binding, exists := l.entityBinding(fieldType); exists {
+			field.entity = &entityReferenceValue{binding: binding}
+		} else {
+			switch {
+			case isPointerType(fieldType):
+				if l.isAggregatePointerType(fieldType) {
+					variant := finiteVariant[lowerValue]{alternatives: []lowerValue{{type_: fieldType, nilPointer: true}}, tag: field}
+					field.slots = nil
+					field.places = nil
+					field.aggregatePointer = &variant
+					l.store(variant.tag, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+				} else {
+					variant := finiteVariant[[]ir.Place]{alternatives: [][]ir.Place{nil}, tag: field}
+					field.slots = nil
+					field.places = nil
+					field.pointer = &pointerValue{finiteVariant: variant}
+					l.store(variant.tag, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+				}
+			case isContainerType(fieldType):
+				variant := finiteVariant[lowerValue]{tag: field}
+				field.slots = nil
+				field.places = nil
+				field.containerVariant = &variant
+				l.store(variant.tag, scalarValue(ir.Const{Value: -1}, types.Typ[types.Int]), node)
+			case isInterfaceType(fieldType):
+				variant := finiteVariant[lowerValue]{tag: field}
+				field.slots = nil
+				field.places = nil
+				field.interface_ = &interfaceValue{finiteVariant: variant}
+				l.store(variant.tag, scalarValue(ir.Const{Value: -1}, types.Typ[types.Int]), node)
+			default:
+				field = l.attachAggregate(field, node)
+			}
+		}
+		fields[index] = field
+		offset += size
+	}
+	value.aggregate = &aggregateValue{fields: fields}
+	return value
+}
+
+func (l *lowerer) newAggregateCell(name string, t types.Type, node ast.Node) lowerValue {
+	return l.attachAggregate(l.allocZeroed(name, t, node), node)
+}
+
+func (l *lowerer) storeAggregate(destination, source lowerValue, node ast.Node) {
+	if destination.aggregate == nil || source.aggregate == nil || len(destination.aggregate.fields) != len(source.aggregate.fields) {
+		l.errorAt(node, "aggregate descriptor assignment requires identical struct types")
+		return
+	}
+	for index := range destination.aggregate.fields {
+		dst, src := destination.aggregate.fields[index], source.aggregate.fields[index]
+		switch {
+		case dst.aggregatePointer != nil || isAggregatePointerValue(src):
+			if dst.aggregatePointer == nil || (!isAggregatePointerValue(src) && !src.nilPointer) {
+				l.errorAt(node, "aggregate pointer field assignment requires an aggregate address or nil")
+				continue
+			}
+			l.mergeAggregatePointerValue(dst, src, node)
+		case dst.aggregate != nil || src.aggregate != nil:
+			l.storeAggregate(dst, src, node)
+		case dst.entity != nil || src.entity != nil:
+			l.storeEntityView(dst, src, node)
+		case dst.interface_ != nil || src.interface_ != nil:
+			if dst.interface_ == nil {
+				l.errorAt(node, "aggregate interface field assignment requires an interface destination")
+				continue
+			}
+			l.storeInterfaceValue(dst, src, node)
+		case dst.pointer != nil || isStaticPointer(src):
+			if dst.pointer == nil || !isStaticPointer(src) {
+				l.errorAt(node, "aggregate pointer field assignment requires a finite pointer source")
+				continue
+			}
+			l.mergePointerValue(dst, src, node)
+		case dst.containerVariant != nil || isContainerValue(src):
+			if dst.containerVariant == nil || !isContainerValue(src) {
+				l.errorAt(node, "aggregate container field assignment requires a container source")
+				continue
+			}
+			l.mergeContainerValue(dst, src, node)
+		default:
+			l.store(dst, src, node)
+		}
+	}
+}
+
+func (l *lowerer) copyAggregate(name string, source lowerValue, node ast.Node) lowerValue {
+	destination := l.newAggregateCell(name, source.type_, node)
+	l.storeAggregate(destination, source, node)
+	return destination
+}
+
+func (l *lowerer) isAggregatePointerType(t types.Type) bool {
+	pointer, ok := types.Unalias(l.resolveType(t)).(*types.Pointer)
+	return ok && l.containsAggregateDescriptor(pointer.Elem())
+}
+
+func isAggregatePointerValue(value lowerValue) bool {
+	return value.aggregatePointer != nil || value.aggregate != nil && isPointerType(value.type_)
+}
+
+func sameAggregatePointerTarget(left, right lowerValue) bool {
+	if left.nilPointer || right.nilPointer {
+		return left.nilPointer && right.nilPointer
+	}
+	return left.aggregate != nil && left.aggregate == right.aggregate
+}
+
+func (l *lowerer) newAggregatePointerCell(name string, pointerType types.Type, node ast.Node) lowerValue {
+	variant := newFiniteVariant[lowerValue](l, name+".aggregate.pointer", node)
+	return lowerValue{type_: pointerType, aggregatePointer: &variant}
+}
+
+func (l *lowerer) mergeAggregatePointerValue(destination, source lowerValue, node ast.Node) lowerValue {
+	if destination.aggregatePointer == nil {
+		cell := l.newAggregatePointerCell("aggregate.pointer.variant", destination.type_, node)
+		destination.aggregatePointer = cell.aggregatePointer
+		if destination.aggregate != nil || destination.nilPointer {
+			index, ok := destination.aggregatePointer.add(destination, sameAggregatePointerTarget)
+			if !ok {
+				l.errorAt(node, "finite aggregate pointer variant exceeds 256 alternatives")
+				return destination
+			}
+			l.store(destination.aggregatePointer.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		}
+		destination.aggregate = nil
+		destination.nilPointer = false
+		destination.slots = nil
+		destination.places = nil
+	}
+	variant := destination.aggregatePointer
+	addAlternative := func(value lowerValue) int {
+		index, ok := variant.add(value, sameAggregatePointerTarget)
+		if !ok {
+			l.errorAt(node, "finite aggregate pointer variant exceeds 256 alternatives")
+			return -1
+		}
+		return index
+	}
+	if source.aggregatePointer == nil {
+		if source.aggregate == nil && !source.nilPointer {
+			l.errorAt(node, "aggregate pointer assignment requires an aggregate address or nil")
+			return destination
+		}
+		index := addAlternative(source)
+		if index >= 0 {
+			l.store(variant.tag, scalarValue(ir.Const{Value: float64(index)}, types.Typ[types.Int]), node)
+		}
+		return destination
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(source.aggregatePointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(source.aggregatePointer.tag.slots[0], cases, invalid)
+	for index, alternative := range source.aggregatePointer.alternatives {
+		l.setCurrent(blocks[index])
+		mapped := addAlternative(alternative)
+		if mapped >= 0 {
+			l.store(variant.tag, scalarValue(ir.Const{Value: float64(mapped)}, types.Typ[types.Int]), node)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	return destination
+}
+
+func (l *lowerer) copyAggregatePointerValue(name string, source lowerValue, node ast.Node) lowerValue {
+	destination := l.newAggregatePointerCell(name, source.type_, node)
+	return l.mergeAggregatePointerValue(destination, source, node)
+}
+
+func (l *lowerer) newDescriptorCell(name string, t types.Type, node ast.Node) lowerValue {
+	t = l.resolveType(t)
+	if l.containsAggregateDescriptor(t) {
+		return l.newAggregateCell(name, t, node)
+	}
+	if binding, exists := l.entityBinding(t); exists {
+		return l.newEntityViewLocal(name, t, binding)
+	}
+	if isInterfaceType(t) {
+		return l.newInterfaceValue(name, t, node)
+	}
+	if isPointerType(t) {
+		if l.isAggregatePointerType(t) {
+			return l.newAggregatePointerCell(name, t, node)
+		}
+		return l.newPointerCell(name, t, node)
+	}
+	if isContainerType(t) {
+		return l.newContainerCell(name, t, node)
+	}
+	return l.allocZeroed(name, t, node)
+}
+
+func (l *lowerer) storeDescriptor(destination, source lowerValue, node ast.Node) {
+	switch {
+	case destination.aggregatePointer != nil || isAggregatePointerValue(source):
+		if destination.aggregatePointer == nil || (!isAggregatePointerValue(source) && !source.nilPointer) {
+			l.errorAt(node, "descriptor aggregate pointer assignment requires an aggregate address or nil")
+			return
+		}
+		l.mergeAggregatePointerValue(destination, source, node)
+	case destination.aggregate != nil || source.aggregate != nil:
+		l.storeAggregate(destination, source, node)
+	case destination.entity != nil || source.entity != nil:
+		l.storeEntityView(destination, source, node)
+	case destination.interface_ != nil || source.interface_ != nil:
+		if destination.interface_ == nil {
+			l.errorAt(node, "descriptor interface assignment requires an interface destination")
+			return
+		}
+		l.storeInterfaceValue(destination, source, node)
+	case destination.pointer != nil || isStaticPointer(source):
+		if destination.pointer == nil || !isStaticPointer(source) {
+			l.errorAt(node, "descriptor pointer assignment requires a finite pointer source")
+			return
+		}
+		l.mergePointerValue(destination, source, node)
+	case destination.containerVariant != nil || isContainerValue(source):
+		if destination.containerVariant == nil || !isContainerValue(source) {
+			l.errorAt(node, "descriptor container assignment requires a container source")
+			return
+		}
+		l.mergeContainerValue(destination, source, node)
+	default:
+		l.store(destination, source, node)
+	}
+}
+
+func aggregatePath(value lowerValue, path []int) (lowerValue, bool) {
+	for _, index := range path {
+		if value.aggregate == nil || index < 0 || index >= len(value.aggregate.fields) {
+			return lowerValue{}, false
+		}
+		value = value.aggregate.fields[index]
+	}
+	return value, true
+}
+
+func (l *lowerer) storeAggregateIndex(indexed *aggregateIndexValue, source lowerValue, node ast.Node) {
+	if indexed == nil || indexed.array.aggregate == nil || len(indexed.index.slots) != 1 {
+		l.errorAt(node, "dynamic descriptor array assignment has no indexed backing")
+		return
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(indexed.array.aggregate.fields))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for position := range blocks {
+		blocks[position] = l.newBlock()
+		cases[position] = ir.SwitchCase{Value: float64(position), Target: blocks[position].ID}
+	}
+	_ = l.builder.Switch(indexed.index.slots[0], cases, invalid)
+	for position, block := range blocks {
+		l.setCurrent(block)
+		destination, ok := aggregatePath(indexed.array.aggregate.fields[position], indexed.path)
+		if !ok {
+			l.errorAt(node, "dynamic descriptor array assignment path is invalid")
+		} else {
+			l.storeDescriptor(destination, source, node)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+}
+
+func (l *lowerer) indexAggregateArray(base lowerValue, array *types.Array, index lowerValue, node, indexNode ast.Node) lowerValue {
+	index = l.materialize("aggregate.array.index", index, indexNode)
+	condition := l.pure(resource.RuntimeFunctionAnd, node,
+		l.pure(resource.RuntimeFunctionGreaterOr, node, index.slots[0], ir.Const{}),
+		l.pure(resource.RuntimeFunctionLess, node, index.slots[0], ir.Const{Value: float64(array.Len())}))
+	l.guard(node, condition)
+	result := l.newDescriptorCell("aggregate.array.value", array.Elem(), node)
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(base.aggregate.fields))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for position := range blocks {
+		blocks[position] = l.newBlock()
+		cases[position] = ir.SwitchCase{Value: float64(position), Target: blocks[position].ID}
+	}
+	_ = l.builder.Switch(index.slots[0], cases, invalid)
+	for position, block := range blocks {
+		l.setCurrent(block)
+		l.storeDescriptor(result, base.aggregate.fields[position], node)
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	result.aggregateIndex = &aggregateIndexValue{array: base, index: index}
+	return result
+}
+
+func (l *lowerer) loadAggregatePointer(value lowerValue, pointer *types.Pointer, node ast.Node) lowerValue {
+	if value.aggregatePointer == nil || len(value.aggregatePointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic aggregate pointer has no target tag")
+		return zeroValue(pointer.Elem())
+	}
+	result := l.newAggregateCell("aggregate.pointer.load", pointer.Elem(), node)
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(value.aggregatePointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(value.aggregatePointer.tag.slots[0], cases, invalid)
+	for index, target := range value.aggregatePointer.alternatives {
+		l.setCurrent(blocks[index])
+		if target.nilPointer {
+			l.terminateRuntime(node, "nil pointer dereference")
+			continue
+		}
+		if target.aggregate == nil {
+			l.errorAt(node, "dynamic aggregate pointer target has no aggregate descriptor")
+		} else {
+			l.storeAggregate(result, target, node)
+		}
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+	result.aggregateLoad = &aggregatePointerLoadValue{pointer: value.aggregatePointer}
+	return result
+}
+
+func (l *lowerer) storeAggregatePointerLoad(load *aggregatePointerLoadValue, source lowerValue, node ast.Node) {
+	if load == nil || load.pointer == nil || len(load.pointer.tag.slots) != 1 {
+		l.errorAt(node, "dynamic aggregate pointer assignment has no target tag")
+		return
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(load.pointer.alternatives))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(load.pointer.tag.slots[0], cases, invalid)
+	for index, target := range load.pointer.alternatives {
+		l.setCurrent(blocks[index])
+		if target.nilPointer {
+			l.terminateRuntime(node, "nil pointer dereference")
+			continue
+		}
+		l.storeAggregatePointerPath(target, load.path, source, node)
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
+}
+
+func (l *lowerer) storeAggregatePointerPath(value lowerValue, path []aggregatePointerPathStep, source lowerValue, node ast.Node) {
+	if len(path) == 0 {
+		l.storeDescriptor(value, source, node)
+		return
+	}
+	step := path[0]
+	if value.aggregate == nil {
+		l.errorAt(node, "dynamic aggregate pointer assignment path is invalid")
+		return
+	}
+	if !step.isDynamic {
+		if step.index < 0 || step.index >= len(value.aggregate.fields) {
+			l.errorAt(node, "dynamic aggregate pointer assignment path is out of bounds")
+			return
+		}
+		l.storeAggregatePointerPath(value.aggregate.fields[step.index], path[1:], source, node)
+		return
+	}
+	if len(step.dynamic.slots) != 1 {
+		l.errorAt(node, "dynamic aggregate pointer array path has no index")
+		return
+	}
+	merge, invalid := l.newBlock(), l.newBlock()
+	blocks := make([]*ir.Block, len(value.aggregate.fields))
+	cases := make([]ir.SwitchCase, len(blocks))
+	for index := range blocks {
+		blocks[index] = l.newBlock()
+		cases[index] = ir.SwitchCase{Value: float64(index), Target: blocks[index].ID}
+	}
+	_ = l.builder.Switch(step.dynamic.slots[0], cases, invalid)
+	for index, block := range blocks {
+		l.setCurrent(block)
+		l.storeAggregatePointerPath(value.aggregate.fields[index], path[1:], source, node)
+		l.jump(merge)
+	}
+	l.setCurrent(invalid)
+	_ = l.builder.MarkUnreachable()
+	l.setCurrent(merge)
 }
 
 func (l *lowerer) zeroRuntimeValue(t types.Type) lowerValue {
@@ -1481,7 +2007,7 @@ func (l *lowerer) endInlineLocalScope(result lowerValue) {
 	last := len(l.localScopes) - 1
 	locals := l.localScopes[last]
 	l.localScopes = l.localScopes[:last]
-	if result.callable != nil || result.callableArray != nil || result.pointer != nil || result.pointerLoad != nil || result.container != nil || result.containerVariant != nil || result.interface_ != nil || result.entity != nil || result.variadic != nil || result.stream != nil || result.levelGlobal != nil {
+	if result.callable != nil || result.callableArray != nil || result.pointer != nil || result.pointerLoad != nil || result.container != nil || result.containerVariant != nil || result.interface_ != nil || result.entity != nil || result.variadic != nil || result.stream != nil || result.levelGlobal != nil || result.aggregate != nil || result.aggregatePointer != nil || result.aggregateLoad != nil || result.aggregateIndex != nil {
 		return
 	}
 	escaped := map[int]bool{}
@@ -1738,6 +2264,25 @@ func (l *lowerer) rebind(obj types.Object, v lowerValue) {
 
 func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, node ast.Node) {
 	parameterType := l.resolveType(obj.Type())
+	if l.isAggregatePointerType(parameterType) && (isAggregatePointerValue(value) || value.nilPointer) {
+		value.type_ = parameterType
+		frame := l.frames[len(l.frames)-1]
+		if frame.reboundValues[obj] {
+			l.bind(obj, l.copyAggregatePointerValue(name, value, node))
+		} else {
+			l.bind(obj, value)
+		}
+		return
+	}
+	if value.aggregate != nil {
+		value.type_ = parameterType
+		if isPointerType(parameterType) {
+			l.bind(obj, value)
+		} else {
+			l.bind(obj, l.copyAggregate(name, value, node))
+		}
+		return
+	}
 	if value.entity != nil {
 		l.bind(obj, l.allocEntityView(name, value, node))
 		return
@@ -2113,7 +2658,7 @@ func isInterfaceType(t types.Type) bool {
 }
 
 func isStaticPointer(value lowerValue) bool {
-	return value.entity == nil && (value.nilPointer || isPointerType(value.type_) && (value.pointer != nil || len(value.places) != 0 && len(value.places) == len(value.slots)))
+	return value.entity == nil && (value.nilPointer || isPointerType(value.type_) && (value.aggregate != nil || value.aggregatePointer != nil || value.pointer != nil || len(value.places) != 0 && len(value.places) == len(value.slots)))
 }
 
 func samePlaces(left, right []ir.Place) bool {
@@ -2231,6 +2776,23 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		l.errorAt(n, "unsupported identifier %s", n.Name)
 	case *ast.StarExpr:
 		v := l.expr(n.X)
+		if v.aggregate != nil {
+			pointer, ok := types.Unalias(v.type_).(*types.Pointer)
+			if !ok {
+				l.errorAt(n, "dereference operand is not a pointer")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			v.type_ = pointer.Elem()
+			return v
+		}
+		if v.aggregatePointer != nil {
+			pointer, ok := types.Unalias(v.type_).(*types.Pointer)
+			if !ok {
+				l.errorAt(n, "dereference operand is not a pointer")
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
+			return l.loadAggregatePointer(v, pointer, n)
+		}
 		if v.entity != nil {
 			l.errorAt(n, "EntityRef.Get views cannot be explicitly dereferenced")
 			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
@@ -2312,7 +2874,12 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 			b = l.materialize("binary.right", b, n.Y)
 		}
 		if (n.Op == token.EQL || n.Op == token.NEQ) && isStaticPointer(a) && isStaticPointer(b) {
-			equal := l.pointerEqual(a, b, n)
+			var equal ir.Expr
+			if l.isAggregatePointerType(a.type_) || l.isAggregatePointerType(b.type_) {
+				equal = l.aggregatePointerEqual(a, b, n)
+			} else {
+				equal = l.pointerEqual(a, b, n)
+			}
 			if n.Op == token.NEQ {
 				equal = l.pure(resource.RuntimeFunctionNot, n, equal)
 			}
@@ -2455,6 +3022,49 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				}
 				return l.lowerLevelGlobalValue(n, declaration, global.storage, baseExpr, global.read, global.write)
 			}
+			if base.aggregatePointer != nil {
+				pointer, ok := types.Unalias(base.type_).(*types.Pointer)
+				if !ok {
+					l.errorAt(n, "aggregate pointer selector requires a pointer receiver")
+					return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+				}
+				base = l.loadAggregatePointer(base, pointer, n.X)
+				base.type_ = pointer.Elem()
+			}
+			if base.aggregate != nil {
+				if pointer, ok := types.Unalias(base.type_).(*types.Pointer); ok {
+					base.type_ = pointer.Elem()
+				}
+				value := base
+				var indexedPath []int
+				if base.aggregateIndex != nil {
+					indexedPath = append(indexedPath, base.aggregateIndex.path...)
+				}
+				var loadPath []aggregatePointerPathStep
+				if base.aggregateLoad != nil {
+					loadPath = append(loadPath, base.aggregateLoad.path...)
+				}
+				for _, index := range sel.Index() {
+					if value.aggregate == nil || index < 0 || index >= len(value.aggregate.fields) {
+						l.errorAt(n, "selector %s has no aggregate descriptor", n.Sel.Name)
+						return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+					}
+					value = value.aggregate.fields[index]
+					indexedPath = append(indexedPath, index)
+					loadPath = append(loadPath, aggregatePointerPathStep{index: index})
+				}
+				if base.aggregateIndex != nil {
+					indexed := *base.aggregateIndex
+					indexed.path = indexedPath
+					value.aggregateIndex = &indexed
+				}
+				if base.aggregateLoad != nil {
+					load := *base.aggregateLoad
+					load.path = loadPath
+					value.aggregateLoad = &load
+				}
+				return value
+			}
 			if field.Embedded() && l.currentArchetype != nil {
 				if named, ok := namedType(field.Type()); ok {
 					if binding, exists := l.archetypes[named]; exists {
@@ -2548,6 +3158,45 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		base, index := l.expr(n.X), l.expr(n.Index)
 		if base.type_ == nil || index.type_ == nil {
 			return lowerValue{}
+		}
+		if base.aggregate != nil {
+			arrayType := base.type_
+			if pointer, ok := types.Unalias(arrayType).(*types.Pointer); ok {
+				arrayType = pointer.Elem()
+			}
+			array, ok := types.Unalias(arrayType).Underlying().(*types.Array)
+			if !ok {
+				l.errorAt(n, "descriptor aggregate indexing requires an array")
+				return lowerValue{}
+			}
+			constantIndex, constantOK := index.slots[0].(ir.Const)
+			if !constantOK {
+				result := l.indexAggregateArray(base, array, index, n, n.Index)
+				if base.aggregateLoad != nil && result.aggregateIndex != nil {
+					load := *base.aggregateLoad
+					load.path = append(append([]aggregatePointerPathStep(nil), load.path...), aggregatePointerPathStep{dynamic: result.aggregateIndex.index, isDynamic: true})
+					result.aggregateIndex = nil
+					result.aggregateLoad = &load
+				}
+				return result
+			}
+			position := int(constantIndex.Value)
+			if float64(position) != constantIndex.Value || position < 0 || position >= len(base.aggregate.fields) {
+				l.errorAt(n.Index, "array index is out of bounds")
+				return zeroValue(array.Elem())
+			}
+			result := base.aggregate.fields[position]
+			if base.aggregateIndex != nil {
+				indexed := *base.aggregateIndex
+				indexed.path = append(append([]int(nil), indexed.path...), position)
+				result.aggregateIndex = &indexed
+			}
+			if base.aggregateLoad != nil {
+				load := *base.aggregateLoad
+				load.path = append(append([]aggregatePointerPathStep(nil), load.path...), aggregatePointerPathStep{index: position})
+				result.aggregateLoad = &load
+			}
+			return result
 		}
 		if base.variadic != nil {
 			return l.indexVariadic(n, base, index)
@@ -2713,7 +3362,7 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 
 func (l *lowerer) interfaceAssertion(node ast.Node, value lowerValue, target types.Type, commaOK bool) (lowerValue, lowerValue) {
 	variant := value.interface_
-	result := l.allocZeroed("interface.assert.value", target, node)
+	result := l.newDescriptorCell("interface.assert.value", target, node)
 	ok := l.allocZeroed("interface.assert.ok", types.Typ[types.Bool], node)
 	var matches ir.Expr = ir.Const{}
 	matching := make([]bool, len(variant.alternatives))
@@ -2737,7 +3386,7 @@ func (l *lowerer) interfaceAssertion(node ast.Node, value lowerValue, target typ
 	for index, alternative := range variant.alternatives {
 		l.setCurrent(blocks[index])
 		if matching[index] {
-			l.store(result, alternative, node)
+			l.storeDescriptor(result, alternative, node)
 			l.store(ok, scalarValue(ir.Const{Value: 1}, types.Typ[types.Bool]), node)
 		}
 		l.jump(merge)
@@ -2780,6 +3429,34 @@ func (l *lowerer) pointerEqual(left, right lowerValue, node ast.Node) ir.Expr {
 	for leftIndex, leftPlaces := range leftTargets {
 		for rightIndex, rightPlaces := range rightTargets {
 			if !samePlaces(leftPlaces, rightPlaces) {
+				continue
+			}
+			condition := ir.Expr(ir.Const{Value: 1})
+			if leftTag != nil {
+				condition = l.pure(resource.RuntimeFunctionAnd, node, condition, l.pure(resource.RuntimeFunctionEqual, node, leftTag, ir.Const{Value: float64(leftIndex)}))
+			}
+			if rightTag != nil {
+				condition = l.pure(resource.RuntimeFunctionAnd, node, condition, l.pure(resource.RuntimeFunctionEqual, node, rightTag, ir.Const{Value: float64(rightIndex)}))
+			}
+			result = l.pure(resource.RuntimeFunctionOr, node, result, condition)
+		}
+	}
+	return result
+}
+
+func (l *lowerer) aggregatePointerEqual(left, right lowerValue, node ast.Node) ir.Expr {
+	targets := func(value lowerValue) ([]lowerValue, ir.Expr) {
+		if value.aggregatePointer != nil {
+			return value.aggregatePointer.alternatives, value.aggregatePointer.tag.slots[0]
+		}
+		return []lowerValue{value}, nil
+	}
+	leftTargets, leftTag := targets(left)
+	rightTargets, rightTag := targets(right)
+	result := ir.Expr(ir.Const{})
+	for leftIndex, leftTarget := range leftTargets {
+		for rightIndex, rightTarget := range rightTargets {
+			if !sameAggregatePointerTarget(leftTarget, rightTarget) {
 				continue
 			}
 			condition := ir.Expr(ir.Const{Value: 1})
@@ -2879,6 +3556,9 @@ func (l *lowerer) composite(n *ast.CompositeLit) lowerValue {
 		}
 		return out
 	}
+	if l.containsAggregateDescriptor(t) {
+		return l.aggregateComposite(n, t)
+	}
 	out := l.zeroRuntimeValue(t)
 	if st, ok := types.Unalias(t).Underlying().(*types.Struct); ok {
 		values := make([]lowerValue, st.NumFields())
@@ -2967,6 +3647,91 @@ func (l *lowerer) composite(n *ast.CompositeLit) lowerValue {
 	}
 	l.errorAt(n, "unsupported composite literal type %s", t)
 	return out
+}
+
+func (l *lowerer) aggregateComposite(n *ast.CompositeLit, t types.Type) lowerValue {
+	structure, structureOK := types.Unalias(t).Underlying().(*types.Struct)
+	_, arrayOK := types.Unalias(t).Underlying().(*types.Array)
+	result := l.newAggregateCell("literal.aggregate", t, n)
+	position := 0
+	for _, element := range n.Elts {
+		valueExpression := ast.Expr(element)
+		fieldIndex := position
+		if keyed, ok := element.(*ast.KeyValueExpr); ok {
+			switch {
+			case structureOK:
+				identifier, identifierOK := keyed.Key.(*ast.Ident)
+				if !identifierOK {
+					l.errorAt(keyed.Key, "struct literal field name must be an identifier")
+					continue
+				}
+				fieldIndex = -1
+				for index := 0; index < structure.NumFields(); index++ {
+					if structure.Field(index).Name() == identifier.Name {
+						fieldIndex = index
+						break
+					}
+				}
+				if fieldIndex < 0 {
+					l.errorAt(keyed.Key, "unknown struct literal field %s", identifier.Name)
+					continue
+				}
+			case arrayOK:
+				constantIndex := l.pkg.TypesInfo.Types[keyed.Key].Value
+				if constantIndex == nil {
+					l.errorAt(keyed.Key, "array literal index must be constant")
+					continue
+				}
+				index64, exact := constant.Int64Val(constantIndex)
+				if !exact {
+					l.errorAt(keyed.Key, "array literal index is not representable")
+					continue
+				}
+				fieldIndex = int(index64)
+			default:
+				l.errorAt(n, "descriptor aggregate literal requires a struct or array type")
+				continue
+			}
+			valueExpression = keyed.Value
+		} else {
+			position++
+		}
+		if fieldIndex < 0 || fieldIndex >= len(result.aggregate.fields) {
+			l.errorAt(valueExpression, "descriptor aggregate literal index is out of bounds")
+			continue
+		}
+		destination := result.aggregate.fields[fieldIndex]
+		source := l.expr(valueExpression)
+		switch {
+		case destination.aggregate != nil:
+			l.storeAggregate(destination, source, valueExpression)
+		case destination.entity != nil:
+			l.storeEntityView(destination, source, valueExpression)
+		case destination.interface_ != nil:
+			l.storeInterfaceValue(destination, source, valueExpression)
+		case destination.aggregatePointer != nil:
+			if !isAggregatePointerValue(source) && !source.nilPointer {
+				l.errorAt(valueExpression, "aggregate pointer item requires an aggregate address or nil")
+				continue
+			}
+			l.mergeAggregatePointerValue(destination, source, valueExpression)
+		case destination.pointer != nil:
+			if !isStaticPointer(source) {
+				l.errorAt(valueExpression, "pointer aggregate item requires a finite pointer source")
+				continue
+			}
+			l.mergePointerValue(destination, source, valueExpression)
+		case destination.containerVariant != nil:
+			if !isContainerValue(source) {
+				l.errorAt(valueExpression, "container aggregate item requires a container source")
+				continue
+			}
+			l.mergeContainerValue(destination, source, valueExpression)
+		default:
+			l.store(destination, source, valueExpression)
+		}
+	}
+	return result
 }
 
 func (l *lowerer) indexVariadic(n *ast.IndexExpr, base, index lowerValue) lowerValue {
@@ -3631,8 +4396,8 @@ func (l *lowerer) inlineInterfaceMethodAlternatives(call *ast.CallExpr, method *
 	}
 	resultType := l.pkg.TypesInfo.TypeOf(call)
 	var result lowerValue
-	if resultType != nil && l.runtimeTypeOf(resultType).Slots != 0 {
-		result = l.allocZeroed("interface.call.result", resultType, call)
+	if resultType != nil {
+		result = l.newDescriptorCell("interface.call.result", resultType, call)
 	}
 	merge, invalid := l.newBlock(), l.newBlock()
 	blocks := make([]*ir.Block, len(variant.alternatives))
@@ -3660,8 +4425,8 @@ func (l *lowerer) inlineInterfaceMethodAlternatives(call *ast.CallExpr, method *
 		}
 		arguments := append([]callArgument{{value: alternative}}, args...)
 		returned := l.inlineCallArguments(call, concrete, arguments)
-		if resultType != nil && len(result.places) != 0 {
-			l.store(result, returned, call)
+		if resultType != nil {
+			l.storeDescriptor(result, returned, call)
 		}
 		l.jump(merge)
 	}
@@ -3689,11 +4454,22 @@ func (l *lowerer) callReceiver(selector *ast.SelectorExpr, fn *types.Func) lower
 		return receiver
 	}
 	if pointer, ok := types.Unalias(receiver.type_).(*types.Pointer); ok {
+		if receiver.aggregatePointer != nil {
+			receiver = l.loadAggregatePointer(receiver, pointer, selector.X)
+			return l.copyAggregate("call.receiver", receiver, selector.X)
+		}
+		if receiver.aggregate != nil {
+			receiver.type_ = pointer.Elem()
+			return l.copyAggregate("call.receiver", receiver, selector.X)
+		}
 		if receiver.pointer != nil {
 			receiver = l.loadPointer(receiver, pointer, selector.X)
 		} else {
 			receiver.type_ = pointer.Elem()
 		}
+	}
+	if receiver.aggregate != nil {
+		return l.copyAggregate("call.receiver", receiver, selector.X)
 	}
 	copy := l.alloc("call.receiver", signature.Recv().Type())
 	l.store(copy, receiver, selector.X)
@@ -3712,6 +4488,11 @@ func (l *lowerer) builtinCall(n *ast.CallExpr, builtin *types.Builtin) lowerValu
 			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 		}
 		element := pointer.Elem()
+		if l.containsAggregateDescriptor(element) {
+			value := l.newAggregateCell("new.aggregate", element, n)
+			value.type_ = l.pkg.TypesInfo.TypeOf(n)
+			return value
+		}
 		if isPointerType(element) || isFunctionType(element) || isInterfaceType(element) || isContainerType(element) || l.isCompileTimeOnlyValueType(element) || l.containsEntityView(element) || containsResourceHandle(element) != "" {
 			l.errorAt(n, "Go builtin new does not support compile-time-only element type %s", element)
 			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
@@ -3781,7 +4562,7 @@ func (l *lowerer) builtinCall(n *ast.CallExpr, builtin *types.Builtin) lowerValu
 }
 
 func (l *lowerer) materialize(name string, value lowerValue, node ast.Node) lowerValue {
-	if isContainerValue(value) || value.stream != nil || len(value.slots) == 0 {
+	if isContainerValue(value) || value.stream != nil || value.aggregate != nil || len(value.slots) == 0 {
 		return value
 	}
 	if _, ok := types.Unalias(value.type_).(*types.Pointer); ok {
@@ -3803,6 +4584,9 @@ func (l *lowerer) materialize(name string, value lowerValue, node ast.Node) lowe
 }
 
 func (l *lowerer) materializeAddressable(name string, value lowerValue, node ast.Node) lowerValue {
+	if value.aggregate != nil {
+		return value
+	}
 	if len(value.places) == len(value.slots) && len(value.places) != 0 {
 		return value
 	}
@@ -6880,10 +7664,14 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 			frame.result = l.newCallableArray("closure.callable.result", resultType, call)
 		} else if binding, entityView := l.entityBinding(resultType); entityView {
 			frame.result = l.newEntityViewLocal("closure.entity.result", resultType, binding)
+		} else if l.isAggregatePointerType(resultType) {
+			frame.result = l.newAggregatePointerCell("closure.aggregate.pointer.result", resultType, call)
 		} else if isPointerType(resultType) {
 			frame.result = l.newPointerCell("closure.pointer.result", resultType, call)
 		} else if isContainerType(resultType) {
 			frame.result = l.newContainerCell("closure.container.result", resultType, call)
+		} else if l.containsAggregateDescriptor(resultType) {
+			frame.result = l.newAggregateCell("closure.aggregate.result", resultType, call)
 		} else {
 			frame.result = l.allocZeroed("closure.result", resultType, call)
 		}
@@ -6940,7 +7728,28 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 			parameterIndex++
 		}
 	}
-	if literal.Type.Results != nil && frame.result.slots != nil {
+	if literal.Type.Results != nil && frame.result.aggregatePointer != nil {
+		if sig.Results().Len() != 1 {
+			l.errorAt(literal.Type.Results, "aggregate pointer helper result must be a single value")
+		} else if len(literal.Type.Results.List) == 1 && len(literal.Type.Results.List[0].Names) == 1 {
+			name := literal.Type.Results.List[0].Names[0]
+			if obj := l.pkg.TypesInfo.Defs[name]; obj != nil {
+				frame.result = l.mergeAggregatePointerValue(frame.result, lowerValue{type_: resultType, nilPointer: true}, name)
+				frame.results[obj] = true
+				frame.vars[obj] = frame.result
+			}
+		}
+	} else if literal.Type.Results != nil && frame.result.aggregate != nil {
+		if sig.Results().Len() != 1 {
+			l.errorAt(literal.Type.Results, "aggregate helper result must be a single struct value")
+		} else if len(literal.Type.Results.List) == 1 && len(literal.Type.Results.List[0].Names) == 1 {
+			name := literal.Type.Results.List[0].Names[0]
+			if obj := l.pkg.TypesInfo.Defs[name]; obj != nil {
+				frame.results[obj] = true
+				frame.vars[obj] = frame.result
+			}
+		}
+	} else if literal.Type.Results != nil && frame.result.slots != nil {
 		offset := 0
 		for _, field := range literal.Type.Results.List {
 			fieldType := l.resolveType(l.pkg.TypesInfo.TypeOf(field.Type))
@@ -7121,10 +7930,14 @@ func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []
 			frame.result = l.newCallableArray(fn.Name()+".callable.result", resultType, n)
 		} else if binding, entityView := l.entityBinding(resultType); entityView {
 			frame.result = l.newEntityViewLocal(fn.Name()+".entity.result", resultType, binding)
+		} else if l.isAggregatePointerType(resultType) {
+			frame.result = l.newAggregatePointerCell(fn.Name()+".aggregate.pointer.result", resultType, n)
 		} else if isPointerType(resultType) {
 			frame.result = l.newPointerCell(fn.Name()+".pointer.result", resultType, n)
 		} else if isContainerType(resultType) {
 			frame.result = l.newContainerCell(fn.Name()+".container.result", resultType, n)
+		} else if l.containsAggregateDescriptor(resultType) {
+			frame.result = l.newAggregateCell(fn.Name()+".aggregate.result", resultType, n)
 		} else {
 			frame.result = l.allocZeroed(fn.Name()+".result", resultType, n)
 		}
@@ -7189,7 +8002,28 @@ func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []
 		}
 		arg++
 	}
-	if decl.Type.Results != nil {
+	if decl.Type.Results != nil && frame.result.aggregatePointer != nil {
+		if callSig.Results().Len() != 1 {
+			l.errorAt(decl.Type.Results, "aggregate pointer helper result must be a single value")
+		} else if len(decl.Type.Results.List) == 1 && len(decl.Type.Results.List[0].Names) == 1 {
+			name := decl.Type.Results.List[0].Names[0]
+			if result := pkg.TypesInfo.Defs[name]; result != nil {
+				frame.result = l.mergeAggregatePointerValue(frame.result, lowerValue{type_: resultType, nilPointer: true}, name)
+				frame.results[result] = true
+				frame.vars[result] = frame.result
+			}
+		}
+	} else if decl.Type.Results != nil && frame.result.aggregate != nil {
+		if callSig.Results().Len() != 1 {
+			l.errorAt(decl.Type.Results, "aggregate helper result must be a single struct value")
+		} else if len(decl.Type.Results.List) == 1 && len(decl.Type.Results.List[0].Names) == 1 {
+			name := decl.Type.Results.List[0].Names[0]
+			if result := pkg.TypesInfo.Defs[name]; result != nil {
+				frame.results[result] = true
+				frame.vars[result] = frame.result
+			}
+		}
+	} else if decl.Type.Results != nil {
 		offset, resultIndex := 0, 0
 		for _, field := range decl.Type.Results.List {
 			count := len(field.Names)
@@ -7212,6 +8046,8 @@ func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []
 						frame.vars[result] = frame.result
 					} else if frame.result.entity != nil {
 						frame.vars[result] = lowerValue{type_: actualType, slots: frame.result.slots[offset : offset+1], places: frame.result.places[offset : offset+1], entity: frame.result.entity}
+					} else if frame.result.aggregatePointer != nil {
+						frame.vars[result] = frame.result
 					} else if isPointerType(actualType) {
 						if frame.result.pointer != nil && len(frame.result.pointer.alternatives) == 0 {
 							frame.result = l.mergePointerValue(frame.result, lowerValue{type_: actualType, nilPointer: true}, field.Names[i])
@@ -7304,9 +8140,17 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 					l.errorAt(name, "%s resource handle aggregates cannot be declared without a resource value", kind)
 					continue
 				}
+				if l.containsAggregateDescriptor(objectType) {
+					l.bind(obj, l.newAggregateCell(name.Name, objectType, name))
+					continue
+				}
 				if isPointerType(objectType) {
 					value := lowerValue{type_: objectType, nilPointer: true}
-					l.bind(obj, l.copyPointerValue(name.Name, value, name))
+					if l.isAggregatePointerType(objectType) {
+						l.bind(obj, l.copyAggregatePointerValue(name.Name, value, name))
+					} else {
+						l.bind(obj, l.copyPointerValue(name.Name, value, name))
+					}
 					continue
 				}
 				l.bind(obj, l.allocZeroed(name.Name, objectType, name))
@@ -7486,6 +8330,24 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 			l.jump(frame.returnBlock)
 			return
 		}
+		if frame.result.aggregate != nil {
+			if len(n.Results) == 0 {
+				l.jump(frame.returnBlock)
+				return
+			}
+			if len(n.Results) != 1 {
+				l.errorAt(n, "aggregate helper return requires exactly one result")
+			} else {
+				value := l.expr(n.Results[0])
+				if value.aggregate == nil {
+					l.errorAt(n.Results[0], "aggregate helper must return a local struct with pointer or container fields")
+				} else {
+					l.storeAggregate(frame.result, value, n.Results[0])
+				}
+			}
+			l.jump(frame.returnBlock)
+			return
+		}
 		for _, result := range n.Results {
 			if isFunctionType(l.pkg.TypesInfo.TypeOf(result)) {
 				l.errorAt(result, "function values cannot be returned from callbacks or helpers")
@@ -7519,6 +8381,24 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 					l.errorAt(n.Results[0], "EntityRef.Get view helper must return an entity view")
 				} else {
 					l.storeEntityView(frame.result, value, n.Results[0])
+				}
+			}
+			l.jump(frame.returnBlock)
+			return
+		}
+		if frame.result.aggregatePointer != nil {
+			if len(n.Results) == 0 {
+				if len(frame.result.aggregatePointer.alternatives) == 0 {
+					l.errorAt(n, "named aggregate pointer result has no address or nil value")
+				}
+			} else if len(n.Results) != 1 {
+				l.errorAt(n, "aggregate pointer helper return requires exactly one result")
+			} else {
+				value := l.expr(n.Results[0])
+				if !isAggregatePointerValue(value) && !value.nilPointer {
+					l.errorAt(n.Results[0], "aggregate pointer helper must return an aggregate address or nil")
+				} else {
+					frame.result = l.mergeAggregatePointerValue(frame.result, value, n.Results[0])
 				}
 			}
 			l.jump(frame.returnBlock)
@@ -8088,6 +8968,18 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			skipStore[i] = true
 			continue
 		}
+		if l.isAggregatePointerType(objectType) && (isAggregatePointerValue(values[i]) || values[i].nilPointer) {
+			frame := l.frames[len(l.frames)-1]
+			values[i].type_ = objectType
+			if frame.reboundValues[object] || values[i].aggregatePointer != nil {
+				identifier := n.Lhs[i].(*ast.Ident)
+				l.bind(object, l.copyAggregatePointerValue(identifier.Name, values[i], identifier))
+			} else {
+				l.bind(object, values[i])
+			}
+			skipStore[i] = true
+			continue
+		}
 		if isStaticPointer(values[i]) {
 			values[i].type_ = objectType
 			identifier := n.Lhs[i].(*ast.Ident)
@@ -8109,6 +9001,12 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 		if isContainerValue(values[i]) {
 			identifier := n.Lhs[i].(*ast.Ident)
 			l.bind(object, l.copyContainerValue(identifier.Name, values[i], identifier))
+			skipStore[i] = true
+			continue
+		}
+		if values[i].aggregate != nil {
+			identifier := n.Lhs[i].(*ast.Ident)
+			l.bind(object, l.copyAggregate(identifier.Name, values[i], identifier))
 			skipStore[i] = true
 			continue
 		}
@@ -8137,6 +9035,18 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			}
 		}
 		if values[i].interface_ != nil {
+			if destinations[i].aggregateLoad != nil {
+				l.storeAggregatePointerLoad(destinations[i].aggregateLoad, values[i], lhs)
+				continue
+			}
+			if destinations[i].aggregateIndex != nil {
+				l.storeAggregateIndex(destinations[i].aggregateIndex, values[i], lhs)
+				continue
+			}
+			if destinations[i].interface_ != nil {
+				l.storeInterfaceValue(destinations[i], values[i], lhs)
+				continue
+			}
 			identifier, ok := lhs.(*ast.Ident)
 			if !ok {
 				l.errorAt(lhs, "finite static interface values can only be assigned to local variables")
@@ -8152,6 +9062,45 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			}
 			values[i].type_ = object.Type()
 			l.rebind(object, values[i])
+			continue
+		}
+		if identifier, ok := lhs.(*ast.Ident); ok && destinations[i].aggregate == nil && destinations[i].aggregatePointer == nil {
+			object := l.pkg.TypesInfo.ObjectOf(identifier)
+			if object == nil {
+				object = l.pkg.TypesInfo.Defs[identifier]
+			}
+			if existing, exists := l.lookup(object); exists {
+				if existing.aggregate != nil || existing.aggregatePointer != nil {
+					destinations[i] = existing
+				}
+			}
+		}
+		if destinations[i].aggregateLoad != nil {
+			l.storeAggregatePointerLoad(destinations[i].aggregateLoad, values[i], lhs)
+			continue
+		}
+		if destinations[i].aggregateIndex != nil {
+			l.storeAggregateIndex(destinations[i].aggregateIndex, values[i], lhs)
+			continue
+		}
+		if destinations[i].aggregate != nil && values[i].aggregate != nil {
+			l.storeAggregate(destinations[i], values[i], lhs)
+			continue
+		}
+		if destinations[i].interface_ != nil {
+			l.storeInterfaceValue(destinations[i], values[i], lhs)
+			continue
+		}
+		if destinations[i].aggregatePointer != nil && (isAggregatePointerValue(values[i]) || values[i].nilPointer) {
+			l.mergeAggregatePointerValue(destinations[i], values[i], lhs)
+			continue
+		}
+		if destinations[i].pointer != nil && isStaticPointer(values[i]) {
+			l.mergePointerValue(destinations[i], values[i], lhs)
+			continue
+		}
+		if destinations[i].containerVariant != nil && isContainerValue(values[i]) {
+			l.mergeContainerValue(destinations[i], values[i], lhs)
 			continue
 		}
 		if isStaticPointer(values[i]) {
@@ -8429,6 +9378,8 @@ func (l *lowerer) rangeStmt(n *ast.RangeStmt, label string) {
 	if ok {
 		if collection.callableArray != nil && !blankExpr(n.Value) {
 			collection = l.copyCallableArray("range.callable", collection, n.X)
+		} else if collection.aggregate != nil && pointerArray == nil && !blankExpr(n.Value) {
+			collection = l.copyAggregate("range.aggregate", collection, n.X)
 		} else if pointerArray == nil && !blankExpr(n.Value) {
 			snapshot := l.alloc("range.array", collection.type_)
 			l.store(snapshot, collection, n.X)
@@ -8484,6 +9435,8 @@ func (l *lowerer) rangeStmt(n *ast.RangeStmt, label string) {
 		var element lowerValue
 		if collection.callableArray != nil {
 			element = lowerValue{type_: elementType, callable: indexedCallableVariant(l, collection.callableArray.elements, index, n)}
+		} else if collection.aggregate != nil {
+			element = l.indexAggregateArray(collection, array, index, n, n.X)
 		} else if collection.variadic != nil && isFunctionType(elementType) {
 			element = lowerValue{type_: elementType, callable: indexedCallableVariant(l, collection.variadic.callables, index, n)}
 		} else if collection.variadic != nil && arrayLength == 0 {
@@ -8584,7 +9537,16 @@ func blankExpr(expr ast.Expr) bool {
 
 func (l *lowerer) assignRangeValue(target ast.Expr, op token.Token, value lowerValue) {
 	if op != token.DEFINE {
-		l.store(l.expr(target), value, target)
+		destination := l.expr(target)
+		if destination.aggregateLoad != nil {
+			l.storeAggregatePointerLoad(destination.aggregateLoad, value, target)
+		} else if destination.aggregateIndex != nil {
+			l.storeAggregateIndex(destination.aggregateIndex, value, target)
+		} else if destination.aggregate != nil || destination.pointer != nil || destination.containerVariant != nil || value.aggregate != nil || isStaticPointer(value) || isContainerValue(value) {
+			l.storeDescriptor(destination, value, target)
+		} else {
+			l.store(destination, value, target)
+		}
 		return
 	}
 	identifier, ok := target.(*ast.Ident)
@@ -8603,6 +9565,18 @@ func (l *lowerer) assignRangeValue(target ast.Expr, op token.Token, value lowerV
 	}
 	if value.callable != nil {
 		l.bindCallable(object, value.callable)
+		return
+	}
+	if value.aggregate != nil {
+		l.bind(object, l.copyAggregate(identifier.Name, value, identifier))
+		return
+	}
+	if isStaticPointer(value) {
+		l.bind(object, l.copyPointerValue(identifier.Name, value, identifier))
+		return
+	}
+	if isContainerValue(value) {
+		l.bind(object, l.copyContainerValue(identifier.Name, value, identifier))
 		return
 	}
 	local := l.alloc(identifier.Name, object.Type())

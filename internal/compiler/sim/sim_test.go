@@ -462,6 +462,42 @@ func TestFiniteVariantsAndContainersMatchAcrossOptimizations(t *testing.T) {
 			if got := result.Memory[4000][1]; got != wantPointer {
 				t.Fatalf("optimization %d pointer variants = %v, want %v", optimization, got, wantPointer)
 			}
+			wantPointerAggregate := []float64{1516, 1417}[selector]
+			if got := result.Memory[4000][5]; got != wantPointerAggregate {
+				t.Fatalf("optimization %d pointer aggregate = %v, want %v", optimization, got, wantPointerAggregate)
+			}
+			if len(result.Memory[4000]) <= 13 {
+				t.Fatalf("optimization %d omitted aggregate flow result memory: %+v", optimization, result)
+			}
+			if got := result.Memory[4000][6]; got != 721 {
+				t.Fatalf("optimization %d pointer aggregate flows = %v, want 721", optimization, got)
+			}
+			if got := result.Memory[4000][7]; got != 709 {
+				t.Fatalf("optimization %d container aggregate = %v, want 709", optimization, got)
+			}
+			wantPointerAggregateArray := []float64{713, 1208}[selector]
+			if got := result.Memory[4000][8]; got != wantPointerAggregateArray {
+				t.Fatalf("optimization %d pointer aggregate array = %v, want %v", optimization, got, wantPointerAggregateArray)
+			}
+			if got := result.Memory[4000][9]; got != 77 {
+				t.Fatalf("optimization %d new pointer aggregate = %v, want 77", optimization, got)
+			}
+			wantDynamicAggregateArray := []float64{433, 924}[selector]
+			if got := result.Memory[4000][10]; got != wantDynamicAggregateArray {
+				t.Fatalf("optimization %d dynamic aggregate array = %v, want %v", optimization, got, wantDynamicAggregateArray)
+			}
+			wantReboundAggregatePointer := []float64{703, 208}[selector]
+			if got := result.Memory[4000][11]; got != wantReboundAggregatePointer {
+				t.Fatalf("optimization %d rebound aggregate pointer = %v, want %v", optimization, got, wantReboundAggregatePointer)
+			}
+			wantAggregateInterface := []float64{903, 408}[selector]
+			if got := result.Memory[4000][12]; got != wantAggregateInterface {
+				t.Fatalf("optimization %d aggregate interface = %v, want %v", optimization, got, wantAggregateInterface)
+			}
+			wantNestedAggregatePointer := []float64{106, 502}[selector]
+			if got := result.Memory[4000][13]; got != wantNestedAggregatePointer {
+				t.Fatalf("optimization %d nested aggregate pointer = %v, want %v", optimization, got, wantNestedAggregatePointer)
+			}
 			if index == 0 {
 				reference = result
 				continue
