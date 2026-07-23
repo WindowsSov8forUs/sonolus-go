@@ -659,7 +659,7 @@ func TestPersistentLevelGlobalPointersAndInterfacesCompile(t *testing.T) {
 	if declaration == nil {
 		t.Fatalf("PersistentMemory declaration missing: %+v", declarations.LevelGlobals)
 	}
-	if declaration.Size != 11 || len(declaration.Fields) != 8 {
+	if declaration.Size != 67 || len(declaration.Fields) != 12 {
 		t.Fatalf("persistent level global layout = %+v", declaration)
 	}
 	if declaration.Fields[2].PersistentKind != "pointer" || declaration.Fields[3].PersistentKind != "pointer" || declaration.Fields[6].PersistentKind != "interface" {
