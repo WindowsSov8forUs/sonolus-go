@@ -126,9 +126,25 @@ func (*PersistentNote) Preprocess() {
 	sharedIndex := sharedInput.LaneCount - 1
 	sharedInput.InputStateArray[sharedIndex].Lane = 7
 	sharedInput.CurrentFrameFlickStateArray[sharedIndex].BeginLane = 8
+	unit := &sharedInput.InputStateArray[sharedIndex]
+	flickUnit := &sharedInput.CurrentFrameFlickStateArray[sharedIndex]
+	unit.Clear()
+	flickUnit.Clear()
+	if unit.Lane != -1 || flickUnit.BeginLane != -1 {
+		sonolus.Terminate("dynamic input pointer receiver lost identity")
+	}
+	unit.Lane = 7
+	flickUnit.BeginLane = 8
+	sharedInput.InputStateArray[sharedIndex].Clear()
+	sharedInput.CurrentFrameFlickStateArray[sharedIndex].Clear()
+	if sharedInput.InputStateArray[sharedIndex].Lane != -1 || sharedInput.CurrentFrameFlickStateArray[sharedIndex].BeginLane != -1 {
+		sonolus.Terminate("dynamic indexed input method receiver lost identity")
+	}
+	unit.Lane = 7
+	flickUnit.BeginLane = 8
 	sharedInput.TempPair.Set(
-		&sharedInput.InputStateArray[sharedIndex],
-		&sharedInput.CurrentFrameFlickStateArray[sharedIndex],
+		unit,
+		flickUnit,
 	)
 	if sharedInput.TempPair.InputUnit.Lane != 7 || sharedInput.TempPair.FlickInputUnit.BeginLane != 8 {
 		sonolus.Terminate("dynamic persistent input address lost identity")
