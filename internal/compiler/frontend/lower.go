@@ -252,6 +252,10 @@ func (l *lowerer) packageCallableArray(object types.Object, node ast.Node) (lowe
 	if !ok || variable.Pkg() == nil || variable.IsField() {
 		return lowerValue{}, false
 	}
+	if declaration := l.packagePointers[variable]; declaration != nil {
+		storage, read, write := levelGlobalStorageAccess(declaration, l.mode, l.phase)
+		return l.lowerPersistentPackagePointer(declaration, storage, read, write), true
+	}
 	if _, ok := callableArrayType(l.resolveType(variable.Type())); !ok {
 		return lowerValue{}, false
 	}
@@ -357,6 +361,12 @@ func (l *lowerer) packageStaticValue(object types.Object, node ast.Node) (lowerV
 	if err != nil {
 		l.errorAt(node, "package value %s requires a pure static initializer", variable.Name())
 		return lowerValue{}, true
+	}
+	if binding.Value.Kind == source.StaticPointer && binding.Value.Pointer != nil && binding.Value.Pointer.Object != nil {
+		if declaration := l.packageGlobals[binding.Value.Pointer.Object]; declaration != nil && len(binding.Value.Pointer.Path) == 0 {
+			storage, read, write := levelGlobalStorageAccess(declaration, l.mode, l.phase)
+			return l.lowerPersistentPackagePointer(declaration, storage, read, write), true
+		}
 	}
 	value, ok := l.lowerStaticRuntimeValue(binding.Value, target, node)
 	if !ok {
@@ -854,6 +864,13 @@ func (l *lowerer) lowerLevelGlobalValue(node ast.Node, declaration *LevelGlobalF
 	return value
 }
 
+func (l *lowerer) lowerPersistentPackagePointer(declaration *LevelGlobalFieldDeclaration, storage string, read, write bool) lowerValue {
+	return lowerValue{type_: types.NewPointer(declaration.Type), persistentPointer: &persistentPointerValue{
+		handle:  lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: float64(declaration.Offset + 1)}}},
+		storage: storage, target: declaration, read: read, write: write,
+	}}
+}
+
 type entityReferenceValue struct {
 	binding archetypeBinding
 }
@@ -1086,6 +1103,8 @@ type lowerer struct {
 	streamSize        int
 	configuration     *ConfigurationDeclaration
 	levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration
+	packageGlobals    map[*source.StaticObject]*LevelGlobalFieldDeclaration
+	packagePointers   map[*types.Var]*LevelGlobalFieldDeclaration
 	currentArchetype  *ArchetypeDeclaration
 	archetypeFields   map[*types.Var]*FieldDeclaration
 	archetypes        map[*types.Named]archetypeBinding
@@ -10140,7 +10159,7 @@ func (l *lowerer) assignRangeValue(target ast.Expr, op token.Token, value lowerV
 	l.store(local, value, target)
 }
 
-func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, currentArchetype *ArchetypeDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string, checks RuntimeChecks) (*ir.Function, []error) {
+func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, currentArchetype *ArchetypeDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string, checks RuntimeChecks) (*ir.Function, []error) {
 	if decl == nil {
 		return nil, nil
 	}
@@ -10158,7 +10177,7 @@ func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *pa
 	for _, field := range fields {
 		archetypeFields[field.Object] = field
 	}
-	l := &lowerer{mode: m, phase: phase, checks: checks, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, streamSize: resources.StreamSize, configuration: configuration, levelGlobalFields: levelGlobalFields, currentArchetype: currentArchetype, archetypeFields: archetypeFields, archetypes: archetypes}
+	l := &lowerer{mode: m, phase: phase, checks: checks, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, streamSize: resources.StreamSize, configuration: configuration, levelGlobalFields: levelGlobalFields, packageGlobals: packageGlobals, packagePointers: packagePointers, currentArchetype: currentArchetype, archetypeFields: archetypeFields, archetypes: archetypes}
 	entry := l.newBlock()
 	_ = builder.SetEntry(entry)
 	l.setCurrent(entry)

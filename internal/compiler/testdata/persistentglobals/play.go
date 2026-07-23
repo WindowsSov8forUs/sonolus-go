@@ -16,6 +16,8 @@ type persistentPair struct {
 	Other *persistentUnit
 }
 
+var packageTempPair = new(persistentPair)
+
 func (pair *persistentPair) Set(unit, other *persistentUnit) *persistentPair {
 	pair.Unit = unit
 	pair.Other = other
@@ -69,6 +71,7 @@ type PersistentNote struct {
 }
 
 func (*PersistentNote) Preprocess() {
+	packageTempPair.Set(&Persistent.Unit, nil)
 	if Persistent.AutoInput != nil {
 		sonolus.Terminate("persistent interface zero value is not nil")
 	}
@@ -88,6 +91,11 @@ func (*PersistentNote) Preprocess() {
 }
 
 func (*PersistentNote) UpdateSequential() {
+	packagePair := packageTempPair
+	packagePair.Set(packagePair.Unit, packagePair.Other)
+	if packagePair != packageTempPair {
+		sonolus.Terminate("package persistent pair identity changed")
+	}
 	pair := Persistent.TempPair
 	if pair != Persistent.TempPair {
 		sonolus.Terminate("persistent pair identity changed")
