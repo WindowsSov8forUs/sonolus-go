@@ -23,12 +23,27 @@ type InputUnit struct {
 	FingerIndex    int
 }
 
+func (unit *InputUnit) Clear() {
+	unit.InputState = 0
+	unit.ScreenPosition = sonolus.Vec2{}
+	unit.Lane = -1
+	unit.InputTimeMs = -1
+	unit.FingerIndex = -1
+}
+
 type FlickInputUnit struct {
 	InputUnitIndex        int
 	IsFlickedCurrentFrame bool
 	MoveVector            sonolus.Vec2
 	BeginLane             float64
 	FingerIndex           int
+}
+
+func (unit *FlickInputUnit) Clear() {
+	unit.IsFlickedCurrentFrame = false
+	unit.MoveVector = sonolus.Vec2{}
+	unit.BeginLane = -1
+	unit.FingerIndex = -1
 }
 
 type InputPair struct {
