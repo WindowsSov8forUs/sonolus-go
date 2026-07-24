@@ -1095,3 +1095,45 @@ func TestHugeNestedValueIsRejectedWithoutAllocation(t *testing.T) {
 		t.Fatalf("Good = %d, want 1", got)
 	}
 }
+
+func TestLargeNestedValueUsesGraphBudget(t *testing.T) {
+	pkg := mustStaticPackage(t, map[string]string{
+		"main.go": `package main
+type Result struct {
+	NoteID int
+	Note int
+	State int
+	Judgement *Judgement
+	Progress float64
+	Offset int
+	Override int
+}
+type Judgement struct {
+	Note int
+	Type int
+	Origin int
+	Converted int
+	Timing int
+	DirectionMismatch bool
+	Time int
+	Difference int
+	ConvertedDifference int
+	EasyFlick bool
+}
+var Pool struct {
+	Results [4096]Result
+	Judgements [4096]Judgement
+}
+`,
+	})
+	value := mustEvalBinding(t, NewASTTracer(pkg), "Pool").Value
+	if value.Kind != StaticStruct || len(value.Fields) != 2 {
+		t.Fatalf("Pool = %#v", value)
+	}
+	if got := len(value.Fields[0].Value.Elements); got != 4096 {
+		t.Fatalf("Results length = %d, want 4096", got)
+	}
+	if got := len(value.Fields[1].Value.Elements); got != 4096 {
+		t.Fatalf("Judgements length = %d, want 4096", got)
+	}
+}
