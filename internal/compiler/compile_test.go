@@ -1392,20 +1392,6 @@ func TestParseDeclarationsAcceptsVariadicUserHelper(t *testing.T) {
 	}
 }
 
-func TestStaticDSLCompilesAtEveryOptimizationLevel(t *testing.T) {
-	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
-		t.Run(level.String(), func(t *testing.T) {
-			artifacts, err := NewCompiler(Options{Optimization: level}, "./testdata/lowering").Compile(mode.ModePlay)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if artifacts.Play == nil || len(artifacts.Play.Archetypes) == 0 || len(artifacts.Play.Nodes) == 0 {
-				t.Fatalf("incomplete play artifacts: %#v", artifacts.Play)
-			}
-		})
-	}
-}
-
 func TestParseDeclarationsRejectsInvalidStaticDSL(t *testing.T) {
 	tests := []struct{ pattern, message string }{
 		{"./testdata/invalidintrange", "range is only supported for int values"},

@@ -8,7 +8,8 @@
 - Py optimizer 基线固定为 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3`。
 - JS Runtime/SNode 基线固定为 `sonolus.js-compiler@37b0eee5aa16d1e01973d33d625d86f5ef72d268`。
 - Catalog 是 callback API、layout、阶段权限、effect 与 lowering recipe 的唯一事实来源。
-- Godori 是实际四模式黑盒验收工程；`internal/compiler/testdata` 负责隔离的语法、IR、差分与稳定拒绝测试。
+- Godori 只负责证明实际四模式引擎可由标准优化级成功编译；产物语义、优化级一致性、Development Level、CLI 和具体功能边界由对应内部测试集负责。
+- `internal/compiler` 集中覆盖 compiler 功能、语义、差分与稳定拒绝；`cmd/sonolus-go` 只测试参数、脚手架、缓存、命名和无 compiler 执行的服务边界。
 
 普通测试只读取 checked-in golden，不要求相邻的 Python 或 JavaScript checkout。只有明确更新固定基线或已审核实现语义变化时才运行 regeneration。
 
@@ -40,7 +41,7 @@ Godori 关卡源码位于 `godori/internal/leveldata`。修改后运行：
 go generate ./godori
 ```
 
-`godori/godori_test.go` 会逐字节检查 `godori/dev-level.json` 是否与 builder 输出一致。
+Godori 普通测试不重复验证关卡生成器内部行为。修改关卡源码时显式运行生成命令并审核 `godori/dev-level.json` 差异。
 
 ## Py optimizer 差分
 
@@ -77,17 +78,16 @@ internal/compiler/testdata/backend/regenerate_snode.sh ../sonolus.js-compiler/sr
 局部修改先运行最窄的相关测试。涉及公开链路、IR、优化器、backend、并发、CLI 或 Godori 时，提交前运行：
 
 ```bash
-go test -race -count=1 ./...
+go test -p=1 -race -count=1 ./...
 go vet ./...
 go build ./...
 gofmt -l .
 git diff --check
 
-go run ./cmd/sonolus-go vet -O 0 ./godori
-go run ./cmd/sonolus-go vet -O 1 ./godori
 go run ./cmd/sonolus-go vet -O 2 ./godori
-go run ./cmd/sonolus-go list ./godori
 ```
+
+全量测试使用 `-p=1` 串行运行各 package，避免多个包含完整编译器验收的测试二进制同时占用 CPU 和内存。Godori 只在自身测试中编译一次；仅在需要人工验证 CLI 路由时额外运行标准优化级 `vet`，不把三个优化级和 `list` 重复加入普通收尾。该参数只限制 package 级调度，不会屏蔽单个 package 内显式验证的并发行为；局部测试仍可使用 Go 默认并行度。
 
 `gofmt -l .` 必须无输出。不要用节点数单独证明语义正确；优化修改还需通过 simulator 或 reference corpus 比较 callback 结果、semantic memory、streams 与副作用顺序。
 

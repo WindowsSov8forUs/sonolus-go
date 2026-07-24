@@ -19,9 +19,9 @@ development LevelFile declarations
     -> Sonolus dev server
 ```
 
-根调度器是 `internal/compiler.Compiler`。CLI 只依赖该根包门面，不直接调用 frontend、IR 或 backend。
+根调度器是 `internal/compiler.Compiler`。CLI 只依赖该根包门面，不直接调用 frontend、IR 或 backend。CLI 测试不重复执行 compiler 集成链路，只覆盖参数、脚手架、缓存、目标命名和无编译服务边界。
 
-仓库根目录下的 `godori/` 是完整链路的长期验收工程：同一组源码覆盖 Play、Watch、Preview、Tutorial、Development Level 和 CLI dev server。它参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 的 pydori 设计，包含 Tap、Flick、Directional Flick、以 abstract note 和 `prev`/`next` 统一链表示的任意 anchor Hold、同时押宽 hitbox 切分、99999 实体容量的回放 stream 与分段 Hold 音效、组合 judgment bucket、动态管理 archetype、BPM/Timescale、projective stage transform、统一 layer z 规则、音符边界淡入淡出、周期 Flick 箭头、screen-space affine particle 校正、Preview 与 Tutorial，并使用结构化 level globals 复用公共状态布局。
+仓库根目录下的 `godori/` 是实际四模式引擎 corpus；普通测试只证明同一组 Play、Watch、Preview、Tutorial 源码可由标准优化级成功编译，不重复承担 compiler 功能、优化级语义、Development Level 或 CLI dev server 测试。它参考 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3` 的 pydori 设计，包含 Tap、Flick、Directional Flick、以 abstract note 和 `prev`/`next` 统一链表示的任意 anchor Hold、同时押宽 hitbox 切分、99999 实体容量的回放 stream 与分段 Hold 音效、组合 judgment bucket、动态管理 archetype、BPM/Timescale、projective stage transform、统一 layer z 规则、音符边界淡入淡出、周期 Flick 箭头、screen-space affine particle 校正、Preview 与 Tutorial，并使用结构化 level globals 复用公共状态布局。
 
 CLI 先通过 `compiler.DiscoverTargets` 将 package patterns 展开为稳定排序的 engine main package。未指定 `-o` 时，每个目标使用 module path 最后一段作为名称并由独立 Compiler 编译；产物固定写入 `dist/<name>`。
 
