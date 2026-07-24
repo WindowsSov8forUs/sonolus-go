@@ -43,8 +43,9 @@ func isNilable(typ types.Type) bool {
 }
 
 func (e *staticEvaluator) zeroValue(pkg *packages.Package, typ types.Type) (StaticValue, error) {
-	cost, ok := staticValueCost(typ, maxStaticElements)
-	if !ok || cost > maxStaticGraphElements-e.allocatedElements {
+	remaining := maxStaticGraphElements - e.allocatedElements
+	cost, ok := staticValueCost(typ, remaining)
+	if !ok || cost > remaining {
 		return StaticValue{}, e.errorAt(pkg, nil, nil, fmt.Errorf("value is too large: %w", ErrNotStatic))
 	}
 	e.allocatedElements += cost

@@ -667,6 +667,31 @@ func TestPersistentLevelGlobalPointersAndInterfacesCompile(t *testing.T) {
 	}
 }
 
+func TestLargePersistentLevelGlobalPoolCompiles(t *testing.T) {
+	declarations, err := parseMode(mode.ModePlay, "./testdata/largepersistentglobal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(declarations.LevelGlobals) != 1 {
+		t.Fatalf("level globals = %+v", declarations.LevelGlobals)
+	}
+	declaration := declarations.LevelGlobals[0]
+	if declaration.TypeName != "SimulatorMemory" || declaration.Size != 69632 || len(declaration.Fields) != 2 {
+		t.Fatalf("large persistent level global layout = %+v", declaration)
+	}
+	results := declaration.Fields[0]
+	if len(results.Elements) != 4096 || results.ElementStride != 7 {
+		t.Fatalf("results layout = %+v", results)
+	}
+	if judgement := results.Elements[0].Fields[3]; judgement.PersistentKind != "pointer" || judgement.Size != 1 {
+		t.Fatalf("judgement pointer layout = %+v", judgement)
+	}
+	judgements := declaration.Fields[1]
+	if judgements.Size != 40960 || len(judgements.Elements) != 0 {
+		t.Fatalf("judgements layout = %+v", judgements)
+	}
+}
+
 func TestTypedLevelGlobalsRejectInvalidDeclarationsAndWrites(t *testing.T) {
 	_, err := NewCompiler(Options{}, "./testdata/invalidlevelglobals").Compile(mode.ModePlay)
 	for _, message := range []string{
