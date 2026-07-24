@@ -70,13 +70,13 @@ Backend 在模式范围共享 node pool，子节点优先写入并按值或 `Run
 
 ## 基准与回归
 
-仓库根目录下的 `godori/` 是固定的实际引擎 corpus；内部 conformance fixture 负责覆盖泛型、闭包、variadic helper 和静态 callable 等 DSL 边界。二者共同观察三个优化等级的完整四模式编译成本和最终节点数：
+仓库根目录下的 `godori/` 是固定的实际引擎 corpus，只在普通测试中验证标准优化级的四模式编译成立。三个优化等级的语义与性能比较集中使用内部 reference/conformance fixture：
 
 ```bash
-go test ./godori ./internal/compiler -run '^$' -bench BenchmarkCompileAll -benchmem
+go test ./internal/compiler -run '^$' -bench BenchmarkCompileAll -benchmem
 ```
 
-Godori 的端到端测试检查产物结构、节点索引和确定性；绝对耗时不作为普通 CI 的硬阈值，避免机器负载造成误报。性能改动应在相同机器上多次运行 benchmark 后比较 `ns/op`、内存分配和 `nodes/op`。
+Godori 不再重复检查产物结构、节点索引、确定性或各优化级语义；这些契约由 compiler 的集中功能测试、reference corpus 和 simulator 覆盖。绝对耗时不作为普通 CI 的硬阈值，性能改动应在相同机器上多次运行 benchmark 后比较 `ns/op`、内存分配和 `nodes/op`。
 
 性能改动必须同时检查：
 
@@ -89,8 +89,8 @@ Godori 的端到端测试检查产物结构、节点索引和确定性；绝对�
 推荐验收：
 
 ```bash
-go test -race -count=1 ./internal/compiler/...
-go test -count=1 ./...
+go test -p=1 -race -count=1 ./internal/compiler/...
+go test -p=1 -count=1 ./...
 go vet ./...
 go build ./...
 gofmt -l .

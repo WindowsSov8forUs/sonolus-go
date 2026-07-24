@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -361,4 +364,57 @@ func TestCLICompilerImportsStayAtPublicBoundary(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestNameTargets(t *testing.T) {
+	targets := []compiler.Target{
+		{PackagePath: "example.com/first/cmd/engine", ModulePath: "example.com/first"},
+		{PackagePath: "example.com/second/cmd/engine", ModulePath: "example.com/second"},
+	}
+	named, err := nameTargets(targets, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if named[0].name != "first" || named[1].name != "second" {
+		t.Fatalf("names = %q, %q", named[0].name, named[1].name)
+	}
+	if _, err := nameTargets(targets, "combined"); err == nil || !strings.Contains(err.Error(), "-o requires exactly one engine") {
+		t.Fatalf("multi-engine -o error = %v", err)
+	}
+	if got, err := nameTargets(targets[:1], "custom"); err != nil || got[0].name != "custom" {
+		t.Fatalf("custom name = %#v, err = %v", got, err)
+	}
+	duplicate := []compiler.Target{
+		{PackagePath: "example.com/shared/a", ModulePath: "example.com/shared"},
+		{PackagePath: "example.com/shared/b", ModulePath: "example.com/shared"},
+	}
+	if _, err := nameTargets(duplicate, ""); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("duplicate module name error = %v", err)
+	}
+}
+
+func TestServePayloadWithoutSnapshot(t *testing.T) {
+	srv := &devServer{}
+	recorder := httptest.NewRecorder()
+	srv.servePayload(func(a *compiler.Artifacts) any { return a.Play })(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestServeGzipWriteError(t *testing.T) {
+	w := &failingWriter{}
+	serveGzip(w, []byte("test"))
+	if !w.written {
+		t.Fatal("write was not attempted")
+	}
+}
+
+type failingWriter struct{ written bool }
+
+func (w *failingWriter) Header() http.Header { return http.Header{} }
+func (w *failingWriter) WriteHeader(int)     {}
+func (w *failingWriter) Write([]byte) (int, error) {
+	w.written = true
+	return 0, fmt.Errorf("simulated write error")
 }
