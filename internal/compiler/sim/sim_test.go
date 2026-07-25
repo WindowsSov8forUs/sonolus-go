@@ -737,6 +737,32 @@ func TestPersistentLevelGlobalPointersAndInterfacesMatchAcrossOptimizations(t *t
 		if shared := interfaceSequential.Memory[4102]; len(shared) < 2 || shared[0] != 0 || shared[1] != 0 {
 			t.Fatalf("optimization %d entity shared interface was not cleared: %v", optimization, shared)
 		}
+		entityPreprocessed, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "PersistentEntityInterfaceCarrier", Callback: "preprocess",
+			Memory: map[int][]float64{4002: {1, -1, 2, 0, 0}, 4102: {0}},
+		})
+		if err != nil {
+			t.Fatalf("optimization %d entity interface preprocess: %v", optimization, err)
+		}
+		entitySequential, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "PersistentEntityInterfaceCarrier", Callback: "updateSequential",
+			Memory: entityPreprocessed.Memory,
+		})
+		if err != nil {
+			t.Fatalf("optimization %d entity interface updateSequential: %v", optimization, err)
+		}
+		if memory := entitySequential.Memory[2000]; len(memory) <= 10 || memory[10] != 67 {
+			t.Fatalf("optimization %d entity interface result = %v", optimization, memory)
+		}
+		if target := entitySequential.Memory[4102]; len(target) <= 32 || target[32] != 35 {
+			t.Fatalf("optimization %d entity interface target = %v", optimization, target)
+		}
+		if shared := entitySequential.Memory[4002]; len(shared) < 5 || shared[3] != 0 || shared[4] != 0 {
+			t.Fatalf("optimization %d entity interfaces were not cleared: %v", optimization, shared)
+		}
+		if target := entitySequential.Memory[4102]; len(target) <= 65 || target[64] != 0 || target[65] != 0 {
+			t.Fatalf("optimization %d target entity interface was not cleared: %v", optimization, target)
+		}
 		int64Result, err := engine.Run(Request{
 			Mode: ModePlay, Archetype: "RuntimeInt64Carrier", Callback: "preprocess",
 			Memory: map[int][]float64{4002: {1<<31 - 1}},

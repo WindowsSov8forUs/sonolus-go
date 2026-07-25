@@ -24,6 +24,15 @@ type persistentPackageHolder struct{ Input persistentAutoInput }
 
 var packageHolder = &persistentPackageHolder{Input: &persistentAutoInputImpl{Bias: 5}}
 
+type persistentEntityPackageHolder struct{ Input shared.AutoInput }
+
+var packageEntityHolder = &persistentEntityPackageHolder{}
+
+func (holder *persistentEntityPackageHolder) Dispatch(value float64) float64 {
+	input := holder.Input
+	return input.Apply(value)
+}
+
 type persistentPackageInput struct {
 	TempPair *persistentPair
 	Units    [2]persistentUnit
@@ -89,6 +98,16 @@ func (input *persistentAutoInputOther) Apply(value float64) float64 {
 	return input.Factor * value
 }
 
+type persistentEntityAutoCarrier struct {
+	play.Archetype `archetype:"name=PersistentEntityAutoCarrier"`
+	Bias           float64 `archetype:"shared"`
+}
+
+func (input *persistentEntityAutoCarrier) Apply(value float64) float64 {
+	input.Bias += value
+	return input.Bias
+}
+
 var sharedAutoRoot = &shared.DefaultAutoInput{Bias: 10}
 var sharedAutoOtherRoot = &persistentAutoInputOther{Factor: 3}
 
@@ -141,6 +160,19 @@ type PersistentNote struct {
 type PersistentInterfaceCarrier struct {
 	play.Archetype `archetype:"name=PersistentInterfaceCarrier"`
 	SharedAuto     shared.AutoInput `archetype:"shared"`
+}
+
+type PersistentEntityInterfaceCarrier struct {
+	play.Archetype `archetype:"name=PersistentEntityInterfaceCarrier"`
+	Target         sonolus.EntityRef[persistentEntityAutoCarrier]            `archetype:"shared"`
+	NilTarget      sonolus.EntityRef[persistentEntityAutoCarrier]            `archetype:"shared"`
+	Destination    sonolus.EntityRef[PersistentEntityInterfaceTargetCarrier] `archetype:"shared"`
+	SharedAuto     shared.AutoInput                                          `archetype:"shared"`
+}
+
+type PersistentEntityInterfaceTargetCarrier struct {
+	play.Archetype `archetype:"name=PersistentEntityInterfaceTargetCarrier"`
+	CopiedAuto     shared.AutoInput `archetype:"shared"`
 }
 
 type RuntimeInt64Carrier struct {
@@ -208,6 +240,44 @@ func (*PersistentInterfaceCarrier) UpdateSequential() {
 	view.SharedAuto = nil
 	copied := localAuto.Apply(5)
 	Persistent.Result = direct + copied
+}
+
+func (carrier *PersistentEntityInterfaceCarrier) Preprocess() {
+	target := carrier.Target.Get()
+	target.Bias = 30
+	carrier.SharedAuto = target
+	destination := carrier.Destination.Get()
+	destination.CopiedAuto = carrier.SharedAuto
+	packageEntityHolder.Input = destination.CopiedAuto
+	carrier.SharedAuto = carrier.NilTarget.Get()
+	if carrier.SharedAuto == nil {
+		sonolus.Terminate("typed nil entity interface became nil")
+	}
+	typedNil, ok := carrier.SharedAuto.(*persistentEntityAutoCarrier)
+	if !ok || typedNil != nil {
+		sonolus.Terminate("typed nil entity interface lost its concrete type")
+	}
+	carrier.SharedAuto = nil
+}
+
+func (carrier *PersistentEntityInterfaceCarrier) UpdateSequential() {
+	if carrier.SharedAuto != nil {
+		sonolus.Terminate("cleared entity interface was not nil")
+	}
+	destination := carrier.Destination.Get()
+	if _, ok := destination.CopiedAuto.(*persistentEntityAutoCarrier); !ok {
+		sonolus.Terminate("entity interface assertion failed")
+	}
+	local := destination.CopiedAuto
+	direct := local.Apply(2)
+	nested := packageEntityHolder.Dispatch(3)
+	entity, ok := packageEntityHolder.Input.(*persistentEntityAutoCarrier)
+	if !ok || entity != carrier.Target.Get() || entity.Bias != 35 {
+		sonolus.Terminate("entity interface lost identity")
+	}
+	Persistent.Result = direct + nested
+	packageEntityHolder.Input = nil
+	destination.CopiedAuto = packageEntityHolder.Input
 }
 
 func (*PersistentNote) Preprocess() {

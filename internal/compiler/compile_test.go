@@ -669,6 +669,14 @@ func TestPersistentLevelGlobalPointersAndInterfacesCompile(t *testing.T) {
 	if len(note.Fields) != 1 || note.Fields[0].Storage != "shared" || note.Fields[0].Size != 2 || note.Fields[0].PersistentKind != "interface" {
 		t.Fatalf("entity shared interface layout = %+v", note.Fields)
 	}
+	entity := entityRefArchetype(t, declarations, "PersistentEntityInterfaceCarrier")
+	if len(entity.Fields) != 4 || entity.Fields[0].Size != 1 || entity.Fields[1].Size != 1 || entity.Fields[2].Size != 1 || entity.Fields[3].Size != 2 || entity.Fields[3].PersistentKind != "interface" {
+		t.Fatalf("entity-backed shared interface layout = %+v", entity.Fields)
+	}
+	target := entityRefArchetype(t, declarations, "PersistentEntityInterfaceTargetCarrier")
+	if len(target.Fields) != 1 || target.Fields[0].Size != 2 || target.Fields[0].PersistentKind != "interface" {
+		t.Fatalf("entity-backed shared interface target layout = %+v", target.Fields)
+	}
 }
 
 func TestLargePersistentLevelGlobalPoolCompiles(t *testing.T) {
