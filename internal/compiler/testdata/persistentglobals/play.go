@@ -92,6 +92,22 @@ func (input *persistentAutoInputOther) Apply(value float64) float64 {
 var sharedAutoRoot = &shared.DefaultAutoInput{Bias: 10}
 var sharedAutoOtherRoot = &persistentAutoInputOther{Factor: 3}
 
+const (
+	minInt32 = -1 << 31
+	maxInt32 = 1<<31 - 1
+)
+
+func addRuntimeInt32(left, right int) int {
+	value := int64(left) + int64(right)
+	if value > maxInt32 {
+		value -= 1 << 32
+	}
+	if value < minInt32 {
+		value += 1 << 32
+	}
+	return int(value)
+}
+
 type PersistentMemory struct {
 	sonolus.LevelMemoryResource
 	Unit                persistentUnit
@@ -125,6 +141,15 @@ type PersistentNote struct {
 type PersistentInterfaceCarrier struct {
 	play.Archetype `archetype:"name=PersistentInterfaceCarrier"`
 	SharedAuto     shared.AutoInput `archetype:"shared"`
+}
+
+type RuntimeInt64Carrier struct {
+	play.Archetype `archetype:"name=RuntimeInt64Carrier"`
+	Value          int `archetype:"shared"`
+}
+
+func (carrier *RuntimeInt64Carrier) Preprocess() {
+	Persistent.Result = float64(addRuntimeInt32(carrier.Value, 2000))
 }
 
 func (carrier *PersistentInterfaceCarrier) Preprocess() {

@@ -3207,11 +3207,15 @@ func runtimeBasicKind(t types.Type) (types.BasicKind, bool) {
 		return types.Invalid, false
 	}
 	switch basic.Kind() {
-	case types.Bool, types.Int, types.Float64:
+	case types.Bool, types.Int, types.Int64, types.Float64:
 		return basic.Kind(), true
 	default:
 		return basic.Kind(), false
 	}
+}
+
+func isRuntimeIntegerKind(kind types.BasicKind) bool {
+	return kind == types.Int || kind == types.Int64
 }
 
 func isPointerType(t types.Type) bool {
@@ -3259,7 +3263,7 @@ func foldBinaryConstants(op token.Token, left, right float64, resultType types.T
 			return 0, false
 		}
 		result := left / right
-		if kind, ok := runtimeBasicKind(resultType); ok && kind == types.Int {
+		if kind, ok := runtimeBasicKind(resultType); ok && isRuntimeIntegerKind(kind) {
 			result = math.Trunc(result)
 		}
 		return result, true
@@ -3541,7 +3545,7 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 			if kind, supported := runtimeBasicKind(resultType); !supported {
 				l.errorAt(n, "runtime arithmetic does not support %s", resultType)
 				return zeroValue(resultType)
-			} else if kind == types.Int {
+			} else if isRuntimeIntegerKind(kind) {
 				result = ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{result}, Result: irTypeOf(resultType), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
 			}
 		}
@@ -4025,7 +4029,7 @@ func (l *lowerer) requireIntegerDivisor(node ast.Node, divisor ir.Expr, resultTy
 		l.errorAt(node, "runtime arithmetic does not support %s", resultType)
 		return false
 	}
-	if kind != types.Int {
+	if !isRuntimeIntegerKind(kind) {
 		return true
 	}
 	message := "integer division by zero"
@@ -4741,7 +4745,7 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 				l.errorAt(n, "runtime conversion from %s to %s is not supported", value.type_, target)
 				return zeroValue(target)
 			}
-			if targetKind == types.Int && (sourceKind == types.Float64 || sourceTypeParameter) {
+			if isRuntimeIntegerKind(targetKind) && (sourceKind == types.Float64 || sourceTypeParameter) {
 				value.slots[0] = ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{value.slots[0]}, Result: irTypeOf(target), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
 			}
 		}
@@ -9685,7 +9689,7 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			if kind, supported := runtimeBasicKind(dst.type_); !supported {
 				l.errorAt(n, "runtime arithmetic does not support %s", dst.type_)
 				return
-			} else if kind == types.Int {
+			} else if isRuntimeIntegerKind(kind) {
 				result = ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{result}, Result: irTypeOf(dst.type_), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
 			}
 		}

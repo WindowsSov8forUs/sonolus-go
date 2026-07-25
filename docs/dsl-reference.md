@@ -374,7 +374,7 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 
 `math` 支持 catalog 登记且可保持 Go 语义的常量及函数，例如 `Abs`、`Floor`、`Sin`、`Sinh`、`Atan2`、`Min`、`Max`、`Pow`、`Mod`。`math/rand.Float64()` 映射到 Sonolus Runtime RNG，`rand.Intn(n)` 映射到 `[0,n)` 整数随机；常量 `n <= 0` 在编译期报错，动态 `n <= 0` 在所有 runtime-check 等级终止 callback，`notify` 额外输出诊断。
 
-Go 运算符与标准库遵循 Go 数值规则：`int(x)` 与整数 `/` 向零截断，`%` 和 `math.Mod` 使用 remainder，`math.Round` 的半数远离零。需要 Sonolus/Python modulo 或 JS `Math.round` 时分别显式调用 `native.Mod`、`native.Round`。非 `int` 固定宽度整数与 unsigned runtime 运算不属于 DSL；超出 float32 精确整数范围的 Go overflow 行为不作承诺。
+Go 运算符与标准库遵循 Go 数值规则：`int(x)`、`int64(x)` 与整数 `/` 向零截断，`%` 和 `math.Mod` 使用 remainder，`math.Round` 的半数远离零。运行时 `int64` 与 `int` 使用相同的单槽 Sonolus number 表示，支持显式互转、算术与比较；这用于在 Runtime 精确整数范围内表达 int32 wrap 等有界中间计算，不承诺完整 64 位溢出语义。需要 Sonolus/Python modulo 或 JS `Math.round` 时分别显式调用 `native.Mod`、`native.Round`。其他固定宽度整数与 unsigned runtime 运算不属于 DSL；超出 Sonolus number 精确整数范围的 Go overflow 行为不作承诺。
 
 ## Runtime checks
 
