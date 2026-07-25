@@ -699,11 +699,15 @@ func (l *lowerer) persistentInterfaceValue(node ast.Node, declaration *LevelGlob
 	tagPlace, handlePlace := placeAt(0), placeAt(1)
 	rawTag := lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Load{Place: tagPlace}}, places: []ir.Place{tagPlace}}
 	rawHandle := lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Load{Place: handlePlace}}, places: []ir.Place{handlePlace}}
+	return l.persistentInterfaceFromHandles(node, declaration.Type, declaration.GoName, declaration.Kind, storage, rawTag, rawHandle, read, write)
+}
+
+func (l *lowerer) persistentInterfaceFromHandles(node ast.Node, interfaceValueType types.Type, name, kind, targetStorage string, rawTag, rawHandle lowerValue, read, write bool) lowerValue {
 	tag := lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{l.pure(resource.RuntimeFunctionSubtract, node, rawTag.slots[0], ir.Const{Value: 1})}}
-	interfaceType, _ := types.Unalias(declaration.Type).Underlying().(*types.Interface)
+	interfaceType, _ := types.Unalias(interfaceValueType).Underlying().(*types.Interface)
 	if interfaceType == nil {
-		l.errorAt(node, "persistent interface field has invalid type %s", declaration.Type)
-		return zeroValue(declaration.Type)
+		l.errorAt(node, "persistent interface field has invalid type %s", interfaceValueType)
+		return zeroValue(interfaceValueType)
 	}
 	type candidate struct {
 		name  string
@@ -728,21 +732,43 @@ func (l *lowerer) persistentInterfaceValue(node ast.Node, declaration *LevelGlob
 	alternatives := make([]lowerValue, 0, len(candidates))
 	for _, candidate := range candidates {
 		pointer := candidate.type_.(*types.Pointer)
-		target, err := persistentLevelGlobalTypeNode(pointer.Elem(), declaration.GoName+"."+candidate.name, declaration.Kind, storage)
+		target, err := persistentLevelGlobalTypeNode(pointer.Elem(), name+"."+candidate.name, kind, targetStorage)
 		if err != nil {
 			continue
 		}
 		if len(alternatives) >= 256 {
-			l.errorAt(node, "persistent interface %s exceeds 256 concrete pointer alternatives", declaration.Type)
+			l.errorAt(node, "persistent interface %s exceeds 256 concrete pointer alternatives", interfaceValueType)
 			break
 		}
 		alternatives = append(alternatives, lowerValue{type_: candidate.type_, persistentPointer: &persistentPointerValue{
-			handle: rawHandle, storage: storage, target: target, read: read, write: write,
+			handle: rawHandle, storage: targetStorage, target: target, read: read, write: write,
 		}})
 	}
-	return lowerValue{type_: declaration.Type, interface_: &interfaceValue{
+	return lowerValue{type_: interfaceValueType, interface_: &interfaceValue{
 		finiteVariant: finiteVariant[lowerValue]{alternatives: alternatives, tag: tag}, persistent: true, rawTag: rawTag,
 	}}
+}
+
+func (l *lowerer) archetypePersistentInterfaceValue(node ast.Node, declaration *FieldDeclaration, value lowerValue) lowerValue {
+	if declaration.PersistentKind != "interface" || len(value.slots) != 2 || len(value.places) != 2 {
+		l.errorAt(node, "archetype interface field %s has an invalid persistent layout", declaration.SourcePath)
+		return zeroValue(declaration.Type)
+	}
+	targetStorage, ok := packageGlobalStorage(l.mode)
+	if !ok {
+		l.errorAt(node, "archetype interface field %s has no persistent target storage in %s mode", declaration.SourcePath, l.mode)
+		return zeroValue(declaration.Type)
+	}
+	targetKind := "memory"
+	if l.mode == mode.ModePreview {
+		targetKind = "data"
+	}
+	_, read, write := levelGlobalStorageAccess(&LevelGlobalFieldDeclaration{Kind: targetKind, Storage: targetStorage}, l.mode, l.phase)
+	rawTag := lowerValue{type_: types.Typ[types.Int], slots: value.slots[:1], places: value.places[:1]}
+	rawHandle := lowerValue{type_: types.Typ[types.Int], slots: value.slots[1:], places: value.places[1:]}
+	result := l.persistentInterfaceFromHandles(node, declaration.Type, declaration.SourcePath, "package", targetStorage, rawTag, rawHandle, read, write)
+	result.entityField = value.entityField
+	return result
 }
 
 func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.Node) lowerValue {
@@ -778,6 +804,9 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 				return
 			}
 			payload := l.newDescriptorCell("interface.value", value.type_, node)
+			if value.persistentPointer != nil {
+				payload = l.copyPersistentPointer("interface.value", value, node)
+			}
 			var ok bool
 			index, ok = variant.add(payload, func(left, right lowerValue) bool {
 				return left.type_ != nil && right.type_ != nil && types.Identical(left.type_, right.type_)
@@ -3689,6 +3718,9 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 					return lowerValue{}
 				}
 				value := lowerValue{type_: declaration.Type, slots: base.slots[start : start+size], places: base.places[start : start+size]}
+				if declaration.PersistentKind == "interface" {
+					return l.archetypePersistentInterfaceValue(n, declaration, value)
+				}
 				if declaration.ContainerKind != "" {
 					_, key, element, _ := containerTypes(declaration.Type)
 					stride := declaration.KeySize + declaration.ElementSize
@@ -5342,6 +5374,9 @@ func (l *lowerer) entityReferenceField(node ast.Node, object *types.Var, referen
 			memoryStorage: storage, memoryBase: declaration.Offset + 1, memoryEntity: reference.slots[0],
 			memoryRead: read, memoryWrite: write,
 		}
+	}
+	if declaration.PersistentKind == "interface" {
+		return l.archetypePersistentInterfaceValue(node, declaration, value)
 	}
 	return value
 }
@@ -9753,8 +9788,9 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 		}
 		objectType := l.resolveType(object.Type())
 		if values[i].interface_ != nil {
-			values[i].type_ = objectType
-			l.bind(object, values[i])
+			identifier := n.Lhs[i].(*ast.Ident)
+			value := l.storeInterfaceValue(l.newInterfaceValue(identifier.Name+".interface", objectType, identifier), values[i], identifier)
+			l.bind(object, value)
 			skipStore[i] = true
 			continue
 		}

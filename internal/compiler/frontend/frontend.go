@@ -218,10 +218,9 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 		globalPackages = append(globalPackages, globalPackage{pkg: p, hasMarker: hasGlobals})
 	}
 	packageGlobalOffset := levelGlobalOffsets["LevelMemory"]
-	packageStorage, packageStorageOK := levelGlobalStorage("memory", m)
+	packageStorage, packageStorageOK := packageGlobalStorage(m)
 	if m == mode.ModePreview {
 		packageGlobalOffset = levelGlobalOffsets["PreviewData"]
-		packageStorage, packageStorageOK = levelGlobalStorage("data", m)
 	}
 	if packageStorageOK {
 		userTypes := map[*types.Package]bool{}

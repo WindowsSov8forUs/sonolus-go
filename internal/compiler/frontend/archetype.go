@@ -290,7 +290,19 @@ func (c *archetypeFieldCollector) collectField(owner *types.Named, field *types.
 		c.errs = append(c.errs, fmt.Errorf("%s: exports are only available in play mode", fieldPath))
 		return
 	}
-	size, err := layoutSize(field.Type())
+	size := 0
+	var err error
+	persistentKind := ""
+	if isInterfaceType(field.Type()) {
+		if storage != "shared" {
+			c.errs = append(c.errs, fmt.Errorf("%s: archetype interface fields require shared storage", fieldPath))
+			return
+		}
+		size = 2
+		persistentKind = "interface"
+	} else {
+		size, err = layoutSize(field.Type())
+	}
 	containerKind, keyType, elementType, isContainer := containerTypes(field.Type())
 	capacity, keySize, elementSize := 0, 0, 0
 	if isContainer {
@@ -361,7 +373,7 @@ func (c *archetypeFieldCollector) collectField(owner *types.Named, field *types.
 			def = value
 		}
 	}
-	declaration := &FieldDeclaration{GoName: field.Name(), SourcePath: fieldPath, ExternalName: externalName, ExternalNames: externalNames, Storage: storage, Offset: c.offsets[offsetStorage], Size: size, Default: def, Type: field.Type(), Object: field, ReceiverOffset: c.receiverOffset, ContainerKind: containerKind, Capacity: capacity, KeySize: keySize, ElementSize: elementSize}
+	declaration := &FieldDeclaration{GoName: field.Name(), SourcePath: fieldPath, ExternalName: externalName, ExternalNames: externalNames, Storage: storage, Offset: c.offsets[offsetStorage], Size: size, Default: def, Type: field.Type(), Object: field, ReceiverOffset: c.receiverOffset, ContainerKind: containerKind, Capacity: capacity, KeySize: keySize, ElementSize: elementSize, PersistentKind: persistentKind}
 	c.result.Fields = append(c.result.Fields, declaration)
 	c.receiverOffset += size
 	if storage == "imported" {

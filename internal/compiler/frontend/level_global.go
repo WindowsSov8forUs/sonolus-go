@@ -35,6 +35,13 @@ func levelGlobalStorage(kind string, currentMode mode.Mode) (string, bool) {
 	return "", false
 }
 
+func packageGlobalStorage(currentMode mode.Mode) (string, bool) {
+	if currentMode == mode.ModePreview {
+		return levelGlobalStorage("data", currentMode)
+	}
+	return levelGlobalStorage("memory", currentMode)
+}
+
 func levelGlobalStorageAccess(declaration *LevelGlobalFieldDeclaration, currentMode mode.Mode, phase string) (string, bool, bool) {
 	storage, kind := declaration.Storage, declaration.Kind
 	write := false

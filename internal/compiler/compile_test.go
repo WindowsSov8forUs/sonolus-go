@@ -665,6 +665,10 @@ func TestPersistentLevelGlobalPointersAndInterfacesCompile(t *testing.T) {
 	if declaration.Fields[2].PersistentKind != "pointer" || declaration.Fields[3].PersistentKind != "pointer" || declaration.Fields[6].PersistentKind != "interface" {
 		t.Fatalf("persistent field layouts = %+v", declaration.Fields)
 	}
+	note := entityRefArchetype(t, declarations, "PersistentInterfaceCarrier")
+	if len(note.Fields) != 1 || note.Fields[0].Storage != "shared" || note.Fields[0].Size != 2 || note.Fields[0].PersistentKind != "interface" {
+		t.Fatalf("entity shared interface layout = %+v", note.Fields)
+	}
 }
 
 func TestLargePersistentLevelGlobalPoolCompiles(t *testing.T) {
@@ -917,6 +921,7 @@ func TestEntityRefGetRejectsInaccessibleFieldsAndEscapes(t *testing.T) {
 		"EntityRef.Get views cannot be converted or stored in interfaces",
 		"EntityRef.Get fields cannot be addressed",
 		"EntityRef.Get views cannot be explicitly dereferenced",
+		"Reader.Invalid: archetype interface fields require shared storage",
 		"EntityDataArray storage is read-only",
 		"EntitySharedMemoryArray storage is read-only",
 	} {
