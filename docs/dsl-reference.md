@@ -198,6 +198,8 @@ Storage：
 
 固定记录、定长数组和 catalog 容器按 catalog layout 占用多个连续 slot。`VarArray`、`ArrayMap`、`ArraySet` 必须带编译期可确定的 capacity/backing。
 
+Archetype 可将直接 interface 字段声明为 `shared`，用于保存跨 callback 和 `EntityRef.Get()` view 的封闭持久对象 identity。字段占两个连续 Entity Shared Memory slot：稳定 concrete-type tag 与持久 pointer handle。Concrete alternatives 是当前模式可达用户 package 中实现该 interface 且具有可表示持久布局的 named pointer 类型，按完整类型名稳定排序，最多 256 个；handle 指向该模式的 package object storage（Play/Watch 为 `LevelMemory`，Preview 为 `PreviewData`），而不是 Entity Shared Memory 内的对象。支持赋值、复制、`nil`、interface method dispatch、comma-ok type assertion 与 type switch。`imported`、`data`、`memory`、`exported` 以及嵌套 record/array 中的 interface 字段不受支持；这不会开放运行时堆分配、任意 concrete type 或跨 storage pointer。
+
 `imported` 与 `exported` 字段按 runtime slot 展开外部名称：数组使用 `name[i]`，多槽 record 使用 `name.field`，单槽 record 折叠回 `name`。例如 `Position sonolus.Vec2` 且 `name=position` 会生成 `position.x`、`position.y`。多槽 imported 字段不能用单一 `default=`；展开后的名称在当前类型及继承布局中都必须唯一。这与 Py 的 `_flat_keys_` 规则一致，也同时决定 `list` 输出和 Development Level 字段校验。
 
 Archetype 支持一个直接匿名嵌入的基类，例如匿名字段 `Base` 使用 `archetype:"base"` tag。基类必须在当前模式中声明；字段按 storage 分区成为派生布局前缀，callback method、order 与 runtime 类型关系沿单继承链继承，派生直接方法和显式 order 会覆盖基类。

@@ -708,6 +708,35 @@ func TestPersistentLevelGlobalPointersAndInterfacesMatchAcrossOptimizations(t *t
 				t.Fatalf("optimization %d LevelMemory[%d] = %v, want %v; memory = %v", optimization, index, memory[index], value, memory)
 			}
 		}
+		interfacePreprocessed, err := engine.Run(Request{Mode: ModePlay, Archetype: "PersistentInterfaceCarrier", Callback: "preprocess"})
+		if err != nil {
+			t.Fatalf("optimization %d interface preprocess: %v", optimization, err)
+		}
+		if memory := interfacePreprocessed.Memory[2000]; len(memory) <= 10 || memory[10] != 11 {
+			t.Fatalf("optimization %d interface preprocess result = %v", optimization, memory)
+		}
+		interfaceMemory := map[int][]float64{}
+		for block, values := range interfacePreprocessed.Memory {
+			interfaceMemory[block] = append([]float64(nil), values...)
+		}
+		interfaceMemory[4102] = append([]float64(nil), interfacePreprocessed.Memory[4002]...)
+		interfaceSequential, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "PersistentInterfaceCarrier", Callback: "updateSequential",
+			Memory: interfaceMemory,
+		})
+		if err != nil {
+			t.Fatalf("optimization %d interface updateSequential: %v", optimization, err)
+		}
+		if memory := interfaceSequential.Memory[2000]; len(memory) <= 10 || memory[10] != 27 {
+			var result float64
+			if len(memory) > 10 {
+				result = memory[10]
+			}
+			t.Fatalf("optimization %d interface updateSequential result = %v; current=%v referenced=%v", optimization, result, interfacePreprocessed.Memory[4002], interfaceSequential.Memory[4102])
+		}
+		if shared := interfaceSequential.Memory[4102]; len(shared) < 2 || shared[0] != 0 || shared[1] != 0 {
+			t.Fatalf("optimization %d entity shared interface was not cleared: %v", optimization, shared)
+		}
 	}
 }
 

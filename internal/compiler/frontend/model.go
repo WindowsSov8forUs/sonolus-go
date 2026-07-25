@@ -144,6 +144,7 @@ type FieldDeclaration struct {
 	Capacity       int
 	KeySize        int
 	ElementSize    int
+	PersistentKind string
 }
 
 type CallbackDeclaration struct {

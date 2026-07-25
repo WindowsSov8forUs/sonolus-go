@@ -89,6 +89,9 @@ func (input *persistentAutoInputOther) Apply(value float64) float64 {
 	return input.Factor * value
 }
 
+var sharedAutoRoot = &shared.DefaultAutoInput{Bias: 10}
+var sharedAutoOtherRoot = &persistentAutoInputOther{Factor: 3}
+
 type PersistentMemory struct {
 	sonolus.LevelMemoryResource
 	Unit                persistentUnit
@@ -117,6 +120,40 @@ var Persistent = PersistentMemory{}
 
 type PersistentNote struct {
 	play.Archetype `archetype:"name=PersistentNote"`
+}
+
+type PersistentInterfaceCarrier struct {
+	play.Archetype `archetype:"name=PersistentInterfaceCarrier"`
+	SharedAuto     shared.AutoInput `archetype:"shared"`
+}
+
+func (carrier *PersistentInterfaceCarrier) Preprocess() {
+	if carrier.SharedAuto != nil {
+		Persistent.Result = -1
+		return
+	}
+	carrier.SharedAuto = sharedAutoRoot
+	if _, ok := carrier.SharedAuto.(*shared.DefaultAutoInput); !ok {
+		Persistent.Result = -2
+		return
+	}
+	localAuto := carrier.SharedAuto
+	carrier.SharedAuto = nil
+	Persistent.Result = localAuto.Apply(1)
+	carrier.SharedAuto = sharedAutoOtherRoot
+}
+
+func (*PersistentInterfaceCarrier) UpdateSequential() {
+	view := play.CurrentEntityRef[PersistentInterfaceCarrier]().Get()
+	if _, ok := view.SharedAuto.(*persistentAutoInputOther); !ok {
+		Persistent.Result = -3
+		return
+	}
+	direct := view.SharedAuto.Apply(4)
+	localAuto := view.SharedAuto
+	view.SharedAuto = nil
+	copied := localAuto.Apply(5)
+	Persistent.Result = direct + copied
 }
 
 func (*PersistentNote) Preprocess() {

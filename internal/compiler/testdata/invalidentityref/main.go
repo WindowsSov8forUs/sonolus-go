@@ -17,6 +17,10 @@ type NotArchetype struct {
 	Value float64
 }
 
+type invalidRuntimeInterface interface {
+	Apply(float64) float64
+}
+
 type Holder struct {
 	Target *Target
 }
@@ -25,6 +29,7 @@ type Reader struct {
 	play.Archetype `archetype:"name=Reader"`
 	Target         sonolus.EntityRef[Target]       `archetype:"imported"`
 	Other          sonolus.EntityRef[NotArchetype] `archetype:"imported"`
+	Invalid        invalidRuntimeInterface         `archetype:"memory"`
 }
 
 func (r *Reader) Preprocess() {
