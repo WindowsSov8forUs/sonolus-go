@@ -536,11 +536,14 @@ func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Packag
 		if !isCallback {
 			continue
 		}
+		key := callbackKey(fn.Name())
 		if err := validCallbackSignature(fn, want, true); err != nil {
-			errs = append(errs, fmt.Errorf("%s.%s: %w", result.Named.Obj().Name(), fn.Name(), err))
+			if _, explicit := result.CallbackOrders[key]; explicit {
+				foundOrders[key] = true
+				errs = append(errs, fmt.Errorf("%s.%s: %w", result.Named.Obj().Name(), fn.Name(), err))
+			}
 			continue
 		}
-		key := callbackKey(fn.Name())
 		foundOrders[key] = true
 		callbackPkg := packagesByTypes[fn.Pkg()]
 		if callbackPkg == nil {

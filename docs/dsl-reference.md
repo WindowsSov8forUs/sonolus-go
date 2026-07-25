@@ -315,7 +315,7 @@ Level global 还可以包含 pointer 与 interface 字段，用于编译期有�
 
 ## Callback
 
-Callback 名由方法名决定，必须是无参数 receiver 方法：
+Archetype receiver method 只有在名称与下表 callback 签名同时匹配时才绑定到 EngineData；同名但签名不同的方法保留为普通可内联 receiver method：
 
 | 模式 | Callback | 返回值 |
 |---|---|---|
@@ -326,7 +326,7 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 | Watch | `SpawnTime`、`DespawnTime` | `float64` |
 | Preview | `Preprocess`、`Render` | 无 |
 
-`CallbackOrders` 中的 key 使用 lower camel callback 名。不存在对应方法、未知 callback 或重复 marker 都会报错。
+`CallbackOrders` 中的 key 使用 lower camel callback 名，并显式声明对应方法具有 callback 意图；因此 ordered 方法即使签名不匹配也会稳定报错。不存在对应方法、未知 callback 或重复 marker 同样报错。
 
 全局 callback：
 
