@@ -506,7 +506,7 @@ func TestArchetypeCallbackNamesAllowOrdinaryMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 	note := entityRefArchetype(t, declarations, "ConformanceNote")
-	if len(note.Callbacks) != 1 || note.Callbacks[0].Name != "preprocess" {
+	if len(note.Callbacks) != 2 || note.Callbacks[0].Name != "preprocess" || note.Callbacks[1].Name != "shouldSpawn" {
 		t.Fatalf("callbacks = %+v", note.Callbacks)
 	}
 }
