@@ -198,7 +198,7 @@ Storage：
 
 固定记录、定长数组和 catalog 容器按 catalog layout 占用多个连续 slot。`VarArray`、`ArrayMap`、`ArraySet` 必须带编译期可确定的 capacity/backing。
 
-Archetype 可将直接 interface 字段声明为 `shared`，用于保存跨 callback 和 `EntityRef.Get()` view 的封闭持久对象 identity。字段占两个连续 Entity Shared Memory slot：稳定 concrete-type tag 与持久 pointer handle。Concrete alternatives 是当前模式可达用户 package 中实现该 interface 且具有可表示持久布局的 named pointer 类型，按完整类型名稳定排序，最多 256 个；handle 指向该模式的 package object storage（Play/Watch 为 `LevelMemory`，Preview 为 `PreviewData`），而不是 Entity Shared Memory 内的对象。支持赋值、复制、`nil`、interface method dispatch、comma-ok type assertion 与 type switch。`imported`、`data`、`memory`、`exported` 以及嵌套 record/array 中的 interface 字段不受支持；这不会开放运行时堆分配、任意 concrete type 或跨 storage pointer。
+Archetype 可将直接 interface 字段声明为 `shared`，用于保存跨 callback 和 `EntityRef.Get()` view 的封闭持久对象 identity。字段占两个连续 Entity Shared Memory slot：稳定 concrete-type tag 与持久 handle。Concrete alternatives 是当前模式可达用户 package 中实现该 interface 的 named pointer 类型，且必须可表示为 package semantic-memory pointer 或当前模式的 entity view，按完整类型名稳定排序，最多 256 个。Tag 同时决定 handle 的解释：package object 使用对应 semantic storage 的 `index + 1`，entity view 使用原始 entity index；复制 interface 会逐槽复制 tag 与 handle，不复制 concrete object。支持赋值、复制、`nil`、interface method dispatch、comma-ok type assertion 与 type switch。`imported`、`data`、`memory`、`exported` 以及嵌套 record/array 中的 interface 字段不受支持；这不会开放运行时堆分配、任意 concrete type 或通用跨 storage pointer。
 
 `imported` 与 `exported` 字段按 runtime slot 展开外部名称：数组使用 `name[i]`，多槽 record 使用 `name.field`，单槽 record 折叠回 `name`。例如 `Position sonolus.Vec2` 且 `name=position` 会生成 `position.x`、`position.y`。多槽 imported 字段不能用单一 `default=`；展开后的名称在当前类型及继承布局中都必须唯一。这与 Py 的 `_flat_keys_` 规则一致，也同时决定 `list` 输出和 Development Level 字段校验。
 
@@ -291,7 +291,7 @@ marker 必须直接以 value 形式嵌入 named struct；每个声明类型必�
 
 Level global 还可以包含 pointer 与 interface 字段，用于编译期有限、固定封闭对象图的跨 callback 身份。两者必须以 `nil` 零值初始化，并只能在当前 callback 对该 semantic memory block 具有写权限时赋值。Pointer 使用 `0 = nil`、`index + 1 = 同一 storage 内地址` 的持久 handle；因此只能保存同一 `LevelMemory`/`LevelData` block 中 level-global 字段的地址或 `nil`，支持比较、解引用、pointer receiver、helper 参数/返回，以及嵌套 record 中引用字段的写回。被引用类型可以继续包含普通 record、定长数组、pointer 与 interface，但不能包含需要实例 initializer 决定 capacity/backing 的 catalog container。
 
-持久 interface 使用 `0 = nil` 的 concrete-type tag 和一个持久 pointer handle。Concrete alternatives 是当前模式可达用户 package 中实现该 interface 且具有可表示持久布局的 named pointer 类型，按完整类型名稳定排序，最多 256 个；赋值 payload 必须是指向同一 semantic storage 中可表示对象的 pointer。Interface method dispatch、`nil` 比较、comma-ok type assertion 与 type switch 都从持久 tag 去虚拟化。它不开放通用 runtime interface、动态 concrete-type 装载或运行时堆分配。
+持久 interface 使用 `0 = nil` 的 concrete-type tag 和一个持久 handle。Concrete alternatives 是当前模式可达用户 package 中实现该 interface 的 named pointer 类型，且必须可表示为同一 semantic storage 中的 package object pointer 或当前模式的 entity view，按完整类型名稳定排序，最多 256 个。Package object payload 的 handle 是 `index + 1`；entity-view payload 的 handle 是 entity index，字段加载到 callback-local interface 后继续保留同一 tag、实体 identity 与 alias。Interface method dispatch、`nil` 比较、comma-ok type assertion 与 type switch 都从持久 tag 去虚拟化。它不开放通用 runtime interface、动态 concrete-type 装载、Temporary Memory 逃逸或运行时堆分配。
 
 低层 `play.LevelMemory/LevelData`、`watch.LevelMemory/LevelData`、`preview.LevelData` 与 `tutorial.LevelMemory/LevelData` 的 `Get/Set` 仍作为显式 offset escape hatch；其写权限与结构化 marker 完全一致。Tutorial 原有的 `TutorialMemory`/`TutorialData` 名称也映射同一 block。除非需要与外部固定 offset 协议交互，优先使用结构化声明。
 
@@ -354,7 +354,7 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 - 静态 pointer alias、`new(T)` 非逃逸局部、nil pointer 零值/转换/比较、有限 runtime pointer target 重绑与 target-set 合并、pointer helper 参数/返回、runtime-selected 数组 pointer 的动态索引、解引用读写、pointer 比较、嵌套动态数组 place 和逐 slot comparable aggregate 比较。callback-local 普通 struct 可保存 pointer alias 字段；零值、字段重绑、pointer receiver、整 struct 赋值、嵌套 struct、值参数与 helper 返回都保持 Go 的别名和按值快照语义。包含 pointer/container descriptor 的局部定长数组支持零值/literal、整值复制、常量和动态索引、元素/字段重绑、value range、helper 参数与返回。`new(descriptorStruct)` 与 `&localStruct` 具有独立 aggregate 身份；其 pointer 可保存到局部变量或 struct 字段、动态重绑、比较、传参和返回，解引用写入继续作用于被选中的原对象。nil 解引用在所有 runtime-check 等级终止 callback，`notify` 额外发出诊断。
 - Go 多返回会逐项保留 callback-local descriptor，而不是按 pointee runtime layout 展平。多个 aggregate pointer 可经动态重绑、命名裸返回、helper 转发或立即调用闭包返回；调用端多重赋值继续保持每个对象的独立身份、nil 状态与写回路径。
 - 静态 interface concrete type 传播、有限 concrete-type variant、helper 参数/返回、method devirtualization、type switch/type assertion，以及泛型实例中的同类静态分派。
-- Static interface 可保存到 callback-local 普通 struct/定长数组字段；aggregate 复制会快照 concrete-type tag 与 payload descriptor。Pointer concrete payload 保留 aggregate 身份，因此接口字段重绑不会改变既有副本，而接口方法对所选对象的修改继续通过原别名可见。
+- Static interface 可保存到 callback-local 普通 struct/定长数组字段，也可携带 `EntityRef.Get()` entity-view payload；aggregate 或 interface 复制会快照 concrete-type tag 与 payload descriptor。Pointer 与 entity-view concrete payload 都保留原对象身份，因此接口字段重绑不会改变既有副本，而接口方法对所选对象的修改继续通过原别名可见。
 - package-scope `new(T)` 或零值固定地址复合初始化在 `T` 为编译期有限、固定对象图时分配到当前模式的 semantic memory；预处理阶段写入初始 pointer handles，同一指针可跨 callback 保持对象身份并通过 pointer receiver/helper 读写。动态堆分配、动态长度数组、container backing 和循环对象图仍拒绝。
 - callable helper 的有限 runtime 返回目标、variadic callable 参数包的转发/索引/range、保持静态目标身份与泛型实例环境的 named function type 转换（包括 `iter.Seq[T](func...)`）、`min`、`max`、`Zero[T]`、`SlotsOf[T]`。泛型函数值和离开创建 frame 的闭包会携带其具体 type substitution；`Zero[*T]()` 返回准确的 nil pointer，compile-time-only function/interface/container/resource 类型不接受 `Zero`。
 - `VarArray` 支持 checked/unchecked 读写与追加、查询、删除、交换、重排、正反向 values/items iterator、稳定排序、原子 `Extend`、稳定 min/max；`ArrayMap` 与 `ArraySet` 支持容量查询，map 还提供 key/value/item iterator。容器变量、参数、helper 返回值与 callback-local 普通 struct 字段可在有限 runtime 分支中选择不同 backing/capacity；descriptor 按值快照，mutation 继续作用于被选中的原 backing。包含 container 字段的局部 struct 支持 pointer receiver、整值复制、嵌套 struct、值参数与 helper 返回。零槽可比较 element/key 也合法，容器只保留 size 与必要的非零槽 backing。
@@ -368,7 +368,7 @@ Callback 名由方法名决定，必须是无参数 receiver 方法：
 - 动态递归、重复递归状态、runtime-created closure、函数值逃逸到 aggregate/interface/storage。
 - 普通运行时 slice/map/string 操作和未登记 builtin。
 - 无法枚举有限 backing/target 集合的动态容器或调用，以及容器 descriptor 向 runtime storage 的逃逸。
-- callback-local pointer/container/interface descriptor 不能进入 package static、Archetype、replay 或其他未声明的跨 callback storage。LevelMemory/LevelData 的 pointer 与有限 interface 字段是唯一持久例外：compiler 将其 lowering 为同一 semantic storage 内的稳定 handle/type tag，不把 Go descriptor 或 Runtime 堆对象写入 EngineData。Catalog container descriptor 仍不能经 pointer/interface 逃逸。
+- callback-local pointer/container/interface descriptor 不能进入 package static、Archetype、replay 或其他未声明的跨 callback storage。LevelMemory/LevelData 的 pointer/interface 字段与 Archetype 的直接 `shared` interface 字段是持久例外：compiler 将 package object pointer lowering 为同一 semantic storage 内的稳定 handle，将 entity-view payload lowering 为 entity index，并与 concrete-type tag 一起保存；不会把 Go descriptor 或 Runtime 堆对象写入 EngineData。Catalog container descriptor 仍不能经 pointer/interface 逃逸。
 
 ## 标准库
 

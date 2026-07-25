@@ -732,6 +732,17 @@ func (l *lowerer) persistentInterfaceFromHandles(node ast.Node, interfaceValueTy
 	alternatives := make([]lowerValue, 0, len(candidates))
 	for _, candidate := range candidates {
 		pointer := candidate.type_.(*types.Pointer)
+		if binding, exists := l.entityBinding(pointer); exists {
+			if len(alternatives) >= 256 {
+				l.errorAt(node, "persistent interface %s exceeds 256 concrete pointer alternatives", interfaceValueType)
+				break
+			}
+			alternatives = append(alternatives, lowerValue{
+				type_: pointer, slots: rawHandle.slots, places: rawHandle.places,
+				entity: &entityReferenceValue{binding: binding},
+			})
+			continue
+		}
 		target, err := persistentLevelGlobalTypeNode(pointer.Elem(), name+"."+candidate.name, kind, targetStorage)
 		if err != nil {
 			continue
@@ -787,7 +798,7 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 		return destination
 	}
 	storeConcrete := func(value lowerValue) {
-		if value.type_ == nil || isInterfaceType(value.type_) || value.callable != nil || value.entity != nil || isContainerValue(value) || l.containsEntityView(value.type_) {
+		if value.type_ == nil || isInterfaceType(value.type_) || value.callable != nil || isContainerValue(value) || value.entity == nil && l.containsEntityView(value.type_) {
 			l.errorAt(node, "finite static interface requires a non-escaping concrete runtime value")
 			return
 		}
