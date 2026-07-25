@@ -82,8 +82,13 @@ func integerArithmetic(value, divisor conformanceInt) conformanceInt {
 	return quotient + remainder
 }
 
+func (*Note) Initialize(value float64) float64 {
+	return value + 1
+}
+
 func (n *Note) Preprocess() {
 	result := sum(1.0, 2.0, 3.0)
+	result = n.Initialize(result)
 	result += interfaceNumber(concreteNumber{Value: 3})
 	result += forwardInterface(returnInterface(concreteNumber{Value: 4})).Number()
 	result += chooseInterface(n.Beat >= 0, 5).Number()

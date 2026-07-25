@@ -500,6 +500,17 @@ func TestStructuralMixinRejectsInvalidLayoutsAndCallbacks(t *testing.T) {
 	}
 }
 
+func TestArchetypeCallbackNamesAllowOrdinaryMethods(t *testing.T) {
+	declarations, err := parseMode(mode.ModePlay, "./testdata/conformance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := entityRefArchetype(t, declarations, "ConformanceNote")
+	if len(note.Callbacks) != 1 || note.Callbacks[0].Name != "preprocess" {
+		t.Fatalf("callbacks = %+v", note.Callbacks)
+	}
+}
+
 func TestArchetypeInheritanceAndReferenceMatching(t *testing.T) {
 	declarations, err := parseMode(mode.ModePlay, "./testdata/archetypemro")
 	if err != nil {

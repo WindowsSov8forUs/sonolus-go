@@ -36,7 +36,8 @@ type OversizedMixin struct {
 }
 
 type InvalidCallbackMixin struct {
-	play.Archetype `archetype:"name=InvalidCallbackMixin"`
+	play.Archetype      `archetype:"name=InvalidCallbackMixin"`
+	play.CallbackOrders `archetype:"preprocess=0"`
 	shared.BadCallback
 }
 
