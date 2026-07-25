@@ -22,7 +22,9 @@ type Derived struct {
 	Extra          float64 `archetype:"shared"`
 }
 
-func (derived *Derived) UpdateSequential() { derived.Base.Add(2) }
+func (*Derived) Initialize(value float64) float64 { return value + 1 }
+
+func (derived *Derived) UpdateSequential() { derived.Base.Add(derived.Initialize(1)) }
 
 type GrandDerived struct {
 	Derived        `archetype:"base"`
