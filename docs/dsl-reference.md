@@ -244,7 +244,7 @@ abstract archetype 不得声明 runtime name 或 `hasInput`，不会出现在 En
 
 具体 Archetype 可在 marker 中声明有限数值 key，例如 `archetype:"name=TapNote,key=1"`。未声明时 key 为 `-1`，派生类型默认继承基类 key。`play/watch/preview.Entity.Key()` 返回当前 callback 所属具体 Archetype 的 key；`EntityRef[T].Key()` 根据引用实体的实际 runtime archetype 返回 key，即使 `T` 是 abstract base 或 `AnyArchetype`。这与 Py 的 entity key 语义一致，不要求调用方枚举 runtime archetype ID。
 
-`sonolus.EntityRef[T].Get()` 返回目标 Archetype 的类型化 runtime view。`GetUnchecked` 跳过引用检查；`EntityRefAs`、`EntityRefMatches` 与 `EntityRefGetAs` 支持 `AnyArchetype` 和继承关系下的静态转换、strict/non-strict 匹配与访问。启用 runtime checks 时，`Get`/`GetAs` 会验证非负 index 与目标 MRO。
+`sonolus.EntityRef[T].Get()` 返回目标 Archetype 的类型化 runtime view。`GetUnchecked` 跳过引用检查；`EntityRefAs`、`EntityRefMatches` 与 `EntityRefGetAs` 支持 `AnyArchetype` 和继承关系下的静态转换、strict/non-strict 匹配与访问。启用 runtime checks 时，`Get`/`GetAs` 会验证非负 index 与目标 MRO。返回 entity view 的 helper 可用 `nil` 表示缺失目标；调用方可判 nil、复制或重新赋 nil，非 nil view 继续保留目标 archetype descriptor 与动态实体 index。
 
 Archetype callback 内可使用 `play.CurrentEntityRef[T]()`、`watch.CurrentEntityRef[T]()` 或 `preview.CurrentEntityRef[T]()` 获取当前实体引用。`T` 必须是当前具体 Archetype、其 MRO 中的基类或 `sonolus.AnyArchetype`；这对应 Py 的 `self.ref()`，无需手工读取 `Entity.Info().Index` 后构造引用。
 

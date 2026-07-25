@@ -2023,7 +2023,7 @@ func (l *lowerer) newHelperResultCell(name string, t types.Type, node ast.Node) 
 		return l.newCallableArray(name+".callable", t, node)
 	}
 	if binding, entityView := l.entityBinding(t); entityView {
-		return l.newEntityViewLocal(name+".entity", t, binding)
+		return l.newEntityViewLocal(name+".entity", t, binding, node)
 	}
 	if l.isAggregatePointerType(t) {
 		return l.newAggregatePointerCell(name+".aggregate.pointer", t, node)
@@ -2154,7 +2154,7 @@ func (l *lowerer) newDescriptorCell(name string, t types.Type, node ast.Node) lo
 		return l.newAggregateCell(name, t, node)
 	}
 	if binding, exists := l.entityBinding(t); exists {
-		return l.newEntityViewLocal(name, t, binding)
+		return l.newEntityViewLocal(name, t, binding, node)
 	}
 	if isInterfaceType(t) {
 		return l.newInterfaceValue(name, t, node)
@@ -2661,13 +2661,17 @@ func (l *lowerer) allocEntityView(name string, value lowerValue, node ast.Node) 
 	return result
 }
 
-func (l *lowerer) newEntityViewLocal(name string, t types.Type, binding archetypeBinding) lowerValue {
+func (l *lowerer) newEntityViewLocal(name string, t types.Type, binding archetypeBinding, node ast.Node) lowerValue {
 	typ := entityViewType(t)
 	local := l.builder.NewLocal(name, typ)
-	return lowerValue{
+	result := lowerValue{
 		type_: t, slots: local.Slots, places: ir.Places(local),
 		entity: &entityReferenceValue{binding: binding},
 	}
+	if err := l.builder.Store(result.places, ir.Value{Type: typ, Slots: []ir.Expr{ir.Const{Value: -1}}}, sourcePos(l.pkg, node.Pos())); err != nil {
+		l.errorAt(node, "%v", err)
+	}
+	return result
 }
 
 func (l *lowerer) entityBinding(t types.Type) (archetypeBinding, bool) {
@@ -2680,7 +2684,17 @@ func (l *lowerer) entityBinding(t types.Type) (archetypeBinding, bool) {
 }
 
 func (l *lowerer) storeEntityView(dst, src lowerValue, node ast.Node) {
-	if dst.entity == nil || src.entity == nil || len(dst.places) != 1 || len(src.slots) != 1 {
+	if dst.entity == nil || len(dst.places) != 1 {
+		l.errorAt(node, "EntityRef.Get view assignment requires one local entity index")
+		return
+	}
+	if src.nilPointer {
+		if err := l.builder.Store(dst.places, ir.Value{Type: entityViewType(dst.type_), Slots: []ir.Expr{ir.Const{Value: -1}}}, sourcePos(l.pkg, node.Pos())); err != nil {
+			l.errorAt(node, "%v", err)
+		}
+		return
+	}
+	if src.entity == nil || len(src.slots) != 1 {
 		l.errorAt(node, "EntityRef.Get view assignment requires one local entity index")
 		return
 	}
@@ -3502,6 +3516,17 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 			}
 			op := binaryRuntime[n.Op]
 			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{ir.RuntimeCall{Function: op, Args: []ir.Expr{a.slots[0], b.slots[0]}, Result: irTypeOf(l.pkg.TypesInfo.TypeOf(n)), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}}}
+		}
+		if (n.Op == token.EQL || n.Op == token.NEQ) && (a.entity != nil && b.nilPointer || b.entity != nil && a.nilPointer) {
+			view := a
+			if view.entity == nil {
+				view = b
+			}
+			equal := l.pure(resource.RuntimeFunctionLess, n, view.slots[0], ir.Const{})
+			if n.Op == token.NEQ {
+				equal = l.pure(resource.RuntimeFunctionNot, n, equal)
+			}
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: []ir.Expr{equal}}
 		}
 		if a.entity != nil || b.entity != nil {
 			l.errorAt(n, "EntityRef.Get views cannot be compared or used with binary operators")
@@ -8343,7 +8368,7 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 		if _, callableArray := callableArrayType(resultType); callableArray {
 			frame.result = l.newCallableArray("closure.callable.result", resultType, call)
 		} else if binding, entityView := l.entityBinding(resultType); entityView {
-			frame.result = l.newEntityViewLocal("closure.entity.result", resultType, binding)
+			frame.result = l.newEntityViewLocal("closure.entity.result", resultType, binding, call)
 		} else if l.isAggregatePointerType(resultType) {
 			frame.result = l.newAggregatePointerCell("closure.aggregate.pointer.result", resultType, call)
 		} else if isPointerType(resultType) {
@@ -8587,7 +8612,7 @@ func (l *lowerer) storeHelperResultCell(destination, source lowerValue, node ast
 		l.storeCallableArray(destination, source, node)
 		return destination
 	case destination.entity != nil:
-		if source.entity == nil {
+		if source.entity == nil && !source.nilPointer {
 			l.errorAt(node, "EntityRef.Get view helper must return an entity view")
 			return destination
 		}
@@ -8728,7 +8753,7 @@ func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []
 		if _, callableArray := callableArrayType(resultType); callableArray {
 			frame.result = l.newCallableArray(fn.Name()+".callable.result", resultType, n)
 		} else if binding, entityView := l.entityBinding(resultType); entityView {
-			frame.result = l.newEntityViewLocal(fn.Name()+".entity.result", resultType, binding)
+			frame.result = l.newEntityViewLocal(fn.Name()+".entity.result", resultType, binding, n)
 		} else if l.isAggregatePointerType(resultType) {
 			frame.result = l.newAggregatePointerCell(fn.Name()+".aggregate.pointer.result", resultType, n)
 		} else if isPointerType(resultType) {
@@ -9184,7 +9209,7 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 				l.errorAt(n, "EntityRef.Get view helper return requires exactly one result")
 			} else {
 				value := l.expr(n.Results[0])
-				if value.entity == nil {
+				if value.entity == nil && !value.nilPointer {
 					l.errorAt(n.Results[0], "EntityRef.Get view helper must return an entity view")
 				} else {
 					l.storeEntityView(frame.result, value, n.Results[0])
@@ -9943,6 +9968,16 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 		if destinations[i].containerVariant != nil && isContainerValue(values[i]) {
 			l.mergeContainerValue(destinations[i], values[i], lhs)
 			continue
+		}
+		if identifier, ok := lhs.(*ast.Ident); ok && values[i].nilPointer {
+			object := l.pkg.TypesInfo.ObjectOf(identifier)
+			if object == nil {
+				object = l.pkg.TypesInfo.Defs[identifier]
+			}
+			if existing, exists := l.lookup(object); exists && existing.entity != nil {
+				l.storeEntityView(existing, values[i], lhs)
+				continue
+			}
 		}
 		if isStaticPointer(values[i]) {
 			identifier, ok := lhs.(*ast.Ident)

@@ -747,6 +747,27 @@ func TestPersistentLevelGlobalPointersAndInterfacesMatchAcrossOptimizations(t *t
 		if memory := int64Result.Memory[2000]; len(memory) <= 10 || memory[10] != -1<<31+1999 {
 			t.Fatalf("optimization %d runtime int32 wrap result = %v", optimization, memory)
 		}
+		for _, test := range []struct {
+			enabled float64
+			want    float64
+		}{{enabled: 0, want: -1}, {enabled: 1, want: 42}} {
+			shared := []float64{test.enabled, 41}
+			nullableResult, runErr := engine.Run(Request{
+				Mode: ModePlay, Archetype: "NullableEntityCarrier", Callback: "preprocess",
+				Memory: map[int][]float64{4002: append([]float64(nil), shared...), 4102: append([]float64(nil), shared...)},
+			})
+			if runErr != nil {
+				t.Fatalf("optimization %d nullable entity view enabled %v: %v", optimization, test.enabled, runErr)
+			}
+			if memory := nullableResult.Memory[2000]; len(memory) <= 10 || memory[10] != test.want {
+				t.Fatalf("optimization %d nullable entity view enabled %v result = %v, want %v", optimization, test.enabled, memory, test.want)
+			}
+			if test.enabled != 0 {
+				if referenced := nullableResult.Memory[4102]; len(referenced) < 2 || referenced[1] != 42 {
+					t.Fatalf("optimization %d nullable entity view write = %v", optimization, referenced)
+				}
+			}
+		}
 	}
 }
 
