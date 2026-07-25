@@ -152,6 +152,35 @@ func (carrier *RuntimeInt64Carrier) Preprocess() {
 	Persistent.Result = float64(addRuntimeInt32(carrier.Value, 2000))
 }
 
+type NullableEntityCarrier struct {
+	play.Archetype `archetype:"name=NullableEntityCarrier"`
+	Enabled        bool    `archetype:"shared"`
+	Value          float64 `archetype:"shared"`
+}
+
+func nullableEntityCarrier(enabled bool) *NullableEntityCarrier {
+	if !enabled {
+		return nil
+	}
+	return play.CurrentEntityRef[NullableEntityCarrier]().Get()
+}
+
+func (carrier *NullableEntityCarrier) Preprocess() {
+	view := nullableEntityCarrier(carrier.Enabled)
+	if view == nil {
+		Persistent.Result = -1
+		return
+	}
+	view.Value++
+	updated := view.Value
+	view = nil
+	if view != nil {
+		Persistent.Result = -2
+		return
+	}
+	Persistent.Result = updated
+}
+
 func (carrier *PersistentInterfaceCarrier) Preprocess() {
 	if carrier.SharedAuto != nil {
 		Persistent.Result = -1
