@@ -175,6 +175,17 @@ type PersistentEntityInterfaceTargetCarrier struct {
 	CopiedAuto     shared.AutoInput `archetype:"shared"`
 }
 
+func (carrier *PersistentEntityInterfaceCarrier) Auto() shared.AutoInput {
+	return carrier.Target.Get()
+}
+
+func (carrier *PersistentEntityInterfaceCarrier) NilAuto() shared.AutoInput {
+	if carrier.NilTarget.Index < 0 {
+		return nil
+	}
+	return carrier.NilTarget.Get()
+}
+
 type RuntimeInt64Carrier struct {
 	play.Archetype `archetype:"name=RuntimeInt64Carrier"`
 	Value          int `archetype:"shared"`
@@ -245,6 +256,16 @@ func (*PersistentInterfaceCarrier) UpdateSequential() {
 func (carrier *PersistentEntityInterfaceCarrier) Preprocess() {
 	target := carrier.Target.Get()
 	target.Bias = 30
+	var provider interface {
+		Auto() shared.AutoInput
+		NilAuto() shared.AutoInput
+	} = play.CurrentEntityRef[PersistentEntityInterfaceCarrier]().Get()
+	result := provider.Auto().Apply(1)
+	if auto := provider.NilAuto(); auto != nil {
+		result += auto.Apply(1)
+	}
+	Persistent.Result = result
+	target.Bias = 30
 	carrier.SharedAuto = target
 	destination := carrier.Destination.Get()
 	destination.CopiedAuto = carrier.SharedAuto
@@ -254,8 +275,11 @@ func (carrier *PersistentEntityInterfaceCarrier) Preprocess() {
 		sonolus.Terminate("typed nil entity interface became nil")
 	}
 	typedNil, ok := carrier.SharedAuto.(*persistentEntityAutoCarrier)
-	if !ok || typedNil != nil {
+	if !ok {
 		sonolus.Terminate("typed nil entity interface lost its concrete type")
+	}
+	if (typedNil == nil) != (carrier.NilTarget.Index < 0) {
+		sonolus.Terminate("typed nil entity interface nil state diverged")
 	}
 	carrier.SharedAuto = nil
 }

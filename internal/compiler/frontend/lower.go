@@ -787,14 +787,21 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 		destination = l.newInterfaceValue("interface", destination.type_, node)
 	}
 	variant := destination.interface_
-	if variant.persistent && source.nilPointer {
-		l.store(variant.rawTag, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
-		for _, payload := range variant.alternatives {
-			if payload.persistentPointer != nil {
-				l.store(payload.persistentPointer.handle, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
-				break
+	storeNil := func() {
+		if variant.persistent {
+			l.store(variant.rawTag, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+			for _, payload := range variant.alternatives {
+				if payload.persistentPointer != nil {
+					l.store(payload.persistentPointer.handle, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
+					break
+				}
 			}
+		} else {
+			l.store(variant.tag, scalarValue(ir.Const{Value: -1}, types.Typ[types.Int]), node)
 		}
+	}
+	if source.nilPointer && (variant.persistent || source.type_ == types.Typ[types.UntypedNil]) {
+		storeNil()
 		return destination
 	}
 	storeConcrete := func(value lowerValue) {
@@ -854,15 +861,8 @@ func (l *lowerer) storeInterfaceValue(destination, source lowerValue, node ast.N
 		l.jump(merge)
 	}
 	l.setCurrent(invalid)
-	if sourceVariant.persistent && variant.persistent {
-		l.store(variant.rawTag, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
-		if len(variant.alternatives) != 0 && variant.alternatives[0].persistentPointer != nil {
-			l.store(variant.alternatives[0].persistentPointer.handle, scalarValue(ir.Const{}, types.Typ[types.Int]), node)
-		}
-		l.jump(merge)
-	} else {
-		_ = l.builder.MarkUnreachable()
-	}
+	storeNil()
+	l.jump(merge)
 	l.setCurrent(merge)
 	return destination
 }
@@ -2168,11 +2168,11 @@ func (l *lowerer) copyAggregatePointerValue(name string, source lowerValue, node
 
 func (l *lowerer) newDescriptorCell(name string, t types.Type, node ast.Node) lowerValue {
 	t = l.resolveType(t)
-	if l.containsAggregateDescriptor(t) {
-		return l.newAggregateCell(name, t, node)
-	}
 	if binding, exists := l.entityBinding(t); exists {
 		return l.newEntityViewLocal(name, t, binding, node)
+	}
+	if l.containsAggregateDescriptor(t) {
+		return l.newAggregateCell(name, t, node)
 	}
 	if isInterfaceType(t) {
 		return l.newInterfaceValue(name, t, node)
@@ -5139,11 +5139,7 @@ func (l *lowerer) inlineInterfaceMethodAlternatives(call *ast.CallExpr, method *
 		l.jump(merge)
 	}
 	l.setCurrent(invalid)
-	if variant.persistent {
-		l.terminateRuntime(call, "nil interface method call")
-	} else {
-		_ = l.builder.MarkUnreachable()
-	}
+	l.terminateRuntime(call, "nil interface method call")
 	l.setCurrent(merge)
 	return result
 }
@@ -8388,7 +8384,7 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 	} else if isFunctionType(resultType) {
 		frame.result = lowerValue{type_: resultType}
 	} else if isInterfaceType(resultType) {
-		frame.result = lowerValue{type_: resultType}
+		frame.result = l.newInterfaceValue("closure.interface.result", resultType, call)
 		frame.interfaceResult = true
 	} else if resultType != nil {
 		if _, callableArray := callableArrayType(resultType); callableArray {
@@ -8773,7 +8769,7 @@ func (l *lowerer) inlineCallArgumentsAs(n *ast.CallExpr, fn *types.Func, args []
 	} else if isFunctionType(resultType) {
 		frame.result = lowerValue{type_: resultType}
 	} else if isInterfaceType(resultType) {
-		frame.result = lowerValue{type_: resultType}
+		frame.result = l.newInterfaceValue(fn.Name()+".interface.result", resultType, n)
 		frame.interfaceResult = true
 	} else if resultType != nil {
 		if _, callableArray := callableArrayType(resultType); callableArray {
@@ -9157,37 +9153,7 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 			if len(n.Results) != 1 {
 				l.errorAt(n, "static interface helper return requires exactly one result")
 			} else {
-				value := l.expr(n.Results[0])
-				if value.interface_ != nil {
-					frame.result.interface_ = value.interface_
-				} else if value.type_ == nil || isInterfaceType(value.type_) {
-					l.errorAt(n.Results[0], "static interface helper return requires a known concrete type")
-				} else {
-					if frame.result.interface_ == nil {
-						frame.result.interface_ = &interfaceValue{finiteVariant: newFiniteVariant[lowerValue](l, "interface.return.tag", n.Results[0])}
-					}
-					variant := frame.result.interface_
-					alternative := -1
-					for index, candidate := range variant.alternatives {
-						if types.Identical(candidate.type_, value.type_) {
-							alternative = index
-							break
-						}
-					}
-					if alternative == -1 {
-						payload := l.allocZeroed("interface.return.value", value.type_, n.Results[0])
-						var added bool
-						alternative, added = variant.add(payload, func(left, right lowerValue) bool {
-							return left.type_ != nil && right.type_ != nil && types.Identical(left.type_, right.type_)
-						})
-						if !added {
-							l.errorAt(n.Results[0], "finite static interface return exceeds 256 alternatives")
-							return
-						}
-					}
-					l.store(variant.alternatives[alternative], value, n.Results[0])
-					l.store(variant.tag, scalarValue(ir.Const{Value: float64(alternative)}, types.Typ[types.Int]), n.Results[0])
-				}
+				frame.result = l.storeInterfaceValue(frame.result, l.expr(n.Results[0]), n.Results[0])
 			}
 			l.jump(frame.returnBlock)
 			return
