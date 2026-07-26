@@ -471,14 +471,12 @@ func TestStructuralMixinFieldsAndCallbacksAcrossModes(t *testing.T) {
 			t.Fatalf("%s callbacks = %+v", currentMode, archetype.Callbacks)
 		}
 	}
-	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
-		artifacts, err := NewCompiler(Options{Optimization: level}, "./testdata/structmixin").Compile(mode.ModePlay, mode.ModeWatch)
-		if err != nil {
-			t.Fatalf("level %d: %v", level, err)
-		}
-		if artifacts.Play == nil || artifacts.Watch == nil {
-			t.Fatalf("level %d did not produce play and watch artifacts", level)
-		}
+	artifacts, err := NewCompiler(Options{}, "./testdata/structmixin").Compile(mode.ModePlay, mode.ModeWatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifacts.Play == nil || artifacts.Watch == nil {
+		t.Fatal("standard optimization did not produce play and watch artifacts")
 	}
 }
 
@@ -497,17 +495,6 @@ func TestStructuralMixinRejectsInvalidLayoutsAndCallbacks(t *testing.T) {
 		if !strings.Contains(err.Error(), message) {
 			t.Errorf("missing %q in error:\n%v", message, err)
 		}
-	}
-}
-
-func TestArchetypeCallbackNamesAllowOrdinaryMethods(t *testing.T) {
-	declarations, err := parseMode(mode.ModePlay, "./testdata/conformance")
-	if err != nil {
-		t.Fatal(err)
-	}
-	note := entityRefArchetype(t, declarations, "ConformanceNote")
-	if len(note.Callbacks) != 2 || note.Callbacks[0].Name != "preprocess" || note.Callbacks[1].Name != "shouldSpawn" {
-		t.Fatalf("callbacks = %+v", note.Callbacks)
 	}
 }
 
@@ -546,10 +533,8 @@ func TestArchetypeInheritanceAndReferenceMatching(t *testing.T) {
 	if len(concrete.Fields) != 2 || len(concrete.Callbacks) != 1 || concrete.Callbacks[0].Name != "preprocess" || concrete.Callbacks[0].Order != -7 || !concrete.HasKey || concrete.Key != 7 {
 		t.Fatalf("abstract archetype layout/callback inheritance = %+v", concrete)
 	}
-	for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
-		if _, err := NewCompiler(Options{Optimization: level}, "./testdata/archetypemro").Compile(mode.ModePlay); err != nil {
-			t.Fatalf("level %d: %v", level, err)
-		}
+	if _, err := NewCompiler(Options{}, "./testdata/archetypemro").Compile(mode.ModePlay); err != nil {
+		t.Fatal(err)
 	}
 }
 

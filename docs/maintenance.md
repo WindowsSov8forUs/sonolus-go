@@ -89,6 +89,8 @@ go run ./cmd/sonolus-go vet -O 2 ./godori
 
 全量测试使用 `-p=1` 串行运行各 package，避免多个包含完整编译器验收的测试二进制同时占用 CPU 和内存。Godori 只在自身测试中编译一次；仅在需要人工验证 CLI 路由时额外运行标准优化级 `vet`，不把三个优化级和 `list` 重复加入普通收尾。该参数只限制 package 级调度，不会屏蔽单个 package 内显式验证的并发行为；局部测试仍可使用 Go 默认并行度。
 
+GitHub Actions 只对 `main` push 与目标为 `main` 的 pull request 运行，避免同一 `dev` 提交同时触发 push 与 pull request 两套任务。三平台只重复执行上述串行全量测试；`vet` 与 `build` 由 Ubuntu quality job 统一负责，fuzz 与 vulnerability 保持独立 job。PR 更新会取消同一 PR 的过期运行，`main` 上不同提交的验证互不取消。
+
 `gofmt -l .` 必须无输出。不要用节点数单独证明语义正确；优化修改还需通过 simulator 或 reference corpus 比较 callback 结果、semantic memory、streams 与副作用顺序。
 
 ## 提交与发布前清理
