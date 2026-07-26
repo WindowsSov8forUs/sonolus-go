@@ -37,6 +37,12 @@ func returnedView(reference sonolus.EntityRef[Target]) *Target {
 	return reference.Get()
 }
 
+func useNullableTarget(target *Target, value float64) {
+	if target != nil {
+		target.Shared += value
+	}
+}
+
 type Reader struct {
 	play.Archetype `archetype:"name=Reader,hasInput=true"`
 	First          sonolus.EntityRef[Target] `archetype:"imported"`
@@ -51,6 +57,21 @@ type TargetHolder struct {
 
 func (reader *Reader) Preprocess() {
 	_ = reader.First.GetUnchecked().Imported
+	var nullable *Target
+	if reader.Selector > 0 {
+		nullable = reader.First.Get()
+	}
+	useNullableTarget(nullable, 1)
+	nullable = nil
+	if reader.Selector < 0 {
+		nullable = reader.Second.Get()
+	}
+	useNullableTarget(nullable, 2)
+	var explicitNil *Target = nil
+	if reader.Selector != 0 {
+		explicitNil = reader.First.Get()
+	}
+	useNullableTarget(explicitNil, 3)
 	anyRef := sonolus.EntityRefAs[sonolus.AnyArchetype](reader.First)
 	_ = sonolus.EntityRefMatches[Target](anyRef, true)
 	_ = sonolus.EntityRefGetAs[Target](anyRef).Imported

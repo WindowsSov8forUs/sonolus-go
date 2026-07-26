@@ -8977,6 +8977,10 @@ func (l *lowerer) stmt(stmt ast.Stmt) {
 			for _, name := range vs.Names {
 				obj := l.pkg.TypesInfo.Defs[name]
 				objectType := l.resolveType(obj.Type())
+				if binding, entityView := l.entityBinding(objectType); entityView {
+					l.bind(obj, l.newEntityViewLocal(name.Name, objectType, binding, name))
+					continue
+				}
 				if isInterfaceType(objectType) {
 					l.bind(obj, l.newInterfaceValue(name.Name+".interface", objectType, name))
 					continue
@@ -9842,6 +9846,12 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			continue
 		}
 		objectType := l.resolveType(object.Type())
+		if binding, entityView := l.entityBinding(objectType); entityView && values[i].nilPointer {
+			identifier := n.Lhs[i].(*ast.Ident)
+			l.bind(object, l.newEntityViewLocal(identifier.Name, objectType, binding, identifier))
+			skipStore[i] = true
+			continue
+		}
 		if values[i].interface_ != nil {
 			identifier := n.Lhs[i].(*ast.Ident)
 			value := l.storeInterfaceValue(l.newInterfaceValue(identifier.Name+".interface", objectType, identifier), values[i], identifier)
