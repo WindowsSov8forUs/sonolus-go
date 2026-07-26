@@ -32,10 +32,15 @@ func (n *Note) rhs() float64 {
 	return 30
 }
 
+func writeShared(note *Note, value float64) {
+	note.Shared = value
+}
+
 func (n *Note) Preprocess() {
 	n.Imported = 1
 	n.Data = 2
 	n.Shared = 3
+	writeShared(n, 4)
 	values := [1]float64{}
 	values[n.index()] = n.rhs()
 	c := counter{}

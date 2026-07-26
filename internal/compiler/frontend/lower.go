@@ -1241,6 +1241,7 @@ type lowerFrame struct {
 	mutableCallables map[types.Object]bool
 	mutableValues    map[types.Object]bool
 	reboundValues    map[types.Object]bool
+	addressedValues  map[types.Object]bool
 	valueReads       map[types.Object]int
 	result           lowerValue
 	callableResult   *staticCallable
@@ -1425,6 +1426,7 @@ func (l *lowerer) prepareCallableMutability(frame *lowerFrame, body *ast.BlockSt
 func (l *lowerer) prepareValueParameterUsage(frame *lowerFrame, body *ast.BlockStmt) {
 	frame.mutableValues = map[types.Object]bool{}
 	frame.reboundValues = map[types.Object]bool{}
+	frame.addressedValues = map[types.Object]bool{}
 	frame.valueReads = map[types.Object]int{}
 	markMutable := func(expr ast.Expr) {
 		identifier := assignedRootIdentifier(expr)
@@ -1455,6 +1457,11 @@ func (l *lowerer) prepareValueParameterUsage(frame *lowerFrame, body *ast.BlockS
 		case *ast.UnaryExpr:
 			if node.Op == token.AND {
 				markMutable(node.X)
+				if identifier, ok := node.X.(*ast.Ident); ok {
+					if object := frame.pkg.TypesInfo.ObjectOf(identifier); object != nil {
+						frame.addressedValues[object] = true
+					}
+				}
 			}
 		case *ast.Ident:
 			if object, ok := frame.pkg.TypesInfo.Uses[node].(*types.Var); ok {
@@ -2905,7 +2912,7 @@ func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, n
 	if _, pointer := types.Unalias(parameterType).(*types.Pointer); pointer {
 		value.type_ = parameterType
 		frame := l.frames[len(l.frames)-1]
-		if !frame.mutableValues[obj] {
+		if !frame.reboundValues[obj] && !frame.addressedValues[obj] {
 			l.bind(obj, value)
 			return
 		}
@@ -3769,12 +3776,20 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				}
 				return value
 			}
+			if base.type_ == nil {
+				l.errorAt(n, "selector %s base has no runtime type", n.Sel.Name)
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+			}
 			if pointer, ok := types.Unalias(base.type_).(*types.Pointer); ok {
 				if base.pointer != nil {
 					base = l.loadPointer(base, pointer, n.X)
 				} else {
 					base.type_ = pointer.Elem()
 				}
+			}
+			if base.type_ == nil {
+				l.errorAt(n, "selector %s base has no runtime type", n.Sel.Name)
+				return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 			}
 			offset := 0
 			st, _ := types.Unalias(base.type_).Underlying().(*types.Struct)
