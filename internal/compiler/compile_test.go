@@ -1235,7 +1235,7 @@ func TestHelperPreservesArchetypeReferenceAndAssignmentOrder(t *testing.T) {
 		t.Fatalf("archetype memory store order = %v, want %v", offsets, want)
 	}
 	facts := inspectFunction(fn)
-	if countMemory(facts.stores, "data") != 2 || countMemory(facts.stores, "shared") != 1 {
+	if countMemory(facts.stores, "data") != 2 || countMemory(facts.stores, "shared") != 2 {
 		t.Fatalf("archetype data/shared stores = %#v", facts.stores)
 	}
 	if decl.Archetypes[0].Fields[2].Offset != 0 || decl.Archetypes[0].Fields[3].Offset != 1 {
