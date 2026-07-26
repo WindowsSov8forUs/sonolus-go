@@ -1409,6 +1409,7 @@ func TestParseDeclarationsRejectsInvalidStaticDSL(t *testing.T) {
 		{"./testdata/invalidpackagearray", "package static values are immutable in callbacks"},
 		{"./testdata/invalidcurrententityref", "is not a base of current archetype"},
 		{"./testdata/invalidarchetypeid", "is abstract and has no runtime ID"},
+		{"./testdata/invalidnilinterface", "static interface variant has no alternatives"},
 	}
 	for _, test := range tests {
 		t.Run(test.pattern, func(t *testing.T) {

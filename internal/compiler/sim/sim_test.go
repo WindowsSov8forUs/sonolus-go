@@ -739,10 +739,26 @@ func TestPersistentLevelGlobalPointersAndInterfacesMatchAcrossOptimizations(t *t
 		}
 		entityPreprocessed, err := engine.Run(Request{
 			Mode: ModePlay, Archetype: "PersistentEntityInterfaceCarrier", Callback: "preprocess",
-			Memory: map[int][]float64{4002: {1, -1, 2, 0, 0}, 4102: {0}},
+			Memory: map[int][]float64{4002: {1, -1, 2, 0, 0}, 4102: {1, -1, 2, 0, 0}},
 		})
 		if err != nil {
 			t.Fatalf("optimization %d entity interface preprocess: %v", optimization, err)
+		}
+		if memory := entityPreprocessed.Memory[2000]; len(memory) <= 10 || memory[10] != 31 {
+			t.Fatalf("optimization %d nullable interface result = %v", optimization, memory)
+		}
+		entityNonNullResult, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "PersistentEntityInterfaceCarrier", Callback: "preprocess",
+			Memory: map[int][]float64{4002: {1, 1, 2, 0, 0}, 4102: {1, 1, 2, 0, 0}},
+		})
+		if err != nil {
+			t.Fatalf("optimization %d non-null interface result preprocess: %v", optimization, err)
+		}
+		if memory := entityNonNullResult.Memory[2000]; len(memory) <= 10 || memory[10] != 63 {
+			t.Fatalf("optimization %d non-null interface result = %v", optimization, memory)
+		}
+		if shared := entityNonNullResult.Memory[4002]; len(shared) < 5 || shared[3] != 0 || shared[4] != 0 {
+			t.Fatalf("optimization %d non-null interface preprocess did not run to completion: %v", optimization, shared)
 		}
 		entitySequential, err := engine.Run(Request{
 			Mode: ModePlay, Archetype: "PersistentEntityInterfaceCarrier", Callback: "updateSequential",
