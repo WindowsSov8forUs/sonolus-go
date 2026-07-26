@@ -25,6 +25,7 @@ coverage.*
 .claude/
 .agents/
 .codex/
+/CLAUDE.md
 
 # --- Editors / IDE ---
 .idea/
