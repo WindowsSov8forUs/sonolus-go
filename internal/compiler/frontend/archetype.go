@@ -516,7 +516,7 @@ func inheritArchetypeLayout(derived, base *ArchetypeDeclaration, errs *[]error) 
 	return true
 }
 
-func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, checks RuntimeChecks) []error {
+func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, result *ArchetypeDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, packageInitialization *PackageInitializationDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, checks RuntimeChecks) []error {
 	var errs []error
 	methodSet := types.NewMethodSet(types.NewPointer(result.Named))
 	foundOrders := map[string]bool{}
@@ -559,15 +559,25 @@ func lowerArchetypeCallbacks(packagesByTypes map[*types.Package]*packages.Packag
 		wg.Add(1)
 		go func(i int, job callbackJob) {
 			defer wg.Done()
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, levelGlobalFields, packageGlobals, packagePointers, result, archetypes, m, job.key, checks)
-			callbacks[i] = &CallbackDeclaration{Name: job.key, Order: result.CallbackOrders[job.key], Function: job.fn, Decl: job.decl, IR: bodyIR}
+			bodyIR, usesPackageInitialization, lowerErrs := lowerCallback(packagesByTypes, job.pkg, job.decl, job.fn, result.Fields, resources, configuration, levelGlobalFields, packageGlobals, packagePointers, packageInitialization, result, archetypes, m, job.key, checks)
+			callbacks[i] = &CallbackDeclaration{Name: job.key, Order: result.CallbackOrders[job.key], Function: job.fn, Decl: job.decl, IR: bodyIR, UsesPackageInitialization: usesPackageInitialization}
 			jobErrs[i] = lowerErrs
 		}(i, job)
 	}
 	wg.Wait()
+	hasPreprocess := false
 	for i := range jobs {
 		result.Callbacks = append(result.Callbacks, callbacks[i])
 		errs = append(errs, jobErrs[i]...)
+		hasPreprocess = hasPreprocess || jobs[i].key == "preprocess"
+	}
+	if packageInitialization != nil && len(jobs) != 0 && !hasPreprocess {
+		if _, explicit := result.CallbackOrders["preprocess"]; !explicit {
+			name := "(*" + result.PackagePath + "." + result.TypeName + ").packagePreprocess"
+			bodyIR, lowerErrs := lowerSyntheticPackagePreprocess(packagesByTypes, pkg, packageGlobals, packageInitialization, m, name, result.Named.Obj().Pos())
+			result.Callbacks = append(result.Callbacks, &CallbackDeclaration{Name: "preprocess", IR: bodyIR})
+			errs = append(errs, lowerErrs...)
+		}
 	}
 	for key := range result.CallbackOrders {
 		if !foundOrders[key] {

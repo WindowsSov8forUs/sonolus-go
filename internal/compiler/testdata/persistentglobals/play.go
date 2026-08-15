@@ -110,6 +110,8 @@ func (input *persistentEntityAutoCarrier) Apply(value float64) float64 {
 
 var sharedAutoRoot = &shared.DefaultAutoInput{Bias: 10}
 var sharedAutoOtherRoot = &persistentAutoInputOther{Factor: 3}
+var packageLifecycleRoot = &persistentUnit{Value: 7}
+var packageUpdateOnlyRoot = &persistentUnit{Value: 13}
 
 const (
 	minInt32 = -1 << 31
@@ -155,6 +157,30 @@ var Persistent = PersistentMemory{}
 
 type PersistentNote struct {
 	play.Archetype `archetype:"name=PersistentNote"`
+}
+
+type PersistentLifecycleWriter struct {
+	play.Archetype `archetype:"name=PersistentLifecycleWriter"`
+}
+
+func (*PersistentLifecycleWriter) Preprocess() {
+	packageLifecycleRoot.Value = 24
+}
+
+type PersistentLifecycleReader struct {
+	play.Archetype `archetype:"name=PersistentLifecycleReader"`
+}
+
+func (*PersistentLifecycleReader) Preprocess() {
+	Persistent.Result = packageLifecycleRoot.Value
+}
+
+type PersistentUpdateOnly struct {
+	play.Archetype `archetype:"name=PersistentUpdateOnly"`
+}
+
+func (*PersistentUpdateOnly) UpdateSequential() {
+	Persistent.Result = packageUpdateOnlyRoot.Value
 }
 
 type PersistentInterfaceCarrier struct {

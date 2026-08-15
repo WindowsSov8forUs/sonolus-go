@@ -813,6 +813,120 @@ func TestPersistentLevelGlobalPointersAndInterfacesMatchAcrossOptimizations(t *t
 	}
 }
 
+func TestPackageGlobalInitializationLifecycleMatchesAcrossOptimizations(t *testing.T) {
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/persistentglobals")
+		written, err := engine.Run(Request{Mode: ModePlay, Archetype: "PersistentLifecycleWriter", Callback: "preprocess"})
+		if err != nil {
+			t.Fatalf("optimization %d writer preprocess: %v", optimization, err)
+		}
+		observed, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "PersistentLifecycleReader", Callback: "preprocess",
+			Memory: written.Memory,
+		})
+		if err != nil {
+			t.Fatalf("optimization %d reader preprocess: %v", optimization, err)
+		}
+		if memory := observed.Memory[2000]; len(memory) <= 10 || memory[10] != 24 {
+			t.Fatalf("optimization %d repeated preprocess reset package target: %v", optimization, memory)
+		}
+
+		initialized, err := engine.Run(Request{Mode: ModePlay, Archetype: "PersistentUpdateOnly", Callback: "preprocess"})
+		if err != nil {
+			t.Fatalf("optimization %d synthetic preprocess: %v", optimization, err)
+		}
+		updated, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "PersistentUpdateOnly", Callback: "updateSequential",
+			Memory: initialized.Memory,
+		})
+		if err != nil {
+			t.Fatalf("optimization %d update-only callback: %v", optimization, err)
+		}
+		if memory := updated.Memory[2000]; len(memory) <= 10 || memory[10] != 13 {
+			t.Fatalf("optimization %d synthetic preprocess did not initialize package target: %v", optimization, memory)
+		}
+	}
+}
+
+func TestPackageGlobalInitializationLifecycleAcrossModes(t *testing.T) {
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/packageglobals")
+		for _, currentMode := range []Mode{ModePlay, ModeWatch, ModePreview} {
+			written, err := engine.Run(Request{Mode: currentMode, Archetype: "Writer", Callback: "preprocess"})
+			if err != nil {
+				t.Fatalf("optimization %d %s writer: %v", optimization, currentMode, err)
+			}
+			observed, err := engine.Run(Request{
+				Mode: currentMode, Archetype: "Reader", Callback: "preprocess",
+				Memory: written.Memory,
+			})
+			if err != nil {
+				t.Fatalf("optimization %d %s reader: %v", optimization, currentMode, err)
+			}
+			if memory := observed.Memory[2000]; len(memory) == 0 || memory[0] != 24 {
+				t.Fatalf("optimization %d %s package lifecycle = %v", optimization, currentMode, memory)
+			}
+		}
+		for _, currentMode := range []Mode{ModePlay, ModeWatch} {
+			initialized, err := engine.Run(Request{Mode: currentMode, Archetype: "UpdateOnly", Callback: "preprocess"})
+			if err != nil {
+				t.Fatalf("optimization %d %s synthetic preprocess: %v", optimization, currentMode, err)
+			}
+			updated, err := engine.Run(Request{
+				Mode: currentMode, Archetype: "UpdateOnly", Callback: "updateSequential",
+				Memory: initialized.Memory,
+			})
+			if err != nil {
+				t.Fatalf("optimization %d %s update-only: %v", optimization, currentMode, err)
+			}
+			if memory := updated.Memory[2000]; len(memory) == 0 || memory[0] != 13 {
+				t.Fatalf("optimization %d %s update-only package value = %v", optimization, currentMode, memory)
+			}
+		}
+		tutorialPreprocess, err := engine.Run(Request{Mode: ModeTutorial, Callback: "preprocess"})
+		if err != nil {
+			t.Fatalf("optimization %d tutorial synthetic preprocess: %v", optimization, err)
+		}
+		tutorialNavigate, err := engine.Run(Request{
+			Mode: ModeTutorial, Callback: "navigate", Memory: tutorialPreprocess.Memory,
+		})
+		if err != nil {
+			t.Fatalf("optimization %d tutorial navigate: %v", optimization, err)
+		}
+		if memory := tutorialNavigate.Memory[2000]; len(memory) == 0 || memory[0] != 7 {
+			t.Fatalf("optimization %d tutorial package value = %v", optimization, memory)
+		}
+	}
+}
+
+func TestZeroPackageGlobalUsesRuntimeZeroState(t *testing.T) {
+	engine := compileTestEngine(t, Options{Optimization: OptimizationStandard}, "../testdata/zeropackageglobals")
+	first, err := engine.Run(Request{Mode: ModePlay, Archetype: "ZeroNote", Callback: "updateSequential"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if memory := first.Memory[2000]; len(memory) == 0 || memory[0] != 1 {
+		t.Fatalf("first zero package update = %v", memory)
+	}
+	second, err := engine.Run(Request{
+		Mode: ModePlay, Archetype: "ZeroNote", Callback: "updateSequential",
+		Memory: first.Memory,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if memory := second.Memory[2000]; len(memory) == 0 || memory[0] != 2 {
+		t.Fatalf("second zero package update = %v", memory)
+	}
+	watch, err := engine.Run(Request{Mode: ModeWatch, Callback: "updateSpawn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if watch.Value != 0 {
+		t.Fatalf("zero package UpdateSpawn return = %v", watch.Value)
+	}
+}
+
 func TestTouchIteratorMatchesAcrossOptimizations(t *testing.T) {
 	touches := make([]float64, 30)
 	touches[0], touches[13] = 2, 5

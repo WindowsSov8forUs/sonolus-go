@@ -3,6 +3,7 @@ package frontend
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"sort"
 	"strings"
@@ -96,7 +97,7 @@ func calledObject(pkg *packages.Package, expr ast.Expr) types.Object {
 	}
 }
 
-func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, m mode.Mode, hasMarker bool, checks RuntimeChecks) ([]*CallbackDeclaration, []error) {
+func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, packageInitialization *PackageInitializationDeclaration, m mode.Mode, hasMarker bool, checks RuntimeChecks) ([]*CallbackDeclaration, []error) {
 	if !hasMarker {
 		return nil, nil
 	}
@@ -159,15 +160,27 @@ func globalCallbacks(packagesByTypes map[*types.Package]*packages.Package, pkg *
 		go func(i int, job callbackJob) {
 			defer wg.Done()
 			key := callbackKey(job.name)
-			bodyIR, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, configuration, levelGlobalFields, packageGlobals, packagePointers, nil, nil, m, key, checks)
-			callbacks[i] = &CallbackDeclaration{Name: key, Function: job.fn, Decl: job.decl, IR: bodyIR}
+			bodyIR, usesPackageInitialization, lowerErrs := lowerCallback(packagesByTypes, pkg, job.decl, job.fn, nil, resources, configuration, levelGlobalFields, packageGlobals, packagePointers, packageInitialization, nil, nil, m, key, checks)
+			callbacks[i] = &CallbackDeclaration{Name: key, Function: job.fn, Decl: job.decl, IR: bodyIR, UsesPackageInitialization: usesPackageInitialization}
 			jobErrs[i] = lowerErrs
 		}(i, job)
 	}
 	wg.Wait()
+	hasPreprocess := false
 	for i := range jobs {
 		result = append(result, callbacks[i])
 		errs = append(errs, jobErrs[i]...)
+		hasPreprocess = hasPreprocess || callbacks[i].Name == "preprocess"
+		if m == mode.ModeWatch && callbacks[i].Name == "updateSpawn" && callbacks[i].UsesPackageInitialization {
+			position := pkg.Fset.Position(jobs[i].decl.Pos())
+			errs = append(errs, fmt.Errorf("%s:%d:%d: callback %s: watch UpdateSpawn cannot access a package object requiring runtime initialization", canonicalSourceFile(pkg, position.Filename), position.Line, position.Column, jobs[i].fn.FullName()))
+		}
+	}
+	if m == mode.ModeTutorial && packageInitialization != nil && len(jobs) != 0 && !hasPreprocess {
+		name := pkg.PkgPath + ".packagePreprocess"
+		bodyIR, lowerErrs := lowerSyntheticPackagePreprocess(packagesByTypes, pkg, packageGlobals, packageInitialization, m, name, token.NoPos)
+		result = append(result, &CallbackDeclaration{Name: "preprocess", IR: bodyIR})
+		errs = append(errs, lowerErrs...)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result, errs

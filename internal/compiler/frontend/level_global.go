@@ -5,6 +5,7 @@ import (
 	"go/constant"
 	"go/types"
 	"math"
+	"sort"
 
 	"golang.org/x/tools/go/packages"
 
@@ -46,21 +47,31 @@ func levelGlobalStorageAccess(declaration *LevelGlobalFieldDeclaration, currentM
 	storage, kind := declaration.Storage, declaration.Kind
 	write := false
 	switch kind {
-	case "package":
-		write = true
 	case "data":
 		write = phase == "preprocess"
 	case "memory":
-		switch currentMode {
-		case mode.ModePlay:
-			write = phase == "preprocess" || phase == "updateSequential" || phase == "touch"
-		case mode.ModeWatch:
-			write = phase == "preprocess" || phase == "updateSequential"
-		case mode.ModeTutorial:
-			write = phase == "preprocess" || phase == "navigate" || phase == "update"
+		write = levelMemoryWritable(currentMode, phase)
+	case "package":
+		if currentMode == mode.ModePreview {
+			write = phase == "preprocess"
+		} else {
+			write = levelMemoryWritable(currentMode, phase)
 		}
 	}
 	return storage, true, write
+}
+
+func levelMemoryWritable(currentMode mode.Mode, phase string) bool {
+	switch currentMode {
+	case mode.ModePlay:
+		return phase == "preprocess" || phase == "updateSequential" || phase == "touch"
+	case mode.ModeWatch:
+		return phase == "preprocess" || phase == "updateSequential"
+	case mode.ModeTutorial:
+		return phase == "preprocess" || phase == "navigate" || phase == "update"
+	default:
+		return false
+	}
 }
 
 func staticZero(value source.StaticValue) bool {
@@ -97,6 +108,40 @@ func staticZero(value source.StaticValue) bool {
 	default:
 		return false
 	}
+}
+
+func orderedPackageGlobals(globals map[*source.StaticObject]*LevelGlobalFieldDeclaration) []*LevelGlobalFieldDeclaration {
+	result := make([]*LevelGlobalFieldDeclaration, 0, len(globals))
+	for _, declaration := range globals {
+		result = append(result, declaration)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Storage != result[j].Storage {
+			return result[i].Storage < result[j].Storage
+		}
+		if result[i].Offset != result[j].Offset {
+			return result[i].Offset < result[j].Offset
+		}
+		return result[i].GoName < result[j].GoName
+	})
+	return result
+}
+
+func markPackageInitialization(declaration *LevelGlobalFieldDeclaration) bool {
+	if declaration == nil {
+		return false
+	}
+	required := declaration.PersistentKind == "pointer" && declaration.InitialTarget != nil ||
+		declaration.PersistentKind == "interface" && declaration.InitialInterfaceTarget != nil ||
+		declaration.HasInitialValue && !staticZero(declaration.InitialValue)
+	for _, child := range declaration.Fields {
+		required = markPackageInitialization(child) || required
+	}
+	for _, child := range declaration.Elements {
+		required = markPackageInitialization(child) || required
+	}
+	declaration.RequiresInitialization = required
+	return required
 }
 
 func staticZeroObjectGraph(value source.StaticValue, seen map[*source.StaticObject]bool) bool {

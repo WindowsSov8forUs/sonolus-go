@@ -1,7 +1,9 @@
 package compiler
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"go/types"
 	"math"
 	"path/filepath"
@@ -210,6 +212,27 @@ func TestParserDeterminismAndROMBytes(t *testing.T) {
 	}
 	if string(project.ROM) != "ABC\n" {
 		t.Fatalf("ROM = %v", project.ROM)
+	}
+}
+
+func TestPackageGlobalArtifactsAreDeterministic(t *testing.T) {
+	var first []byte
+	for run := 0; run < 8; run++ {
+		artifacts, err := NewCompiler(Options{Optimization: OptimizationStandard}, "./testdata/persistentglobals").Compile(ModePlay)
+		if err != nil {
+			t.Fatalf("run %d: %v", run, err)
+		}
+		encoded, err := json.Marshal(artifacts.Play)
+		if err != nil {
+			t.Fatalf("run %d marshal: %v", run, err)
+		}
+		if run == 0 {
+			first = encoded
+			continue
+		}
+		if !bytes.Equal(encoded, first) {
+			t.Fatalf("run %d package-global EnginePlayData differs from run 0", run)
+		}
 	}
 }
 

@@ -253,6 +253,7 @@ func (l *lowerer) packageCallableArray(object types.Object, node ast.Node) (lowe
 		return lowerValue{}, false
 	}
 	if declaration := l.packagePointers[variable]; declaration != nil {
+		l.usesPackageInitialization = l.usesPackageInitialization || declaration.RequiresInitialization
 		storage, read, write := levelGlobalStorageAccess(declaration, l.mode, l.phase)
 		return l.lowerPersistentPackagePointer(declaration, storage, read, write), true
 	}
@@ -364,6 +365,7 @@ func (l *lowerer) packageStaticValue(object types.Object, node ast.Node) (lowerV
 	}
 	if binding.Value.Kind == source.StaticPointer && binding.Value.Pointer != nil && binding.Value.Pointer.Object != nil {
 		if declaration := l.packageGlobals[binding.Value.Pointer.Object]; declaration != nil && len(binding.Value.Pointer.Path) == 0 {
+			l.usesPackageInitialization = l.usesPackageInitialization || declaration.RequiresInitialization
 			storage, read, write := levelGlobalStorageAccess(declaration, l.mode, l.phase)
 			return l.lowerPersistentPackagePointer(declaration, storage, read, write), true
 		}
@@ -417,6 +419,32 @@ type interfaceValue struct {
 	finiteVariant[lowerValue]
 	persistent bool
 	rawTag     lowerValue
+}
+
+type persistentInterfaceCandidate struct {
+	name  string
+	type_ types.Type
+}
+
+func persistentInterfaceCandidates(packages map[*types.Package]*packages.Package, interfaceType *types.Interface) []persistentInterfaceCandidate {
+	var candidates []persistentInterfaceCandidate
+	seen := map[string]bool{}
+	for _, pkg := range packages {
+		for _, named := range packageNamedTypes(pkg) {
+			pointer := types.NewPointer(named)
+			if !types.Implements(pointer, interfaceType) {
+				continue
+			}
+			name := types.TypeString(pointer, func(owner *types.Package) string { return owner.Path() })
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			candidates = append(candidates, persistentInterfaceCandidate{name: name, type_: pointer})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].name < candidates[j].name })
+	return candidates
 }
 
 type pointerValue struct {
@@ -709,26 +737,7 @@ func (l *lowerer) persistentInterfaceFromHandles(node ast.Node, interfaceValueTy
 		l.errorAt(node, "persistent interface field has invalid type %s", interfaceValueType)
 		return zeroValue(interfaceValueType)
 	}
-	type candidate struct {
-		name  string
-		type_ types.Type
-	}
-	var candidates []candidate
-	seen := map[string]bool{}
-	for _, pkg := range l.packages {
-		for _, named := range packageNamedTypes(pkg) {
-			pointer := types.NewPointer(named)
-			if !types.Implements(pointer, interfaceType) {
-				continue
-			}
-			name := types.TypeString(pointer, func(owner *types.Package) string { return owner.Path() })
-			if !seen[name] {
-				seen[name] = true
-				candidates = append(candidates, candidate{name: name, type_: pointer})
-			}
-		}
-	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].name < candidates[j].name })
+	candidates := persistentInterfaceCandidates(l.packages, interfaceType)
 	alternatives := make([]lowerValue, 0, len(candidates))
 	for _, candidate := range candidates {
 		pointer := candidate.type_.(*types.Pointer)
@@ -968,9 +977,16 @@ func (l *lowerer) lowerPersistentPackagePointer(declaration *LevelGlobalFieldDec
 }
 
 func (l *lowerer) initializePackageGlobals(node ast.Node) {
-	if l.phase != "preprocess" {
+	initialization := l.packageInitialization
+	if l.phase != "preprocess" || initialization == nil {
 		return
 	}
+	flagPlace := l.memory(initialization.Storage, ir.Const{}, 1, initialization.FlagOffset, true, true, node)
+	initialize, continuation := l.newBlock(), l.newBlock()
+	condition := l.pure(resource.RuntimeFunctionEqual, node, ir.Load{Place: flagPlace}, ir.Const{})
+	_ = l.builder.Branch(condition, initialize, continuation)
+	l.setCurrent(initialize)
+
 	seen := map[*LevelGlobalFieldDeclaration]bool{}
 	var visit func(*LevelGlobalFieldDeclaration)
 	visit = func(declaration *LevelGlobalFieldDeclaration) {
@@ -987,28 +1003,9 @@ func (l *lowerer) initializePackageGlobals(node ast.Node) {
 		if declaration.PersistentKind == "interface" && declaration.InitialInterfaceTarget != nil {
 			interfaceType, ok := types.Unalias(declaration.InitialInterfaceType).Underlying().(*types.Interface)
 			if ok {
-				type candidate struct {
-					name  string
-					type_ types.Type
-				}
-				var candidates []candidate
-				seenTypes := map[string]bool{}
-				for _, pkg := range l.packages {
-					for _, named := range packageNamedTypes(pkg) {
-						pointer := types.NewPointer(named)
-						if !types.Implements(pointer, interfaceType) {
-							continue
-						}
-						name := types.TypeString(pointer, func(owner *types.Package) string { return owner.Path() })
-						if !seenTypes[name] {
-							seenTypes[name] = true
-							candidates = append(candidates, candidate{name: name, type_: pointer})
-						}
-					}
-				}
-				sort.Slice(candidates, func(i, j int) bool { return candidates[i].name < candidates[j].name })
+				candidates := persistentInterfaceCandidates(l.packages, interfaceType)
 				targetType := types.NewPointer(declaration.InitialInterfaceTarget.Type)
-				tag := 0
+				tag, matched := 0, false
 				for _, candidate := range candidates {
 					pointer := candidate.type_.(*types.Pointer)
 					if _, err := persistentLevelGlobalTypeNode(pointer.Elem(), declaration.GoName+"."+candidate.name, declaration.Kind, declaration.Storage); err != nil {
@@ -1016,10 +1013,11 @@ func (l *lowerer) initializePackageGlobals(node ast.Node) {
 					}
 					tag++
 					if types.Identical(candidate.type_, targetType) {
+						matched = true
 						break
 					}
 				}
-				if tag > 0 {
+				if matched {
 					if target := l.packageGlobals[declaration.InitialInterfaceTarget]; target != nil {
 						for offset, value := range []float64{float64(tag), float64(target.Offset + 1)} {
 							place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset+offset, false, true, node)
@@ -1029,7 +1027,7 @@ func (l *lowerer) initializePackageGlobals(node ast.Node) {
 				}
 			}
 		}
-		if declaration.HasInitialValue && declaration.InitialValue.Exact != nil {
+		if declaration.HasInitialValue && declaration.InitialValue.Exact != nil && !staticZero(declaration.InitialValue) {
 			if expression, ok := constantExpr(declaration.InitialValue.Exact); ok {
 				place := l.memory(declaration.Storage, ir.Const{}, 1, declaration.Offset, false, true, node)
 				l.store(lowerValue{type_: declaration.Type, places: []ir.Place{place}, slots: []ir.Expr{ir.Load{Place: place}}}, lowerValue{type_: declaration.Type, slots: []ir.Expr{expression}}, node)
@@ -1042,9 +1040,12 @@ func (l *lowerer) initializePackageGlobals(node ast.Node) {
 			visit(child)
 		}
 	}
-	for _, declaration := range l.packageGlobals {
+	for _, declaration := range initialization.Roots {
 		visit(declaration)
 	}
+	l.store(lowerValue{type_: types.Typ[types.Int], places: []ir.Place{flagPlace}, slots: []ir.Expr{ir.Load{Place: flagPlace}}}, scalarValue(ir.Const{Value: 1}, types.Typ[types.Int]), node)
+	l.jump(continuation)
+	l.setCurrent(continuation)
 }
 
 type entityReferenceValue struct {
@@ -1269,34 +1270,36 @@ type labeledTargets struct {
 }
 
 type lowerer struct {
-	mode              mode.Mode
-	phase             string
-	packages          map[*types.Package]*packages.Package
-	pkg               *packages.Package
-	builder           *ir.Builder
-	frames            []*lowerFrame
-	callStack         map[any]bool
-	resourceIDs       map[*types.Var][]int
-	streamSize        int
-	configuration     *ConfigurationDeclaration
-	levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration
-	packageGlobals    map[*source.StaticObject]*LevelGlobalFieldDeclaration
-	packagePointers   map[*types.Var]*LevelGlobalFieldDeclaration
-	currentArchetype  *ArchetypeDeclaration
-	archetypeFields   map[*types.Var]*FieldDeclaration
-	archetypes        map[*types.Named]archetypeBinding
-	breaks            []*ir.Block
-	continues         []*ir.Block
-	labels            map[string]labeledTargets
-	fallthroughs      []*ir.Block
-	inlineCalls       []inlineCallSite
-	localPool         map[string][]int
-	localScopes       [][]int
-	returnFrames      []returnRedirect
-	typeSubstitutions []map[*types.TypeParam]types.Type
-	dynamicDepth      int
-	checks            RuntimeChecks
-	errs              []error
+	mode                      mode.Mode
+	phase                     string
+	packages                  map[*types.Package]*packages.Package
+	pkg                       *packages.Package
+	builder                   *ir.Builder
+	frames                    []*lowerFrame
+	callStack                 map[any]bool
+	resourceIDs               map[*types.Var][]int
+	streamSize                int
+	configuration             *ConfigurationDeclaration
+	levelGlobalFields         map[*types.Var]*LevelGlobalFieldDeclaration
+	packageGlobals            map[*source.StaticObject]*LevelGlobalFieldDeclaration
+	packagePointers           map[*types.Var]*LevelGlobalFieldDeclaration
+	packageInitialization     *PackageInitializationDeclaration
+	usesPackageInitialization bool
+	currentArchetype          *ArchetypeDeclaration
+	archetypeFields           map[*types.Var]*FieldDeclaration
+	archetypes                map[*types.Named]archetypeBinding
+	breaks                    []*ir.Block
+	continues                 []*ir.Block
+	labels                    map[string]labeledTargets
+	fallthroughs              []*ir.Block
+	inlineCalls               []inlineCallSite
+	localPool                 map[string][]int
+	localScopes               [][]int
+	returnFrames              []returnRedirect
+	typeSubstitutions         []map[*types.TypeParam]types.Type
+	dynamicDepth              int
+	checks                    RuntimeChecks
+	errs                      []error
 }
 
 func (l *lowerer) pushLabel(name string, breakTarget, continueTarget *ir.Block) func() {
@@ -10462,9 +10465,42 @@ func (l *lowerer) assignRangeValue(target ast.Expr, op token.Token, value lowerV
 	l.store(local, value, target)
 }
 
-func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, currentArchetype *ArchetypeDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string, checks RuntimeChecks) (*ir.Function, []error) {
+type syntheticCallbackNode struct{ pos token.Pos }
+
+func (n syntheticCallbackNode) Pos() token.Pos { return n.pos }
+func (n syntheticCallbackNode) End() token.Pos { return n.pos }
+
+func lowerSyntheticPackagePreprocess(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packageInitialization *PackageInitializationDeclaration, m mode.Mode, name string, pos token.Pos) (*ir.Function, []error) {
+	builder := ir.NewBuilder(name, ir.Type{Name: "void"})
+	l := &lowerer{
+		mode: m, phase: "preprocess", packages: packagesByTypes, pkg: pkg, builder: builder,
+		callStack: map[any]bool{}, packageGlobals: packageGlobals, packageInitialization: packageInitialization,
+	}
+	entry := l.newBlock()
+	_ = builder.SetEntry(entry)
+	l.setCurrent(entry)
+	l.initializePackageGlobals(syntheticCallbackNode{pos: pos})
+	_ = builder.Return(ir.Value{Type: ir.Type{Name: "void"}})
+	if len(l.errs) != 0 {
+		sort.SliceStable(l.errs, func(i, j int) bool { return l.errs[i].Error() < l.errs[j].Error() })
+		return nil, l.errs
+	}
+	result, err := builder.Finish()
+	if err != nil {
+		return nil, []error{fmt.Errorf("callback %s: %w", name, err)}
+	}
+	if runtimeErrs := validateRuntimeCalls(result); len(runtimeErrs) != 0 {
+		for i := range runtimeErrs {
+			runtimeErrs[i] = fmt.Errorf("callback %s: %w", name, runtimeErrs[i])
+		}
+		return nil, runtimeErrs
+	}
+	return result, nil
+}
+
+func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *packages.Package, decl *ast.FuncDecl, fn *types.Func, fields []*FieldDeclaration, resources *ModeResources, configuration *ConfigurationDeclaration, levelGlobalFields map[*types.Var]*LevelGlobalFieldDeclaration, packageGlobals map[*source.StaticObject]*LevelGlobalFieldDeclaration, packagePointers map[*types.Var]*LevelGlobalFieldDeclaration, packageInitialization *PackageInitializationDeclaration, currentArchetype *ArchetypeDeclaration, archetypes map[*types.Named]archetypeBinding, m mode.Mode, phase string, checks RuntimeChecks) (*ir.Function, bool, []error) {
 	if decl == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 	resultType := ir.Type{Name: "void"}
 	sig := fn.Type().(*types.Signature)
@@ -10480,7 +10516,7 @@ func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *pa
 	for _, field := range fields {
 		archetypeFields[field.Object] = field
 	}
-	l := &lowerer{mode: m, phase: phase, checks: checks, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, streamSize: resources.StreamSize, configuration: configuration, levelGlobalFields: levelGlobalFields, packageGlobals: packageGlobals, packagePointers: packagePointers, currentArchetype: currentArchetype, archetypeFields: archetypeFields, archetypes: archetypes}
+	l := &lowerer{mode: m, phase: phase, checks: checks, packages: packagesByTypes, pkg: pkg, builder: builder, callStack: map[any]bool{fn: true}, resourceIDs: resourceIDs, streamSize: resources.StreamSize, configuration: configuration, levelGlobalFields: levelGlobalFields, packageGlobals: packageGlobals, packagePointers: packagePointers, packageInitialization: packageInitialization, currentArchetype: currentArchetype, archetypeFields: archetypeFields, archetypes: archetypes}
 	entry := l.newBlock()
 	_ = builder.SetEntry(entry)
 	l.setCurrent(entry)
@@ -10524,19 +10560,19 @@ func lowerCallback(packagesByTypes map[*types.Package]*packages.Package, pkg *pa
 	}
 	sort.SliceStable(l.errs, func(i, j int) bool { return l.errs[i].Error() < l.errs[j].Error() })
 	if len(l.errs) > 0 {
-		return nil, l.errs
+		return nil, l.usesPackageInitialization, l.errs
 	}
 	result, err := builder.Finish()
 	if err != nil {
-		return nil, []error{fmt.Errorf("callback %s: %w", fn.FullName(), err)}
+		return nil, l.usesPackageInitialization, []error{fmt.Errorf("callback %s: %w", fn.FullName(), err)}
 	}
 	if runtimeErrs := validateRuntimeCalls(result); len(runtimeErrs) != 0 {
 		for i := range runtimeErrs {
 			runtimeErrs[i] = fmt.Errorf("callback %s: %w", fn.FullName(), runtimeErrs[i])
 		}
-		return nil, runtimeErrs
+		return nil, l.usesPackageInitialization, runtimeErrs
 	}
-	return result, nil
+	return result, l.usesPackageInitialization, nil
 }
 
 func archetypeStorageAccess(storage string, m mode.Mode, phase string) (string, bool, bool) {
