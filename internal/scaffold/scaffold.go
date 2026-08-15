@@ -122,7 +122,7 @@ func InitWorkspace(options WorkspaceOptions) (*WorkspaceResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scaffold: initialize workspace file: %w", err)
 	}
-	if err := work.AddGoStmt("1.25.12"); err != nil {
+	if err := work.AddGoStmt("1.25.13"); err != nil {
 		return nil, fmt.Errorf("scaffold: initialize workspace: %w", err)
 	}
 	modules := make([]string, 0, len(options.ModuleDirectories))
@@ -382,7 +382,7 @@ func writeFiles(directory string, files map[string][]byte) error {
 
 func goMod(modulePath, dependencyVersion string) string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "module %s\n\ngo 1.25.12\n", modulePath)
+	fmt.Fprintf(&builder, "module %s\n\ngo 1.25.13\n", modulePath)
 	if dependencyVersion != "" {
 		fmt.Fprintf(&builder, "\nrequire %s %s\n", SonolusModulePath, dependencyVersion)
 	}

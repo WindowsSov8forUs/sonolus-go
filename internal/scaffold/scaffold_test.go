@@ -28,7 +28,7 @@ func TestInitModuleCreatesDeterministicProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantGoMod := "module example.com/project\n\ngo 1.25.12\n\nrequire " + SonolusModulePath + " v2.0.1\n"
+	wantGoMod := "module example.com/project\n\ngo 1.25.13\n\nrequire " + SonolusModulePath + " v2.0.1\n"
 	if string(goModData) != wantGoMod {
 		t.Fatalf("go.mod = %q, want %q", goModData, wantGoMod)
 	}
@@ -66,7 +66,7 @@ func TestInitWorkspaceCreatesDeterministicWorkFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "go 1.25.12\n\nuse (\n\t./shared\n\t./sirius\n)\n"
+	want := "go 1.25.13\n\nuse (\n\t./shared\n\t./sirius\n)\n"
 	if string(data) != want {
 		t.Fatalf("go.work = %q, want %q", data, want)
 	}
@@ -153,7 +153,7 @@ func TestInitRejectsMissingOrMisplacedModuleMetadata(t *testing.T) {
 	for _, missing := range []string{"go.mod", "go.sum"} {
 		root := t.TempDir()
 		present := "go.mod"
-		content := []byte("module example.com/project\n\ngo 1.25.12\n")
+		content := []byte("module example.com/project\n\ngo 1.25.13\n")
 		if missing == "go.mod" {
 			present = "go.sum"
 			content = nil

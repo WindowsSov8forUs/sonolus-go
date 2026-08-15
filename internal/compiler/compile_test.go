@@ -862,7 +862,7 @@ func TestDiagnosticsAreIndependentOfCheckoutPath(t *testing.T) {
 	compile := func(root string) map[int]string {
 		t.Helper()
 		files := map[string]string{
-			"go.mod":  fmt.Sprintf("module example.com/diagnostics\n\ngo 1.25.12\n\nrequire github.com/WindowsSov8forUs/sonolus-go/v2 v2.0.0\nreplace github.com/WindowsSov8forUs/sonolus-go/v2 => %s\n", filepath.ToSlash(moduleRoot)),
+			"go.mod":  fmt.Sprintf("module example.com/diagnostics\n\ngo 1.25.13\n\nrequire github.com/WindowsSov8forUs/sonolus-go/v2 v2.0.0\nreplace github.com/WindowsSov8forUs/sonolus-go/v2 => %s\n", filepath.ToSlash(moduleRoot)),
 			"main.go": "package main\n\nfunc main() {}\n",
 			"play.go": `//go:build play
 
