@@ -289,9 +289,19 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 				}
 			}
 		}
+		roots := orderedPackageGlobals(out.PackageGlobals)
+		requiresInitialization := false
+		for _, declaration := range roots {
+			requiresInitialization = markPackageInitialization(declaration) || requiresInitialization
+		}
+		if requiresInitialization {
+			out.PackageInitialization = &PackageInitializationDeclaration{
+				Storage: packageStorage, FlagOffset: packageGlobalOffset, Roots: roots,
+			}
+		}
 	}
 	for _, candidate := range globalPackages {
-		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, levelGlobalFields, out.PackageGlobals, out.PackagePointers, m, candidate.hasMarker, options.RuntimeChecks)
+		globals, globalErrs := globalCallbacks(packagesByTypes, candidate.pkg, &out.Resources, out.Configuration, levelGlobalFields, out.PackageGlobals, out.PackagePointers, out.PackageInitialization, m, candidate.hasMarker, options.RuntimeChecks)
 		errs = append(errs, globalErrs...)
 		out.Globals = append(out.Globals, globals...)
 	}
@@ -321,7 +331,7 @@ func parsePackage(pkg *packages.Package, m mode.Mode, options Options) (*ModeDec
 			errs = append(errs, fmt.Errorf("%s: archetype source package is unavailable", declaration.Name))
 			continue
 		}
-		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, levelGlobalFields, out.PackageGlobals, out.PackagePointers, archetypes, m, options.RuntimeChecks)...)
+		errs = append(errs, lowerArchetypeCallbacks(packagesByTypes, owner, declaration, &out.Resources, out.Configuration, levelGlobalFields, out.PackageGlobals, out.PackagePointers, out.PackageInitialization, archetypes, m, options.RuntimeChecks)...)
 	}
 	concrete := out.Archetypes[:0]
 	for _, declaration := range out.Archetypes {

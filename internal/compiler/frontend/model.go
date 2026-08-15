@@ -19,16 +19,23 @@ type Project struct {
 }
 
 type ModeDeclarations struct {
-	Mode            mode.Mode
-	Configuration   *ConfigurationDeclaration
-	Resources       ModeResources
-	Archetypes      []*ArchetypeDeclaration
-	Globals         []*CallbackDeclaration
-	ROM             *ROMDeclaration
-	Streams         *StreamDeclaration
-	LevelGlobals    []*LevelGlobalDeclaration
-	PackageGlobals  map[*source.StaticObject]*LevelGlobalFieldDeclaration
-	PackagePointers map[*types.Var]*LevelGlobalFieldDeclaration
+	Mode                  mode.Mode
+	Configuration         *ConfigurationDeclaration
+	Resources             ModeResources
+	Archetypes            []*ArchetypeDeclaration
+	Globals               []*CallbackDeclaration
+	ROM                   *ROMDeclaration
+	Streams               *StreamDeclaration
+	LevelGlobals          []*LevelGlobalDeclaration
+	PackageGlobals        map[*source.StaticObject]*LevelGlobalFieldDeclaration
+	PackagePointers       map[*types.Var]*LevelGlobalFieldDeclaration
+	PackageInitialization *PackageInitializationDeclaration
+}
+
+type PackageInitializationDeclaration struct {
+	Storage    string
+	FlagOffset int
+	Roots      []*LevelGlobalFieldDeclaration
 }
 
 type LevelGlobalDeclaration struct {
@@ -65,6 +72,7 @@ type LevelGlobalFieldDeclaration struct {
 	Fields                 []*LevelGlobalFieldDeclaration
 	Elements               []*LevelGlobalFieldDeclaration
 	ElementStride          int
+	RequiresInitialization bool
 }
 
 type StreamDeclaration struct {
@@ -148,11 +156,12 @@ type FieldDeclaration struct {
 }
 
 type CallbackDeclaration struct {
-	Name     string
-	Order    int
-	Function *types.Func
-	Decl     *ast.FuncDecl
-	IR       *ir.Function
+	Name                      string
+	Order                     int
+	Function                  *types.Func
+	Decl                      *ast.FuncDecl
+	IR                        *ir.Function
+	UsesPackageInitialization bool
 }
 
 type ROMDeclaration struct {

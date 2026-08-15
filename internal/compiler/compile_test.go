@@ -673,6 +673,98 @@ func TestPersistentLevelGlobalPointersAndInterfacesCompile(t *testing.T) {
 	if len(target.Fields) != 1 || target.Fields[0].Size != 2 || target.Fields[0].PersistentKind != "interface" {
 		t.Fatalf("entity-backed shared interface target layout = %+v", target.Fields)
 	}
+	initialization := declarations.PackageInitialization
+	if initialization == nil || initialization.Storage != "LevelMemory" || len(initialization.Roots) == 0 {
+		t.Fatalf("package initialization = %+v", initialization)
+	}
+	previousEnd := 0
+	for index, root := range initialization.Roots {
+		if index != 0 && root.Offset < previousEnd {
+			t.Fatalf("package roots are not offset ordered: %+v", initialization.Roots)
+		}
+		previousEnd = root.Offset + root.Size
+	}
+	if initialization.FlagOffset < previousEnd {
+		t.Fatalf("package initialization flag offset %d overlaps roots ending at %d", initialization.FlagOffset, previousEnd)
+	}
+	updateOnly := entityRefArchetype(t, declarations, "PersistentUpdateOnly")
+	synthetic := callbackByName(t, updateOnly.Callbacks, "preprocess")
+	if synthetic == nil || synthetic.Name != "(*github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/testdata/persistentglobals.PersistentUpdateOnly).packagePreprocess" {
+		t.Fatalf("synthetic preprocess = %+v", synthetic)
+	}
+	if err := ir.Validate(synthetic); err != nil {
+		t.Fatalf("synthetic preprocess IR: %v", err)
+	}
+	writer := callbackByName(t, entityRefArchetype(t, declarations, "PersistentLifecycleWriter").Callbacks, "preprocess")
+	entry := writer.Blocks[writer.Entry]
+	branch, ok := entry.Terminator.(ir.Branch)
+	if !ok {
+		t.Fatalf("package initializer entry terminator = %#v", entry.Terminator)
+	}
+	initialize := writer.Blocks[branch.True]
+	var offsets []int
+	for _, instruction := range initialize.Instructions {
+		store, ok := instruction.(ir.Store)
+		if !ok {
+			continue
+		}
+		place, ok := store.Place.(ir.MemoryPlace)
+		if ok && place.Storage == initialization.Storage {
+			offsets = append(offsets, place.Offset)
+		}
+	}
+	if len(offsets) == 0 || offsets[len(offsets)-1] != initialization.FlagOffset {
+		t.Fatalf("package initializer stores = %v, flag offset = %d", offsets, initialization.FlagOffset)
+	}
+	for index := 1; index+1 < len(offsets); index++ {
+		if offsets[index] < offsets[index-1] {
+			t.Fatalf("package initializer stores are not ordered: %v", offsets)
+		}
+	}
+}
+
+func TestZeroPackageGlobalsNeedNoRuntimeInitialization(t *testing.T) {
+	playDeclarations, err := parseMode(mode.ModePlay, "./testdata/zeropackageglobals")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if playDeclarations.PackageInitialization != nil {
+		t.Fatalf("zero package globals unexpectedly require initialization: %+v", playDeclarations.PackageInitialization)
+	}
+	note := entityRefArchetype(t, playDeclarations, "ZeroNote")
+	for _, callback := range note.Callbacks {
+		if callback.Name == "preprocess" {
+			t.Fatalf("zero package globals generated synthetic preprocess: %+v", callback)
+		}
+	}
+	watchDeclarations, err := parseMode(mode.ModeWatch, "./testdata/zeropackageglobals")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if watchDeclarations.PackageInitialization != nil || len(watchDeclarations.Globals) != 1 || watchDeclarations.Globals[0].Name != "updateSpawn" {
+		t.Fatalf("zero watch package globals = %+v", watchDeclarations)
+	}
+}
+
+func TestPackageGlobalWritesFollowSemanticStoragePermissions(t *testing.T) {
+	for _, test := range []struct {
+		mode    mode.Mode
+		message string
+	}{
+		{mode.ModePlay, "LevelMemory storage is read-only"},
+		{mode.ModeWatch, "watch UpdateSpawn cannot access a package object requiring runtime initialization"},
+		{mode.ModePreview, "PreviewData storage is read-only"},
+	} {
+		t.Run(string(test.mode), func(t *testing.T) {
+			_, err := parseMode(test.mode, "./testdata/invalidpackageglobalwrites")
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("error = %v, want %q", err, test.message)
+			}
+		})
+	}
+	if _, err := parseMode(mode.ModeTutorial, "./testdata/invalidpackageglobalwrites"); err != nil {
+		t.Fatalf("tutorial package global write: %v", err)
+	}
 }
 
 func TestLargePersistentLevelGlobalPoolCompiles(t *testing.T) {
