@@ -177,6 +177,7 @@ func indexedLocalIDs(function *ir.Function) map[int]bool {
 				if place, indexed := value.Place.(ir.IndexedLocalPlace); indexed {
 					result[place.ID] = true
 				}
+				addPlaceExpressions(value.Place, visit)
 				visit(value.Value)
 			case ir.Eval:
 				visit(value.Value)
@@ -762,6 +763,10 @@ func sonolusRound(value float64) float64 {
 
 type InlineVars struct{ Aggressive bool }
 
+func (InlineVars) Requires() []Analysis  { return []Analysis{AnalysisDominance} }
+func (InlineVars) Preserves() []Analysis { return []Analysis{AnalysisDominance, AnalysisSSA} }
+func (InlineVars) Destroys() []Analysis  { return []Analysis{AnalysisLiveness} }
+
 func (p InlineVars) Name() string {
 	if p.Aggressive {
 		return "InlineVarsAggressive"
@@ -769,28 +774,61 @@ func (p InlineVars) Name() string {
 	return "InlineVars"
 }
 func (p InlineVars) Run(context Context, f *ir.Function) error {
-	defs := map[temporaryPlaceKey]ir.Expr{}
+	type definition struct {
+		value              ir.Expr
+		block, instruction int
+	}
+	indexed := indexedLocalIDs(f)
+	dom := dominanceFor(context, f)
+	defs := map[temporaryPlaceKey]definition{}
 	defCounts := map[temporaryPlaceKey]int{}
 	uses := map[temporaryPlaceKey]int{}
+	unsafeUses := map[temporaryPlaceKey]bool{}
 	for _, b := range f.Blocks {
-		for _, in := range b.Instructions {
+		for index, in := range b.Instructions {
 			if s, ok := in.(ir.Store); ok && isTemporaryPlace(s.Place) {
 				k, _ := placeKey(s.Place)
-				defs[k] = s.Value
+				defs[k] = definition{s.Value, b.ID, index}
 				defCounts[k]++
 			}
 		}
 	}
 	for _, block := range f.Blocks {
-		for _, instruction := range block.Instructions {
+		instructionIndex := 0
+		visit := func(expr ir.Expr) {
+			walkExpr(expr, func(value ir.Expr) {
+				load, ok := value.(ir.Load)
+				if !ok {
+					return
+				}
+				key, valid := placeKey(load.Place)
+				if !valid {
+					return
+				}
+				uses[key]++
+				if place, local := load.Place.(ir.LocalPlace); local {
+					def, exists := defs[key]
+					// Indexed writes can redefine every slot of this local.
+					// A unique fixed-slot definition is not sufficient.
+					if indexed[place.ID] || !exists || !dominates(dom, def.block, block.ID) ||
+						def.block == block.ID && def.instruction >= instructionIndex {
+						unsafeUses[key] = true
+					}
+				}
+			})
+		}
+		for index, instruction := range block.Instructions {
+			instructionIndex = index
 			switch value := instruction.(type) {
 			case ir.Store:
-				countLoads(value.Value, uses)
+				visit(value.Value)
+				addPlaceExpressions(value.Place, visit)
 			case ir.Eval:
-				countLoads(value.Value, uses)
+				visit(value.Value)
 			}
 		}
-		visitTerminator(block.Terminator, func(expr ir.Expr) { countLoads(expr, uses) })
+		instructionIndex = len(block.Instructions)
+		visitTerminator(block.Terminator, visit)
 	}
 	rewriteFunctionExpressionsChanged(f, func(e ir.Expr) (ir.Expr, bool) {
 		l, ok := e.(ir.Load)
@@ -802,22 +840,12 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 			return e, false
 		}
 		v, ok := defs[k]
-		if !ok || defCounts[k] != 1 || !movableExpression(context, v) || (!p.Aggressive && uses[k] != 1) {
+		if !ok || defCounts[k] != 1 || unsafeUses[k] || !movableExpression(context, v.value) || (!p.Aggressive && uses[k] != 1) {
 			return e, false
 		}
-		return cloneExpr(v), true
+		return cloneExpr(v.value), true
 	})
 	return nil
-}
-
-func countLoads(expr ir.Expr, counts map[temporaryPlaceKey]int) {
-	walkExpr(expr, func(value ir.Expr) {
-		if load, ok := value.(ir.Load); ok {
-			if key, valid := placeKey(load.Place); valid {
-				counts[key]++
-			}
-		}
-	})
 }
 
 func movableExpression(context Context, expr ir.Expr) bool {

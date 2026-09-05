@@ -225,6 +225,70 @@ func executeOptionalRoot(mode executableMode, label string, seed float64) (execu
 	return executionResult{Value: math.Float64bits(value), Memory: map[string]uint64{}, Effects: []string{}}, nil
 }
 
+func TestCallValuesPreserveGoSemantics(t *testing.T) {
+	combined := []float64{2, 8, 8, 8, 8, 8, 8, 8, 8, 4, 4, 2, 1, 8, 10, 10, 10, 10, 10, 324, 324, 324, 10}
+	elements := make([]float64, 0, 96)
+	for range 2 {
+		for i := range 24 {
+			elements = append(elements, float64(i+1), 1)
+		}
+	}
+	wants := map[string][]float64{
+		"Parameter": {324}, "Return": {324}, "Direct": {324}, "Skipped": {1},
+		"Scalars":    append(append([]float64(nil), combined[:14]...), 8, 8, 8),
+		"Combined20": combined[:20], "Combined23": combined, "Elements": elements,
+	}
+	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate} {
+		for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+			t.Run(fmt.Sprintf("checks%d/%s", checks, level), func(t *testing.T) {
+				artifacts, err := NewCompiler(Options{Optimization: level, RuntimeChecks: checks}, "./testdata/callvalues").Compile(mode.ModePlay, mode.ModeWatch)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, current := range []mode.Mode{mode.ModePlay, mode.ModeWatch} {
+					var nodes []resource.EngineDataNode
+					roots := map[string]int{}
+					if current == mode.ModePlay {
+						nodes = artifacts.Play.Nodes
+						for _, archetype := range artifacts.Play.Archetypes {
+							roots[string(archetype.Name)] = archetype.Preprocess.Index
+						}
+					} else {
+						nodes = artifacts.Watch.Nodes
+						for _, archetype := range artifacts.Watch.Archetypes {
+							roots[string(archetype.Name)] = archetype.Preprocess.Index
+						}
+					}
+					for _, name := range []string{"Parameter", "Return", "Direct", "Skipped", "Scalars", "Combined20", "Combined23", "Elements"} {
+						t.Run(string(current)+"/"+name, func(t *testing.T) {
+							root, ok := roots[name]
+							if !ok {
+								t.Fatalf("missing archetype %s", name)
+							}
+							result, err := simexec.Execute(nodes, root, simexec.Request{Memory: map[int][]float64{4001: {1}}, StepLimit: 100000})
+							if err != nil {
+								t.Fatal(err)
+							}
+							var got []float64
+							for _, effect := range result.Effects {
+								if effect.Function == resource.RuntimeFunctionDebugLog {
+									got = append(got, effect.Arguments...)
+								}
+							}
+							if !reflect.DeepEqual(got, wants[name]) {
+								t.Fatalf("Go values: want %v, got %v", wants[name], got)
+							}
+							if len(result.Effects) != len(got) {
+								t.Fatalf("unexpected effects: %v", result.Effects)
+							}
+						})
+					}
+				}
+			})
+		}
+	}
+}
+
 func decodeExecutableMode(data any) (executableMode, error) {
 	result := executableMode{roots: map[string]int{}}
 	add := func(archetype int, name string, callbackIndex int) {

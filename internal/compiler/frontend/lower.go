@@ -2895,11 +2895,6 @@ func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, n
 		l.bind(obj, l.allocEntityView(name, value, node))
 		return
 	}
-	if _, typeParameter := types.Unalias(obj.Type()).(*types.TypeParam); typeParameter {
-		value = l.materialize(name, value, node)
-		l.bind(obj, value)
-		return
-	}
 	if _, interfaceType := types.Unalias(parameterType).Underlying().(*types.Interface); interfaceType {
 		if value.interface_ == nil {
 			value = l.storeInterfaceValue(l.newInterfaceValue(name, parameterType, node), value, node)
@@ -2931,8 +2926,11 @@ func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, n
 		return
 	}
 	frame := l.frames[len(l.frames)-1]
+	// A constant argument does not make a writable Go parameter constant.
+	// Initialize its storage here, before lowering any branch or loop body.
+	// Generic runtime values use the same path with their instantiated layout.
+	value.type_ = parameterType
 	if !frame.mutableValues[obj] && frame.valueReads[obj] <= 1 {
-		value.type_ = parameterType
 		l.bind(obj, value)
 		return
 	}
@@ -2943,8 +2941,7 @@ func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, n
 			break
 		}
 	}
-	if allConstant {
-		value.type_ = parameterType
+	if allConstant && !frame.mutableValues[obj] {
 		l.bind(obj, value)
 		return
 	}

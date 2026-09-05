@@ -1,14 +1,273 @@
 package optimize
 
 import (
+	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/backend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/simexec"
 )
+
+func TestInlineVarsPreservesLocalWritesAndControlFlow(t *testing.T) {
+	local := ir.LocalPlace{ID: 0, Name: "value"}
+	load := ir.Load{Place: local}
+	log := func(value ir.Expr) ir.Instruction {
+		return ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{value}, Result: ir.Type{}}}
+	}
+	store := ir.Store{Place: local, Value: ir.Const{Value: 7}}
+	done := ir.Return{Value: ir.Value{Type: ir.Type{}}}
+	tests := []struct {
+		name   string
+		blocks []*ir.Block
+		want   []float64
+		inline bool
+	}{
+		{"indexed-write", []*ir.Block{{ID: 0, Instructions: []ir.Instruction{
+			ir.Store{Place: local, Value: ir.Const{}},
+			ir.Store{Place: ir.IndexedLocalPlace{ID: 0, Length: 1, Stride: 1, Index: ir.Const{}}, Value: ir.Const{Value: 7}},
+			log(load),
+		}, Terminator: done}}, []float64{7}, false},
+		{"skipped-definition", []*ir.Block{
+			{ID: 0, Terminator: ir.Branch{Condition: ir.Const{}, True: 1, False: 2}},
+			{ID: 1, Instructions: []ir.Instruction{store}, Terminator: ir.Jump{Target: 2}},
+			{ID: 2, Instructions: []ir.Instruction{log(load)}, Terminator: done},
+		}, []float64{0}, false},
+		{"read-before-write", []*ir.Block{{ID: 0, Instructions: []ir.Instruction{log(load), store}, Terminator: done}}, []float64{0}, false},
+		{"same-block", []*ir.Block{{ID: 0, Instructions: []ir.Instruction{store, log(load)}, Terminator: done}}, []float64{7}, true},
+		{"dominating-block", []*ir.Block{
+			{ID: 0, Instructions: []ir.Instruction{store}, Terminator: ir.Jump{Target: 1}},
+			{ID: 1, Instructions: []ir.Instruction{log(load)}, Terminator: done},
+		}, []float64{7}, true},
+		{"self-read", []*ir.Block{{ID: 0, Instructions: []ir.Instruction{
+			ir.Store{Place: local, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{load, ir.Const{Value: 1}}, Result: ir.Type{Slots: 1}, Pure: true}},
+			log(load),
+		}, Terminator: done}}, []float64{1}, false},
+	}
+	for _, test := range tests {
+		for _, aggressive := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/aggressive=%t", test.name, aggressive), func(t *testing.T) {
+				function := CloneFunction(&ir.Function{Name: test.name, Locals: []ir.Type{{Slots: 1}}, Blocks: test.blocks})
+				if err := (InlineVars{Aggressive: aggressive}).Run(Context{Mode: mode.ModePlay, Callback: "preprocess"}, function); err != nil {
+					t.Fatal(err)
+				}
+				if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, test.want) {
+					t.Fatalf("want %v, got %v", test.want, got)
+				}
+				for _, block := range function.Blocks {
+					for _, instruction := range block.Instructions {
+						if eval, ok := instruction.(ir.Eval); ok {
+							_, constant := eval.Value.(ir.RuntimeCall).Args[0].(ir.Const)
+							if constant != test.inline {
+								t.Fatalf("log constant=%t, want %t", constant, test.inline)
+							}
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestInlineVarsCountsAddressReads(t *testing.T) {
+	index := ir.LocalPlace{ID: 0}
+	for _, destination := range []ir.Place{
+		ir.IndexedLocalPlace{ID: 1, Index: ir.Load{Place: index}, Length: 2, Stride: 1},
+		ir.MemoryPlace{Storage: "LevelMemory", Index: ir.Load{Place: index}, Stride: 1, Write: true},
+	} {
+		for _, aggressive := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%T/aggressive=%t", destination, aggressive), func(t *testing.T) {
+				function := &ir.Function{Locals: []ir.Type{{Slots: 1}, {Slots: 2}}, Blocks: []*ir.Block{{
+					ID: 0, Instructions: []ir.Instruction{
+						ir.Store{Place: index, Value: ir.Const{Value: 1}},
+						ir.Store{Place: destination, Value: ir.Const{Value: 7}},
+						ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{ir.Load{Place: index}}, Result: ir.Type{}}},
+					}, Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}},
+				}}}
+				if err := (InlineVars{Aggressive: aggressive}).Run(Context{Mode: mode.ModePlay, Callback: "preprocess"}, function); err != nil {
+					t.Fatal(err)
+				}
+				argument := function.Blocks[0].Instructions[2].(ir.Eval).Value.(ir.RuntimeCall).Args[0]
+				if _, constant := argument.(ir.Const); constant != aggressive {
+					t.Fatalf("two uses including the store address: constant=%t, aggressive=%t", constant, aggressive)
+				}
+				if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, []float64{1}) {
+					t.Fatalf("logs=%v", got)
+				}
+			})
+		}
+	}
+}
+
+func TestIndexedLocalInitializationUsedByStoreAddress(t *testing.T) {
+	index := ir.IndexedLocalPlace{ID: 0, Index: ir.Const{}, Length: 1, Stride: 1}
+	for _, destination := range []ir.Place{
+		ir.IndexedLocalPlace{ID: 1, Index: ir.Load{Place: index}, Length: 2, Stride: 1},
+		ir.MemoryPlace{Storage: "LevelMemory", Index: ir.Load{Place: index}, Stride: 1, Write: true},
+	} {
+		t.Run(fmt.Sprintf("%T", destination), func(t *testing.T) {
+			function := &ir.Function{Locals: []ir.Type{{Slots: 1}, {Slots: 2}}, Blocks: []*ir.Block{{
+				ID: 0, Instructions: []ir.Instruction{
+					ir.Store{Place: ir.LocalPlace{ID: 0}, Value: ir.Const{Value: 1}},
+					ir.Store{Place: destination, Value: ir.Const{Value: 7}},
+				}, Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}},
+			}}}
+			for _, pass := range []Pass{DeadCodeElimination{}, AdvancedDeadCodeElimination{}} {
+				candidate := CloneFunction(function)
+				if err := pass.Run(Context{}, candidate); err != nil {
+					t.Fatal(err)
+				}
+				if len(candidate.Blocks[0].Instructions) != 2 {
+					t.Fatalf("%s removed the nested index initialization", pass.Name())
+				}
+			}
+			if !indexedLocalIDs(function)[0] {
+				t.Fatal("nested indexed read missing from local inventory")
+			}
+		})
+	}
+}
+
+// Execute a checkpoint through the real backend. SSA destruction and minimal
+// allocation only touch a clone, so they cannot affect the pipeline under test.
+func executeCallValueCheckpoint(t *testing.T, function *ir.Function) []float64 {
+	t.Helper()
+	final := CloneFunction(function)
+	if !final.Allocated {
+		if err := (FromSSA{}).Run(Context{}, final); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		final, err = NewOptimizer(LevelMinimal).Optimize(Context{Mode: mode.ModePlay, Callback: "preprocess"}, final)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	artifacts, err := backend.Compile(&frontend.Project{Modes: map[mode.Mode]*frontend.ModeDeclarations{
+		mode.ModePlay: {Mode: mode.ModePlay, Archetypes: []*frontend.ArchetypeDeclaration{{
+			Name: "Checkpoint", Callbacks: []*frontend.CallbackDeclaration{{Name: "preprocess", IR: final}},
+		}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := simexec.Execute(artifacts.Play.Nodes, artifacts.Play.Archetypes[0].Preprocess.Index,
+		simexec.Request{Memory: map[int][]float64{4001: {1}}, StepLimit: 100000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs []float64
+	for _, effect := range result.Effects {
+		if effect.Function == resource.RuntimeFunctionDebugLog {
+			logs = append(logs, effect.Arguments...)
+		}
+	}
+	return logs
+}
+
+func TestCallValuePipelineCheckpoints(t *testing.T) {
+	packages, err := source.LoadMode(mode.ModePlay, "../testdata/callvalues")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser := frontend.NewParser()
+	if err := parser.Parse(mode.ModePlay, packages[0]); err != nil {
+		t.Fatal(err)
+	}
+	project, err := parser.GetProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := map[string]struct {
+		index int
+		want  float64
+	}{
+		"Parameter": {0, 324}, "Return": {0, 324}, "Direct": {0, 324},
+		"Combined20": {19, 324}, "Combined23": {19, 324},
+		"Skipped": {0, 1}, "Scalars": {3, 8},
+	}
+	for _, archetype := range project.Modes[mode.ModePlay].Archetypes {
+		observation, ok := selected[archetype.Name]
+		if !ok {
+			continue
+		}
+		t.Run(archetype.Name, func(t *testing.T) {
+			function := CloneFunction(archetype.Callbacks[0].IR)
+			check := func(label string) {
+				t.Helper()
+				logs := executeCallValueCheckpoint(t, function)
+				if observation.index >= len(logs) {
+					t.Fatalf("%s: missing observation %d in %v", label, observation.index, logs)
+				}
+				if got := logs[observation.index]; got != observation.want {
+					t.Fatalf("%s: want %g, got %g", label, observation.want, got)
+				}
+			}
+			if archetype.Name == "Skipped" {
+				for _, block := range function.Blocks {
+					for index, instruction := range block.Instructions {
+						if store, ok := instruction.(ir.Store); ok {
+							if place, ok := store.Place.(ir.LocalPlace); ok && place.Name == "value" {
+								t.Logf("frontend parameter local %d: block %d instruction %d value=%s", place.ID, block.ID, index, exprKey(store.Value))
+							}
+						}
+					}
+				}
+			}
+			for id, typ := range function.Locals {
+				if typ.Slots != 48 {
+					continue
+				}
+				fixed, dynamic := 0, 0
+				for _, block := range function.Blocks {
+					for _, instruction := range block.Instructions {
+						if store, ok := instruction.(ir.Store); ok {
+							switch place := store.Place.(type) {
+							case ir.LocalPlace:
+								if place.ID == id && place.Offset == 0 {
+									fixed++
+								}
+							case ir.IndexedLocalPlace:
+								if place.ID == id {
+									dynamic++
+								}
+							}
+						}
+					}
+				}
+				t.Logf("frontend local %d: slot-0 definitions=%d, indexed writes=%d", id, fixed, dynamic)
+			}
+			check("frontend checkpoint")
+			context := Context{Mode: mode.ModePlay, Callback: "preprocess", analyses: newAnalysisManager()}
+			for index, pass := range NewOptimizer(LevelStandard).passes {
+				managed := pass.(ManagedPass)
+				for _, analysis := range managed.Requires() {
+					if err := context.analyses.ensure(analysis, function); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := pass.Run(context, function); err != nil {
+					t.Fatal(err)
+				}
+				if err := ir.Validate(function); err != nil {
+					t.Fatal(err)
+				}
+				check(fmt.Sprintf("checkpoint after pass %d %s", index+1, pass.Name()))
+				context.analyses.invalidateExcept(managed.Preserves())
+				for _, analysis := range managed.Destroys() {
+					delete(context.analyses.values, analysis)
+				}
+			}
+		})
+	}
+}
 
 func allocatedFunction(slots int) *ir.Function {
 	return &ir.Function{

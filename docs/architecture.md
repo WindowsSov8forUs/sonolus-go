@@ -76,6 +76,8 @@ Frontend 分为：
 
 `frontend.Parser.GetProject()` 比较所有已解析模式的 Configuration 和 ROM。Configuration 按规范化语义比较，ROM 按最终用户 float32 字节比较；声明变量名和文件路径不影响相等性。
 
+可变的普通 runtime 值参数必须在内联函数体开始前按实例化后的类型建立并初始化 local；实参是常量不代表 Go 形参不可变。普通 helper、泛型和立即调用闭包使用相同规则，不可变参数继续保留常量专门化。CG-01 的旧实现直到首次赋值才建立存储，导致循环条件仍读取常量、循环体每轮重置初值，或未进入分支时读到未初始化的 local；这类错误必须在 frontend 修复，Minimal/Fast 不会自动恢复参数语义。
+
 ## Catalog
 
 Catalog 是公开 Sonolus API 的唯一语义来源，记录：
