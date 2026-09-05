@@ -226,9 +226,17 @@ func executeOptionalRoot(mode executableMode, label string, seed float64) (execu
 }
 
 func TestCallValuesPreserveGoSemantics(t *testing.T) {
+	combined := []float64{2, 8, 8, 8, 8, 8, 8, 8, 8, 4, 4, 2, 1, 8, 10, 10, 10, 10, 10, 324, 324, 324, 10}
+	elements := make([]float64, 0, 96)
+	for range 2 {
+		for i := range 24 {
+			elements = append(elements, float64(i+1), 1)
+		}
+	}
 	wants := map[string][]float64{
-		"Skipped": {1},
-		"Scalars": {2, 8, 8, 8, 8, 8, 8, 8, 8, 4, 4, 2, 1, 8, 8, 8, 8},
+		"Parameter": {324}, "Return": {324}, "Direct": {324}, "Skipped": {1},
+		"Scalars":    append(append([]float64(nil), combined[:14]...), 8, 8, 8),
+		"Combined20": combined[:20], "Combined23": combined, "Elements": elements,
 	}
 	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate} {
 		for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
@@ -251,7 +259,7 @@ func TestCallValuesPreserveGoSemantics(t *testing.T) {
 							roots[string(archetype.Name)] = archetype.Preprocess.Index
 						}
 					}
-					for _, name := range []string{"Skipped", "Scalars"} {
+					for _, name := range []string{"Parameter", "Return", "Direct", "Skipped", "Scalars", "Combined20", "Combined23", "Elements"} {
 						t.Run(string(current)+"/"+name, func(t *testing.T) {
 							root, ok := roots[name]
 							if !ok {

@@ -58,6 +58,8 @@ Standard 以 `sonolus.py@1040bc0` 的 pass 语义和顺序为基线，包含：
 
 只提升可静态寻址的 scalar local slot。动态索引 aggregate 保持 memory 形式，避免错误 alias 推断。
 
+`InlineVars` 的普通和 aggressive 形式均排除存在动态索引访问的整个 local，包括通过赋值地址表达式间接读取的数组。动态写入可能覆盖任意固定槽，不能只统计 `LocalPlace` 赋值就认定该槽只有一个定义。其余普通 local 只有在唯一赋值支配所有读取、且同 block 内赋值严格早于读取时才能替换；赋值右侧与地址表达式都属于写入前的读取。SSA 与合法的普通 local 内联继续保留。
+
 ## 副作用与数值
 
 优化只处理 local 和 catalog 明确标记为 pure 的 RuntimeCall。semantic memory、动态索引和非纯调用采用保守规则，不跨副作用读取、删除或重排。
@@ -85,3 +87,7 @@ IR optimizer 之后，backend 始终执行以 `sonolus.js-compiler@37b0eee` 为�
 仓库保存固定 Py pass snapshot 和 JS SNode golden。普通 Go CI 只读取 checked-in golden，不依赖相邻 Python/Node checkout。更新固定参考版本时，必须显式运行对应 testdata regeneration script并审核差异。
 
 具体 fixture/snapshot schema、allowlist 规则和 regeneration 命令见[维护指南](maintenance.md)。
+
+CG-02 的 `[24]Vec2` 值参数、值返回和20项组合回归在旧 Standard 的第11个 pass（首次 `InlineVars`）首次从324变为0：数组动态写入被漏算，复制时的固定槽读取被替换为初始化零值。23项组合复用了同类型 local，使源数组固定槽定义次数从1变为2，恰好避开错误替换；这不是24元素容量限制，也不是该组合正确性的保证。集中 `callvalues` fixture 保留隔离与组合调用顺序，回归执行每个 checkpoint 经 backend 装配的 EngineData，并验证三个优化等级下的明确 Go 预期与逐元素顺序，不把 Minimal 输出当作正确性标准。
+
+上述回归针对当前源码。源码验收通过不代表既有 v2.3.14 Release 已更新，也不替代使用方采用新版本后的完整引擎与设备验收。
