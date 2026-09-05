@@ -4797,7 +4797,8 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 				return zeroValue(target)
 			}
 			if isRuntimeIntegerKind(targetKind) && (sourceKind == types.Float64 || sourceTypeParameter) {
-				value.slots[0] = ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{value.slots[0]}, Result: irTypeOf(target), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}
+				// Conversion must not replace the operand binding's shared slot.
+				value.slots = []ir.Expr{ir.RuntimeCall{Function: resource.RuntimeFunctionTrunc, Args: []ir.Expr{value.slots[0]}, Result: irTypeOf(target), Pure: true, Pos: sourcePos(l.pkg, n.Pos())}}
 			}
 		}
 		value.type_ = target
@@ -5342,6 +5343,7 @@ func (l *lowerer) ensureAssignable(value lowerValue, expression ast.Expr) lowerV
 }
 
 func (l *lowerer) freezePointerValue(value lowerValue, node ast.Node) lowerValue {
+	detached := false
 	for i, raw := range value.places {
 		var index ir.Expr
 		switch place := raw.(type) {
@@ -5354,6 +5356,13 @@ func (l *lowerer) freezePointerValue(value lowerValue, node ast.Node) lowerValue
 		}
 		if _, constant := index.(ir.Const); constant {
 			continue
+		}
+		if !detached {
+			// Selectors and fixed indexes share descriptor slices with their parent.
+			// Freezing owns its replacements, but still addresses the same pointee.
+			value.places = append([]ir.Place(nil), value.places...)
+			value.slots = append([]ir.Expr(nil), value.slots...)
+			detached = true
 		}
 		frozen := l.materialize("pointer.index", lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{index}}, node)
 		switch place := raw.(type) {
