@@ -2,7 +2,7 @@
 
 ## 前置条件
 
-- Go 1.25 或更高版本。
+- Go 1.25.13 或更高版本。
 - `sonolus-go` 可执行文件，或直接使用 `go run ./cmd/sonolus-go`。
 - 引擎源码必须属于一个 Go module，入口 package 必须为 `main`。
 
