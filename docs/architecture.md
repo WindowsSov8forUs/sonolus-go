@@ -99,6 +99,44 @@ Callable、callback-local pointer、catalog container 与 static interface 的 r
 
 当 helper 或立即调用闭包的 Go 多返回包含 aggregate pointer 时，Frontend 使用逐结果 `lowerValue` 向量穿过 inline return block 与多重赋值；每个结果独立保存 finite tag 和 alternatives。只有纯 runtime 值继续使用 tuple slot 展平，因此 descriptor 不会被误解释为 pointee layout，也不要求 IR、backend 或 Sonolus Runtime 提供原生 pointer/tuple 对象。
 
+### 地址描述所有权与 CG-03
+
+`lowerValue` 是编译期描述，不是运行时对象。普通 selector 与固定数组索引会对 `slots`、`places` 取子切片；binding、receiver 与 inline frame 之间传递这个值，也可能继续持有同一底层切片。允许这些只读视图共享，但派生转换不得替换其他持有者的切片元素。运行时指针别名与编译期描述所有权是两件事：隔离描述不能复制 pointee，也不能使通过指针的写入脱离原对象。
+
+CG-03 在 `dev@ae30fc3` 的独立调查确认了以下因果链。官方 v2.3.15 的既有失败记录、本次未修复源码构建与本次源码候选分别记录身份；“升级后发现”不代表已经证明缺陷由该版本引入。
+
+1. 集中 fixture `testdata/freezeaddress/model` 的 `State` 包含六个同型 `Number`，每个 `Number` 含两个数组元素及一个标量。`Exercise` 连续调用 `CopyPair(&Result, &Left, &Right)`、`CopyPair(&Left, &Result, &Right)`；helper 内继续访问父 receiver 的 `A`、`B`，并取得 `&s.B`。各字段使用不同整数，宿主 Go 与显式预期向量交叉确认。
+2. 旧 `freezePointerValue` 为动态地址表达式生成 `pointer.index` local，然后原地替换子视图的 `places[i]` 与 `slots[i]`。于是父 receiver 持有的 `B` 地址也变成了 helper 内的临时 local。这里替换的是切片元素及 place 值中的 `Index`，没有原地修改嵌套的 `RuntimeCall.Args`。
+3. helper 退出时，`endInlineLocalScope` 按显式返回结果保留逃逸 local；被意外污染的父描述不属于显式返回结果，相关 local 因而进入复用池。后续取址重用了这些 ID，却让父描述继续引用它们。问题起点是描述被越权改写，不能用全局禁止 local 复用掩盖。
+4. 最小诊断构建中，第一次 `&s.B` 在 block 10 的指令 0–2 将地址 12、13、14 变成 local 12、13、14；第二次调用前，block 4 的指令 0–2 将 local 14、13、12 分别复用于地址 1、2、6。之后 block 28 指令 2 的 `B.Digits[i]` 写入以 local 12 为 base，实际写入 `Result.Digits[i]`；block 30 指令 0 的 `B.Exponent` 写入实际落在 `Left.Digits[1]`。最终 `Left.Exponent` 从明确预期 23 变成 22。该编号仅描述当次诊断构建，测试不固定编号。
+5. `Builder.Store` 发射前，目标描述已经错误。Builder 将每个 place/expression 值分别存入 IR 指令；后续替换描述切片元素不会追溯改写已发射的 Store。原始 frontend IR 的地址检查与快照经真实 backend、`simexec` 执行得到的错误一致，不需要 Standard 专属优化才会触发。快照的 SSA 消除与分配只处理副本。
+
+实际分数候选也重新完成同一链路的定位，而非引用历史补丁的通过声明：
+
+- `exact/score.go:240` 的 `s.C.Compare(&s.B)` 将 B 的地址 297/329 改为 local 136/111；下一行 `s.C.Subtract(&s.B)` 再改为 local 105/38。父 receiver 与两个子视图的切片地址相同。
+- `Divide` 返回后释放 105/38。`Score` 第 268 行求值 `&s.Result` 时，block 840 指令 1 将 local 38 改为 232；求值 `&s.Ratio` 时，指令 33 将 local 105 改为 165。
+- `Multiply` 内的 `s.B.Copy(b)` 因而在 `Number.Copy` 第 23 行、block 1273 指令 0 发射以 local 105 为基址的数组写入；第 25 行、block 1270 指令 0 使用 local 38 写标量。
+- 本轮未修复 Play EngineData 的 node 6411 实际为 `SetShifted(LevelMemory, 165+i, …)`，node 6419 为 `Set(LevelMemory, 232, …)`，应分别写 297+i、329。未修复场景执行在 node 7314 报断言码 279。诊断 overlay 构建与干净基线构建的 EnginePlayData 字节相同，排除了定位日志改变生成产物的影响。
+- 修复后重新检查最终树，目标恢复为 297+i、329。数组复制仍按 32 元素原顺序写入，周围字段地址未通过业务侧补偿调整。节点编号变化不构成语义断言。
+
+方案比较与选择：
+
+| 所有权边界 | 结论 |
+| --- | --- |
+| selector／固定索引生成视图时复制 | 会使普通只读派生也复制，且仍须枚举其他共享来源；不是当前最窄边界 |
+| `freezePointerValue` 构造独立输出 | 直接覆盖所有调用该转换的入口；首次真正替换动态地址前隔离 `places` 与 `slots`，保留静态路径及 IR 发射顺序；采用此方案 |
+| binding／frame 边界统一复制 | 不能覆盖同一 frame 内的共享子视图，还会影响有意共享的 aggregate、pointer、container；不采用 |
+
+控制变量验证表明，仅隔离 `slots` 仍会写错 `Left.Exponent`；仅隔离 `places` 可修复最初写入用例，但 `ReadDirect` 追加一次 helper 调用后读取 B 得到 `[23,22,21]`，而 Go 预期为 `[21,22,23]`。同时隔离两者才覆盖已确认的读写路径。无需深拷贝整个 `lowerValue` 或递归复制表达式树：本次冻结转换只替换 slice 元素及 place 值，所有嵌套表达式保留只读使用。修复不取消地址冻结，不改变求值次数，不复制运行时对象，也不调整优化 pass 或内存上限。
+
+同文件切片元素写入的有界审计还确认：float-to-int 转换对 `l.expr` 返回值的 `slots[0]` 原地替换会污染 operand binding，使 `Conversion(1.75)` 的后续浮点读取从 1.75 变为 1。该同因位置改为构造新的单槽结果；回归明确比较 `[1.75,1]`。其他 lowering 写入点分别属于 `make`、`zeroValue`、新 local、动态索引元素或新 variadic backing 的初始化。`diagnostic.go` 对已完成 callback IR 的统一诊断码解析是另一个阶段的全树转换，不生成冻结临时地址，不纳入此修复。
+
+集中语义回归覆盖 semantic memory、动态索引 local 与静态地址；独立／组合调用；数组与相邻标量；显式取址、pointer receiver、参数与指针返回；带副作用的索引求值、索引变化、receiver 重绑、别名写回、有限重复及分支进入／跳过。17 组输入分别在 Play/Watch × Minimal/Fast/Standard × none/terminate 执行，共 204 条，以宿主 Go 核对过的显式向量为准，逐槽比较，不用 Minimal 代替正确答案。最初动态 local 对照未失败：其共享 index 表达式与 semantic memory 的逐槽地址不同，不能据此推断共享改写安全。
+
+实际候选复核使用字节未变的三份场景与既有 runner，在仓库外临时目录分别构建并执行 Play、ordinary Watch、Replay Watch × 三场景 × 三优化级，共 27 条。原 default/Minimal 的 264 个观察点保留，Fast 增加相同预期向量的 132 点。固定参考 golden、历史收据与生产源码不参与修改。这里的“源码修复通过”不代表已发布版本修复、Sirius 已采用新版本或设备／业务资格完成；正式版本采用、完整候选资格与设备验收仍是独立后续工作。
+
+本轮验收通过集中矩阵、原候选 27 条执行、CG-01/CG-02 回归、固定 Py/JS 差分，以及 `go test -p=1 -count=1 ./...`、`go test -p=1 -race -count=1 ./...`、`go vet ./...`、`go build ./...`、Godori Standard 四模式 CLI `vet`。`gofmt -l .` 无输出，`git diff --check` 通过，Go 源码未引入旧编译链路引用；未新增独立测试脚本或 `*_test.go`，定位日志已从交付源码移除。
+
 ## IR
 
 `internal/compiler/ir` 是与 Go frontend 解耦的强类型 CFG：

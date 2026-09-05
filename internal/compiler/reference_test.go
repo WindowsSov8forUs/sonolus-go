@@ -14,6 +14,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/backend"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/testdata/freezeaddress/model"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/simexec"
 	"math"
 
@@ -280,6 +281,133 @@ func TestCallValuesPreserveGoSemantics(t *testing.T) {
 							}
 							if len(result.Effects) != len(got) {
 								t.Fatalf("unexpected effects: %v", result.Effects)
+							}
+						})
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestFrozenFieldAddressesPreserveGoSemantics(t *testing.T) {
+	want := []float64{21, 22, 23, 21, 22, 23, 21, 22, 23, 21, 22, 23, 21, 22, 23, 61, 62, 63}
+	var host model.State
+	host.Init()
+	host.Exercise()
+	hostValues := host.Values()
+	if !reflect.DeepEqual(hostValues[:], want) {
+		t.Fatalf("host Go: want %v, got %v", want, hostValues)
+	}
+	type addressCase struct {
+		name        string
+		input, want []float64
+	}
+	cases := []addressCase{}
+	for _, name := range []string{"Memory", "Local", "Static", "ReadMemory"} {
+		cases = append(cases, addressCase{name, []float64{1}, want})
+	}
+	host.Init()
+	observed := host.Observe()
+	if !reflect.DeepEqual(observed[:], want) {
+		t.Fatal("host Observe", observed)
+	}
+	host.Init()
+	direct := host.ReadDirect()
+	if direct != [3]float64{21, 22, 23} {
+		t.Fatal("host ReadDirect", direct)
+	}
+	cases = append(cases, addressCase{"ReadDirect", nil, []float64{21, 22, 23}})
+	initial := []float64{11, 12, 13, 21, 22, 23, 31, 32, 33, 41, 42, 43, 51, 52, 53, 61, 62, 63}
+	once := []float64{11, 12, 13, 21, 22, 23, 21, 22, 23, 11, 12, 13, 21, 22, 23, 61, 62, 63}
+	host.Init()
+	host.Once()
+	hostValues = host.Values()
+	if !reflect.DeepEqual(hostValues[:], once) {
+		t.Fatal("host Once", hostValues)
+	}
+	cases = append(cases, addressCase{"Once", nil, once})
+	for _, enter := range []int{0, 1} {
+		branchWant := initial
+		if enter != 0 {
+			branchWant = want
+		}
+		host.Init()
+		host.Branch(enter != 0)
+		hostValues = host.Values()
+		if !reflect.DeepEqual(hostValues[:], branchWant) {
+			t.Fatal("host Branch", hostValues)
+		}
+		cases = append(cases, addressCase{"Branch", []float64{float64(enter)}, branchWant})
+		for _, index := range []int{0, 1} {
+			aliasWant := append(append([]float64{}, initial...), initial...)
+			copy(aliasWant[18:24], []float64{101, 102, 103, 111, 112, 113})
+			base := index * 18
+			aliasWant[base+2] = 72
+			if enter != 0 {
+				left := []float64{111, 112, 114}
+				if index == 1 {
+					left = []float64{21, 22, 24}
+				}
+				copy(aliasWant[base:base+3], left)
+			}
+			copy(aliasWant[base+6:base+9], []float64{81, 72, 35})
+			aliasWant = append(aliasWant, float64(1-index))
+			var pair model.Pair
+			pair.Init()
+			alias := pair.Alias(index, enter != 0)
+			if !reflect.DeepEqual(alias[:], aliasWant) {
+				t.Fatal("host Alias", index, enter, alias)
+			}
+			for _, name := range []string{"MemoryAlias", "LocalAlias"} {
+				cases = append(cases, addressCase{name, []float64{float64(index), float64(enter)}, aliasWant})
+			}
+		}
+	}
+	conversion := model.Conversion(1.75)
+	if conversion != [2]float64{1.75, 1} {
+		t.Fatal("host Conversion", conversion)
+	}
+	cases = append(cases, addressCase{"Conversion", []float64{1.75}, []float64{1.75, 1}})
+	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksTerminate} {
+		for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+			t.Run(fmt.Sprintf("checks%d/%s", checks, level), func(t *testing.T) {
+				artifacts, err := NewCompiler(Options{Optimization: level, RuntimeChecks: checks}, "./testdata/freezeaddress").Compile(mode.ModePlay, mode.ModeWatch)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, current := range []mode.Mode{mode.ModePlay, mode.ModeWatch} {
+					var nodes []resource.EngineDataNode
+					roots := map[string]int{}
+					if current == mode.ModePlay {
+						nodes = artifacts.Play.Nodes
+						for _, a := range artifacts.Play.Archetypes {
+							roots[string(a.Name)] = a.Preprocess.Index
+						}
+					} else {
+						nodes = artifacts.Watch.Nodes
+						for _, a := range artifacts.Watch.Archetypes {
+							roots[string(a.Name)] = a.Preprocess.Index
+						}
+					}
+					for _, tc := range cases {
+						t.Run(fmt.Sprintf("%s/%s/%v", current, tc.name, tc.input), func(t *testing.T) {
+							root, ok := roots[tc.name]
+							if !ok {
+								t.Fatal("missing archetype", tc.name)
+							}
+							result, err := simexec.Execute(nodes, root, simexec.Request{Memory: map[int][]float64{4001: tc.input}, StepLimit: 100000})
+							if err != nil {
+								t.Fatal(err)
+							}
+							var got []float64
+							for _, effect := range result.Effects {
+								if effect.Function == resource.RuntimeFunctionDebugLog {
+									got = append(got, effect.Arguments...)
+								}
+							}
+							if !reflect.DeepEqual(got, tc.want) {
+								t.Fatalf("Go values: want %v, got %v", tc.want, got)
 							}
 						})
 					}

@@ -269,6 +269,34 @@ func TestCallValuePipelineCheckpoints(t *testing.T) {
 	}
 }
 
+func TestFrozenAddressFrontendCheckpoint(t *testing.T) {
+	packages, err := source.LoadMode(mode.ModePlay, "../testdata/freezeaddress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser := frontend.NewParser()
+	if err := parser.Parse(mode.ModePlay, packages[0]); err != nil {
+		t.Fatal(err)
+	}
+	project, err := parser.GetProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, archetype := range project.Modes[mode.ModePlay].Archetypes {
+		if archetype.Name != "Memory" {
+			continue
+		}
+		function := archetype.Callbacks[0].IR
+		got := executeCallValueCheckpoint(t, function)
+		want := []float64{21, 22, 23, 21, 22, 23, 21, 22, 23, 21, 22, 23, 21, 22, 23, 61, 62, 63}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("frontend checkpoint: want %v, got %v", want, got)
+		}
+		return
+	}
+	t.Fatal("missing Memory callback")
+}
+
 func allocatedFunction(slots int) *ir.Function {
 	return &ir.Function{
 		Name: "allocation", Entry: 0, Result: ir.Type{},
