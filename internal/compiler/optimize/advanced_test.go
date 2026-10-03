@@ -965,6 +965,27 @@ func TestLICMHoistsReadonlyMemoryWithInvariantIndex(t *testing.T) {
 	if len(writableFunction.Blocks[2].Instructions) != 1 {
 		t.Fatal("writable memory load was hoisted")
 	}
+	t.Run("single-block-loop", func(t *testing.T) {
+		fn := &ir.Function{Name: "self-loop", Entry: 0, Result: ir.Type{}, Blocks: []*ir.Block{
+			{ID: 0, Instructions: []ir.Instruction{ir.Store{Place: index, Value: ir.Const{Value: 3}}}, Terminator: ir.Jump{Target: 1}},
+			{ID: 1, Instructions: []ir.Instruction{ir.Store{Place: value, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Load{Place: readonly}, ir.Const{Value: 1}}, Result: number, Pure: true}}}, Terminator: ir.Branch{Condition: ir.Load{Place: parityMemory(0)}, True: 1, False: 2}},
+			{ID: 2, Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}}},
+		}}
+		if err := (LoopInvariantCodeMotion{}).Run(Context{}, fn); err != nil {
+			t.Fatal(err)
+		}
+		if err := ir.Validate(fn); err != nil {
+			t.Fatal(err)
+		}
+		if len(fn.Blocks[0].Instructions) != 2 {
+			t.Fatal("self-loop swallowed its preheader and prevented invariant hoisting")
+		}
+		if load, ok := fn.Blocks[1].Instructions[0].(ir.Store).Value.(ir.Load); !ok {
+			t.Fatal("self-loop still recomputes its invariant")
+		} else if _, ok := load.Place.(ir.SSAPlace); !ok {
+			t.Fatal("self-loop does not reuse the hoisted value")
+		}
+	})
 }
 
 func TestLICMHandlesMultipleLatchesWhenTheCandidateDominatesAll(t *testing.T) {

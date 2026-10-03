@@ -33,6 +33,9 @@ type pythonDifference struct {
 }
 
 func pythonDifferenceReason(difference pythonDifference) string {
+	if difference.Case == "readonly_cse_loop" && difference.Checkpoint == "allocate" {
+		return "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+	}
 	if difference.Checkpoint == "standard" {
 		switch difference.Case {
 		case "allocation_4095", "allocation_4096":
@@ -46,6 +49,9 @@ func pythonDifferenceReason(difference pythonDifference) string {
 		case "impure_effect":
 			return "Go emits an explicit callback break after the impure effect; effect order and callback result are identical"
 		}
+	}
+	if difference.Checkpoint == "allocate" && strings.HasSuffix(difference.Path, "/place/offset") {
+		return "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
 	}
 	if strings.Contains(difference.Path, "/version") {
 		return "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
@@ -820,6 +826,10 @@ func TestPinnedPythonFinalEngineDataSemantics(t *testing.T) {
 		}
 		for _, input := range matrix[caseName] {
 			request := simexec.Request{Memory: map[int][]float64{2000: {input}}}
+			if caseName == "readonly_cse_loop" {
+				bits := math.Float32bits(float32(input))
+				request.ROM = []byte{byte(bits), byte(bits >> 8), byte(bits >> 16), byte(bits >> 24)}
+			}
 			goResult, goErr := simexec.Execute(goNodes, goRoot, request)
 			pythonResult, pythonErr := simexec.Execute(pythonNodes, pythonRoot, request)
 			if goErr != nil || pythonErr != nil {

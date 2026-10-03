@@ -598,6 +598,9 @@ func dominates(dom *Dominance, ancestor, block int) bool {
 
 func naturalLoop(preds [][]int, header, latch int) map[int]bool {
 	result := map[int]bool{header: true, latch: true}
+	if header == latch {
+		return result
+	}
 	stack := []int{latch}
 	for len(stack) > 0 {
 		id := stack[len(stack)-1]
