@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
 
@@ -16,6 +17,9 @@ func (FoldConstantControl) Run(_ Context, function *ir.Function) error {
 		switch terminator := block.Terminator.(type) {
 		case ir.Branch:
 			if terminator.True == terminator.False {
+				if expressionHasEffects(terminator.Condition) {
+					block.Instructions = append(block.Instructions, ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionExecute, Args: []ir.Expr{terminator.Condition}, Pure: true}})
+				}
 				block.Terminator = ir.Jump{Target: terminator.True}
 				continue
 			}
@@ -28,6 +32,9 @@ func (FoldConstantControl) Run(_ Context, function *ir.Function) error {
 			}
 		case ir.Switch:
 			if len(terminator.Cases) == 0 {
+				if expressionHasEffects(terminator.Value) {
+					block.Instructions = append(block.Instructions, ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionExecute, Args: []ir.Expr{terminator.Value}, Pure: true}})
+				}
 				block.Terminator = ir.Jump{Target: terminator.Default}
 				continue
 			}
