@@ -584,10 +584,7 @@ func (e *executor) builtin(function resource.RuntimeFunction, a []float64) (floa
 	case "Add":
 		return fold(a, 0, func(x, y float64) float64 { return x + y }), true, nil
 	case "Subtract":
-		if len(a) == 1 {
-			return -a[0], true, nil
-		}
-		return a[0] - a[1], true, nil
+		return reduce(a, func(left, right float64) float64 { return left - right }), true, nil
 	case "Multiply":
 		return reduce(a, func(x, y float64) float64 { return x * y }), true, nil
 	case "Divide":
