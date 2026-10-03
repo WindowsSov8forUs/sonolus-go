@@ -396,7 +396,7 @@ func TestPinnedPythonStandardPipelineCheckpoints(t *testing.T) {
 		name  string
 		count int
 	}{
-		{"toSSA", 5}, {"firstSCCPCleanup", 9}, {"secondSCCP", 15}, {"fromSSA", 31}, {"allocate", 38},
+		{"toSSA", 5}, {"firstSCCPCleanup", 9}, {"secondSCCP", 15}, {"fromSSA", 31}, {"allocate", 39},
 	}
 	builders, _ := pipelineFixtureBuilders(t)
 	for _, caseName := range sortedKeys(builders) {
@@ -785,7 +785,7 @@ func TestPinnedPythonAllocationOverflowBoundary(t *testing.T) {
 			continue
 		}
 		function := builders[item.Name]()
-		err := runStandardPrefix(function, 38)
+		err := runStandardPrefix(function, 39)
 		if err == nil || !strings.Contains(err.Error(), "4096") {
 			t.Fatalf("%s Go allocation error = %v", item.Name, err)
 		}

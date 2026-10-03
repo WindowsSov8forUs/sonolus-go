@@ -13,53 +13,83 @@ type DeadCodeElimination struct{}
 func (DeadCodeElimination) Name() string { return "DeadCodeElimination" }
 func (DeadCodeElimination) Run(_ Context, function *ir.Function) error {
 	indexed := indexedLocalIDs(function)
-	for changed := true; changed; {
-		changed = false
-		uses := map[temporaryPlaceKey]int{}
-		visit := func(expr ir.Expr) {
-			walkExpr(expr, func(e ir.Expr) {
-				if l, ok := e.(ir.Load); ok {
-					if key, valid := placeKey(l.Place); valid {
-						uses[key]++
+	dependencies := map[temporaryPlaceKey][]temporaryPlaceKey{}
+	live := map[temporaryPlaceKey]bool{}
+	var queue []temporaryPlaceKey
+	mark := func(key temporaryPlaceKey) {
+		if !live[key] {
+			live[key] = true
+			queue = append(queue, key)
+		}
+	}
+	collect := func(expr ir.Expr, visit func(temporaryPlaceKey)) {
+		walkExpr(expr, func(value ir.Expr) {
+			if load, ok := value.(ir.Load); ok {
+				if key, valid := placeKey(load.Place); valid {
+					visit(key)
+				}
+			}
+		})
+	}
+	root := func(expr ir.Expr) { collect(expr, mark) }
+	for _, block := range function.Blocks {
+		for _, phi := range block.Phis {
+			key, _ := placeKey(phi.Target)
+			for _, arg := range phi.Args {
+				input, _ := placeKey(arg.Value)
+				dependencies[key] = append(dependencies[key], input)
+			}
+		}
+		for _, instruction := range block.Instructions {
+			switch value := instruction.(type) {
+			case ir.Store:
+				key, temporary := placeKey(value.Place)
+				if temporary {
+					collect(value.Value, func(input temporaryPlaceKey) { dependencies[key] = append(dependencies[key], input) })
+					if expressionHasEffects(value.Value) {
+						mark(key)
 					}
+					if place, local := value.Place.(ir.LocalPlace); local && indexed[place.ID] {
+						mark(key)
+					}
+				} else {
+					root(value.Value)
 				}
-			})
-		}
-		for _, b := range function.Blocks {
-			for _, p := range b.Phis {
-				for _, a := range p.Args {
-					key, _ := placeKey(a.Value)
-					uses[key]++
-				}
+				addPlaceExpressions(value.Place, root)
+			case ir.Eval:
+				root(value.Value)
 			}
-			for _, in := range b.Instructions {
-				switch v := in.(type) {
-				case ir.Store:
-					visit(v.Value)
-					addPlaceExpressions(v.Place, visit)
-				case ir.Eval:
-					visit(v.Value)
-				}
-			}
-			visitTerminator(b.Terminator, visit)
 		}
-		for _, b := range function.Blocks {
-			out := b.Instructions[:0]
-			for _, in := range b.Instructions {
-				store, ok := in.(ir.Store)
-				addressTaken := false
-				if place, local := store.Place.(ir.LocalPlace); local {
-					addressTaken = indexed[place.ID]
-				}
-				key, temporary := placeKey(store.Place)
-				if ok && temporary && !addressTaken && uses[key] == 0 && !expressionHasEffects(store.Value) {
-					changed = true
+		visitTerminator(block.Terminator, root)
+	}
+	// Trace definitions from observable roots instead of repeatedly counting
+	// every syntactic use. Unobserved Phi cycles must not keep themselves alive.
+	for len(queue) != 0 {
+		key := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		for _, input := range dependencies[key] {
+			mark(input)
+		}
+	}
+	for _, block := range function.Blocks {
+		phis := block.Phis[:0]
+		for _, phi := range block.Phis {
+			key, _ := placeKey(phi.Target)
+			if live[key] {
+				phis = append(phis, phi)
+			}
+		}
+		block.Phis = phis
+		instructions := block.Instructions[:0]
+		for _, instruction := range block.Instructions {
+			if store, ok := instruction.(ir.Store); ok {
+				if key, temporary := placeKey(store.Place); temporary && !live[key] {
 					continue
 				}
-				out = append(out, in)
 			}
-			b.Instructions = out
+			instructions = append(instructions, instruction)
 		}
+		block.Instructions = instructions
 	}
 	return nil
 }
@@ -67,8 +97,8 @@ func (DeadCodeElimination) Run(_ Context, function *ir.Function) error {
 type AdvancedDeadCodeElimination struct{}
 
 func (AdvancedDeadCodeElimination) Requires() []Analysis  { return nil }
-func (AdvancedDeadCodeElimination) Preserves() []Analysis { return []Analysis{AnalysisLiveness} }
-func (AdvancedDeadCodeElimination) Destroys() []Analysis  { return nil }
+func (AdvancedDeadCodeElimination) Preserves() []Analysis { return nil }
+func (AdvancedDeadCodeElimination) Destroys() []Analysis  { return []Analysis{AnalysisLiveness} }
 
 func (AdvancedDeadCodeElimination) Name() string { return "AdvancedDeadCodeElimination" }
 func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
@@ -79,17 +109,13 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 			ids[key] = len(ids)
 		}
 	}
-	use := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
-	def := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
 	for i := range f.Blocks {
-		use[i], def[i] = map[temporaryPlaceKey]bool{}, map[temporaryPlaceKey]bool{}
 		add := func(expr ir.Expr) {
 			walkExpr(expr, func(value ir.Expr) {
 				if load, ok := value.(ir.Load); ok {
 					key, valid := placeKey(load.Place)
-					if valid && !def[i][key] {
+					if valid {
 						intern(key)
-						use[i][key] = true
 					}
 				}
 			})
@@ -101,7 +127,6 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 				addPlaceExpressions(value.Place, add)
 				if key, valid := placeKey(value.Place); valid {
 					intern(key)
-					def[i][key] = true
 				}
 			case ir.Eval:
 				add(value.Value)
@@ -109,17 +134,84 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 		}
 		visitTerminator(f.Blocks[i].Terminator, add)
 	}
-	useBits, defBits := make([]bitSet, len(f.Blocks)), make([]bitSet, len(f.Blocks))
-	for i := range f.Blocks {
-		useBits[i], defBits[i] = newBitSet(len(ids)), newBitSet(len(ids))
-		for key := range use[i] {
-			useBits[i].set(ids[key])
-		}
-		for key := range def[i] {
-			defBits[i].set(ids[key])
+	// Propagate demand through retained instructions only. Ordinary liveness
+	// counts reads in dead stores, keeping entire dead chains (and cycles)
+	// alive across block boundaries even after their final consumer disappears.
+	type transfer struct {
+		target    int
+		removable bool
+		uses      bitSet
+	}
+	transfers := make([][]transfer, len(f.Blocks))
+	terminalUses := make([]bitSet, len(f.Blocks))
+	collect := func(expr ir.Expr, set bitSet) {
+		walkExpr(expr, func(value ir.Expr) {
+			if load, ok := value.(ir.Load); ok {
+				if key, valid := placeKey(load.Place); valid {
+					set.set(ids[key])
+				}
+			}
+		})
+	}
+	for i, block := range f.Blocks {
+		terminalUses[i] = newBitSet(len(ids))
+		visitTerminator(block.Terminator, func(expr ir.Expr) { collect(expr, terminalUses[i]) })
+		for _, instruction := range block.Instructions {
+			item := transfer{target: -1, uses: newBitSet(len(ids))}
+			switch value := instruction.(type) {
+			case ir.Store:
+				if key, valid := placeKey(value.Place); valid {
+					item.target = ids[key]
+					item.removable = !expressionHasEffects(value.Value)
+					if local, ok := value.Place.(ir.LocalPlace); ok && indexed[local.ID] {
+						item.removable = false
+					}
+				}
+				collect(value.Value, item.uses)
+				addPlaceExpressions(value.Place, func(expr ir.Expr) { collect(expr, item.uses) })
+			case ir.Eval:
+				collect(value.Value, item.uses)
+			}
+			transfers[i] = append(transfers[i], item)
 		}
 	}
-	_, liveOut := computeLiveness(f, useBits, defBits, len(ids))
+	liveIn, liveOut := make([]bitSet, len(f.Blocks)), make([]bitSet, len(f.Blocks))
+	queued := make([]bool, len(f.Blocks))
+	queue := make([]int, 0, len(f.Blocks))
+	for i := range f.Blocks {
+		liveIn[i], liveOut[i] = newBitSet(len(ids)), newBitSet(len(ids))
+		queue = append(queue, i)
+		queued[i] = true
+	}
+	preds := predecessors(f)
+	working := newBitSet(len(ids))
+	for len(queue) != 0 {
+		id := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		queued[id] = false
+		forEachTerminatorTarget(f.Blocks[id].Terminator, func(next int) { liveOut[id].union(liveIn[next]) })
+		copy(working, liveOut[id])
+		working.union(terminalUses[id])
+		for i := len(transfers[id]) - 1; i >= 0; i-- {
+			item := transfers[id][i]
+			if item.removable && !working.has(item.target) {
+				continue
+			}
+			if item.target >= 0 {
+				working.clear(item.target)
+			}
+			working.union(item.uses)
+		}
+		if !working.equal(liveIn[id]) {
+			copy(liveIn[id], working)
+			for _, previous := range preds[id] {
+				if !queued[previous] {
+					queued[previous] = true
+					queue = append(queue, previous)
+				}
+			}
+		}
+	}
 	live := newBitSet(len(ids))
 	addLive := func(expr ir.Expr) {
 		walkExpr(expr, func(value ir.Expr) {

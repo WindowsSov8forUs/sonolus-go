@@ -362,10 +362,34 @@
   {
     "Case": "loop_memory",
     "Checkpoint": "firstSCCPCleanup",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/length",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/0/target/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/1/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/1/target/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
   },
   {
     "Case": "loop_memory",
@@ -378,10 +402,10 @@
   {
     "Case": "loop_memory",
     "Checkpoint": "firstSCCPCleanup",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/2/phis/length",
-    "Go": "3",
-    "Python": "1",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/firstSCCPCleanup/blocks/2/phis/0/arguments/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "The normalized CFG leaf differs while the following checkpoints and fixed execution matrix verify identical observable semantics"
   },
   {
     "Case": "loop_memory",
@@ -410,10 +434,34 @@
   {
     "Case": "loop_memory",
     "Checkpoint": "secondSCCP",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/phis/length",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/phis/0/target/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/phis/1/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/1/phis/1/target/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
   },
   {
     "Case": "loop_memory",
@@ -426,10 +474,10 @@
   {
     "Case": "loop_memory",
     "Checkpoint": "secondSCCP",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/2/phis/length",
-    "Go": "3",
-    "Python": "1",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/secondSCCP/blocks/2/phis/0/arguments/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "The normalized CFG leaf differs while the following checkpoints and fixed execution matrix verify identical observable semantics"
   },
   {
     "Case": "loop_memory",
@@ -642,10 +690,18 @@
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "firstSCCPCleanup",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/length",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "firstSCCPCleanup",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/1/phis/0/target/version",
     "Go": "3",
-    "Python": "1",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -654,14 +710,6 @@
     "Go": "2",
     "Python": "3",
     "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
-  },
-  {
-    "Case": "readonly_cse_loop",
-    "Checkpoint": "firstSCCPCleanup",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/firstSCCPCleanup/blocks/2/phis/length",
-    "Go": "3",
-    "Python": "0",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
   },
   {
     "Case": "readonly_cse_loop",
@@ -682,18 +730,34 @@
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "secondSCCP",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/instructions/length",
-    "Go": "4",
-    "Python": "2",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/instructions/1/place/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "secondSCCP",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/phis/length",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/instructions/1/value/arguments/0/place/version",
     "Go": "3",
-    "Python": "1",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/phis/0/arguments/1/value/version",
+    "Go": "2",
+    "Python": "3",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "secondSCCP",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/1/phis/0/target/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -705,17 +769,9 @@
   },
   {
     "Case": "readonly_cse_loop",
-    "Checkpoint": "secondSCCP",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/secondSCCP/blocks/2/phis/length",
-    "Go": "3",
-    "Python": "0",
-    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
-  },
-  {
-    "Case": "readonly_cse_loop",
     "Checkpoint": "fromSSA",
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/fromSSA/blocks/length",
-    "Go": "5",
+    "Go": "4",
     "Python": "9",
     "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
   },
@@ -859,7 +915,7 @@
     "Case": "loop_memory",
     "Checkpoint": "standard",
     "Path": "/pipelineCases/loop_memory/nodes",
-    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#1,#0),#1),Execute(Set(#10000,#2,Get(#2000,#0)),SetAdd(#10000,#0,Get(#10000,#2)),Set(#10000,#3,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#3)),If(Less(Get(#10000,#3),#10),#3,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),Break(#1,#0)),Execute(#1),#0))",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#1,#0),#1),Execute(Set(#10000,#2,Get(#2000,#0)),SetAdd(#10000,#0,Get(#10000,#2)),Set(#10000,#2,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#2)),If(Less(Get(#10000,#2),#10),#3,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),Break(#1,#0)),Execute(#1),#0))",
     "Python": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#2,#0),If(Less(#0,#10),#1,#2)),Execute(Set(#10000,#0,Add(Get(#10000,#0),Get(#2000,#0))),Set(#10000,#1,Add(Get(#10000,#2),#1)),Set(#10000,#2,Get(#10000,#1)),If(Less(Get(#10000,#1),#10),#1,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),#3),#0))",
     "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
   },
@@ -867,7 +923,7 @@
     "Case": "readonly_cse_loop",
     "Checkpoint": "standard",
     "Path": "/pipelineCases/readonly_cse_loop/nodes",
-    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),#1),Execute(Set(#10000,#3,Add(#1,Get(#3000,#0))),Set(#2000,#1,Add(Get(#10000,#3),Get(#10000,#3))),Set(#10000,#3,Add(#1,Get(#10000,#0))),Set(#10000,#0,Get(#10000,#3)),If(Less(Get(#10000,#3),#3),#3,#2)),Execute(Break(#1,#0)),Execute(#1),#0))",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),#1),Execute(Set(#10000,#1,Add(#1,Get(#3000,#0))),Set(#2000,#1,Add(Get(#10000,#1),Get(#10000,#1))),Set(#10000,#1,Add(#1,Get(#10000,#0))),Set(#10000,#0,Get(#10000,#1)),If(Less(Get(#10000,#1),#3),#3,#2)),Execute(Break(#1,#0)),Execute(#1),#0))",
     "Python": "Block(JumpLoop(Execute(Set(#10000,#1,#0),If(Less(#0,#3),#1,#2)),Execute(Set(#2000,#1,Add(Get(#3000,#0),#1,Add(Get(#3000,#0),#1))),Set(#10000,#0,Add(Get(#10000,#1),#1)),Set(#10000,#1,Get(#10000,#0)),If(Less(Get(#10000,#0),#3),#1,#2)),Execute(#3),#0))",
     "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
   },

@@ -481,6 +481,133 @@ func TestAllocateRetriesAfterConservativeInterferenceExhaustsSlots(t *testing.T)
 	if len(function.Locals) != 1 || function.Locals[0].Slots != 1 {
 		t.Fatalf("physical locals = %#v", function.Locals)
 	}
+	t.Run("dead-stores-within-limit", func(t *testing.T) {
+		builder := ir.NewBuilder("dead-stores", ir.Type{})
+		entry := builder.NewBlock()
+		_ = builder.SetEntry(entry)
+		_ = builder.SetCurrent(entry)
+		var live ir.Value
+		for index := range 3 {
+			local := builder.NewLocal(fmt.Sprintf("value%d", index), numberType)
+			if index == 0 {
+				live = local
+			}
+			if err := builder.Store(ir.Places(local), ir.Value{Type: numberType, Slots: []ir.Expr{ir.Const{Value: float64(index + 1)}}}, ir.SourcePos{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, live.Slots, ir.Type{}, false, ir.SourcePos{}))
+		_ = builder.Return(ir.Value{Type: ir.Type{}})
+		input, err := builder.Finish()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Populate the cached graph before removing dead writes. Allocation
+		// must use the new lifetimes even when the old graph fits in 4096.
+		optimizer := &Optimizer{level: LevelStandard, passes: []Pass{CopyCoalesce{}, AdvancedDeadCodeElimination{}, Allocate{}}}
+		result, err := optimizer.Optimize(Context{Mode: mode.ModePlay, Callback: "preprocess"}, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Locals[0].Slots != 1 {
+			t.Fatalf("stale interference retained %d slots", result.Locals[0].Slots)
+		}
+	})
+}
+
+func TestDeadCodeEliminationPropagatesDemandAcrossCycles(t *testing.T) {
+	for _, observed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("observed=%t", observed), func(t *testing.T) {
+			builder := ir.NewBuilder("demand-cycle", ir.Type{})
+			entry, exit := builder.NewBlock(), builder.NewBlock()
+			_ = builder.SetEntry(entry)
+			_ = builder.SetCurrent(entry)
+			const count = 32
+			values := make([]ir.Value, count)
+			blocks := make([]*ir.Block, count)
+			for i := range count {
+				values[i] = builder.NewLocal(fmt.Sprintf("value%d", i), numberType)
+				blocks[i] = builder.NewBlock()
+			}
+			counter := builder.NewLocal("counter", numberType)
+			_ = builder.Store(ir.Places(counter), ir.ZeroValue(numberType), ir.SourcePos{})
+			_ = builder.Store(ir.Places(values[count-1]), ir.ZeroValue(numberType), ir.SourcePos{})
+			_ = builder.Jump(blocks[0])
+			for i, block := range blocks {
+				_ = builder.SetCurrent(block)
+				value := values[(i+count-1)%count]
+				if i == 0 {
+					value = ir.Value{Type: numberType, Slots: []ir.Expr{builder.RuntimeCall(resource.RuntimeFunctionAdd, []ir.Expr{value.Slots[0], ir.Const{Value: 1}}, numberType, true, ir.SourcePos{})}}
+				}
+				_ = builder.Store(ir.Places(values[i]), value, ir.SourcePos{})
+				if i+1 < count {
+					_ = builder.Jump(blocks[i+1])
+					continue
+				}
+				if observed {
+					_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, values[i].Slots, ir.Type{}, false, ir.SourcePos{}))
+				}
+				increment := builder.RuntimeCall(resource.RuntimeFunctionAdd, []ir.Expr{counter.Slots[0], ir.Const{Value: 1}}, numberType, true, ir.SourcePos{})
+				_ = builder.Store(ir.Places(counter), ir.Value{Type: numberType, Slots: []ir.Expr{increment}}, ir.SourcePos{})
+				condition := builder.RuntimeCall(resource.RuntimeFunctionLess, []ir.Expr{counter.Slots[0], ir.Const{Value: 3}}, numberType, true, ir.SourcePos{})
+				_ = builder.Branch(condition, blocks[0], exit)
+			}
+			_ = builder.SetCurrent(exit)
+			_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, counter.Slots, ir.Type{}, false, ir.SourcePos{}))
+			_ = builder.Return(ir.Value{Type: ir.Type{}})
+			function, err := builder.Finish()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Run("ssa", func(t *testing.T) {
+				ssa := CloneFunction(function)
+				context := Context{Mode: mode.ModePlay, Callback: "preprocess"}
+				for _, pass := range []Pass{ToSSA{}, DeadCodeElimination{}} {
+					if err := pass.Run(context, ssa); err != nil {
+						t.Fatal(err)
+					}
+					if err := ir.Validate(ssa); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if !observed {
+					for _, block := range ssa.Blocks {
+						for _, phi := range block.Phis {
+							if phi.Target.ID < count {
+								t.Fatal("unobserved Phi cycle retained")
+							}
+						}
+					}
+				}
+				want := []float64{3}
+				if observed {
+					want = []float64{1, 2, 3, 3}
+				}
+				if got := executeCallValueCheckpoint(t, ssa); !reflect.DeepEqual(got, want) {
+					t.Fatalf("SSA final node logs = %v, want %v", got, want)
+				}
+			})
+			if err := (AdvancedDeadCodeElimination{}).Run(Context{}, function); err != nil {
+				t.Fatal(err)
+			}
+			if !observed {
+				for _, block := range function.Blocks {
+					for _, instruction := range block.Instructions {
+						if store, ok := instruction.(ir.Store); ok && store.Place.(ir.LocalPlace).ID < count {
+							t.Fatal("unobserved value cycle retained after one pass")
+						}
+					}
+				}
+			}
+			want := []float64{3}
+			if observed {
+				want = []float64{1, 2, 3, 3}
+			}
+			if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, want) {
+				t.Fatalf("final node logs = %v, want %v", got, want)
+			}
+		})
+	}
 }
 
 func TestAllocationRewritesDynamicLocalBaseAndIndex(t *testing.T) {
