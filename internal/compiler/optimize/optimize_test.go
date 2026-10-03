@@ -121,6 +121,39 @@ func TestFoldConstantSwitchUsesFirstMatchAndDefault(t *testing.T) {
 	}
 }
 
+func TestFoldDegenerateControlPreservesEffects(t *testing.T) {
+	for _, shape := range []string{"branch", "switch"} {
+		for _, level := range []Level{LevelMinimal, LevelFast, LevelStandard} {
+			t.Run(shape+"/"+level.String(), func(t *testing.T) {
+				builder := ir.NewBuilder("control-effects", voidType)
+				entry, exit := builder.NewBlock(), builder.NewBlock()
+				_ = builder.SetEntry(entry)
+				_ = builder.SetCurrent(entry)
+				log := builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Const{Value: 7}}, numberType, false, ir.SourcePos{})
+				condition := builder.RuntimeCall(resource.RuntimeFunctionAdd, []ir.Expr{log, ir.Const{Value: 1}}, numberType, true, ir.SourcePos{})
+				if shape == "branch" {
+					_ = builder.Branch(condition, exit, exit)
+				} else {
+					_ = builder.Switch(condition, nil, exit)
+				}
+				_ = builder.SetCurrent(exit)
+				_ = builder.Return(ir.Value{Type: voidType})
+				input, err := builder.Finish()
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := NewOptimizer(level).Optimize(Context{Mode: mode.ModePlay, Callback: "preprocess"}, input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := executeCallValueCheckpoint(t, result); !reflect.DeepEqual(got, []float64{7}) {
+					t.Fatalf("final node effects = %v, want [7]", got)
+				}
+			})
+		}
+	}
+}
+
 func TestRewriteToSwitchKeepsPhiArgumentsOrderedAfterRenumbering(t *testing.T) {
 	equal := func(value float64) ir.Expr {
 		return ir.RuntimeCall{

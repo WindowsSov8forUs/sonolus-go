@@ -503,6 +503,40 @@ func TestAllocationRewritesDynamicLocalBaseAndIndex(t *testing.T) {
 	}
 }
 
+func TestFromSSAPreservesParallelPhiAssignments(t *testing.T) {
+	number := ir.Type{Slots: 1}
+	load := func(id int) ir.Expr { return ir.Load{Place: ir.SSAPlace{ID: id}} }
+	function := &ir.Function{Name: "phi-swap", Blocks: []*ir.Block{
+		{ID: 0, Instructions: []ir.Instruction{
+			ir.Store{Place: ir.SSAPlace{ID: 0}, Value: ir.Const{Value: 1}},
+			ir.Store{Place: ir.SSAPlace{ID: 1}, Value: ir.Const{Value: 2}},
+			ir.Store{Place: ir.SSAPlace{ID: 2}, Value: ir.Const{}},
+		}, Terminator: ir.Jump{Target: 1}},
+		{ID: 1, Phis: []ir.Phi{
+			{Target: ir.SSAPlace{ID: 3}, Args: []ir.PhiArg{{Predecessor: 0, Value: ir.SSAPlace{ID: 0}}, {Predecessor: 1, Value: ir.SSAPlace{ID: 4}}}},
+			{Target: ir.SSAPlace{ID: 4}, Args: []ir.PhiArg{{Predecessor: 0, Value: ir.SSAPlace{ID: 1}}, {Predecessor: 1, Value: ir.SSAPlace{ID: 3}}}},
+			{Target: ir.SSAPlace{ID: 5}, Args: []ir.PhiArg{{Predecessor: 0, Value: ir.SSAPlace{ID: 2}}, {Predecessor: 1, Value: ir.SSAPlace{ID: 6}}}},
+		}, Instructions: []ir.Instruction{
+			ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{load(3)}}},
+			ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{load(4)}}},
+			ir.Store{Place: ir.SSAPlace{ID: 6}, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{load(5), ir.Const{Value: 1}}, Result: number, Pure: true}},
+		}, Terminator: ir.Branch{Condition: ir.RuntimeCall{Function: resource.RuntimeFunctionLess, Args: []ir.Expr{load(6), ir.Const{Value: 2}}, Result: number, Pure: true}, True: 1, False: 2}},
+		{ID: 2, Terminator: ir.Return{}},
+	}}
+	if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, []float64{1, 2, 2, 1}) {
+		t.Fatalf("Phi assignments were not simultaneous: %v", got)
+	}
+	// A chain also needs parallel assignment semantics: x = next, y = old x.
+	// Saving incoming values only for overwritten destinations is insufficient
+	// if x is restored before y reads it.
+	chain := CloneFunction(function)
+	chain.Blocks[0].Instructions[0] = ir.Store{Place: ir.SSAPlace{ID: 0}, Value: ir.Const{Value: 7}}
+	chain.Blocks[1].Phis[0].Args[1].Value = ir.SSAPlace{ID: 6}
+	if got := executeCallValueCheckpoint(t, chain); !reflect.DeepEqual(got, []float64{7, 2, 1, 7}) {
+		t.Fatalf("Phi copy chain lost its old value: %v", got)
+	}
+}
+
 func TestSSAConstructionAndCriticalEdgeDestruction(t *testing.T) {
 	number := ir.Type{Name: "number", Slots: 1}
 	fn := &ir.Function{
