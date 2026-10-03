@@ -503,6 +503,195 @@ func TestAllocationRewritesDynamicLocalBaseAndIndex(t *testing.T) {
 	}
 }
 
+func TestSingleStoreAggregatePreservesIndexSnapshots(t *testing.T) {
+	for _, name := range []string{"same-index", "log", "nested-log-write", "changed-local-index", "changed-memory-index", "different-index", "cross-block", "read-before-store"} {
+		for _, fast := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/fast=%t", name, fast), func(t *testing.T) {
+				builder := ir.NewBuilder(name, voidType)
+				entry := builder.NewBlock()
+				_ = builder.SetEntry(entry)
+				_ = builder.SetCurrent(entry)
+				store := func(place ir.Place, value ir.Expr) {
+					_ = builder.Store([]ir.Place{place}, ir.Value{Type: numberType, Slots: []ir.Expr{value}}, ir.SourcePos{})
+				}
+				log := func(place ir.Place) {
+					_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Load{Place: place}}, voidType, false, ir.SourcePos{}))
+				}
+				typ := ir.Type{Slots: 2}
+				a, b := builder.NewLocal("a", typ), builder.NewLocal("b", typ)
+				memory, err := builder.Memory("memory", ir.Const{}, 1, 0, true, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var index ir.Expr = ir.Load{Place: memory}
+				var indexLocal ir.Place
+				if name == "changed-local-index" {
+					local := builder.NewLocal("index", numberType)
+					index, indexLocal = local.Slots[0], ir.Places(local)[0]
+					store(indexLocal, ir.Const{})
+				}
+				store(ir.Places(a)[0], ir.Const{Value: 7})
+				store(ir.Places(a)[1], ir.Const{Value: 8})
+				log(ir.Places(a)[1])
+				address, err := builder.IndexedLocal(ir.Places(b)[0].(ir.LocalPlace), index, 2, 1, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := []float64{8, 99}
+				if name == "read-before-store" {
+					log(address)
+					want = []float64{8, 0, 99}
+				}
+				store(address, ir.Const{Value: 99})
+				switch name {
+				case "log":
+					log(memory)
+					want = []float64{8, 0, 99}
+				case "nested-log-write":
+					write := builder.RuntimeCall(resource.RuntimeFunctionSet, []ir.Expr{ir.Const{Value: 4000}, ir.Const{}, ir.Const{Value: 1}}, numberType, false, ir.SourcePos{})
+					_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{write}, voidType, false, ir.SourcePos{}))
+					want = []float64{8, 1, 0}
+				case "changed-local-index":
+					store(indexLocal, ir.Const{Value: 1})
+					want = []float64{8, 0}
+				case "changed-memory-index":
+					store(memory, ir.Const{Value: 1})
+					want = []float64{8, 0}
+				case "different-index":
+					address.Index = ir.Const{Value: 1}
+					want = []float64{8, 0}
+				case "cross-block":
+					next := builder.NewBlock()
+					_ = builder.Jump(next)
+					_ = builder.SetCurrent(next)
+				}
+				log(address)
+				_ = builder.Return(ir.Value{Type: voidType})
+				function, err := builder.Finish()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := allocateLocals(function, true, fast); err != nil {
+					t.Fatal(err)
+				}
+				if (name == "same-index" || name == "log") && function.Locals[0].Slots != 2 {
+					t.Fatalf("single-store aggregate failed to reuse: %d slots", function.Locals[0].Slots)
+				}
+				if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, want) {
+					t.Fatalf("final node logs = %v, want %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestAggregateAllocationPreservesInitializationReads(t *testing.T) {
+	for _, name := range []string{"complete", "partial", "duplicate-slot", "read-during-overwrite", "read-in-first-store", "indexed-write"} {
+		for _, fast := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/fast=%t", name, fast), func(t *testing.T) {
+				builder := ir.NewBuilder(name, ir.Type{})
+				entry := builder.NewBlock()
+				_ = builder.SetEntry(entry)
+				_ = builder.SetCurrent(entry)
+				typ := ir.Type{Name: "pair", Slots: 2}
+				a, b := builder.NewLocal("a", typ), builder.NewLocal("b", typ)
+				placesA, placesB := ir.Places(a), ir.Places(b)
+				store := func(place ir.Place, value ir.Expr) {
+					if err := builder.Store([]ir.Place{place}, ir.Value{Type: numberType, Slots: []ir.Expr{value}}, ir.SourcePos{}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				log := func(place ir.Place) {
+					if err := builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Load{Place: place}}, ir.Type{}, false, ir.SourcePos{})); err != nil {
+						t.Fatal(err)
+					}
+				}
+				store(placesA[0], ir.Const{Value: 7})
+				store(placesA[1], ir.Const{Value: 8})
+				var want []float64
+				wantSlots := 4
+				switch name {
+				case "complete", "partial", "duplicate-slot":
+					log(placesA[1])
+					store(placesB[0], ir.Const{Value: 20})
+					if name == "complete" {
+						store(placesB[1], ir.Const{Value: 21})
+						want, wantSlots = []float64{8, 21}, 2
+					} else {
+						if name == "duplicate-slot" {
+							store(placesB[0], ir.Const{Value: 21})
+						}
+						want = []float64{8, 0}
+					}
+					log(placesB[1])
+				default:
+					store(placesB[0], ir.Const{Value: 10})
+					store(placesB[1], ir.Const{Value: 11})
+					log(placesB[1])
+					value := ir.Expr(ir.Const{Value: 20})
+					if name == "read-in-first-store" {
+						value = ir.Load{Place: placesA[1]}
+					}
+					store(placesA[0], value)
+					if name == "read-during-overwrite" {
+						log(placesA[1])
+						want = []float64{11, 8, 21}
+					} else if name == "read-in-first-store" {
+						want = []float64{11, 8, 21}
+					} else {
+						want = []float64{11, 20, 21}
+					}
+					last := placesA[1]
+					if name == "indexed-write" {
+						var err error
+						last, err = builder.IndexedLocal(placesA[0].(ir.LocalPlace), ir.Const{Value: 1}, 2, 1, 0)
+						if err != nil {
+							t.Fatal(err)
+						}
+						// A is fully overwritten after B dies in this case.
+						wantSlots = 4 // Dynamic writes deliberately stay conservative.
+					}
+					store(last, ir.Const{Value: 21})
+					if name != "read-during-overwrite" {
+						log(placesA[0])
+					}
+					log(placesA[1])
+				}
+				_ = builder.Return(ir.Value{Type: ir.Type{}})
+				fn, err := builder.Finish()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := allocateLocals(fn, true, fast); err != nil {
+					t.Fatal(err)
+				}
+				if fn.Locals[0].Slots != wantSlots {
+					t.Fatalf("slots=%d want=%d", fn.Locals[0].Slots, wantSlots)
+				}
+				tree, _, err := parityBackendTree(fn)
+				if err != nil {
+					t.Fatal(err)
+				}
+				nodes, root, err := parseCanonicalTree(tree)
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := simexec.Execute(nodes, root, simexec.Request{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []float64
+				for _, effect := range result.Effects {
+					got = append(got, effect.Arguments...)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("effects=%v want=%v", got, want)
+				}
+			})
+		}
+	}
+}
+
 func TestFromSSAPreservesParallelPhiAssignments(t *testing.T) {
 	number := ir.Type{Slots: 1}
 	load := func(id int) ir.Expr { return ir.Load{Place: ir.SSAPlace{ID: id}} }

@@ -5,6 +5,7 @@ import (
 	"math/bits"
 	"sort"
 
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 )
 
@@ -133,6 +134,13 @@ func allocateLocalsWithInterference(function *ir.Function, interference interfer
 		}
 	}
 	if size > TemporaryMemorySlots {
+		if fast && interference != nil {
+			// The cheap placement appends after all conflicts and can miss
+			// reusable holes (for example A-B-C interference chains). Retry
+			// first-fit on the same graph before rejecting, without entering
+			// SSA or mutating the function between attempts.
+			return allocateLocalsWithInterference(function, interference, false)
+		}
 		if failedID >= 0 {
 			local := function.Locals[failedID]
 			neighbors := make([]int, 0)
@@ -282,17 +290,29 @@ func (graph interferenceGraph) clone() interferenceGraph {
 
 func localInterference(function *ir.Function) interferenceGraph {
 	n := len(function.Locals)
+	partialDefinitions := singleStoreAggregateDefinitions(function)
+	initializations := make([]map[int]bool, len(function.Blocks))
 	use, def := make([]bitSet, len(function.Blocks)), make([]bitSet, len(function.Blocks))
 	for i := range use {
 		use[i], def[i] = newBitSet(n), newBitSet(n)
 	}
 	for _, block := range function.Blocks {
-		for _, instruction := range block.Instructions {
+		initializations[block.ID] = aggregateInitializations(function, block)
+		for index := range partialDefinitions[block.ID] {
+			if initializations[block.ID] == nil {
+				initializations[block.ID] = map[int]bool{}
+			}
+			initializations[block.ID][index] = true
+		}
+		for index, instruction := range block.Instructions {
 			switch value := instruction.(type) {
 			case ir.Store:
 				addUsesBeforeDefsExpr(value.Value, use[block.ID], def[block.ID])
-				if p, ok := value.Place.(ir.LocalPlace); ok && function.Locals[p.ID].Slots == 1 {
-					def[block.ID].set(p.ID)
+				id, temporary := localPlaceID(value.Place)
+				_, fixed := value.Place.(ir.LocalPlace)
+				if temporary && (fixed && function.Locals[id].Slots == 1 || initializations[block.ID][index]) {
+					addPlaceExpressions(value.Place, func(expr ir.Expr) { addUsesBeforeDefsExpr(expr, use[block.ID], def[block.ID]) })
+					def[block.ID].set(id)
 				} else {
 					addUsesBeforeDefsPlace(value.Place, use[block.ID], def[block.ID])
 				}
@@ -314,9 +334,12 @@ func localInterference(function *ir.Function) interferenceGraph {
 			uses := newBitSet(n)
 			switch value := block.Instructions[i].(type) {
 			case ir.Store:
-				if place, ok := value.Place.(ir.LocalPlace); ok && function.Locals[place.ID].Slots == 1 {
-					addInterferenceSet(graph, place.ID, live)
-					live.clear(place.ID)
+				id, temporary := localPlaceID(value.Place)
+				_, fixed := value.Place.(ir.LocalPlace)
+				if temporary && (fixed && function.Locals[id].Slots == 1 || initializations[block.ID][i]) {
+					addInterferenceSet(graph, id, live)
+					live.clear(id)
+					addPlaceExpressions(value.Place, func(expr ir.Expr) { localUsesExprBitSet(expr, uses) })
 				} else {
 					localUsesPlaceBitSet(value.Place, uses)
 				}
@@ -328,6 +351,201 @@ func localInterference(function *ir.Function) interferenceGraph {
 		}
 	}
 	return graph
+}
+
+// A partial store can start an aggregate's lifetime when it is the only store
+// and every read is proven to address that value after the store. All accesses
+// must stay within one block. Index snapshots are invalidated by writes to
+// their inputs and by effects; matching syntax alone is not sufficient.
+func singleStoreAggregateDefinitions(function *ir.Function) []map[int]bool {
+	type candidate struct {
+		block, instruction int
+		address            string
+		locals             map[int]bool
+		memory             bool
+		defined, stable    bool
+		valid              bool
+	}
+	counts := make([]int, len(function.Locals))
+	candidates := map[int]*candidate{}
+	for _, block := range function.Blocks {
+		for index, instruction := range block.Instructions {
+			store, ok := instruction.(ir.Store)
+			if !ok {
+				continue
+			}
+			id, local := localPlaceID(store.Place)
+			if !local || function.Locals[id].Slots <= 1 {
+				continue
+			}
+			counts[id]++
+			c := &candidate{block: block.ID, instruction: index, address: exprKey(ir.Load{Place: store.Place}), locals: map[int]bool{}, valid: !expressionHasEffects(store.Value)}
+			addPlaceExpressions(store.Place, func(expr ir.Expr) {
+				c.valid = c.valid && !expressionHasEffects(expr)
+				walkExpr(expr, func(expr ir.Expr) {
+					if load, ok := expr.(ir.Load); ok {
+						if dependency, local := localPlaceID(load.Place); local {
+							c.locals[dependency] = true
+						} else if _, memory := load.Place.(ir.MemoryPlace); memory {
+							c.memory = true
+						}
+					}
+				})
+			})
+			candidates[id] = c
+		}
+	}
+	for id := range candidates {
+		if counts[id] != 1 {
+			delete(candidates, id)
+		}
+	}
+	result := make([]map[int]bool, len(function.Blocks))
+	if len(candidates) == 0 {
+		return result
+	}
+	invalidate := func() {
+		for _, c := range candidates {
+			c.stable = false
+		}
+	}
+	for _, block := range function.Blocks {
+		read := func(expr ir.Expr) {
+			walkExpr(expr, func(expr ir.Expr) {
+				if load, ok := expr.(ir.Load); ok {
+					if id, local := localPlaceID(load.Place); local {
+						if c := candidates[id]; c != nil && (c.block != block.ID || !c.defined || !c.stable || c.address != exprKey(load)) {
+							c.valid = false
+						}
+					}
+				}
+			})
+		}
+		for _, instruction := range block.Instructions {
+			switch value := instruction.(type) {
+			case ir.Store:
+				if expressionHasEffects(value.Value) {
+					invalidate()
+				}
+				addPlaceExpressions(value.Place, func(expr ir.Expr) {
+					if expressionHasEffects(expr) {
+						invalidate()
+					}
+					read(expr)
+				})
+				read(value.Value)
+				id, local := localPlaceID(value.Place)
+				for _, c := range candidates {
+					if local && c.locals[id] || !local && c.memory {
+						c.stable = false
+					}
+				}
+				if c := candidates[id]; local && c != nil {
+					c.defined, c.stable = true, true
+				}
+			case ir.Eval:
+				call, ok := value.Value.(ir.RuntimeCall)
+				if !ok || argumentsHaveEffects(call.Args) {
+					invalidate()
+				}
+				read(value.Value)
+				// Logging observes its arguments but does not write memory.
+				// Effectful arguments already invalidate snapshots above; do not
+				// otherwise extend unrelated aggregate lifetimes across a log.
+				if expressionHasEffects(value.Value) && (!ok || call.Function != resource.RuntimeFunctionDebugLog) {
+					invalidate()
+				}
+			}
+		}
+		visitTerminator(block.Terminator, func(expr ir.Expr) {
+			if expressionHasEffects(expr) {
+				invalidate()
+			}
+			read(expr)
+		})
+	}
+	for _, c := range candidates {
+		if c.valid {
+			if result[c.block] == nil {
+				result[c.block] = map[int]bool{}
+			}
+			result[c.block][c.instruction] = true
+		}
+	}
+	return result
+}
+
+func localPlaceID(place ir.Place) (int, bool) {
+	switch place := place.(type) {
+	case ir.LocalPlace:
+		return place.ID, true
+	case ir.IndexedLocalPlace:
+		return place.ID, true
+	default:
+		return 0, false
+	}
+}
+
+// aggregateInitializations identifies the start of a complete fixed-slot
+// overwrite within one block. No value from the old aggregate can be read
+// between this start and completion. Partial or dynamic writes do not define
+// the whole aggregate, and initialization across CFG edges stays conservative.
+func aggregateInitializations(function *ir.Function, block *ir.Block) map[int]bool {
+	type candidate struct {
+		first, count int
+		written      bitSet
+	}
+	var starts map[int]bool
+	pending := map[int]*candidate{}
+	read := func(expr ir.Expr) {
+		walkExpr(expr, func(expr ir.Expr) {
+			if load, ok := expr.(ir.Load); ok {
+				switch place := load.Place.(type) {
+				case ir.LocalPlace:
+					delete(pending, place.ID)
+				case ir.IndexedLocalPlace:
+					delete(pending, place.ID)
+				}
+			}
+		})
+	}
+	for index, instruction := range block.Instructions {
+		switch value := instruction.(type) {
+		case ir.Store:
+			read(value.Value)
+			addPlaceExpressions(value.Place, read)
+			place, fixed := value.Place.(ir.LocalPlace)
+			if !fixed {
+				if indexed, ok := value.Place.(ir.IndexedLocalPlace); ok {
+					delete(pending, indexed.ID)
+				}
+				continue
+			}
+			width := function.Locals[place.ID].Slots
+			if width <= 1 {
+				continue
+			}
+			group := pending[place.ID]
+			if group == nil {
+				group = &candidate{first: index, written: newBitSet(width)}
+				pending[place.ID] = group
+			}
+			if !group.written.has(place.Offset) {
+				group.written.set(place.Offset)
+				group.count++
+			}
+			if group.count == width {
+				if starts == nil {
+					starts = map[int]bool{}
+				}
+				starts[group.first] = true
+				delete(pending, place.ID)
+			}
+		case ir.Eval:
+			read(value.Value)
+		}
+	}
+	return starts
 }
 
 // computeLiveness solves the backward dataflow equations without allocating a
