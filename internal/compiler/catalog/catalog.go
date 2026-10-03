@@ -112,7 +112,7 @@ var internalRuntimeSignatures = map[resource.RuntimeFunction]RuntimeSignature{
 	resource.RuntimeFunctionAnd:      {MinArgs: 0, MaxArgs: -1, ResultSlots: 1},
 	resource.RuntimeFunctionOr:       {MinArgs: 0, MaxArgs: -1, ResultSlots: 1},
 	resource.RuntimeFunctionIf:       {MinArgs: 3, MaxArgs: 3, ResultSlots: 1},
-	resource.RuntimeFunctionSubtract: {MinArgs: 2, MaxArgs: 2, ResultSlots: 1},
+	resource.RuntimeFunctionSubtract: {MinArgs: 0, MaxArgs: -1, ResultSlots: 1},
 }
 
 func (s Symbol) Key() string {

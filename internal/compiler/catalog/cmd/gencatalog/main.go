@@ -593,7 +593,7 @@ func internalSimulationSignature(name string) (minArgs, maxArgs, resultSlots int
 	case "If":
 		return 3, 3, 1
 	case "Subtract":
-		return 2, 2, 1
+		return 0, -1, 1
 	default:
 		return 0, 0, 0
 	}
