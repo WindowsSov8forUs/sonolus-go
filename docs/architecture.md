@@ -170,6 +170,8 @@ Backend 只依赖规范化 `frontend.Project` 和 final-form IR，不依赖 AST�
 5. 子节点优先写入、确定性去重并生成 EngineData node pool。
 6. 组装 archetype callback index/order 和模式静态资源。
 
+`Execute` 的最后一个参数决定返回值，不能通用地删除尾部常量零；这同时保护乘零表达式的结果与 `JumpLoop` 的分支选择。Tutorial 对多个 callback 分组装配时可能再次简化节点树，因此上述返回值契约也必须在重复简化后成立。
+
 源码显式声明 ROM、提供 fallback，或优化后的 callback IR 实际读取 ROM 时，backend 才生成 ROM。其最终布局固定为 NaN、`+Inf`、`-Inf` 三个 float32 前缀，之后连接用户 ROM；否则 `Artifacts.ROM` 为 nil，build 不写出 `EngineRom`。
 
 ## Artifacts 与输出
