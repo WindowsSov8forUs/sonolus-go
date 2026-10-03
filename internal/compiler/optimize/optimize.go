@@ -148,7 +148,7 @@ func NewOptimizer(level Level) *Optimizer {
 			SparseConditionalConstantPropagation{}, FlattenAssociativeOps{}, RemoveRedundantArguments{}, DeadCodeElimination{}, CoalesceFlow{},
 			RewriteToSwitch{}, InlineVars{Aggressive: true}, UnflattenAssociativeOps{}, LoopInvariantCodeMotion{}, CommonSubexpressionElimination{}, NormalizeBlocks{},
 			FlattenAssociativeOps{}, InlineVars{}, DeadCodeElimination{}, FlattenAssociativeOps{}, RemoveRedundantArguments{},
-			FromSSA{}, CoalesceFlow{}, CopyCoalesce{}, AdvancedDeadCodeElimination{}, CoalesceFlow{}, NormalizeSwitch{}, CombineExitBlocks{},
+			FromSSA{}, CoalesceFlow{}, AdvancedDeadCodeElimination{}, CopyCoalesce{}, AdvancedDeadCodeElimination{}, CoalesceFlow{}, InlineVars{}, AdvancedDeadCodeElimination{}, NormalizeSwitch{}, CombineExitBlocks{},
 			Allocate{}, RenumberBlocks{},
 		}
 	}

@@ -212,6 +212,9 @@ func (f *finalizer) terminator(terminator ir.Terminator, indexes map[int]int, ex
 		args = append(args, valueNode(indexes[terminator.Default]))
 		return call(resource.RuntimeFunctionSwitchWithDefault, args...), nil
 	case ir.Return:
+		if len(terminator.Value.Slots) == 0 {
+			return valueNode(exit), nil
+		}
 		result := snode(valueNode(0))
 		if len(terminator.Value.Slots) == 1 {
 			var err error

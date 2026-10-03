@@ -217,6 +217,194 @@ func TestCoalesceFlowMergesLinearButPreservesLoopAndJoin(t *testing.T) {
 	if branch.True != 1 || branch.False != 1 {
 		t.Fatalf("join branch = %#v", branch)
 	}
+	t.Run("empty-cycle", func(t *testing.T) {
+		fn := function(
+			&ir.Block{ID: 0, Terminator: ir.Jump{Target: 1}},
+			&ir.Block{ID: 1, Terminator: ir.Jump{Target: 2}},
+			&ir.Block{ID: 2, Terminator: ir.Jump{Target: 3}},
+			&ir.Block{ID: 3, Terminator: ir.Jump{Target: 2}},
+		)
+		if err := (CoalesceFlow{}).Run(Context{}, fn); err != nil {
+			t.Fatal(err)
+		}
+		if err := ir.Validate(fn); err != nil {
+			t.Fatal(err)
+		}
+		if len(fn.Blocks) != 2 || fn.Blocks[1].Terminator.(ir.Jump).Target != 1 {
+			t.Fatalf("empty cycle was not preserved: %#v", fn.Blocks)
+		}
+	})
+	t.Run("empty-backedge-chain", func(t *testing.T) {
+		fn := function(
+			&ir.Block{ID: 0, Terminator: ir.Jump{Target: 1}},
+			&ir.Block{ID: 1, Instructions: []ir.Instruction{ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{ir.Const{Value: 7}}, Result: voidType}}}, Terminator: ir.Branch{Condition: ir.Const{Value: 1}, True: 2, False: 4}},
+			&ir.Block{ID: 2, Terminator: ir.Jump{Target: 3}},
+			&ir.Block{ID: 3, Terminator: ir.Jump{Target: 1}},
+			returnVoid(4),
+		)
+		if err := (CoalesceFlow{}).Run(Context{}, fn); err != nil {
+			t.Fatal(err)
+		}
+		if err := ir.Validate(fn); err != nil {
+			t.Fatal(err)
+		}
+		if len(fn.Blocks) != 3 || len(fn.Blocks[1].Instructions) != 1 || fn.Blocks[1].Terminator.(ir.Branch).True != 1 {
+			t.Fatalf("backedge chain was not removed: %#v", fn.Blocks)
+		}
+	})
+	t.Run("phi-backedge", func(t *testing.T) {
+		initial, current, next := ir.SSAPlace{ID: 1}, ir.SSAPlace{ID: 2}, ir.SSAPlace{ID: 3}
+		fn := function(
+			&ir.Block{ID: 0, Instructions: []ir.Instruction{ir.Store{Place: initial, Value: ir.Const{}}}, Terminator: ir.Jump{Target: 1}},
+			&ir.Block{ID: 1, Phis: []ir.Phi{{Target: current, Local: ir.LocalPlace{ID: 0}, Args: []ir.PhiArg{{Predecessor: 0, Value: initial}, {Predecessor: 3, Value: next}}}}, Terminator: ir.Branch{Condition: ir.Load{Place: current}, True: 2, False: 4}},
+			&ir.Block{ID: 2, Instructions: []ir.Instruction{ir.Store{Place: next, Value: ir.Const{Value: 1}}}, Terminator: ir.Jump{Target: 3}},
+			&ir.Block{ID: 3, Terminator: ir.Jump{Target: 1}},
+			returnVoid(4),
+		)
+		fn.Locals = []ir.Type{numberType}
+		if err := (CoalesceFlow{}).Run(Context{}, fn); err != nil {
+			t.Fatal(err)
+		}
+		if err := ir.Validate(fn); err != nil {
+			t.Fatal(err)
+		}
+		if len(fn.Blocks) != 4 {
+			t.Fatalf("phi backedge identity changed: %#v", fn.Blocks)
+		}
+		predecessor := fn.Blocks[1].Phis[0].Args[1].Predecessor
+		if len(fn.Blocks[predecessor].Instructions) != 1 || fn.Blocks[predecessor].Instructions[0].(ir.Store).Place != next {
+			t.Fatal("Phi input no longer points to its merged defining predecessor")
+		}
+	})
+}
+
+func TestCoalesceFlowThreadsOnlyStableConditions(t *testing.T) {
+	for _, scenario := range []string{"pure", "effectful-condition", "intervening-write"} {
+		t.Run(scenario, func(t *testing.T) {
+			builder := ir.NewBuilder("thread-condition", voidType)
+			entry, nested, hit, miss, exit := builder.NewBlock(), builder.NewBlock(), builder.NewBlock(), builder.NewBlock(), builder.NewBlock()
+			_ = builder.SetEntry(entry)
+			_ = builder.SetCurrent(entry)
+			memory, err := builder.Memory("memory", ir.Const{}, 1, 0, true, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var condition ir.Expr = builder.RuntimeCall(resource.RuntimeFunctionLessOr, []ir.Expr{ir.Load{Place: memory}, ir.Const{}}, numberType, true, ir.SourcePos{})
+			if scenario == "effectful-condition" {
+				log := builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Const{Value: 7}}, numberType, false, ir.SourcePos{})
+				condition = builder.RuntimeCall(resource.RuntimeFunctionAdd, []ir.Expr{log, ir.Const{Value: 1}}, numberType, true, ir.SourcePos{})
+			}
+			_ = builder.Branch(condition, nested, exit)
+			_ = builder.SetCurrent(nested)
+			if scenario == "intervening-write" {
+				_ = builder.Store([]ir.Place{memory}, ir.Value{Type: numberType, Slots: []ir.Expr{ir.Const{Value: 1}}}, ir.SourcePos{})
+			}
+			_ = builder.Branch(condition, hit, miss)
+			for i, block := range []*ir.Block{hit, miss} {
+				_ = builder.SetCurrent(block)
+				_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Const{Value: float64(i + 1)}}, voidType, false, ir.SourcePos{}))
+				_ = builder.Jump(exit)
+			}
+			_ = builder.SetCurrent(exit)
+			_ = builder.Return(ir.Value{Type: voidType})
+			input, err := builder.Finish()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (CoalesceFlow{}).Run(Context{}, input); err != nil {
+				t.Fatal(err)
+			}
+			if err := ir.Validate(input); err != nil {
+				t.Fatal(err)
+			}
+			want := []float64{1}
+			if scenario == "effectful-condition" {
+				want = []float64{7, 7, 1}
+			} else if scenario == "intervening-write" {
+				want = []float64{2}
+			} else if len(input.Blocks) != 3 {
+				t.Fatalf("redundant condition retained: %d blocks", len(input.Blocks))
+			}
+			if got := executeCallValueCheckpoint(t, input); !reflect.DeepEqual(got, want) {
+				t.Fatalf("final node effects = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestCoalesceFlowPropagatesLogicalEdgeFacts(t *testing.T) {
+	for _, scenario := range []string{"false", "true-nonboolean", "shared", "write", "effect"} {
+		t.Run(scenario, func(t *testing.T) {
+			builder := ir.NewBuilder("edge-fact", voidType)
+			entry, body, exit := builder.NewBlock(), builder.NewBlock(), builder.NewBlock()
+			_ = builder.SetEntry(entry)
+			_ = builder.SetCurrent(entry)
+			memory, err := builder.Memory("memory", ir.Const{}, 1, 0, true, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value := 0.0
+			if scenario == "true-nonboolean" {
+				value = 7
+			}
+			_ = builder.Store([]ir.Place{memory}, ir.Value{Type: numberType, Slots: []ir.Expr{ir.Const{Value: value}}}, ir.SourcePos{})
+			condition := ir.Load{Place: memory}
+			if scenario == "shared" {
+				_ = builder.Branch(condition, body, body)
+			} else if value != 0 {
+				_ = builder.Branch(condition, body, exit)
+			} else {
+				_ = builder.Branch(condition, exit, body)
+			}
+			_ = builder.SetCurrent(body)
+			if scenario == "write" {
+				_ = builder.Store([]ir.Place{memory}, ir.Value{Type: numberType, Slots: []ir.Expr{ir.Const{Value: 1}}}, ir.SourcePos{})
+			}
+			var negation ir.Expr = builder.RuntimeCall(resource.RuntimeFunctionNot, []ir.Expr{condition}, numberType, true, ir.SourcePos{})
+			if scenario == "effect" {
+				log := builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Const{Value: 7}}, numberType, false, ir.SourcePos{})
+				negation = builder.RuntimeCall(resource.RuntimeFunctionAdd, []ir.Expr{log, negation}, numberType, true, ir.SourcePos{})
+			}
+			// Writing the result back to the condition's storage is safe only
+			// because all reads in this first RHS precede the write.
+			_ = builder.Store([]ir.Place{memory}, ir.Value{Type: numberType, Slots: []ir.Expr{negation}}, ir.SourcePos{})
+			_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Load{Place: memory}}, voidType, false, ir.SourcePos{}))
+			_ = builder.Jump(exit)
+			_ = builder.SetCurrent(exit)
+			_ = builder.Return(ir.Value{Type: voidType})
+			input, err := builder.Finish()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (CoalesceFlow{}).Run(Context{}, input); err != nil {
+				t.Fatal(err)
+			}
+			if err := ir.Validate(input); err != nil {
+				t.Fatal(err)
+			}
+			want := []float64{1}
+			if scenario == "true-nonboolean" || scenario == "write" {
+				want = []float64{0}
+			}
+			if scenario == "effect" {
+				want = []float64{7, 1}
+			}
+			if got := executeCallValueCheckpoint(t, input); !reflect.DeepEqual(got, want) {
+				t.Fatalf("final node effects = %v, want %v", got, want)
+			}
+			if scenario == "false" || scenario == "true-nonboolean" {
+				for _, block := range input.Blocks {
+					for _, instruction := range block.Instructions {
+						if store, ok := instruction.(ir.Store); ok {
+							if _, call := store.Value.(ir.RuntimeCall); call {
+								t.Fatal("logical edge fact was not propagated")
+							}
+						}
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestRemoveNoOpsPreservesEffects(t *testing.T) {

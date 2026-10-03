@@ -251,15 +251,7 @@
                     {
                       "args": [
                         {
-                          "args": [
-                            {
-                              "value": 1
-                            },
-                            {
-                              "value": 0
-                            }
-                          ],
-                          "func": "Break"
+                          "value": 4
                         }
                       ],
                       "func": "Execute"
@@ -454,15 +446,7 @@
                     "func": "Set"
                   },
                   {
-                    "args": [
-                      {
-                        "value": 1
-                      },
-                      {
-                        "value": 0
-                      }
-                    ],
-                    "func": "Break"
+                    "value": 1
                   }
                 ],
                 "func": "Execute"
@@ -499,15 +483,7 @@
                     "func": "DebugLog"
                   },
                   {
-                    "args": [
-                      {
-                        "value": 1
-                      },
-                      {
-                        "value": 0
-                      }
-                    ],
-                    "func": "Break"
+                    "value": 1
                   }
                 ],
                 "func": "Execute"
@@ -563,15 +539,7 @@
                     "func": "Paint"
                   },
                   {
-                    "args": [
-                      {
-                        "value": 1
-                      },
-                      {
-                        "value": 0
-                      }
-                    ],
-                    "func": "Break"
+                    "value": 1
                   }
                 ],
                 "func": "Execute"

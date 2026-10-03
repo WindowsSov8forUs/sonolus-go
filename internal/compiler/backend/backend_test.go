@@ -3,6 +3,7 @@ package backend
 import (
 	"encoding/binary"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/mode"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/simexec"
 )
 
 func TestCompileRejectsMisalignedROM(t *testing.T) {
@@ -224,5 +226,47 @@ func TestSNodeNormalizesArithmeticSwitch(t *testing.T) {
 	switchNode, ok := result.(functionNode)
 	if !ok || switchNode.function != resource.RuntimeFunctionSwitchInteger || len(switchNode.args) != 4 {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestSNodePaddedSwitchPreservesEvaluation(t *testing.T) {
+	for _, start := range []int{1, 2, 9, 1000, -2} {
+		for _, zeroDefault := range []bool{false, true} {
+			input := execute(call(resource.RuntimeFunctionDebugLog, valueNode(7)), call(resource.RuntimeFunctionGet, valueNode(4000), valueNode(0)))
+			fallback := execute(call(resource.RuntimeFunctionDebugLog, valueNode(90)), valueNode(90))
+			if zeroDefault {
+				fallback = valueNode(0)
+			}
+			args := []snode{input}
+			for i := range 3 {
+				args = append(args, valueNode(start+i), execute(call(resource.RuntimeFunctionDebugLog, valueNode(10+i)), valueNode(10+i)))
+			}
+			original := call(resource.RuntimeFunctionSwitchWithDefault, append(args, fallback)...)
+			optimized := simplify(original)
+			for _, value := range []float64{-3, -2, -1, math.Copysign(0, -1), 0, .5, math.Nextafter(1, 0), 1, 2, 3, 4, 5, 9, 10, 11, 1000, 1001, 1002, math.NaN(), math.Inf(1), math.Inf(-1)} {
+				var results []simexec.Result
+				for _, node := range []snode{original, optimized} {
+					appender := newNodeAppender()
+					root, err := appender.append(node)
+					if err != nil {
+						t.Fatal(err)
+					}
+					result, err := simexec.Execute(appender.nodes, root, simexec.Request{Memory: map[int][]float64{4000: {value}}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					results = append(results, result)
+				}
+				if results[0].Value != results[1].Value || !reflect.DeepEqual(results[0].Effects, results[1].Effects) {
+					t.Fatalf("start=%d zeroDefault=%v input=%g: semantic difference", start, zeroDefault, value)
+				}
+				if start > 0 && start <= 2 && results[1].Steps > results[0].Steps {
+					t.Fatalf("padded switch increased runtime cost: %d > %d", results[1].Steps, results[0].Steps)
+				}
+			}
+			if start >= 9 && len(optimized.(functionNode).args) > 5 {
+				t.Fatal("large prefix inflated switch table")
+			}
+		}
 	}
 }

@@ -220,6 +220,7 @@ func (FromSSA) Destroys() []Analysis {
 func (FromSSA) Run(_ Context, function *ir.Function) error {
 	splitPhiCriticalEdges(function)
 	mapping := map[int]ir.LocalPlace{}
+	constants := map[int]ir.Const{}
 	placeFor := func(ssa ir.SSAPlace) ir.LocalPlace {
 		if p, ok := mapping[ssa.ID]; ok {
 			return p
@@ -240,7 +241,10 @@ func (FromSSA) Run(_ Context, function *ir.Function) error {
 		for _, in := range block.Instructions {
 			if s, ok := in.(ir.Store); ok {
 				if p, ok := s.Place.(ir.SSAPlace); ok {
-					placeFor(p)
+					local := placeFor(p)
+					if value, ok := s.Value.(ir.Const); ok {
+						constants[local.ID] = value
+					}
 				}
 			}
 		}
@@ -287,7 +291,13 @@ func (FromSSA) Run(_ Context, function *ir.Function) error {
 				if temporary, exists := snapshots[move.source.ID]; exists {
 					move.source = temporary
 				}
-				pred.Instructions = append(pred.Instructions, ir.Store{Place: move.target, Value: ir.Load{Place: move.source}})
+				var value ir.Expr = ir.Load{Place: move.source}
+				if constant, ok := constants[move.source.ID]; ok {
+					// Materialize immutable constants on the selected edge. The
+					// original SSA store can then die without an entry-time copy.
+					value = constant
+				}
+				pred.Instructions = append(pred.Instructions, ir.Store{Place: move.target, Value: value})
 			}
 		}
 		block.Phis = nil

@@ -294,7 +294,8 @@ func (CopyCoalesce) Requires() []Analysis  { return []Analysis{AnalysisLiveness}
 func (CopyCoalesce) Preserves() []Analysis { return []Analysis{AnalysisLiveness} }
 func (CopyCoalesce) Destroys() []Analysis  { return nil }
 func (CopyCoalesce) Run(context Context, f *ir.Function) error {
-	interference := interferenceFor(context, f).clone()
+	interference := interferenceFor(context, f)
+	merged := false
 	parent := make([]int, len(f.Locals))
 	for i := range parent {
 		parent[i] = i
@@ -317,6 +318,10 @@ func (CopyCoalesce) Run(context Context, f *ir.Function) error {
 			}
 			a, b := find(target.ID), find(source.ID)
 			if a != b && !interference[a].has(b) {
+				if !merged {
+					interference = interference.clone()
+					merged = true
+				}
 				if b < a {
 					a, b = b, a
 				}
@@ -329,22 +334,32 @@ func (CopyCoalesce) Run(context Context, f *ir.Function) error {
 			}
 		}
 	}
-	representatives := map[int]int{}
+	if !merged {
+		return (RemoveNoOps{}).Run(Context{}, f)
+	}
+	representatives := make([]int, len(parent))
+	for id := range representatives {
+		representatives[id] = -1
+	}
 	locals := []ir.Type{}
 	for id := range parent {
 		rep := find(id)
-		if _, ok := representatives[rep]; !ok {
+		if representatives[rep] < 0 {
 			representatives[rep] = len(locals)
 			locals = append(locals, f.Locals[rep])
 		}
 	}
+	newIDs := make([]int, len(parent))
+	for id := range parent {
+		newIDs[id] = representatives[find(id)]
+	}
 	remap := func(place ir.Place) ir.Place {
 		switch value := place.(type) {
 		case ir.LocalPlace:
-			value.ID = representatives[find(value.ID)]
+			value.ID = newIDs[value.ID]
 			return value
 		case ir.IndexedLocalPlace:
-			value.ID = representatives[find(value.ID)]
+			value.ID = newIDs[value.ID]
 			return value
 		default:
 			return place
@@ -368,9 +383,14 @@ func (CopyCoalesce) Run(context Context, f *ir.Function) error {
 	f.Locals = locals
 	coalesced := newInterferenceGraph(len(locals))
 	for oldID := range interference {
-		left := representatives[find(oldID)]
+		left := newIDs[oldID]
 		interference[oldID].each(func(other int) {
-			right := representatives[find(other)]
+			// Each undirected edge is present twice. addInterference restores
+			// both directions after mapping its endpoints.
+			if other <= oldID {
+				return
+			}
+			right := newIDs[other]
 			if left != right {
 				addInterference(coalesced, left, right)
 			}
@@ -578,6 +598,9 @@ func dominates(dom *Dominance, ancestor, block int) bool {
 
 func naturalLoop(preds [][]int, header, latch int) map[int]bool {
 	result := map[int]bool{header: true, latch: true}
+	if header == latch {
+		return result
+	}
 	stack := []int{latch}
 	for len(stack) > 0 {
 		id := stack[len(stack)-1]

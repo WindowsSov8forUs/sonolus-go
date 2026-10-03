@@ -82,7 +82,10 @@ type RemoveUnreachable struct{}
 
 func (RemoveUnreachable) Name() string { return "RemoveUnreachable" }
 
-func (RemoveUnreachable) Run(_ Context, function *ir.Function) error {
+func (RemoveUnreachable) Run(context Context, function *ir.Function) error {
+	if err := (FoldConstantControl{}).Run(context, function); err != nil {
+		return err
+	}
 	return normalizeReachable(function)
 }
 
