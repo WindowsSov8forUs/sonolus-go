@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"go/types"
+	"maps"
 	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 
 	"golang.org/x/tools/go/packages"
 
@@ -20,6 +24,229 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/source"
 )
+
+func TestCallbackCacheIdentityIsolationAndPublication(t *testing.T) {
+	makeFunction := func(value float64) *ir.Function {
+		b := ir.NewBuilder("cached", ir.Type{Name: "void"})
+		block := b.NewBlock()
+		_ = b.SetEntry(block)
+		_ = b.SetCurrent(block)
+		if err := b.Eval(b.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Const{Value: value}}, ir.Type{Name: "void"}, false, ir.SourcePos{File: "engine.go", Line: 1})); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.Return(ir.Value{Type: ir.Type{Name: "void"}}); err != nil {
+			t.Fatal(err)
+		}
+		b.Function().Diagnostics = map[int]string{1: "one", 2: "two"}
+		return b.Function()
+	}
+	context := optimize.Context{Mode: mode.ModePlay, Callback: "preprocess"}
+	optimizer := optimize.NewOptimizer(optimize.LevelStandard)
+	cache := new(CallbackCache)
+	source := makeFunction(7)
+	seed := cache.begin(optimize.LevelStandard, RuntimeChecksNone)
+	result, err := seed.optimize(optimizer, context, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := optimize.CloneFunction(result)
+	result.Name = "mutated before commit"
+	result.Diagnostics[1] = "mutated"
+	seed.commit()
+	for round := range 2 {
+		session := cache.begin(0, RuntimeChecksNone)
+		got, err := session.optimize(optimizer, context, source)
+		if err != nil || session.hits != 1 || !reflect.DeepEqual(got, want) {
+			t.Fatalf("round %d: hits=%d error=%v result=%#v", round, session.hits, err, got)
+		}
+		got.Blocks[0].Instructions = nil
+		got.Diagnostics[1] = "changed"
+	}
+	for _, test := range []struct {
+		name    string
+		mutate  func(*ir.Function)
+		context optimize.Context
+		level   optimize.Level
+		checks  RuntimeChecks
+	}{
+		{name: "constant", mutate: func(f *ir.Function) {
+			e := f.Blocks[0].Instructions[0].(ir.Eval)
+			call := e.Value.(ir.RuntimeCall)
+			call.Args[0] = ir.Const{Value: 8}
+			e.Value = call
+			f.Blocks[0].Instructions[0] = e
+		}},
+		{name: "position", mutate: func(f *ir.Function) {
+			e := f.Blocks[0].Instructions[0].(ir.Eval)
+			call := e.Value.(ir.RuntimeCall)
+			call.Pos.Line++
+			e.Value = call
+			f.Blocks[0].Instructions[0] = e
+		}},
+		{name: "diagnostics", mutate: func(f *ir.Function) { f.Diagnostics[1] = "different" }},
+		{name: "mode", context: optimize.Context{Mode: mode.ModeWatch, Callback: "preprocess"}},
+		{name: "phase", context: optimize.Context{Mode: mode.ModePlay, Callback: "updateSequential"}},
+		{name: "optimization", level: optimize.LevelMinimal},
+		{name: "checks", checks: RuntimeChecksNotify},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fn := optimize.CloneFunction(source)
+			if test.mutate != nil {
+				test.mutate(fn)
+			}
+			ctx := test.context
+			if ctx.Mode == "" {
+				ctx = context
+			}
+			level := test.level
+			if level == 0 {
+				level = optimize.LevelStandard
+			}
+			session := cache.begin(level, test.checks)
+			if _, err := session.optimize(optimize.NewOptimizer(level), ctx, fn); err != nil {
+				t.Fatal(err)
+			}
+			if session.hits != 0 {
+				t.Fatal("changed identity reused stale IR")
+			}
+		})
+	}
+	t.Run("float bits", func(t *testing.T) {
+		cache := new(CallbackCache)
+		values := []float64{0, math.Copysign(0, -1), math.Inf(1), math.Inf(-1), math.Float64frombits(0x7ff8000000000001), math.Float64frombits(0x7ff8000000000002)}
+		session := cache.begin(0, RuntimeChecksNone)
+		for _, value := range values {
+			if _, err := session.optimize(optimizer, context, makeFunction(value)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		session.commit()
+		if len(cache.entries) != len(values) {
+			t.Fatalf("distinct float bit patterns collapsed: %d", len(cache.entries))
+		}
+		warm := cache.begin(0, RuntimeChecksNone)
+		for _, value := range values {
+			if _, err := warm.optimize(optimizer, context, makeFunction(value)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if warm.hits != len(values) {
+			t.Fatalf("float hits=%d", warm.hits)
+		}
+	})
+	t.Run("concurrent snapshots", func(t *testing.T) {
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				session := cache.begin(0, RuntimeChecksNone)
+				got, err := session.optimize(optimizer, context, source)
+				if err != nil || !reflect.DeepEqual(got, want) {
+					t.Errorf("concurrent result: %v", err)
+				}
+				session.commit()
+			}()
+		}
+		wg.Wait()
+	})
+	t.Run("failed candidate", func(t *testing.T) {
+		before := maps.Clone(cache.entries)
+		session := cache.begin(0, RuntimeChecksNone)
+		if _, err := session.optimize(optimizer, context, makeFunction(99)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.optimize(optimizer, context, nil); err == nil {
+			t.Fatal("invalid candidate succeeded")
+		}
+		if !reflect.DeepEqual(cache.entries, before) {
+			t.Fatal("failed candidate changed published cache")
+		}
+	})
+}
+
+func TestCallbackCacheRetentionAndCompilerReuse(t *testing.T) {
+	t.Run("retention", func(t *testing.T) {
+		cache := new(CallbackCache)
+		optimizer := optimize.NewOptimizer(optimize.LevelMinimal)
+		context := optimize.Context{Mode: mode.ModePlay, Callback: "preprocess"}
+		b := ir.NewBuilder("bounded", ir.Type{Name: "void"})
+		block := b.NewBlock()
+		_ = b.SetEntry(block)
+		_ = b.SetCurrent(block)
+		_ = b.Return(ir.Value{Type: ir.Type{Name: "void"}})
+		session := cache.begin(optimize.LevelMinimal, RuntimeChecksNone)
+		for i := range maxCallbackCacheEntries + 1 {
+			fn := optimize.CloneFunction(b.Function())
+			fn.Name = fmt.Sprint(i)
+			if _, err := session.optimize(optimizer, context, fn); err != nil {
+				t.Fatal(err)
+			}
+		}
+		session.commit()
+		if len(cache.entries) != maxCallbackCacheEntries {
+			t.Fatalf("entries=%d", len(cache.entries))
+		}
+		byteLimited := cache.begin(optimize.LevelMinimal, RuntimeChecksNone)
+		message := strings.Repeat("x", 1<<20)
+		for i := range 33 {
+			fn := optimize.CloneFunction(b.Function())
+			fn.Name = fmt.Sprint(i)
+			fn.Diagnostics = map[int]string{1: message}
+			if _, err := byteLimited.optimize(optimizer, context, fn); err != nil {
+				t.Fatal(err)
+			}
+		}
+		byteLimited.commit()
+		retained := 0
+		for _, entry := range cache.entries {
+			retained += entry.size
+		}
+		if len(cache.entries) == 0 || len(cache.entries) >= 33 || retained > maxCallbackCacheBytes {
+			t.Fatalf("byte limit: entries=%d bytes=%d", len(cache.entries), retained)
+		}
+		fn := optimize.CloneFunction(b.Function())
+		fn.Diagnostics = map[int]string{1: strings.Repeat("x", maxCallbackCacheBytes+1)}
+		oversize := cache.begin(optimize.LevelMinimal, RuntimeChecksNone)
+		if _, err := oversize.optimize(optimizer, context, fn); err != nil {
+			t.Fatal(err)
+		}
+		if len(oversize.pending) != 0 {
+			t.Fatal("oversized callback retained")
+		}
+		prune := cache.begin(optimize.LevelMinimal, RuntimeChecksNone)
+		if _, err := prune.optimize(optimizer, context, b.Function()); err != nil {
+			t.Fatal(err)
+		}
+		prune.commit()
+		if len(cache.entries) != 1 {
+			t.Fatalf("unused generation retained: %d", len(cache.entries))
+		}
+	})
+	t.Run("fresh compiler", func(t *testing.T) {
+		cache := new(CallbackCache)
+		cold := NewCompiler(Options{CallbackCache: cache}, "./testdata/callvalues")
+		want, err := cold.Compile(mode.ModePlay, mode.ModeWatch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		warm := NewCompiler(Options{CallbackCache: cache}, "./testdata/callvalues")
+		got, err := warm.Compile(mode.ModePlay, mode.ModeWatch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if warm.Stats().Cached || warm.Stats().CallbackCacheHits == 0 || !reflect.DeepEqual(got, want) {
+			t.Fatal("fresh compiler did not reuse equivalent callbacks")
+		}
+		before := maps.Clone(cache.entries)
+		if _, err := NewCompiler(Options{CallbackCache: cache}, "./testdata/invaliddefer").Compile(mode.ModePlay); err == nil {
+			t.Fatal("invalid engine succeeded")
+		}
+		if !reflect.DeepEqual(before, cache.entries) {
+			t.Fatal("failed compilation published cache")
+		}
+	})
+}
 
 func loadInto(t *testing.T, parser *frontend.Parser, m mode.Mode, pattern string) {
 	t.Helper()

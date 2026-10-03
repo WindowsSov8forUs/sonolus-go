@@ -19,6 +19,10 @@ type callbackOptimization struct {
 }
 
 func optimizeProject(optimizer *optimize.Optimizer, project *frontend.Project) (*frontend.Project, error) {
+	return optimizeProjectCached(optimizer, project, nil)
+}
+
+func optimizeProjectCached(optimizer *optimize.Optimizer, project *frontend.Project, cache *callbackCacheSession) (*frontend.Project, error) {
 	if err := optimizer.Validate(); err != nil {
 		return nil, fmt.Errorf("compiler: optimize project: %w", err)
 	}
@@ -72,7 +76,7 @@ func optimizeProject(optimizer *optimize.Optimizer, project *frontend.Project) (
 						job.err = fmt.Errorf("callback declaration is nil")
 						continue
 					}
-					function, err := optimizer.Optimize(optimize.Context{Mode: job.mode, Callback: job.callback.Name}, job.callback.IR)
+					function, err := cache.optimize(optimizer, optimize.Context{Mode: job.mode, Callback: job.callback.Name}, job.callback.IR)
 					if err != nil {
 						job.err = err
 						continue

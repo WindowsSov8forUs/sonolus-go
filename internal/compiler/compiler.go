@@ -23,6 +23,7 @@ type Options struct {
 	Optimization  optimize.Level
 	FallbackROM   []byte
 	RuntimeChecks RuntimeChecks
+	CallbackCache *CallbackCache
 }
 
 type RuntimeChecks = frontend.RuntimeChecks
@@ -42,6 +43,7 @@ type CompileStats struct {
 	Load, Frontend, Optimize, Backend, Total time.Duration
 	Modes                                    map[mode.Mode]ModeStats
 	Cached                                   bool
+	CallbackCacheHits                        int
 }
 
 type Artifacts = backend.Artifacts
@@ -58,10 +60,18 @@ type Compiler struct {
 	stats          CompileStats
 	files          []string
 	runtimeChecks  RuntimeChecks
+	callbackCache  *CallbackCache
+	optimization   optimize.Level
 }
 
 func NewCompiler(options Options, patterns ...string) *Compiler {
+	cache := options.CallbackCache
+	if cache == nil {
+		cache = new(CallbackCache)
+	}
 	return &Compiler{
+		callbackCache:  cache,
+		optimization:   options.Optimization,
 		optimizer:      optimize.NewOptimizer(options.Optimization),
 		fallbackROM:    append([]byte(nil), options.FallbackROM...),
 		runtimeChecks:  options.RuntimeChecks,
@@ -145,8 +155,10 @@ func (c *Compiler) Compile(requested ...mode.Mode) (*Artifacts, error) {
 		project.ROM = append([]byte(nil), c.fallbackROM...)
 	}
 	optimizeStarted := time.Now()
-	project, err = optimizeProject(c.optimizer, project)
+	cache := c.callbackCache.begin(c.optimization, c.runtimeChecks)
+	project, err = optimizeProjectCached(c.optimizer, project, cache)
 	stats.Optimize = time.Since(optimizeStarted)
+	stats.CallbackCacheHits = cache.hits
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +169,7 @@ func (c *Compiler) Compile(requested ...mode.Mode) (*Artifacts, error) {
 		return nil, err
 	}
 	c.packages = candidate
+	cache.commit()
 	c.result = cloneArtifacts(result)
 	c.files = sourceFiles(candidate)
 	return cloneArtifacts(result), nil

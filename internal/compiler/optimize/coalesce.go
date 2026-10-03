@@ -12,11 +12,11 @@ func (CoalesceFlow) Name() string { return "CoalesceFlow" }
 
 func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 	for {
-		predecessors := predecessorCounts(function)
 		cycles := cyclicBlocks(function)
 		changed := false
-
+		forward := make([]int, len(function.Blocks))
 		for _, block := range function.Blocks {
+			forward[block.ID] = block.ID
 			if block.ID == function.Entry || len(block.Phis) != 0 || len(block.Instructions) != 0 {
 				continue
 			}
@@ -24,44 +24,69 @@ func (CoalesceFlow) Run(_ Context, function *ir.Function) error {
 			if !ok || jump.Target == block.ID || len(function.Blocks[jump.Target].Phis) != 0 || cycles[block.ID] {
 				continue
 			}
-			replaceTarget(function, block.ID, jump.Target)
+			forward[block.ID] = jump.Target
 			changed = true
-			break
 		}
 		if changed {
+			// Eligible blocks are outside cycles. Compress all forwarding chains
+			// before rewriting edges, then normalize the graph once for the batch.
+			for id := range forward {
+				target := id
+				for forward[target] != target {
+					target = forward[target]
+				}
+				for current := id; forward[current] != target; {
+					next := forward[current]
+					forward[current] = target
+					current = next
+				}
+			}
+			for _, block := range function.Blocks {
+				terminator, err := remapTerminator(block.Terminator, forward)
+				if err != nil {
+					return err
+				}
+				block.Terminator = terminator
+			}
 			if err := normalizeReachable(function); err != nil {
 				return err
 			}
 			continue
 		}
-
+		predecessors := predecessorCounts(function)
+		removed := make([]bool, len(function.Blocks))
 		for _, block := range function.Blocks {
-			jump, ok := block.Terminator.(ir.Jump)
-			if !ok || jump.Target == block.ID || jump.Target == function.Entry || predecessors[jump.Target] != 1 || cycles[jump.Target] {
+			if removed[block.ID] {
 				continue
 			}
-			target := function.Blocks[jump.Target]
-			for _, phi := range target.Phis {
-				for _, arg := range phi.Args {
-					if arg.Predecessor == block.ID {
-						block.Instructions = append(block.Instructions, ir.Store{Place: phi.Target, Value: ir.Load{Place: arg.Value}})
-						break
-					}
+			for {
+				jump, ok := block.Terminator.(ir.Jump)
+				if !ok || jump.Target == block.ID || jump.Target == function.Entry || predecessors[jump.Target] != 1 || cycles[jump.Target] {
+					break
 				}
-			}
-			block.Instructions = append(block.Instructions, target.Instructions...)
-			block.Terminator = target.Terminator
-			forEachTerminatorTarget(block.Terminator, func(successor int) {
-				for i := range function.Blocks[successor].Phis {
-					for j := range function.Blocks[successor].Phis[i].Args {
-						if function.Blocks[successor].Phis[i].Args[j].Predecessor == target.ID {
-							function.Blocks[successor].Phis[i].Args[j].Predecessor = block.ID
+				target := function.Blocks[jump.Target]
+				for _, phi := range target.Phis {
+					for _, arg := range phi.Args {
+						if arg.Predecessor == block.ID {
+							block.Instructions = append(block.Instructions, ir.Store{Place: phi.Target, Value: ir.Load{Place: arg.Value}})
+							break
 						}
 					}
 				}
-			})
-			changed = true
-			break
+				block.Instructions = append(block.Instructions, target.Instructions...)
+				block.Terminator = target.Terminator
+				forEachTerminatorTarget(block.Terminator, func(successor int) {
+					for i := range function.Blocks[successor].Phis {
+						for j := range function.Blocks[successor].Phis[i].Args {
+							if function.Blocks[successor].Phis[i].Args[j].Predecessor == target.ID {
+								function.Blocks[successor].Phis[i].Args[j].Predecessor = block.ID
+							}
+						}
+					}
+				})
+				removed[target.ID] = true
+				changed = true
+			}
 		}
 		if !changed {
 			return nil

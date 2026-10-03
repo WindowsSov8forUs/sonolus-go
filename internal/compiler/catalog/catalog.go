@@ -77,39 +77,22 @@ func LookupRuntimeSimulation(runtime resource.RuntimeFunction) (RuntimeSimulatio
 }
 
 func MemoryReadonly(currentMode mode.Mode, callback, storage string) bool {
-	for _, recipes := range []map[string]memoryRecipe{memoryRecipes, uiMemoryRecipes} {
-		for key, recipe := range recipes {
-			if recipe.storage != storage || !recipe.write {
-				continue
+	for _, symbol := range memoryWriters[storage] {
+		modeAllowed := len(symbol.Modes) == 0
+		for _, candidate := range symbol.Modes {
+			if candidate == string(currentMode) {
+				modeAllowed = true
+				break
 			}
-			var symbol *Symbol
-			for index := range Symbols {
-				if Symbols[index].Key() == key {
-					symbol = &Symbols[index]
-					break
-				}
-			}
-			if symbol == nil {
-				continue
-			}
-			modeAllowed := len(symbol.Modes) == 0
-			for _, candidate := range symbol.Modes {
-				if candidate == string(currentMode) {
-					modeAllowed = true
-					break
-				}
-			}
-			if !modeAllowed {
-				continue
-			}
-			phaseAllowed := len(symbol.Phases) == 0
-			for _, phase := range symbol.Phases {
-				if phase == callback {
-					phaseAllowed = true
-					break
-				}
-			}
-			if phaseAllowed {
+		}
+		if !modeAllowed {
+			continue
+		}
+		if len(symbol.Phases) == 0 {
+			return false
+		}
+		for _, phase := range symbol.Phases {
+			if phase == callback {
 				return false
 			}
 		}
@@ -140,11 +123,19 @@ func (s Symbol) Key() string {
 }
 
 var byKey map[string]*Symbol
+var memoryWriters map[string][]*Symbol
 
 func init() {
 	byKey = make(map[string]*Symbol, len(Symbols))
+	memoryWriters = make(map[string][]*Symbol)
 	for i := range Symbols {
-		byKey[Symbols[i].Key()] = &Symbols[i]
+		key := Symbols[i].Key()
+		byKey[key] = &Symbols[i]
+		for _, recipes := range []map[string]memoryRecipe{memoryRecipes, uiMemoryRecipes} {
+			if recipe, ok := recipes[key]; ok && recipe.write {
+				memoryWriters[recipe.storage] = append(memoryWriters[recipe.storage], &Symbols[i])
+			}
+		}
 	}
 }
 
