@@ -361,6 +361,8 @@ Archetype receiver method 只有在名称与下表 callback 签名同时匹配�
 - `VarArray` 支持 checked/unchecked 读写与追加、查询、删除、交换、重排、正反向 values/items iterator、稳定排序、原子 `Extend`、稳定 min/max；`ArrayMap` 与 `ArraySet` 支持容量查询，map 还提供 key/value/item iterator。容器变量、参数、helper 返回值与 callback-local 普通 struct 字段可在有限 runtime 分支中选择不同 backing/capacity；descriptor 按值快照，mutation 继续作用于被选中的原 backing。包含 container 字段的局部 struct 支持 pointer receiver、整值复制、嵌套 struct、值参数与 helper 返回。零槽可比较 element/key 也合法，容器只保留 size 与必要的非零槽 backing。
 - `SortLinkedEntities` 与 `SortDoublyLinkedEntities` 使用稳定 bottom-up merge sort，仅重排链接。链表输入必须无环。
 
+`VarArray.SortFunc` 按静态 capacity 选择算法：不超过 16 时使用插入排序，更大时使用原地稳定归并。归并通过二分切分和区间旋转完成，最坏比较次数为 O(n log n)、元素移动为 O(n log² n)，辅助索引栈为 O(log capacity)，不分配完整元素副本数组。比较器应给出严格弱序；等价元素保留原顺序，比较调用次数与调用顺序不作为 API 契约。
+
 静态 variadic 参数只允许 `len/cap`、索引、`range` 和向另一个 variadic helper 静态转发。
 
 明确拒绝：

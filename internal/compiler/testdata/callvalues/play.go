@@ -7,9 +7,21 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
 
+type LargeSort struct {
+	play.Archetype
+	Count      float64 `archetype:"imported,name=count"`
+	Pattern    float64 `archetype:"imported,name=pattern"`
+	Descending float64 `archetype:"imported,name=descending"`
+	Persistent float64 `archetype:"imported,name=persistent"`
+}
+
 type Identity struct{ play.Archetype }
 
 func (*Identity) Preprocess() { identityValues() }
+
+func (p *LargeSort) Preprocess() {
+	sortCollection(int(p.Count), int(p.Pattern), int(p.Descending), p.Persistent != 0)
+}
 
 type Parameter struct {
 	play.Archetype

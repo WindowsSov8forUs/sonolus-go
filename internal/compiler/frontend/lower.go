@@ -6152,6 +6152,9 @@ func (l *lowerer) sortContainerValue(n *ast.CallExpr, receiver lowerValue, compa
 		return lowerValue{}
 	}
 	c := receiver.container
+	if c.capacity > 16 {
+		return l.mergeSortContainerValue(n, receiver, comparator)
+	}
 	index := l.allocZeroed("container.sort.index", types.Typ[types.Int], n)
 	cursor := l.allocZeroed("container.sort.cursor", types.Typ[types.Int], n)
 	l.store(index, lowerValue{type_: types.Typ[types.Int], slots: []ir.Expr{ir.Const{Value: 1}}}, n)
