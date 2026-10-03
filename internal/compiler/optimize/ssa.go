@@ -246,11 +246,48 @@ func (FromSSA) Run(_ Context, function *ir.Function) error {
 		}
 	}
 	for _, block := range function.Blocks {
+		type copyPair struct{ target, source ir.LocalPlace }
+		copies := map[int][]copyPair{}
+		var predecessors []int
 		for _, phi := range block.Phis {
 			target := placeFor(phi.Target)
 			for _, arg := range phi.Args {
-				pred := function.Blocks[arg.Predecessor]
-				pred.Instructions = append(pred.Instructions, ir.Store{Place: target, Value: ir.Load{Place: placeFor(arg.Value)}})
+				source := placeFor(arg.Value)
+				if target.ID == source.ID {
+					continue
+				}
+				if _, exists := copies[arg.Predecessor]; !exists {
+					predecessors = append(predecessors, arg.Predecessor)
+				}
+				copies[arg.Predecessor] = append(copies[arg.Predecessor], copyPair{target, source})
+			}
+		}
+		sort.Ints(predecessors)
+		for _, id := range predecessors {
+			pred := function.Blocks[id]
+			moves := copies[id]
+			sources := map[int]bool{}
+			for _, move := range moves {
+				sources[move.source.ID] = true
+			}
+			// Phi assignments on an edge are simultaneous. Save old values
+			// of destinations that are also sources, then redirect every read
+			// of those values before writing any destination.
+			snapshots := map[int]ir.LocalPlace{}
+			for _, move := range moves {
+				if !sources[move.target.ID] {
+					continue
+				}
+				temporary := ir.LocalPlace{ID: len(function.Locals), Name: "phi.copy"}
+				function.Locals = append(function.Locals, ir.Type{Name: "phi.copy", Slots: 1})
+				pred.Instructions = append(pred.Instructions, ir.Store{Place: temporary, Value: ir.Load{Place: move.target}})
+				snapshots[move.target.ID] = temporary
+			}
+			for _, move := range moves {
+				if temporary, exists := snapshots[move.source.ID]; exists {
+					move.source = temporary
+				}
+				pred.Instructions = append(pred.Instructions, ir.Store{Place: move.target, Value: ir.Load{Place: move.source}})
 			}
 		}
 		block.Phis = nil
