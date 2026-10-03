@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
@@ -23,6 +24,106 @@ import (
 )
 
 var updateReferenceGolden = flag.Bool("update-reference", false, "update checked-in compiler reference golden")
+
+func TestLargeContainerSortPreservesStableOrder(t *testing.T) {
+	temporary := make([]float64, 4096)
+	for i := range temporary {
+		temporary[i] = float64(i + 17)
+	}
+	for _, options := range []Options{
+		{Optimization: optimize.LevelMinimal},
+		{Optimization: optimize.LevelFast},
+		{Optimization: optimize.LevelStandard},
+		{Optimization: optimize.LevelStandard, RuntimeChecks: RuntimeChecksNotify},
+	} {
+		name := options.Optimization.String()
+		if options.RuntimeChecks == RuntimeChecksNotify {
+			name += "-notify"
+		}
+		t.Run(name, func(t *testing.T) {
+			artifacts, err := NewCompiler(options, "./testdata/callvalues").Compile(mode.ModePlay, mode.ModeWatch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, m := range []mode.Mode{mode.ModePlay, mode.ModeWatch} {
+				var nodes []resource.EngineDataNode
+				root := -1
+				if m == mode.ModePlay {
+					nodes = artifacts.Play.Nodes
+					for _, a := range artifacts.Play.Archetypes {
+						if a.Name == "LargeSort" {
+							root = a.Preprocess.Index
+						}
+					}
+				} else {
+					nodes = artifacts.Watch.Nodes
+					for _, a := range artifacts.Watch.Archetypes {
+						if a.Name == "LargeSort" {
+							root = a.Preprocess.Index
+						}
+					}
+				}
+				if root < 0 {
+					t.Fatal("missing LargeSort")
+				}
+				for _, count := range []int{0, 1, 2, 3, 16, 17, 31, 64, 129, 257} {
+					for pattern := range 5 {
+						for descending := range 2 {
+							for persistent := range 2 {
+								t.Run(fmt.Sprintf("%s/n%d/p%d/d%d/storage%d", m, count, pattern, descending, persistent), func(t *testing.T) {
+									want := make([][2]int, count)
+									for i := range want {
+										key := (i*37 + 11) % 17
+										switch pattern {
+										case 0:
+											key = count - i
+										case 1:
+											key = i
+										case 2:
+											key = i % 5
+										case 4:
+											key = 1
+										}
+										want[i] = [2]int{key, i}
+									}
+									slices.SortStableFunc(want, func(a, b [2]int) int {
+										if descending != 0 {
+											return b[0] - a[0]
+										}
+										return a[0] - b[0]
+									})
+									result, err := simexec.Execute(nodes, root, simexec.Request{Memory: map[int][]float64{4001: {float64(count), float64(pattern), float64(descending), float64(persistent)}, 10000: temporary}, StepLimit: 10_000_000})
+									if err != nil {
+										t.Fatal(err)
+									}
+									if len(result.Effects) != 2*count+1 {
+										t.Fatalf("effects: got %d, want %d", len(result.Effects), 2*count+1)
+									}
+									for i, item := range want {
+										for j, value := range item {
+											effect := result.Effects[2*i+j]
+											if effect.Function != resource.RuntimeFunctionDebugLog || len(effect.Arguments) != 1 || effect.Arguments[0] != float64(value) {
+												t.Fatalf("item %d slot %d: got %v want %d", i, j, effect, value)
+											}
+										}
+									}
+									comparisons := result.Effects[2*count].Arguments[0]
+									if count == 257 && pattern == 0 && descending == 0 && persistent == 0 {
+										t.Logf("comparisons=%g runtime node steps=%d", comparisons, result.Steps)
+									}
+									bound := 8 * float64(count) * math.Ceil(math.Log2(float64(max(2, count))))
+									if comparisons > bound {
+										t.Fatalf("comparisons %g exceed n log n envelope %g", comparisons, bound)
+									}
+								})
+							}
+						}
+					}
+				}
+			}
+		})
+	}
+}
 
 type referenceSnapshot struct {
 	PythonCommit  string         `json:"pythonCommit"`

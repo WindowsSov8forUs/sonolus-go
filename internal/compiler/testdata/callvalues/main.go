@@ -1,6 +1,11 @@
 package main
 
-import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/native"
+import (
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/native"
+)
+
+type sortItem struct{ Key, Order int }
 
 type identityReader interface{ Read() int }
 type identityCounter struct{ Value int }
@@ -35,6 +40,48 @@ func identityValues() {
 	native.DebugLog(float64(value.Read()))
 }
 func mutateReader(value identityReader) { value.(*identityCounter).Value++ }
+
+type sortMemory struct {
+	sonolus.LevelMemoryResource
+	Values sonolus.VarArray[sortItem]
+}
+
+var SortMemory = sortMemory{Values: sonolus.NewVarArray[sortItem](257)}
+
+func sortCollection(count, pattern, descending int, persistent bool) {
+	values := sonolus.NewVarArray[sortItem](257)
+	if persistent {
+		values = SortMemory.Values
+	}
+	values.Clear()
+	for i := 0; i < count; i++ {
+		key := (i*37 + 11) % 17
+		switch pattern {
+		case 0:
+			key = count - i
+		case 1:
+			key = i
+		case 2:
+			key = i % 5
+		case 4:
+			key = 1
+		}
+		values.Append(sortItem{Key: key, Order: i})
+	}
+	comparisons := 0
+	values.SortFunc(func(a, b sortItem) bool {
+		comparisons++
+		if descending != 0 {
+			return a.Key > b.Key
+		}
+		return a.Key < b.Key
+	})
+	for value := range values.Values() {
+		native.DebugLog(float64(value.Key))
+		native.DebugLog(float64(value.Order))
+	}
+	native.DebugLog(float64(comparisons))
+}
 
 type Vec2 struct{ X, Y float64 }
 type Touch struct {
