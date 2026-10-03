@@ -4,11 +4,43 @@ The optimizer pipeline follows `sonolus.py` commit `1040bc0`:
 
 - `MINIMAL_PASSES`: `CoalesceFlow`, unreachable-code elimination, and basic allocation.
 - `FAST_PASSES`: `CoalesceFlow`, unreachable-code elimination, `TryAllocateBasic`, and final flow coalescing. Fast never enters SSA.
-- `STANDARD_PASSES`: the pass order in `sonolus/backend/optimize/optimize.py`, including SSA construction/destruction, SCCP, DCE, inlining, associative simplification, switch rewriting, LICM, CSE, copy coalescing, and liveness allocation.
+- `STANDARD_PASSES`: based on the pass order in `sonolus/backend/optimize/optimize.py`, including SSA construction/destruction, SCCP, DCE, inlining, associative simplification, switch rewriting, LICM, CSE, copy coalescing, and liveness allocation. Go additionally runs advanced dead-code elimination before copy coalescing: its interference graph includes writes to dead locals, unlike Py's live-set-only copy graph. The existing cleanup after copy coalescing removes newly dead copies.
 
-The Go IR represents CFG edges and Phi arguments explicitly, so CFG passes also update predecessor IDs and split critical Phi edges before SSA destruction. Mode-specific memory has already been normalized by the frontend catalog; `NormalizeBlocks` therefore normalizes CFG order rather than coercing Python `BlockPlace` values.
+The Go IR represents CFG edges and Phi arguments explicitly, so CFG passes also update predecessor IDs and split critical Phi edges before SSA destruction. Phi copies preserve simultaneous assignment by saving old destination values used by other copies before any destination is overwritten. Mode-specific memory has already been normalized by the frontend catalog; `NormalizeBlocks` therefore normalizes CFG order rather than coercing Python `BlockPlace` values.
+
+CoalesceFlow merges unique-predecessor successors within loops while preserving
+entry and self-edge boundaries and repairing Phi predecessors. Unreachable-code
+elimination folds constant control first in every tier. Degenerate branches and
+empty switches retain effectful discriminants through a void Execute.
+Empty successors reuse an already evaluated pure condition. A unique incoming
+branch edge can also resolve logical negation in the successor's first pure
+assignment, before any write invalidates the observation. Shared targets, Phi
+edges and effectful expressions remain boundaries; numeric values are not
+replaced with Boolean values. These rewrites invalidate cached liveness.
+Ordinary DCE traces temporary definitions and Phi inputs from observable roots,
+so unobserved Phi cycles do not retain their own definitions.
 
 Temporary Memory allocation is owned by this package. Minimal allocates locals sequentially, Fast falls back to conservative liveness reuse when sequential allocation exceeds 4096 slots, and Standard uses deterministic size-first first-fit coloring of the local interference graph. Backend finalization only accepts allocated final-form IR.
+
+Liveness recognizes complete fixed-slot aggregate overwrites within a block.
+A partial or dynamic single store also starts a lifetime when every read follows
+it in the same block at the identical address, with unchanged index dependencies
+and no intervening memory-changing effect. Standalone DebugLog does not invalidate
+the index snapshot, but effects inside its arguments still do. Other partial
+writes do not kill the old aggregate. Fast retries first-fit on the same graph
+only when its cheap placement exceeds 4096 slots, without entering SSA.
+Advanced DCE invalidates
+the cached interference graph after removing writes. Its backward worklist
+propagates demand only through retained instructions, eliminating cross-block
+dead chains and unobserved value cycles in one invocation. Normal inlining preserves
+loop-invariant computation outside loops and budgets repeated expressions against
+temporary Set/Get costs. Immutable SSA copy chains, including Phi inputs, are
+resolved before use counting; mutable local and memory snapshots are not aliases.
+Inlining expands newly inserted definitions transitively, caches expansions per
+callback, and rechecks the budget against the expanded expression. Phi destruction
+materializes constant SSA inputs directly on their selected predecessor edges.
+After SSA destruction and flow coalescing, another bounded InlineVars and ADCE
+pair removes snapshots whose repeated condition use has just disappeared.
 
 Backend SNode peephole rules follow `sonolus.js-compiler` commit `37b0eee`, `src/snode/optimize`. They run bottom-up after IR finalization and preserve evaluation of eliminated dynamic arithmetic arguments with `Execute`.
 

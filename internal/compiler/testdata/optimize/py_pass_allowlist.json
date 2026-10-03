@@ -461,7 +461,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/0/instructions/1/place/offset",
     "Go": "1",
     "Python": "2",
-    "Reason": "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
+    "Reason": "Go and Py assign different physical slots to loop temporaries; the final node trees and fixed-input execution compare their uses and observable state"
   },
   {
     "Case": "loop_memory",
@@ -485,7 +485,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/1/instructions/0/place/offset",
     "Go": "2",
     "Python": "0",
-    "Reason": "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
+    "Reason": "Go and Py assign different physical slots to loop temporaries; the final node trees and fixed-input execution compare their uses and observable state"
   },
   {
     "Case": "loop_memory",
@@ -501,7 +501,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/1/instructions/1/place/offset",
     "Go": "0",
     "Python": "1",
-    "Reason": "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
+    "Reason": "Go and Py assign different physical slots to loop temporaries; the final node trees and fixed-input execution compare their uses and observable state"
   },
   {
     "Case": "loop_memory",
@@ -509,7 +509,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/1/instructions/1/value/arguments/0/place/offset",
     "Go": "0",
     "Python": "2",
-    "Reason": "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
+    "Reason": "Go and Py assign different physical slots to loop temporaries; the final node trees and fixed-input execution compare their uses and observable state"
   },
   {
     "Case": "loop_memory",
@@ -525,7 +525,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/1/instructions/2/place/offset",
     "Go": "1",
     "Python": "2",
-    "Reason": "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
+    "Reason": "Go and Py assign different physical slots to loop temporaries; the final node trees and fixed-input execution compare their uses and observable state"
   },
   {
     "Case": "loop_memory",
@@ -821,7 +821,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/0/instructions/length",
     "Go": "2",
     "Python": "1",
-    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+    "Reason": "Go retains hoisted readonly expressions in the self-loop preheader, changing instruction layout and physical slots; final execution verifies identical semantic memory and effects"
   },
   {
     "Case": "readonly_cse_loop",
@@ -829,7 +829,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/0/terminator/edges/length",
     "Go": "1",
     "Python": "2",
-    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+    "Reason": "Go retains hoisted readonly expressions in the self-loop preheader, changing instruction layout and physical slots; final execution verifies identical semantic memory and effects"
   },
   {
     "Case": "readonly_cse_loop",
@@ -837,7 +837,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/0/terminator/value/kind",
     "Go": "\"const\"",
     "Python": "\"call\"",
-    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+    "Reason": "Go retains hoisted readonly expressions in the self-loop preheader, changing instruction layout and physical slots; final execution verifies identical semantic memory and effects"
   },
   {
     "Case": "readonly_cse_loop",
@@ -845,7 +845,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/1/instructions/length",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+    "Reason": "Go retains hoisted readonly expressions in the self-loop preheader, changing instruction layout and physical slots; final execution verifies identical semantic memory and effects"
   },
   {
     "Case": "readonly_cse_loop",
@@ -853,7 +853,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/1/terminator/value/arguments/0/place/offset",
     "Go": "1",
     "Python": "0",
-    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+    "Reason": "Go retains hoisted readonly expressions in the self-loop preheader, changing instruction layout and physical slots; final execution verifies identical semantic memory and effects"
   },
   {
     "Case": "switch_chain",
@@ -949,7 +949,7 @@
     "Path": "/pipelineCases/diamond_memory/nodes",
     "Go": "Block(JumpLoop(Execute(If(Greater(Get(#2000,#0),#5),#2,#1)),Execute(Set(#2000,#1,#2),#3),Execute(Set(#2000,#1,#1),#3),#0))",
     "Python": "Block(JumpLoop(Execute(If(Greater(Get(#2000,#0),#5),#1,#2)),Execute(Set(#2000,#1,#1),#3),Execute(Set(#2000,#1,#2),#3),#0))",
-    "Reason": "Go materializes the runtime discriminant and orders equivalent CFG exits differently; the fixed execution matrix covers every branch"
+    "Reason": "Go and Py order equivalent CFG exits differently; both read the discriminant directly and the fixed execution matrix covers every branch"
   },
   {
     "Case": "loop_memory",
@@ -957,7 +957,7 @@
     "Path": "/pipelineCases/loop_memory/nodes",
     "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#1,#0),#1),Execute(Set(#10000,#2,Get(#2000,#0)),SetAdd(#10000,#0,Get(#10000,#2)),SetAdd(#10000,#1,#1),If(Less(Get(#10000,#1),#10),#1,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),#3),#0))",
     "Python": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#2,#0),If(Less(#0,#10),#1,#2)),Execute(Set(#10000,#0,Add(Get(#10000,#0),Get(#2000,#0))),Set(#10000,#1,Add(Get(#10000,#2),#1)),Set(#10000,#2,Get(#10000,#1)),If(Less(Get(#10000,#1),#10),#1,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),#3),#0))",
-    "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
+    "Reason": "Go and Py retain different loop temporaries and increment expressions; fixed inputs compare semantic memory and effects"
   },
   {
     "Case": "readonly_cse_loop",
@@ -965,7 +965,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/nodes",
     "Go": "Block(JumpLoop(Execute(Set(#10000,#0,Add(#2,Get(#3000,#0),Get(#3000,#0))),Set(#10000,#1,#0),#1),Execute(Set(#2000,#1,Get(#10000,#0)),SetAdd(#10000,#1,#1),If(Less(Get(#10000,#1),#3),#1,#2)),Execute(#3),#0))",
     "Python": "Block(JumpLoop(Execute(Set(#10000,#1,#0),If(Less(#0,#3),#1,#2)),Execute(Set(#2000,#1,Add(Get(#3000,#0),#1,Add(Get(#3000,#0),#1))),Set(#10000,#0,Add(Get(#10000,#1),#1)),Set(#10000,#1,Get(#10000,#0)),If(Less(Get(#10000,#0),#3),#1,#2)),Execute(#3),#0))",
-    "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
+    "Reason": "Go hoists readonly expressions into the self-loop preheader while Py inlines runtime constants into the body; fixed inputs compare semantic memory and effects"
   },
   {
     "Case": "switch_chain",
@@ -973,6 +973,6 @@
     "Path": "/pipelineCases/switch_chain/nodes",
     "Go": "Block(JumpLoop(Execute(SwitchIntegerWithDefault(Get(#2000,#0),#3,#2,#1,#3)),Execute(Set(#2000,#1,#20),#4),Execute(Set(#2000,#1,#10),#4),Execute(Set(#2000,#1,#30),#4),#0))",
     "Python": "Block(JumpLoop(Execute(SwitchIntegerWithDefault(Subtract(Get(#2000,#0),#1),#3,#2,#1)),Execute(Set(#2000,#1,#30),#4),Execute(Set(#2000,#1,#20),#4),Execute(Set(#2000,#1,#10),#4),#0))",
-    "Reason": "Go materializes the runtime discriminant and orders equivalent CFG exits differently; the fixed execution matrix covers every branch"
+    "Reason": "Go pads the small positive switch prefix with the default exit to remove index subtraction; exit order also differs, and fixed inputs compare final memory and effects"
   }
 ]

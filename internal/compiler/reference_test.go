@@ -14,6 +14,7 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-core-go/core/resource"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/backend"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/frontend"
+	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/ir"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/optimize"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/compiler/testdata/freezeaddress/model"
 	"github.com/WindowsSov8forUs/sonolus-go/v2/internal/simexec"
@@ -597,13 +598,164 @@ func executeRoot(mode executableMode, root int, seed float64) (executionResult, 
 	return executionResult{Value: math.Float64bits(result.Value), Memory: memory, Effects: effects}, nil
 }
 
+func TestOptimizationTierCapacityAndRuntime(t *testing.T) {
+	levels := []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard}
+	t.Run("capacity", func(t *testing.T) {
+		scalarEvents := make([]int, 0, 8194)
+		for id := 1; id <= 4097; id++ {
+			scalarEvents = append(scalarEvents, id, -id)
+		}
+		for _, tc := range []struct {
+			name       string
+			width      int
+			events     []int  // positive stores, negative reads; IDs are one-based
+			wantSlots  [3]int // -1 requires rejection; -2 permits conservative rejection or improved allocation
+			initialize bool
+		}{
+			{"exact-limit", 2048, []int{1, 2, -1, -2}, [3]int{4096, 4096, 4096}, false},
+			{"scalar-reuse", 1, scalarEvents, [3]int{-1, 1, 1}, false},
+			{"aggregate-reuse-single-store", 2048, []int{1, -1, 2, -2, 3, -3}, [3]int{-1, 2048, 2048}, false},
+			{"aggregate-chain", 2048, []int{1, 2, -1, 3, -2, -3}, [3]int{-1, 4096, 4096}, false},
+			{"live-overflow", 2049, []int{1, 2, -1, -2}, [3]int{-1, -1, -1}, false},
+			{"initialized-aggregate-reuse", 2048, []int{1, -1, 2, -2, 3, -3}, [3]int{-1, 2048, 2048}, true},
+			{"initialized-aggregate-live-overflow", 2049, []int{1, 2, -1, -2}, [3]int{-1, -1, -1}, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				builder := ir.NewBuilder(tc.name, ir.Type{})
+				entry := builder.NewBlock()
+				_ = builder.SetEntry(entry)
+				_ = builder.SetCurrent(entry)
+				input, err := builder.Memory("memory", ir.Const{}, 1, 0, true, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				places := map[int]ir.Place{}
+				var want []float64
+				for _, event := range tc.events {
+					if event > 0 {
+						local := builder.NewLocal(fmt.Sprintf("array%d", event), ir.Type{Name: "array", Slots: tc.width})
+						if tc.initialize {
+							values := make([]ir.Expr, tc.width)
+							for index := range values {
+								values[index] = ir.Const{Value: float64(event * 10)}
+							}
+							if err := builder.Store(ir.Places(local), ir.Value{Type: local.Type, Slots: values}, ir.SourcePos{}); err != nil {
+								t.Fatal(err)
+							}
+						}
+						var place ir.Place = local.Slots[0].(ir.Load).Place
+						if tc.width > 1 {
+							place, err = builder.IndexedLocal(place.(ir.LocalPlace), ir.Load{Place: input}, tc.width, 1, 0)
+							if err != nil {
+								t.Fatal(err)
+							}
+						}
+						places[event] = place
+						if err := builder.Store([]ir.Place{place}, ir.Value{Type: ir.Type{Name: "number", Slots: 1}, Slots: []ir.Expr{ir.Const{Value: float64(event * 10)}}}, ir.SourcePos{}); err != nil {
+							t.Fatal(err)
+						}
+					} else {
+						want = append(want, float64(-event*10))
+						if err := builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{ir.Load{Place: places[-event]}}, ir.Type{}, false, ir.SourcePos{})); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				_ = builder.Return(ir.Value{Type: ir.Type{}})
+				fn, err := builder.Finish()
+				if err != nil {
+					t.Fatal(err)
+				}
+				for index, level := range levels {
+					t.Run(level.String(), func(t *testing.T) {
+						optimized, err := optimize.NewOptimizer(level).Optimize(optimize.Context{Mode: mode.ModePlay, Callback: "preprocess"}, fn)
+						if tc.wantSlots[index] == -1 || tc.wantSlots[index] == -2 && err != nil {
+							if err == nil || !strings.Contains(err.Error(), "4096") {
+								t.Fatalf("expected capacity rejection, got %v", err)
+							}
+							t.Logf("capacity rejection: %v", err)
+							return
+						}
+						if err != nil {
+							t.Fatal(err)
+						}
+						slots := 0
+						for _, local := range optimized.Locals {
+							slots += local.Slots
+						}
+						if slots > optimize.TemporaryMemorySlots || tc.wantSlots[index] >= 0 && slots != tc.wantSlots[index] {
+							t.Fatalf("slots=%d want=%d", slots, tc.wantSlots[index])
+						}
+						project := &frontend.Project{Modes: map[mode.Mode]*frontend.ModeDeclarations{mode.ModePlay: {Mode: mode.ModePlay, Archetypes: []*frontend.ArchetypeDeclaration{{Name: "Capacity", Callbacks: []*frontend.CallbackDeclaration{{Name: "preprocess", IR: optimized}}}}}}}
+						artifacts, err := backend.Compile(project)
+						if err != nil {
+							t.Fatal(err)
+						}
+						seeds := []float64{0}
+						if tc.width > 1 {
+							seeds = append(seeds, 1, float64(tc.width-1))
+						}
+						for _, seed := range seeds {
+							result, err := simexec.Execute(artifacts.Play.Nodes, artifacts.Play.Archetypes[0].Preprocess.Index, simexec.Request{Memory: map[int][]float64{4000: {seed}}, StepLimit: 100000})
+							if err != nil {
+								t.Fatal(err)
+							}
+							var got []float64
+							for _, effect := range result.Effects {
+								got = append(got, effect.Arguments...)
+							}
+							if !reflect.DeepEqual(got, want) {
+								t.Fatalf("seed=%g got=%v want=%v", seed, got, want)
+							}
+							t.Logf("slots=%d nodes=%d seed=%g steps=%d", slots, len(artifacts.Play.Nodes), seed, result.Steps)
+						}
+					})
+				}
+			})
+		}
+	})
+	t.Run("dynamic-loop", func(t *testing.T) {
+		for _, level := range levels {
+			t.Run(level.String(), func(t *testing.T) {
+				artifacts, err := NewCompiler(Options{Optimization: level}, "./testdata/fuzzsemantics").Compile(mode.ModePlay)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, n := range []int{-1, 0, 1, 8, 32, 127} {
+					seed := float64(n)
+					result, err := simexec.Execute(artifacts.Play.Nodes, artifacts.Play.Archetypes[0].Preprocess.Index, simexec.Request{DefaultMemory: &seed, StepLimit: 100000})
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := 9.0
+					if n > 0 {
+						want = 11 + float64(n*(n-1))/2
+					}
+					if len(result.Effects) != 1 || result.Effects[0].Function != resource.RuntimeFunctionDebugLog || !reflect.DeepEqual(result.Effects[0].Arguments, []float64{want}) {
+						t.Fatalf("n=%d effects=%v want=%g", n, result.Effects, want)
+					}
+					// The pinned Py pipeline executes this same input CFG in 4566
+					// steps. Guard this measured loop regression, not a universal
+					// ordering of the three optimization levels.
+					if level == optimize.LevelStandard && n == 127 && result.Steps > 4566 {
+						t.Fatalf("loop cost regressed: %d steps exceeds pinned Py budget 4566", result.Steps)
+					}
+					t.Logf("n=%d nodes=%d steps=%d", n, len(artifacts.Play.Nodes), result.Steps)
+				}
+			})
+		}
+	})
+}
+
 func BenchmarkCompileAll(b *testing.B) {
 	corpora := []struct {
 		name    string
 		pattern string
+		modes   []mode.Mode
 	}{
-		{name: "reference", pattern: "./testdata/reference"},
-		{name: "godori", pattern: "../../godori"},
+		{name: "reference", pattern: "./testdata/reference", modes: orderedModes},
+		{name: "callvalues-playwatch", pattern: "./testdata/callvalues", modes: []mode.Mode{mode.ModePlay, mode.ModeWatch}},
+		{name: "godori", pattern: "../../godori", modes: orderedModes},
 	}
 	levels := []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard}
 	for _, corpus := range corpora {
@@ -612,11 +764,17 @@ func BenchmarkCompileAll(b *testing.B) {
 				var nodes int
 				b.ResetTimer()
 				for range b.N {
-					artifacts, err := NewCompiler(Options{Optimization: level}, corpus.pattern).CompileAll()
+					artifacts, err := NewCompiler(Options{Optimization: level}, corpus.pattern).Compile(corpus.modes...)
 					if err != nil {
 						b.Fatal(err)
 					}
-					nodes = len(artifacts.Play.Nodes) + len(artifacts.Watch.Nodes) + len(artifacts.Preview.Nodes) + len(artifacts.Tutorial.Nodes)
+					nodes = len(artifacts.Play.Nodes) + len(artifacts.Watch.Nodes)
+					if artifacts.Preview != nil {
+						nodes += len(artifacts.Preview.Nodes)
+					}
+					if artifacts.Tutorial != nil {
+						nodes += len(artifacts.Tutorial.Nodes)
+					}
 				}
 				b.ReportMetric(float64(nodes), "nodes/op")
 			})
@@ -666,14 +824,32 @@ func BenchmarkCompilerStages(b *testing.B) {
 				}
 			})
 			project := parse()
-			b.Run("optimize", func(b *testing.B) {
-				optimizer := optimize.NewOptimizer(optimize.LevelStandard)
-				for range b.N {
-					if _, optimizeErr := optimizeProject(optimizer, project); optimizeErr != nil {
-						b.Fatal(optimizeErr)
+			for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+				b.Run("optimize/"+level.String(), func(b *testing.B) {
+					optimizer := optimize.NewOptimizer(level)
+					for range b.N {
+						result, optimizeErr := optimizeProject(optimizer, project)
+						if optimizeErr != nil {
+							b.Fatal(optimizeErr)
+						}
+						peak := 0
+						for _, declarations := range result.Modes {
+							callbacks := append([]*frontend.CallbackDeclaration(nil), declarations.Globals...)
+							for _, archetype := range declarations.Archetypes {
+								callbacks = append(callbacks, archetype.Callbacks...)
+							}
+							for _, callback := range callbacks {
+								slots := 0
+								for _, local := range callback.IR.Locals {
+									slots += local.Slots
+								}
+								peak = max(peak, slots)
+							}
+						}
+						b.ReportMetric(float64(peak), "peak-slots/op")
 					}
-				}
-			})
+				})
+			}
 			optimized, err := optimizeProject(optimize.NewOptimizer(optimize.LevelStandard), project)
 			if err != nil {
 				b.Fatal(err)

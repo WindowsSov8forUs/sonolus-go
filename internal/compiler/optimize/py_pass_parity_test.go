@@ -33,25 +33,27 @@ type pythonDifference struct {
 }
 
 func pythonDifferenceReason(difference pythonDifference) string {
-	if difference.Case == "readonly_cse_loop" && difference.Checkpoint == "allocate" {
-		return "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
-	}
 	if difference.Checkpoint == "standard" {
 		switch difference.Case {
 		case "allocation_4095", "allocation_4096":
 			return "Go removes the final temporary copy after allocation; the returned semantic-memory value and 4096-slot boundary are identical"
 		case "linear_constant", "diamond_constant":
 			return "Go folds constant control flow before backend emission; the fixed execution matrix verifies the same result and effects"
-		case "diamond_memory", "switch_chain":
-			return "Go materializes the runtime discriminant and orders equivalent CFG exits differently; the fixed execution matrix covers every branch"
-		case "loop_memory", "readonly_cse_loop":
-			return "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
-		case "impure_effect":
-			return "Go emits an explicit callback break after the impure effect; effect order and callback result are identical"
+		case "diamond_memory":
+			return "Go and Py order equivalent CFG exits differently; both read the discriminant directly and the fixed execution matrix covers every branch"
+		case "switch_chain":
+			return "Go pads the small positive switch prefix with the default exit to remove index subtraction; exit order also differs, and fixed inputs compare final memory and effects"
+		case "loop_memory":
+			return "Go and Py retain different loop temporaries and increment expressions; fixed inputs compare semantic memory and effects"
+		case "readonly_cse_loop":
+			return "Go hoists readonly expressions into the self-loop preheader while Py inlines runtime constants into the body; fixed inputs compare semantic memory and effects"
 		}
 	}
+	if difference.Case == "readonly_cse_loop" && difference.Checkpoint == "allocate" {
+		return "Go retains hoisted readonly expressions in the self-loop preheader, changing instruction layout and physical slots; final execution verifies identical semantic memory and effects"
+	}
 	if difference.Checkpoint == "allocate" && strings.HasSuffix(difference.Path, "/place/offset") {
-		return "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
+		return "Go and Py assign different physical slots to loop temporaries; the final node trees and fixed-input execution compare their uses and observable state"
 	}
 	if strings.Contains(difference.Path, "/version") {
 		return "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
@@ -837,6 +839,10 @@ func TestPinnedPythonFinalEngineDataSemantics(t *testing.T) {
 			}
 			if !reflect.DeepEqual(goResult.Memory[2000], pythonResult.Memory[2000]) || !reflect.DeepEqual(goResult.Effects, pythonResult.Effects) {
 				t.Fatalf("%s input %g semantic mismatch:\nGo: %+v\nPython: %+v", caseName, input, goResult, pythonResult)
+			}
+			t.Logf("%s input=%g Go steps=%d Py steps=%d", caseName, input, goResult.Steps, pythonResult.Steps)
+			if goResult.Steps > pythonResult.Steps {
+				t.Errorf("%s input %g runtime cost exceeds pinned Py: Go=%d Py=%d", caseName, input, goResult.Steps, pythonResult.Steps)
 			}
 		}
 	}
