@@ -78,6 +78,8 @@ Frontend 分为：
 
 可变的普通 runtime 值参数必须在内联函数体开始前按实例化后的类型建立并初始化 local；实参是常量不代表 Go 形参不可变。普通 helper、泛型和立即调用闭包使用相同规则，不可变参数继续保留常量专门化。CG-01 的旧实现直到首次赋值才建立存储，导致循环条件仍读取常量、循环体每轮重置初值，或未进入分支时读到未初始化的 local；这类错误必须在 frontend 修复，Minimal/Fast 不会自动恢复参数语义。
 
+可变性扫描包含嵌套闭包对自由变量的读写与取址；按 `go/types.Object` 区分内外层同名变量。被闭包修改的外层参数和 callable 在捕获前建立共享变量单元，不能在闭包首次写入时才替换其私有 binding。Interface 则遵循值传递：实参求值时冻结 tag 与 payload，形参绑定建立独立的 interface 单元；重绑形参不修改调用者变量，具体 pointer/entity payload 仍指向原对象。
+
 ## Catalog
 
 Catalog 是公开 Sonolus API 的唯一语义来源，记录：
@@ -169,6 +171,8 @@ Backend 只依赖规范化 `frontend.Project` 和 final-form IR，不依赖 AST�
 4. 自底向上执行 SNode peephole。
 5. 子节点优先写入、确定性去重并生成 EngineData node pool。
 6. 组装 archetype callback index/order 和模式静态资源。
+
+`Execute` 的最后一个参数决定返回值，不能通用地删除尾部常量零；这同时保护乘零表达式的结果与 `JumpLoop` 的分支选择。Tutorial 对多个 callback 分组装配时可能再次简化节点树，因此上述返回值契约也必须在重复简化后成立。
 
 源码显式声明 ROM、提供 fallback，或优化后的 callback IR 实际读取 ROM 时，backend 才生成 ROM。其最终布局固定为 NaN、`+Inf`、`-Inf` 三个 float32 前缀，之后连接用户 ROM；否则 `Artifacts.ROM` 为 nil，build 不写出 `EngineRom`。
 

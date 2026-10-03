@@ -7,6 +7,10 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/watch"
 )
 
+type Identity struct{ watch.Archetype }
+
+func (*Identity) Preprocess() { identityValues() }
+
 type Parameter struct {
 	watch.Archetype
 	Value float64 `archetype:"imported,name=Value"`

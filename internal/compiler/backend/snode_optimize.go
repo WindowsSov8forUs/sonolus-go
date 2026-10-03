@@ -56,17 +56,6 @@ func simplify(node snode) snode {
 				}
 			}
 		}
-	case resource.RuntimeFunctionExecute:
-		if len(args) > 0 && isValue(args[len(args)-1], 0) {
-			args = args[:len(args)-1]
-			if len(args) == 0 {
-				return valueNode(0)
-			}
-			if len(args) == 1 {
-				return args[0]
-			}
-			function.args = args
-		}
 	}
 	return function
 }

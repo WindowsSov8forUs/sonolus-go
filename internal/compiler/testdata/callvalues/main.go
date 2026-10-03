@@ -1,5 +1,41 @@
 package main
 
+import "github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/native"
+
+type identityReader interface{ Read() int }
+type identityCounter struct{ Value int }
+
+func (c *identityCounter) Read() int { return c.Value }
+func rebindReader(value identityReader) int {
+	value = &identityCounter{Value: 9}
+	return value.Read()
+}
+func readFirst(value identityReader, ignored int) int { return value.Read() }
+func capturedParameter(value int) int {
+	change := func() { value++ }
+	change()
+	return value
+}
+func capturedCallable() int {
+	value := func() int { return 1 }
+	change := func() { value = func() int { return 2 } }
+	change()
+	return value()
+}
+func identityValues() {
+	native.DebugLog(float64(capturedParameter(1)))
+	native.DebugLog(float64(capturedCallable()))
+	a, b := identityCounter{Value: 1}, identityCounter{Value: 2}
+	var value identityReader = &a
+	native.DebugLog(float64(readFirst(value, func() int { value = &b; return 0 }())))
+	native.DebugLog(float64(value.Read()))
+	native.DebugLog(float64(rebindReader(value)))
+	native.DebugLog(float64(value.Read()))
+	mutateReader(value)
+	native.DebugLog(float64(value.Read()))
+}
+func mutateReader(value identityReader) { value.(*identityCounter).Value++ }
+
 type Vec2 struct{ X, Y float64 }
 type Touch struct {
 	ID, X, Y float64

@@ -198,9 +198,12 @@ func TestOmitConstantCallback(t *testing.T) {
 func TestSNodeMultiplyZeroPreservesDynamicEvaluation(t *testing.T) {
 	dynamic := call(resource.RuntimeFunctionDebugLog, valueNode(1))
 	result := simplify(call(resource.RuntimeFunctionMultiply, valueNode(0), dynamic))
-	execute, ok := result.(functionNode)
-	if !ok || execute.function != resource.RuntimeFunctionExecute || len(execute.args) != 2 || !isValue(execute.args[1], 0) {
-		t.Fatalf("result = %#v", result)
+	for round := range 3 {
+		execute, ok := result.(functionNode)
+		if !ok || execute.function != resource.RuntimeFunctionExecute || len(execute.args) != 2 || !isValue(execute.args[1], 0) {
+			t.Fatalf("round %d: result = %#v", round, result)
+		}
+		result = simplify(result)
 	}
 }
 
