@@ -853,6 +853,34 @@ func TestFromSSAPreservesParallelPhiAssignments(t *testing.T) {
 	}
 }
 
+func TestFromSSAMaterializesConstantInputsOnSelectedEdges(t *testing.T) {
+	function := &ir.Function{Name: "phi-constants", Blocks: []*ir.Block{
+		{ID: 0, Instructions: []ir.Instruction{
+			ir.Store{Place: ir.SSAPlace{ID: 0}, Value: ir.Const{Value: 7}},
+			ir.Store{Place: ir.SSAPlace{ID: 1}, Value: ir.Const{Value: 9}},
+		}, Terminator: ir.Branch{Condition: ir.Load{Place: ir.MemoryPlace{Storage: "data", Index: ir.Const{}, Read: true}}, True: 1, False: 2}},
+		{ID: 1, Terminator: ir.Jump{Target: 3}},
+		{ID: 2, Terminator: ir.Jump{Target: 3}},
+		{ID: 3, Phis: []ir.Phi{{Target: ir.SSAPlace{ID: 2}, Args: []ir.PhiArg{
+			{Predecessor: 1, Value: ir.SSAPlace{ID: 0}}, {Predecessor: 2, Value: ir.SSAPlace{ID: 1}},
+		}}}, Instructions: []ir.Instruction{
+			ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{ir.Load{Place: ir.SSAPlace{ID: 2}}}}},
+		}, Terminator: ir.Return{}},
+	}}
+	if err := (FromSSA{}).Run(Context{}, function); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []float64{7, 9} {
+		store := function.Blocks[i+1].Instructions[0].(ir.Store)
+		if value, ok := store.Value.(ir.Const); !ok || value.Value != want {
+			t.Fatalf("edge %d still copies a temporary: %#v", i+1, store)
+		}
+	}
+	if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, []float64{7}) {
+		t.Fatalf("selected Phi value=%v, want 7", got)
+	}
+}
+
 func TestSSAConstructionAndCriticalEdgeDestruction(t *testing.T) {
 	number := ir.Type{Name: "number", Slots: 1}
 	fn := &ir.Function{
