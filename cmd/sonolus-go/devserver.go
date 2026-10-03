@@ -28,20 +28,21 @@ type devServerState struct {
 }
 
 type devServer struct {
-	mu       sync.RWMutex
-	patterns []string
-	name     string
-	fallback []byte
-	stats    bool
-	level    compiler.OptimizationLevel
-	checks   compiler.RuntimeChecks
-	watcher  *fsnotify.Watcher
-	watched  map[string]bool
-	state    devServerState
+	mu            sync.RWMutex
+	patterns      []string
+	name          string
+	fallback      []byte
+	stats         bool
+	level         compiler.OptimizationLevel
+	checks        compiler.RuntimeChecks
+	watcher       *fsnotify.Watcher
+	watched       map[string]bool
+	state         devServerState
+	callbackCache compiler.CallbackCache
 }
 
 func (s *devServer) recompile() error {
-	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: s.level, FallbackROM: s.fallback, RuntimeChecks: s.checks}, s.patterns...)
+	engineCompiler := compiler.NewCompiler(compiler.Options{Optimization: s.level, FallbackROM: s.fallback, RuntimeChecks: s.checks, CallbackCache: &s.callbackCache}, s.patterns...)
 	artifacts, err := engineCompiler.CompileAll()
 	if s.stats {
 		printCompileStats(engineCompiler.Stats())

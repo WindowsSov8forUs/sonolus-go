@@ -161,6 +161,8 @@ Optimizer 深拷贝每个 callback IR，并执行所选 pipeline。callback 使�
 
 Temporary Memory 上限为 4096 slots。allocation 将 virtual local 重写为物理 Temporary Memory layout；backend 拒绝残留 SSA、Phi 或未分配 local。
 
+`compiler.CallbackCache` 缓存优化后的独立 IR，可通过 `Options.CallbackCache` 在多个 Compiler 间共享；默认实例只在当前 Compiler 内复用。缓存身份包含模式、callback 阶段、优化等级、runtime-check 等级和完整 typed IR（含诊断编号、源码位置、layout、purity 与浮点位模式）。命中时深拷贝，不保存 AST、`go/types` 或 frontend declaration。优化及 backend 全部成功后原子发布新缓存代，只保留本次使用的条目；失败候选不写入共享缓存。每代最多 512 条，按编码后的 IR 总量限制为 32 MiB，此限额不是进程实际内存上限。`dev` 在各次新 Compiler 间共享该缓存，成功 handler 的原子替换契约保持不变；stats 单独报告 callback cache hits，与整份 artifacts 的 `Cached` 区分。
+
 ## Backend
 
 Backend 只依赖规范化 `frontend.Project` 和 final-form IR，不依赖 AST、`go/types` 或 packages。

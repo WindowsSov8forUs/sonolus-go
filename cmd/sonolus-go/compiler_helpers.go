@@ -34,4 +34,5 @@ func printCompileStats(stats compiler.CompileStats) {
 	fmt.Fprintf(os.Stderr, "  shared   load=%s frontend=%s optimize=%s backend=%s total=%s cached=%t\n",
 		stats.Load.Round(time.Millisecond), stats.Frontend.Round(time.Millisecond), stats.Optimize.Round(time.Millisecond),
 		stats.Backend.Round(time.Millisecond), stats.Total.Round(time.Millisecond), stats.Cached)
+	fmt.Fprintf(os.Stderr, "  callback cache hits=%d\n", stats.CallbackCacheHits)
 }
