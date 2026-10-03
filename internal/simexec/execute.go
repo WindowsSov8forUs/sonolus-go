@@ -304,13 +304,8 @@ func (e *executor) call(nodeIndex int, function resource.RuntimeFunction, indexe
 			return 0, signal, err
 		}
 		selected := len(indexes) - 1
-		integerValue, integerErr := integer("switch value", value)
-		if integerErr != nil {
-			return 0, nil, executionError(ExecutionErrorInvalidArgument, nodeIndex, function, 0, e.steps, "%v", integerErr)
-		}
-		candidate := integerValue + 1
-		if candidate >= 1 && candidate < len(indexes)-1 {
-			selected = candidate
+		if value >= 0 && value < float64(len(indexes)-2) && math.Trunc(value) == value {
+			selected = int(value) + 1
 		}
 		return eval(selected)
 	case "SwitchInteger":
@@ -318,13 +313,8 @@ func (e *executor) call(nodeIndex int, function resource.RuntimeFunction, indexe
 		if err != nil || signal != nil {
 			return 0, signal, err
 		}
-		integerValue, integerErr := integer("switch value", value)
-		if integerErr != nil {
-			return 0, nil, executionError(ExecutionErrorInvalidArgument, nodeIndex, function, 0, e.steps, "%v", integerErr)
-		}
-		candidate := integerValue + 1
-		if candidate >= 1 && candidate < len(indexes) {
-			return eval(candidate)
+		if value >= 0 && value < float64(len(indexes)-1) && math.Trunc(value) == value {
+			return eval(int(value) + 1)
 		}
 		return 0, nil, nil
 	case "Switch":

@@ -1345,6 +1345,30 @@ func TestSimulatorValidationAndJSNumbers(t *testing.T) {
 			t.Fatalf("Subtract(%v)=%g, err=%v, want %g", tc.values, result.Value, err, tc.want)
 		}
 	}
+	for _, function := range []resource.RuntimeFunction{resource.RuntimeFunctionSwitchInteger, resource.RuntimeFunctionSwitchIntegerWithDefault} {
+		for _, discriminant := range []float64{0, 1, 2, -1, 0.25, -0.25, math.NaN(), math.Inf(1), math.Inf(-1), 1e30} {
+			args := []int{0, 1, 2}
+			want := float64(0)
+			if function == resource.RuntimeFunctionSwitchIntegerWithDefault {
+				args = append(args, 3)
+				want = 30
+			}
+			if discriminant == 0 {
+				want = 10
+			} else if discriminant == 1 {
+				want = 20
+			}
+			nodes := []resource.EngineDataNode{
+				resource.EngineDataValueNode{Value: discriminant}, resource.EngineDataValueNode{Value: 10},
+				resource.EngineDataValueNode{Value: 20}, resource.EngineDataValueNode{Value: 30},
+				resource.EngineDataFunctionNode{Func: function, Args: args},
+			}
+			result, err := simexec.Execute(nodes, 4, simexec.Request{})
+			if err != nil || result.Value != want {
+				t.Fatalf("%s(%g)=%g, err=%v, want %g", function, discriminant, result.Value, err, want)
+			}
+		}
+	}
 	if err := simexec.ValidateStreams(map[int][]simexec.StreamEntry{1: {{Key: 1}, {Key: 1}}}); err == nil {
 		t.Fatal("duplicate stream key was accepted")
 	}
