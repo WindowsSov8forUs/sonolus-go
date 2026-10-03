@@ -78,6 +78,8 @@ Frontend 分为：
 
 可变的普通 runtime 值参数必须在内联函数体开始前按实例化后的类型建立并初始化 local；实参是常量不代表 Go 形参不可变。普通 helper、泛型和立即调用闭包使用相同规则，不可变参数继续保留常量专门化。CG-01 的旧实现直到首次赋值才建立存储，导致循环条件仍读取常量、循环体每轮重置初值，或未进入分支时读到未初始化的 local；这类错误必须在 frontend 修复，Minimal/Fast 不会自动恢复参数语义。
 
+可变性扫描包含嵌套闭包对自由变量的读写与取址；按 `go/types.Object` 区分内外层同名变量。被闭包修改的外层参数和 callable 在捕获前建立共享变量单元，不能在闭包首次写入时才替换其私有 binding。Interface 则遵循值传递：实参求值时冻结 tag 与 payload，形参绑定建立独立的 interface 单元；重绑形参不修改调用者变量，具体 pointer/entity payload 仍指向原对象。
+
 ## Catalog
 
 Catalog 是公开 Sonolus API 的唯一语义来源，记录：

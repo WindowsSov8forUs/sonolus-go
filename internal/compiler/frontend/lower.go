@@ -1405,8 +1405,6 @@ func (l *lowerer) prepareCallableMutability(frame *lowerFrame, body *ast.BlockSt
 	frame.mutableCallables = map[types.Object]bool{}
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch node := node.(type) {
-		case *ast.FuncLit:
-			return false
 		case *ast.AssignStmt:
 			if node.Tok != token.ASSIGN {
 				return true
@@ -1440,10 +1438,10 @@ func (l *lowerer) prepareValueParameterUsage(frame *lowerFrame, body *ast.BlockS
 			frame.mutableValues[object] = true
 		}
 	}
+	// Nested closures share captured variables. Object identities keep their own
+	// parameters and shadowed locals distinct from the enclosing frame's values.
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch node := node.(type) {
-		case *ast.FuncLit:
-			return false
 		case *ast.AssignStmt:
 			for _, target := range node.Lhs {
 				markMutable(target)
@@ -2872,6 +2870,12 @@ func (l *lowerer) rebind(obj types.Object, v lowerValue) {
 
 func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, node ast.Node) {
 	parameterType := l.resolveType(obj.Type())
+	if isInterfaceType(parameterType) {
+		// The parameter owns its interface cell, even when its concrete payload
+		// aliases an object also reachable through the caller's interface.
+		l.bind(obj, l.storeInterfaceValue(l.newInterfaceValue(name, parameterType, node), value, node))
+		return
+	}
 	if l.isAggregatePointerType(parameterType) && (isAggregatePointerValue(value) || value.nilPointer) {
 		value.type_ = parameterType
 		frame := l.frames[len(l.frames)-1]
@@ -2893,14 +2897,6 @@ func (l *lowerer) bindParameter(obj *types.Var, value lowerValue, name string, n
 	}
 	if value.entity != nil {
 		l.bind(obj, l.allocEntityView(name, value, node))
-		return
-	}
-	if _, interfaceType := types.Unalias(parameterType).Underlying().(*types.Interface); interfaceType {
-		if value.interface_ == nil {
-			value = l.storeInterfaceValue(l.newInterfaceValue(name, parameterType, node), value, node)
-		}
-		value.type_ = parameterType
-		l.bind(obj, value)
 		return
 	}
 	if value.callableArray != nil {
@@ -5285,6 +5281,10 @@ func (l *lowerer) builtinCall(n *ast.CallExpr, builtin *types.Builtin) lowerValu
 }
 
 func (l *lowerer) materialize(name string, value lowerValue, node ast.Node) lowerValue {
+	if value.interface_ != nil {
+		// Freeze the tag and payload before evaluating later arguments or RHSs.
+		return l.storeInterfaceValue(l.newInterfaceValue(name, value.type_, node), value, node)
+	}
 	if isContainerValue(value) || value.stream != nil || value.aggregate != nil || len(value.slots) == 0 {
 		return value
 	}

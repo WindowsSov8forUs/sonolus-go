@@ -235,6 +235,7 @@ func TestCallValuesPreserveGoSemantics(t *testing.T) {
 		}
 	}
 	wants := map[string][]float64{
+		"Identity":  {2, 2, 1, 2, 9, 2, 3},
 		"Parameter": {324}, "Return": {324}, "Direct": {324}, "Skipped": {1},
 		"Scalars":    append(append([]float64(nil), combined[:14]...), 8, 8, 8),
 		"Combined20": combined[:20], "Combined23": combined, "Elements": elements,
@@ -260,7 +261,7 @@ func TestCallValuesPreserveGoSemantics(t *testing.T) {
 							roots[string(archetype.Name)] = archetype.Preprocess.Index
 						}
 					}
-					for _, name := range []string{"Parameter", "Return", "Direct", "Skipped", "Scalars", "Combined20", "Combined23", "Elements"} {
+					for _, name := range []string{"Parameter", "Return", "Direct", "Skipped", "Scalars", "Combined20", "Combined23", "Elements", "Identity"} {
 						t.Run(string(current)+"/"+name, func(t *testing.T) {
 							root, ok := roots[name]
 							if !ok {

@@ -7,6 +7,10 @@ import (
 	"github.com/WindowsSov8forUs/sonolus-go/v2/sonolus/play"
 )
 
+type Identity struct{ play.Archetype }
+
+func (*Identity) Preprocess() { identityValues() }
+
 type Parameter struct {
 	play.Archetype
 	Value float64 `archetype:"imported,name=Value"`
