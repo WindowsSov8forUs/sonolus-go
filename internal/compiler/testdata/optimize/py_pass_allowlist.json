@@ -490,10 +490,42 @@
   {
     "Case": "loop_memory",
     "Checkpoint": "allocate",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/length",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/0/instructions/1/place/offset",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/0/terminator/edges/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/0/terminator/value/kind",
+    "Go": "\"const\"",
+    "Python": "\"call\"",
+    "Reason": "Go folds the loop entry condition one cleanup checkpoint earlier; subsequent checkpoints and fixed-input execution verify the same reachable edges"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/1/instructions/length",
     "Go": "4",
     "Python": "3",
-    "Reason": "Go and Py use different critical-edge and parallel-copy block shapes during FromSSA; Allocate and final execution verify equivalence"
+    "Reason": "Go retains a different set of explicit loop/copy temporaries at this checkpoint; final allocation and semantic execution verify equivalent observable state"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/allocate/blocks/1/terminator/value/arguments/0/place/offset",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go assigns different physical slots to equivalent loop temporaries; final execution verifies their observable uses"
   },
   {
     "Case": "readonly_cse_loop",
@@ -778,9 +810,57 @@
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "allocate",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/length",
-    "Go": "4",
-    "Python": "3",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/0/instructions/length",
+    "Go": "3",
+    "Python": "1",
+    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/0/terminator/edges/length",
+    "Go": "1",
+    "Python": "2",
+    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/0/terminator/value/kind",
+    "Go": "\"const\"",
+    "Python": "\"call\"",
+    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/1/instructions/0/value/kind",
+    "Go": "\"load\"",
+    "Python": "\"call\"",
+    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/1/instructions/1/place/offset",
+    "Go": "2",
+    "Python": "0",
+    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/1/instructions/2/value/place/offset",
+    "Go": "2",
+    "Python": "0",
+    "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "allocate",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/allocate/blocks/1/terminator/value/arguments/0/place/offset",
+    "Go": "2",
+    "Python": "0",
     "Reason": "Go hoists readonly expressions into the self-loop preheader; final execution verifies identical memory and effects"
   },
   {
@@ -915,7 +995,7 @@
     "Case": "loop_memory",
     "Checkpoint": "standard",
     "Path": "/pipelineCases/loop_memory/nodes",
-    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#1,#0),#1),Execute(Set(#10000,#2,Get(#2000,#0)),SetAdd(#10000,#0,Get(#10000,#2)),Set(#10000,#2,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#2)),If(Less(Get(#10000,#2),#10),#3,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),Break(#1,#0)),Execute(#1),#0))",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#1,#0),#1),Execute(Set(#10000,#2,Get(#2000,#0)),SetAdd(#10000,#0,Get(#10000,#2)),Set(#10000,#2,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#2)),If(Less(Get(#10000,#2),#10),#1,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),Break(#1,#0)),#0))",
     "Python": "Block(JumpLoop(Execute(Set(#10000,#0,#0),Set(#10000,#2,#0),If(Less(#0,#10),#1,#2)),Execute(Set(#10000,#0,Add(Get(#10000,#0),Get(#2000,#0))),Set(#10000,#1,Add(Get(#10000,#2),#1)),Set(#10000,#2,Get(#10000,#1)),If(Less(Get(#10000,#1),#10),#1,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),#3),#0))",
     "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
   },
@@ -923,7 +1003,7 @@
     "Case": "readonly_cse_loop",
     "Checkpoint": "standard",
     "Path": "/pipelineCases/readonly_cse_loop/nodes",
-    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,Add(#1,Get(#3000,#0))),SetAdd(#10000,#0,Get(#10000,#0)),Set(#10000,#1,#0),#1),Execute(Set(#2000,#1,Get(#10000,#0)),Set(#10000,#2,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#2)),If(Less(Get(#10000,#2),#3),#3,#2)),Execute(Break(#1,#0)),Execute(#1),#0))",
+    "Go": "Block(JumpLoop(Execute(Set(#10000,#0,Add(#1,Get(#3000,#0))),SetAdd(#10000,#0,Get(#10000,#0)),Set(#10000,#1,#0),#1),Execute(Set(#2000,#1,Get(#10000,#0)),Set(#10000,#2,Add(#1,Get(#10000,#1))),Set(#10000,#1,Get(#10000,#2)),If(Less(Get(#10000,#2),#3),#1,#2)),Execute(Break(#1,#0)),#0))",
     "Python": "Block(JumpLoop(Execute(Set(#10000,#1,#0),If(Less(#0,#3),#1,#2)),Execute(Set(#2000,#1,Add(Get(#3000,#0),#1,Add(Get(#3000,#0),#1))),Set(#10000,#0,Add(Get(#10000,#1),#1)),Set(#10000,#1,Get(#10000,#0)),If(Less(Get(#10000,#0),#3),#1,#2)),Execute(#3),#0))",
     "Reason": "Go emits an explicit loop state machine while Py retains a compact loop CFG; fixed inputs compare return value, semantic memory, and effects"
   },
