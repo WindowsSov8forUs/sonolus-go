@@ -76,8 +76,56 @@ func TestInlineVarsPreservesLocalWritesAndControlFlow(t *testing.T) {
 	}
 }
 
+func TestInlineVarsResolvesSSAAliasChainsOnPhiEdges(t *testing.T) {
+	number := ir.Type{Slots: 1}
+	load := func(id int) ir.Expr { return ir.Load{Place: ir.SSAPlace{ID: id}} }
+	function := &ir.Function{Name: "aliases", Locals: []ir.Type{number}, Blocks: []*ir.Block{
+		{ID: 0, Instructions: []ir.Instruction{
+			ir.Store{Place: ir.LocalPlace{ID: 0}, Value: ir.Const{Value: 7}},
+			ir.Store{Place: ir.SSAPlace{ID: 0}, Value: ir.Load{Place: ir.LocalPlace{ID: 0}}},
+			ir.Store{Place: ir.SSAPlace{ID: 1}, Value: load(0)},
+			ir.Store{Place: ir.SSAPlace{ID: 2}, Value: load(1)},
+			ir.Store{Place: ir.LocalPlace{ID: 0}, Value: ir.Const{Value: 99}},
+		}, Terminator: ir.Jump{Target: 1}},
+		{ID: 1, Phis: []ir.Phi{{Target: ir.SSAPlace{ID: 3}, Args: []ir.PhiArg{
+			{Predecessor: 0, Value: ir.SSAPlace{ID: 2}}, {Predecessor: 1, Value: ir.SSAPlace{ID: 5}},
+		}}}, Instructions: []ir.Instruction{
+			ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{load(3)}}},
+			ir.Store{Place: ir.SSAPlace{ID: 4}, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{load(3), ir.Const{Value: 1}}, Result: number, Pure: true}},
+			ir.Store{Place: ir.SSAPlace{ID: 5}, Value: load(4)},
+		}, Terminator: ir.Branch{Condition: ir.RuntimeCall{Function: resource.RuntimeFunctionLess, Args: []ir.Expr{load(4), ir.Const{Value: 9}}, Result: number, Pure: true}, True: 1, False: 2}},
+		{ID: 2, Terminator: ir.Return{}},
+	}}
+	for _, aggressive := range []bool{false, true} {
+		t.Run(fmt.Sprintf("aggressive=%t", aggressive), func(t *testing.T) {
+			candidate := CloneFunction(function)
+			if err := (InlineVars{Aggressive: aggressive}).Run(Context{}, candidate); err != nil {
+				t.Fatal(err)
+			}
+			if err := ir.Validate(candidate); err != nil {
+				t.Fatal(err)
+			}
+			args := candidate.Blocks[1].Phis[0].Args
+			if args[0].Value.ID != 0 || args[1].Value.ID != 4 {
+				t.Fatalf("unresolved Phi aliases: %+v", args)
+			}
+			if got := executeCallValueCheckpoint(t, candidate); !reflect.DeepEqual(got, []float64{7, 8}) {
+				t.Fatalf("snapshot or loop value changed: %v", got)
+			}
+		})
+	}
+}
+
 func TestInlineVarsCountsAddressReads(t *testing.T) {
 	index := ir.LocalPlace{ID: 0}
+	arguments := make([]ir.Expr, 10)
+	for i := range arguments {
+		arguments[i] = ir.Const{}
+	}
+	arguments[0] = ir.Const{Value: 1}
+	// A duplicated expression must cost more than storing it once and
+	// reading it twice, so omitting the address use changes this decision.
+	value := ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: arguments, Result: numberType, Pure: true}
 	for _, destination := range []ir.Place{
 		ir.IndexedLocalPlace{ID: 1, Index: ir.Load{Place: index}, Length: 2, Stride: 1},
 		ir.MemoryPlace{Storage: "LevelMemory", Index: ir.Load{Place: index}, Stride: 1, Write: true},
@@ -86,7 +134,7 @@ func TestInlineVarsCountsAddressReads(t *testing.T) {
 			t.Run(fmt.Sprintf("%T/aggressive=%t", destination, aggressive), func(t *testing.T) {
 				function := &ir.Function{Locals: []ir.Type{{Slots: 1}, {Slots: 2}}, Blocks: []*ir.Block{{
 					ID: 0, Instructions: []ir.Instruction{
-						ir.Store{Place: index, Value: ir.Const{Value: 1}},
+						ir.Store{Place: index, Value: value},
 						ir.Store{Place: destination, Value: ir.Const{Value: 7}},
 						ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{ir.Load{Place: index}}, Result: ir.Type{}}},
 					}, Terminator: ir.Return{Value: ir.Value{Type: ir.Type{}}},
@@ -95,14 +143,202 @@ func TestInlineVarsCountsAddressReads(t *testing.T) {
 					t.Fatal(err)
 				}
 				argument := function.Blocks[0].Instructions[2].(ir.Eval).Value.(ir.RuntimeCall).Args[0]
-				if _, constant := argument.(ir.Const); constant != aggressive {
-					t.Fatalf("two uses including the store address: constant=%t, aggressive=%t", constant, aggressive)
+				if _, inlined := argument.(ir.RuntimeCall); inlined != aggressive {
+					t.Fatalf("two uses including the store address: inlined=%t, aggressive=%t", inlined, aggressive)
 				}
 				if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, []float64{1}) {
 					t.Fatalf("logs=%v", got)
 				}
 			})
 		}
+	}
+}
+
+func TestInlineVarsPreservesMutableTerminatorEvaluation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		want   float64
+		inline bool
+	}{{"pure", 3, true}, {"effectful-operand", 11, false}, {"intervening-write", 2, false}, {"cheap-repeated", 6, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := ir.NewBuilder(tc.name, numberType)
+			entry := builder.NewBlock()
+			_ = builder.SetEntry(entry)
+			_ = builder.SetCurrent(entry)
+			memory, err := builder.Memory("LevelMemory", ir.Const{}, 1, 0, true, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			local := builder.NewLocal("value", numberType)
+			add := func(a, b ir.Expr) ir.Expr {
+				return builder.RuntimeCall(resource.RuntimeFunctionAdd, []ir.Expr{a, b}, numberType, true, ir.SourcePos{})
+			}
+			var value ir.Expr = ir.Load{Place: memory}
+			if tc.name == "cheap-repeated" {
+				value = add(ir.Const{Value: 1}, ir.Const{Value: 2})
+			}
+			if err := builder.Store(ir.Places(local), ir.Value{Type: numberType, Slots: []ir.Expr{value}}, ir.SourcePos{}); err != nil {
+				t.Fatal(err)
+			}
+			result := add(local.Slots[0], ir.Const{Value: 1})
+			switch tc.name {
+			case "effectful-operand":
+				write := builder.RuntimeCall(resource.RuntimeFunctionSet, []ir.Expr{ir.Const{Value: 2000}, ir.Const{}, ir.Const{Value: 9}}, numberType, false, ir.SourcePos{})
+				result = add(write, local.Slots[0])
+			case "intervening-write":
+				if err := builder.Store([]ir.Place{memory}, ir.Value{Type: numberType, Slots: []ir.Expr{ir.Const{Value: 9}}}, ir.SourcePos{}); err != nil {
+					t.Fatal(err)
+				}
+				result = local.Slots[0]
+			case "cheap-repeated":
+				result = add(local.Slots[0], local.Slots[0])
+			}
+			_ = builder.Return(ir.Value{Type: numberType, Slots: []ir.Expr{result}})
+			fn, err := builder.Finish()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (InlineVars{}).Run(Context{Mode: mode.ModePlay, Callback: "preprocess"}, fn); err != nil {
+				t.Fatal(err)
+			}
+			uses := newBitSet(1)
+			localUsesExprBitSet(fn.Blocks[0].Terminator.(ir.Return).Value.Slots[0], uses)
+			if uses.has(0) == tc.inline {
+				t.Fatalf("inline=%t want=%t", !uses.has(0), tc.inline)
+			}
+			if err := allocateLocals(fn, false, false); err != nil {
+				t.Fatal(err)
+			}
+			tree, _, err := parityBackendTree(fn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nodes, root, err := parseCanonicalTree(tree)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := simexec.Execute(nodes, root, simexec.Request{Memory: map[int][]float64{2000: {2}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Value != tc.want {
+				t.Fatalf("value=%g want=%g", got.Value, tc.want)
+			}
+		})
+	}
+}
+
+func TestInlineVarsExpandsNestedDefinitionsWithinBudget(t *testing.T) {
+	for _, repeated := range []bool{false, true} {
+		t.Run(fmt.Sprintf("repeated=%t", repeated), func(t *testing.T) {
+			number := ir.Type{Slots: 1}
+			arguments := make([]ir.Expr, 10)
+			for i := range arguments {
+				arguments[i] = ir.Const{Value: 1}
+			}
+			var result ir.Expr = ir.Load{Place: ir.SSAPlace{ID: 1}}
+			if repeated {
+				result = ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{result, result}, Result: number, Pure: true}
+			}
+			function := &ir.Function{Name: "nested-inlining", Blocks: []*ir.Block{{ID: 0, Instructions: []ir.Instruction{
+				ir.Store{Place: ir.SSAPlace{ID: 0}, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: arguments, Result: number, Pure: true}},
+				ir.Store{Place: ir.SSAPlace{ID: 1}, Value: ir.RuntimeCall{Function: resource.RuntimeFunctionMultiply, Args: []ir.Expr{ir.Load{Place: ir.SSAPlace{ID: 0}}, ir.Const{Value: 2}}, Result: number, Pure: true}},
+				ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{result}}},
+			}, Terminator: ir.Return{}}}}
+			if err := (InlineVars{}).Run(Context{}, function); err != nil {
+				t.Fatal(err)
+			}
+			retained := false
+			walkExpr(function.Blocks[0].Instructions[2].(ir.Eval).Value, func(expr ir.Expr) {
+				if _, ok := expr.(ir.Load); ok {
+					retained = true
+				}
+			})
+			if retained != repeated {
+				t.Fatalf("retained temporary=%t, repeated=%t", retained, repeated)
+			}
+			want := float64(20)
+			if repeated {
+				want = 40
+			}
+			if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, []float64{want}) {
+				t.Fatalf("nested result=%v, want %g", got, want)
+			}
+		})
+	}
+}
+
+func TestInlineVarsKeepsWorkOutsideLoops(t *testing.T) {
+	builder := ir.NewBuilder("loop-inlining", ir.Type{})
+	entry, loop, exit := builder.NewBlock(), builder.NewBlock(), builder.NewBlock()
+	_ = builder.SetEntry(entry)
+	_ = builder.SetCurrent(entry)
+	rom, err := builder.Memory("EngineRom", ir.Const{}, 1, 0, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter, err := builder.Memory("LevelMemory", ir.Const{}, 1, 0, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := builder.NewLocal("invariant", numberType)
+	add := func(a, b ir.Expr) ir.Expr {
+		return builder.RuntimeCall(resource.RuntimeFunctionAdd, []ir.Expr{a, b}, numberType, true, ir.SourcePos{})
+	}
+	store := func(place ir.Place, expr ir.Expr) {
+		if err := builder.Store([]ir.Place{place}, ir.Value{Type: numberType, Slots: []ir.Expr{expr}}, ir.SourcePos{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store(ir.Places(value)[0], add(ir.Load{Place: rom}, ir.Const{Value: 1}))
+	store(counter, ir.Const{})
+	_ = builder.Jump(loop)
+	_ = builder.SetCurrent(loop)
+	_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, value.Slots, ir.Type{}, false, ir.SourcePos{}))
+	store(counter, add(ir.Load{Place: counter}, ir.Const{Value: 1}))
+	condition := builder.RuntimeCall(resource.RuntimeFunctionLess, []ir.Expr{ir.Load{Place: counter}, ir.Const{Value: 16}}, numberType, true, ir.SourcePos{})
+	_ = builder.Branch(condition, loop, exit)
+	_ = builder.SetCurrent(exit)
+	_ = builder.Return(ir.Value{Type: ir.Type{}})
+	input, err := builder.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := make([]int, 2)
+	for i, aggressive := range []bool{false, true} {
+		optimizer := &Optimizer{level: LevelStandard, passes: []Pass{InlineVars{Aggressive: aggressive}, DeadCodeElimination{}, AllocateBasic{}}}
+		fn, err := optimizer.Optimize(Context{Mode: mode.ModePlay, Callback: "preprocess"}, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		argument := fn.Blocks[loop.ID].Instructions[0].(ir.Eval).Value.(ir.RuntimeCall).Args[0]
+		if _, inlined := argument.(ir.RuntimeCall); inlined != aggressive {
+			t.Fatalf("aggressive=%t inlined=%t", aggressive, inlined)
+		}
+		tree, _, err := parityBackendTree(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nodes, root, err := parseCanonicalTree(tree)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := simexec.Execute(nodes, root, simexec.Request{ROM: []byte{0, 0, 0xc0, 0x40}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Effects) != 16 || result.Memory[2000][0] != 16 {
+			t.Fatalf("loop result=%+v", result)
+		}
+		for _, effect := range result.Effects {
+			if !reflect.DeepEqual(effect.Arguments, []float64{7}) {
+				t.Fatalf("effect=%+v", effect)
+			}
+		}
+		steps[i] = result.Steps
+	}
+	if steps[0] >= steps[1] {
+		t.Fatalf("normal inline costs %d steps; aggressive costs %d", steps[0], steps[1])
 	}
 }
 

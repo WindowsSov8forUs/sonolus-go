@@ -840,6 +840,7 @@ func (p InlineVars) Name() string {
 	return "InlineVars"
 }
 func (p InlineVars) Run(context Context, f *ir.Function) error {
+	inlineSSAAliases(f)
 	type definition struct {
 		value              ir.Expr
 		block, instruction int
@@ -850,6 +851,25 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 	defCounts := map[temporaryPlaceKey]int{}
 	uses := map[temporaryPlaceKey]int{}
 	unsafeUses := map[temporaryPlaceKey]bool{}
+	crossBlock := map[temporaryPlaceKey]bool{}
+	crossLoop := map[temporaryPlaceKey]bool{}
+	loops := map[int]map[int]bool{}
+	if !p.Aggressive {
+		preds := predecessors(f)
+		for latch, block := range f.Blocks {
+			forEachTerminatorTarget(block.Terminator, func(header int) {
+				if !dominates(dom, header, latch) {
+					return
+				}
+				if loops[header] == nil {
+					loops[header] = map[int]bool{}
+				}
+				for id := range naturalLoop(preds, header, latch) {
+					loops[header][id] = true
+				}
+			})
+		}
+	}
 	for _, b := range f.Blocks {
 		for index, in := range b.Instructions {
 			if s, ok := in.(ir.Store); ok && isTemporaryPlace(s.Place) {
@@ -872,6 +892,14 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 					return
 				}
 				uses[key]++
+				if def, exists := defs[key]; exists && def.block != block.ID {
+					crossBlock[key] = true
+					for _, body := range loops {
+						if body[block.ID] && !body[def.block] {
+							crossLoop[key] = true
+						}
+					}
+				}
 				if place, local := load.Place.(ir.LocalPlace); local {
 					def, exists := defs[key]
 					// Indexed writes can redefine every slot of this local.
@@ -895,8 +923,32 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 		}
 		instructionIndex = len(block.Instructions)
 		visitTerminator(block.Terminator, visit)
+		for _, phi := range block.Phis {
+			for _, arg := range phi.Args {
+				key, _ := placeKey(arg.Value)
+				uses[key]++
+				// Phi inputs must stay in SSA places. Their definitions cannot
+				// be eliminated by expression substitution alone.
+				crossBlock[key] = true
+			}
+		}
 	}
-	rewriteFunctionExpressionsChanged(f, func(e ir.Expr) (ir.Expr, bool) {
+	// Budget the fully expanded expression as well as the original one:
+	// substituting a cheap wrapper must not duplicate an expensive dependency.
+	affordable := func(k temporaryPlaceKey, value ir.Expr) bool {
+		if p.Aggressive {
+			return true
+		}
+		cost := expressionCost(value)
+		// Keep LICM's work outside loops unless substitution costs no more
+		// than a temporary Get. Repeated same-block uses can inline when
+		// they cost at most one Set plus the original Gets.
+		return !(crossLoop[k] && cost > 3 || uses[k] != 1 && cost > 3 && (crossBlock[k] || uses[k] < 2 || cost*(uses[k]-1) > 3*(uses[k]+1)))
+	}
+	expanding := map[temporaryPlaceKey]bool{}
+	expanded := map[temporaryPlaceKey]ir.Expr{}
+	var inline func(ir.Expr) (ir.Expr, bool)
+	inline = func(e ir.Expr) (ir.Expr, bool) {
 		l, ok := e.(ir.Load)
 		if !ok {
 			return e, false
@@ -906,12 +958,110 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 			return e, false
 		}
 		v, ok := defs[k]
-		if !ok || defCounts[k] != 1 || unsafeUses[k] || !movableExpression(context, v.value) || (!p.Aggressive && uses[k] != 1) {
+		if !ok || defCounts[k] != 1 || unsafeUses[k] || expanding[k] {
 			return e, false
 		}
-		return cloneExpr(v.value), true
-	})
+		movable := movableExpression(context, v.value)
+		if !movable && uses[k] == 1 && !crossBlock[k] && v.instruction == len(f.Blocks[v.block].Instructions)-1 && !expressionHasEffects(v.value) {
+			// A single use in the immediately following pure terminator can
+			// read a mutable value directly: no intervening store or effect
+			// can change it. Never move this read across an effectful operand.
+			movable = true
+			visitTerminator(f.Blocks[v.block].Terminator, func(expr ir.Expr) {
+				if expressionHasEffects(expr) {
+					movable = false
+				}
+			})
+		}
+		if !movable {
+			return e, false
+		}
+		if !affordable(k, v.value) {
+			return e, false
+		}
+		replacement, cached := expanded[k]
+		if !cached {
+			expanding[k] = true
+			replacement, _ = rewriteExprChanged(v.value, inline)
+			delete(expanding, k)
+			expanded[k] = replacement
+		}
+		if !affordable(k, replacement) {
+			return e, false
+		}
+		// Later passes may mutate expression argument slices. Each use must
+		// own its tree even though expansion is cached within this callback.
+		return cloneExpr(replacement), true
+	}
+	rewriteFunctionExpressionsChanged(f, inline)
 	return nil
+}
+
+// SSA aliases are immutable snapshots. Resolve them before counting uses so
+// alias chains and Phi edges do not hide the actual number of consumers.
+// Local and memory loads deliberately remain outside this substitution.
+func inlineSSAAliases(f *ir.Function) {
+	aliases := map[ir.SSAPlace]ir.SSAPlace{}
+	for _, block := range f.Blocks {
+		for _, instruction := range block.Instructions {
+			store, ok := instruction.(ir.Store)
+			if !ok {
+				continue
+			}
+			target, ok := store.Place.(ir.SSAPlace)
+			if !ok {
+				continue
+			}
+			load, ok := store.Value.(ir.Load)
+			if !ok {
+				continue
+			}
+			if source, ok := load.Place.(ir.SSAPlace); ok {
+				aliases[target] = source
+			}
+		}
+	}
+	if len(aliases) == 0 {
+		return
+	}
+	resolve := func(place ir.SSAPlace) ir.SSAPlace {
+		root := place
+		for steps := 0; steps <= len(aliases); steps++ {
+			next, ok := aliases[root]
+			if !ok {
+				for place != root {
+					next := aliases[place]
+					aliases[place] = root
+					place = next
+				}
+				return root
+			}
+			root = next
+		}
+		// Valid SSA cannot contain a cycle of ordinary copy definitions.
+		// Leave malformed input unchanged for the validator to diagnose.
+		return place
+	}
+	rewriteFunctionExpressionsChanged(f, func(expr ir.Expr) (ir.Expr, bool) {
+		load, ok := expr.(ir.Load)
+		if !ok {
+			return expr, false
+		}
+		place, ok := load.Place.(ir.SSAPlace)
+		if !ok {
+			return expr, false
+		}
+		root := resolve(place)
+		return ir.Load{Place: root}, root != place
+	})
+	for _, block := range f.Blocks {
+		for i := range block.Phis {
+			for j := range block.Phis[i].Args {
+				arg := &block.Phis[i].Args[j]
+				arg.Value = resolve(arg.Value)
+			}
+		}
+	}
 }
 
 func movableExpression(context Context, expr ir.Expr) bool {
