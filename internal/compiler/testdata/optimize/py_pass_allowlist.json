@@ -971,7 +971,7 @@
     "Case": "switch_chain",
     "Checkpoint": "standard",
     "Path": "/pipelineCases/switch_chain/nodes",
-    "Go": "Block(JumpLoop(Execute(SwitchIntegerWithDefault(Subtract(Get(#2000,#0),#1),#2,#1,#3)),Execute(Set(#2000,#1,#20),#4),Execute(Set(#2000,#1,#10),#4),Execute(Set(#2000,#1,#30),#4),#0))",
+    "Go": "Block(JumpLoop(Execute(SwitchIntegerWithDefault(Get(#2000,#0),#3,#2,#1,#3)),Execute(Set(#2000,#1,#20),#4),Execute(Set(#2000,#1,#10),#4),Execute(Set(#2000,#1,#30),#4),#0))",
     "Python": "Block(JumpLoop(Execute(SwitchIntegerWithDefault(Subtract(Get(#2000,#0),#1),#3,#2,#1)),Execute(Set(#2000,#1,#30),#4),Execute(Set(#2000,#1,#20),#4),Execute(Set(#2000,#1,#10),#4),#0))",
     "Reason": "Go materializes the runtime discriminant and orders equivalent CFG exits differently; the fixed execution matrix covers every branch"
   }

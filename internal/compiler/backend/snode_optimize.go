@@ -43,6 +43,8 @@ func simplify(node snode) snode {
 		}
 	case resource.RuntimeFunctionSwitchWithDefault:
 		return simplifySwitch(function)
+	case resource.RuntimeFunctionSwitchInteger, resource.RuntimeFunctionSwitchIntegerWithDefault:
+		return padIntegerSwitch(function)
 	case resource.RuntimeFunctionWhile:
 		if len(args) >= 2 {
 			if body, ok := asCall(args[1], resource.RuntimeFunctionExecute); ok && len(body.args) > 0 {
@@ -259,15 +261,45 @@ func simplifySwitch(function functionNode) snode {
 				args = append(args, cases[i])
 			}
 			if isValue(fallback, 0) {
-				return call(resource.RuntimeFunctionSwitchInteger, args...)
+				return padIntegerSwitch(functionNode{function: resource.RuntimeFunctionSwitchInteger, args: args})
 			}
-			return call(resource.RuntimeFunctionSwitchIntegerWithDefault, append(args, fallback)...)
+			return padIntegerSwitch(functionNode{function: resource.RuntimeFunctionSwitchIntegerWithDefault, args: append(args, fallback)})
 		}
 	}
 	if isValue(fallback, 0) {
 		return call(resource.RuntimeFunctionSwitch, append([]snode{function.args[0]}, cases...)...)
 	}
 	return function
+}
+
+// Handle both backend normalization and switches already normalized by the IR
+// optimizer. Padding is bounded to avoid inflating sparse tables. Consequences
+// remain lazy: referencing the fallback in several slots never executes it early.
+func padIntegerSwitch(function functionNode) snode {
+	if len(function.args) < 2 {
+		return function
+	}
+	index, ok := asCall(function.args[0], resource.RuntimeFunctionSubtract)
+	if !ok || len(index.args) != 2 {
+		return function
+	}
+	offset, ok := index.args[1].(valueNode)
+	count := len(function.args) - 1
+	var fallback snode = valueNode(0)
+	if function.function == resource.RuntimeFunctionSwitchIntegerWithDefault {
+		count--
+		fallback = function.args[len(function.args)-1]
+	}
+	if !ok || !safeInteger(float64(offset)) || offset <= 0 || offset > 8 || int(offset) > count {
+		return function
+	}
+	args := make([]snode, 0, len(function.args)+int(offset))
+	args = append(args, index.args[0])
+	for range int(offset) {
+		args = append(args, fallback)
+	}
+	args = append(args, function.args[1:]...)
+	return call(function.function, args...)
 }
 
 func asCall(node snode, function resource.RuntimeFunction) (functionNode, bool) {
