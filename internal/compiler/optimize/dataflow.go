@@ -73,6 +73,12 @@ func (AdvancedDeadCodeElimination) Destroys() []Analysis  { return nil }
 func (AdvancedDeadCodeElimination) Name() string { return "AdvancedDeadCodeElimination" }
 func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 	indexed := indexedLocalIDs(f)
+	ids := map[temporaryPlaceKey]int{}
+	intern := func(key temporaryPlaceKey) {
+		if _, exists := ids[key]; !exists {
+			ids[key] = len(ids)
+		}
+	}
 	use := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
 	def := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
 	for i := range f.Blocks {
@@ -82,6 +88,7 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 				if load, ok := value.(ir.Load); ok {
 					key, valid := placeKey(load.Place)
 					if valid && !def[i][key] {
+						intern(key)
 						use[i][key] = true
 					}
 				}
@@ -93,6 +100,7 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 				add(value.Value)
 				addPlaceExpressions(value.Place, add)
 				if key, valid := placeKey(value.Place); valid {
+					intern(key)
 					def[i][key] = true
 				}
 			case ir.Eval:
@@ -101,34 +109,30 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 		}
 		visitTerminator(f.Blocks[i].Terminator, add)
 	}
-	liveIn := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
-	liveOut := make([]map[temporaryPlaceKey]bool, len(f.Blocks))
+	useBits, defBits := make([]bitSet, len(f.Blocks)), make([]bitSet, len(f.Blocks))
 	for i := range f.Blocks {
-		liveIn[i], liveOut[i] = map[temporaryPlaceKey]bool{}, map[temporaryPlaceKey]bool{}
-	}
-	for changed := true; changed; {
-		changed = false
-		for i := len(f.Blocks) - 1; i >= 0; i-- {
-			out := map[temporaryPlaceKey]bool{}
-			forEachTerminatorTarget(f.Blocks[i].Terminator, func(successor int) {
-				for key := range liveIn[successor] {
-					out[key] = true
-				}
-			})
-			in := cloneStringSet(use[i])
-			for key := range out {
-				if !def[i][key] {
-					in[key] = true
-				}
-			}
-			if !sameStringSet(out, liveOut[i]) || !sameStringSet(in, liveIn[i]) {
-				liveOut[i], liveIn[i], changed = out, in, true
-			}
+		useBits[i], defBits[i] = newBitSet(len(ids)), newBitSet(len(ids))
+		for key := range use[i] {
+			useBits[i].set(ids[key])
+		}
+		for key := range def[i] {
+			defBits[i].set(ids[key])
 		}
 	}
+	_, liveOut := computeLiveness(f, useBits, defBits, len(ids))
+	live := newBitSet(len(ids))
+	addLive := func(expr ir.Expr) {
+		walkExpr(expr, func(value ir.Expr) {
+			if load, ok := value.(ir.Load); ok {
+				if key, valid := placeKey(load.Place); valid {
+					live.set(ids[key])
+				}
+			}
+		})
+	}
 	for _, block := range f.Blocks {
-		live := cloneStringSet(liveOut[block.ID])
-		visitTerminator(block.Terminator, func(expr ir.Expr) { addExpressionKeys(expr, live) })
+		copy(live, liveOut[block.ID])
+		visitTerminator(block.Terminator, addLive)
 		kept := make([]ir.Instruction, 0, len(block.Instructions))
 		for i := len(block.Instructions) - 1; i >= 0; i-- {
 			instruction := block.Instructions[i]
@@ -138,16 +142,16 @@ func (AdvancedDeadCodeElimination) Run(_ Context, f *ir.Function) error {
 				if place, local := store.Place.(ir.LocalPlace); local {
 					addressTaken = indexed[place.ID]
 				}
-				if temporary && !addressTaken && !live[key] && !expressionHasEffects(store.Value) {
+				if temporary && !addressTaken && !live.has(ids[key]) && !expressionHasEffects(store.Value) {
 					continue
 				}
 				if temporary {
-					delete(live, key)
+					live.clear(ids[key])
 				}
-				addExpressionKeys(store.Value, live)
-				addPlaceExpressions(store.Place, func(expr ir.Expr) { addExpressionKeys(expr, live) })
+				addLive(store.Value)
+				addPlaceExpressions(store.Place, addLive)
 			} else if eval, ok := instruction.(ir.Eval); ok {
-				addExpressionKeys(eval.Value, live)
+				addLive(eval.Value)
 			}
 			kept = append(kept, instruction)
 		}
@@ -195,36 +199,6 @@ func addPlaceExpressions(place ir.Place, fn func(ir.Expr)) {
 	case ir.MemoryPlace:
 		fn(value.Index)
 	}
-}
-
-func addExpressionKeys(expr ir.Expr, values map[temporaryPlaceKey]bool) {
-	walkExpr(expr, func(value ir.Expr) {
-		if load, ok := value.(ir.Load); ok {
-			if key, valid := placeKey(load.Place); valid {
-				values[key] = true
-			}
-		}
-	})
-}
-
-func cloneStringSet(input map[temporaryPlaceKey]bool) map[temporaryPlaceKey]bool {
-	result := make(map[temporaryPlaceKey]bool, len(input))
-	for key := range input {
-		result[key] = true
-	}
-	return result
-}
-
-func sameStringSet(a, b map[temporaryPlaceKey]bool) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for key := range a {
-		if !b[key] {
-			return false
-		}
-	}
-	return true
 }
 
 func isTemporaryPlace(p ir.Place) bool {

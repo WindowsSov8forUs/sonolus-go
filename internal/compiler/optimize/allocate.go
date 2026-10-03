@@ -304,25 +304,7 @@ func localInterference(function *ir.Function) interferenceGraph {
 			addUsesBeforeDefsExpr(expr, use[block.ID], def[block.ID])
 		})
 	}
-	liveIn, liveOut := make([]bitSet, len(function.Blocks)), make([]bitSet, len(function.Blocks))
-	for i := range liveIn {
-		liveIn[i], liveOut[i] = newBitSet(n), newBitSet(n)
-	}
-	for changed := true; changed; {
-		changed = false
-		for i := len(function.Blocks) - 1; i >= 0; i-- {
-			out := newBitSet(n)
-			forEachTerminatorTarget(function.Blocks[i].Terminator, func(target int) {
-				out.union(liveIn[target])
-			})
-			in := out.clone()
-			in.andNot(def[i])
-			in.union(use[i])
-			if !out.equal(liveOut[i]) || !in.equal(liveIn[i]) {
-				liveOut[i], liveIn[i], changed = out, in, true
-			}
-		}
-	}
+	_, liveOut := computeLiveness(function, use, def, n)
 	graph := newInterferenceGraph(n)
 	for _, block := range function.Blocks {
 		live := liveOut[block.ID].clone()
@@ -346,6 +328,45 @@ func localInterference(function *ir.Function) interferenceGraph {
 		}
 	}
 	return graph
+}
+
+// computeLiveness solves the backward dataflow equations without allocating a
+// new set on every iteration. Only predecessors of a changed live-in need work.
+func computeLiveness(function *ir.Function, use, def []bitSet, size int) ([]bitSet, []bitSet) {
+	count := len(function.Blocks)
+	liveIn, liveOut := make([]bitSet, count), make([]bitSet, count)
+	work := make([]int, count)
+	queued := make([]bool, count)
+	for id := range function.Blocks {
+		liveIn[id], liveOut[id] = newBitSet(size), newBitSet(size)
+		work[id], queued[id] = id, true
+	}
+	preds := predecessors(function)
+	out, in := newBitSet(size), newBitSet(size)
+	for len(work) != 0 {
+		id := work[len(work)-1]
+		work = work[:len(work)-1]
+		queued[id] = false
+		clear(out)
+		forEachTerminatorTarget(function.Blocks[id].Terminator, func(target int) {
+			out.union(liveIn[target])
+		})
+		copy(liveOut[id], out)
+		copy(in, out)
+		in.andNot(def[id])
+		in.union(use[id])
+		if in.equal(liveIn[id]) {
+			continue
+		}
+		copy(liveIn[id], in)
+		for _, predecessor := range preds[id] {
+			if !queued[predecessor] {
+				work = append(work, predecessor)
+				queued[predecessor] = true
+			}
+		}
+	}
+	return liveIn, liveOut
 }
 
 func addLiveUses(graph interferenceGraph, live, uses bitSet) {

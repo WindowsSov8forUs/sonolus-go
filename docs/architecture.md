@@ -155,6 +155,8 @@ IR 不导入 AST、`go/token`、`go/types`、packages、frontend 或 catalog。
 
 ## Optimize
 
+CFG 合并批量压缩非循环空块的转发链，并在一批单前驱块合并完成后统一规范化编号；保留循环与 Phi 的原有合并限制。ADCE 将 temporary place 编号为稠密 bitset，和 local allocation 共用 backward liveness 工作队列；只在 live-in 变化时重新调度前驱，迭代复用集合存储。Catalog 按 storage 预建写入者索引，readonly 查询不再重复扫描全部 symbol 或构造 key。
+
 Optimizer 深拷贝每个 callback IR，并执行所选 pipeline。callback 使用不超过 `GOMAXPROCS` 的有界 worker pool 并行优化，结果与错误仍按稳定 job 顺序归并。分析缓存只存在于单次 Optimize 调用，不跨 callback 或并发共享；未声明契约的 pass 按保守策略清空缓存，CopyCoalesce clone 并重映射干涉图，后续只删除指令/CFG 的 pass 可保留该 over-approximation 供 Allocate 复用。若该保守图无法满足 4096 slots，Allocate 会基于当前最终 CFG 重算精确 liveness/interference 后重试；精确图仍超限才返回包含失败 local 的稳定错误。liveness 与 interference graph 使用固定宽度 bitset。LICM/CSE 只把 catalog 按 mode/callback 判定为 readonly 的 semantic memory 作为候选，RuntimeUI 等存在同阶段 setter 的 storage 保持屏障。详情见 [优化器](optimization.md)。
 
 Temporary Memory 上限为 4096 slots。allocation 将 virtual local 重写为物理 Temporary Memory layout；backend 拒绝残留 SSA、Phi 或未分配 local。
