@@ -33,6 +33,11 @@ type pythonDifference struct {
 }
 
 func pythonDifferenceReason(difference pythonDifference) string {
+	if difference.Checkpoint == "toSSA" && (difference.Case == "loop_memory" || difference.Case == "readonly_cse_loop") {
+		if strings.Contains(difference.Path, "/instructions/length") || strings.Contains(difference.Path, "/arguments/length") || strings.Contains(difference.Path, "/version") {
+			return "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
+		}
+	}
 	if difference.Checkpoint == "standard" {
 		switch difference.Case {
 		case "allocation_4095", "allocation_4096":

@@ -590,6 +590,35 @@ func TestSwitchRewriteLoopAndEffects(t *testing.T) {
 	}
 }
 
+func TestToSSAPreservesMissingDefinitionRead(t *testing.T) {
+	local := ir.LocalPlace{ID: 0}
+	fn := &ir.Function{Locals: []ir.Type{numberType}, Blocks: []*ir.Block{
+		{ID: 0, Terminator: ir.Branch{Condition: ir.RuntimeCall{Function: resource.RuntimeFunctionGet, Args: []ir.Expr{ir.Const{Value: 4001}, ir.Const{}}, Pure: true, Result: numberType}, True: 1, False: 2}},
+		{ID: 1, Instructions: []ir.Instruction{ir.Store{Place: local, Value: ir.Const{Value: 7}}}, Terminator: ir.Jump{Target: 2}},
+		{ID: 2, Instructions: []ir.Instruction{ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{ir.Load{Place: local}}}}}, Terminator: ir.Return{}},
+	}}
+	if err := (ToSSA{}).Run(Context{}, fn); err != nil {
+		t.Fatal(err)
+	}
+	if err := ir.Validate(fn); err != nil {
+		t.Fatal(err)
+	}
+	if len(fn.Blocks[2].Phis) != 1 || len(fn.Blocks[2].Phis[0].Args) != 2 {
+		t.Fatal("incomplete Phi")
+	}
+	initial := 37.0
+	temporary := make([]float64, 4096)
+	for i := range temporary {
+		temporary[i] = initial
+	}
+	for input, want := range []float64{initial, 7} {
+		request := simexec.Request{Memory: map[int][]float64{4001: {float64(input)}, 10000: temporary}, StepLimit: 100000}
+		if got := executeCheckpointRequest(t, fn, request); !reflect.DeepEqual(got, []float64{want}) {
+			t.Fatalf("input %d: %v", input, got)
+		}
+	}
+}
+
 func TestCallValuePipelineCheckpoints(t *testing.T) {
 	packages, err := source.LoadMode(mode.ModePlay, "../testdata/callvalues")
 	if err != nil {

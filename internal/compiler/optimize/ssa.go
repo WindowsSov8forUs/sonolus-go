@@ -148,6 +148,14 @@ func (ToSSA) Run(context Context, function *ir.Function) error {
 				s := stacks[k]
 				if len(s) > 0 {
 					function.Blocks[succ].Phis[i].Args = append(function.Blocks[succ].Phis[i].Args, ir.PhiArg{Predecessor: id, Value: s[len(s)-1]})
+				} else {
+					// No definition dominates this edge. Preserve the original
+					// local read instead of leaving the Phi input undefined.
+					value := newValue(k)
+					block.Instructions = append(block.Instructions, ir.Store{
+						Place: value, Value: ir.Load{Place: ir.LocalPlace{ID: k.id, Offset: k.offset}},
+					})
+					function.Blocks[succ].Phis[i].Args = append(function.Blocks[succ].Phis[i].Args, ir.PhiArg{Predecessor: id, Value: value})
 				}
 			}
 		})

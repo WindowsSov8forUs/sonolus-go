@@ -138,10 +138,18 @@
   {
     "Case": "loop_memory",
     "Checkpoint": "toSSA",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/0/place/version",
-    "Go": "1",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/0/instructions/length",
+    "Go": "4",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/0/place/version",
+    "Go": "3",
+    "Python": "2",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -149,7 +157,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/1/place/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -157,15 +165,15 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/1/value/arguments/0/place/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
     "Checkpoint": "toSSA",
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/1/value/arguments/1/place/version",
-    "Go": "1",
+    "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -173,7 +181,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/2/place/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -181,7 +189,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/instructions/2/value/arguments/0/place/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -189,7 +197,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/0/arguments/1/value/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -197,7 +205,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/0/target/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -205,7 +213,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/1/arguments/1/value/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -213,23 +221,23 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/1/target/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
     "Checkpoint": "toSSA",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/2/arguments/0/value/version",
-    "Go": "1",
-    "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/2/arguments/length",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
     "Checkpoint": "toSSA",
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/phis/2/target/version",
-    "Go": "2",
+    "Go": "4",
     "Python": "1",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -237,7 +245,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/1/terminator/value/arguments/0/place/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -245,7 +253,7 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/0/arguments/1/value/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -253,15 +261,23 @@
     "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/1/arguments/1/value/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
     "Checkpoint": "toSSA",
-    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/2/arguments/0/value/version",
-    "Go": "1",
-    "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/2/arguments/length",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
+  },
+  {
+    "Case": "loop_memory",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/loop_memory/structuredCheckpoints/toSSA/blocks/2/phis/2/target/version",
+    "Go": "5",
+    "Python": "3",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "loop_memory",
@@ -538,34 +554,42 @@
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/0/instructions/length",
+    "Go": "5",
+    "Python": "1",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/0/place/version",
-    "Go": "1",
+    "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/1/place/version",
-    "Go": "1",
+    "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/2/value/arguments/0/place/version",
-    "Go": "1",
+    "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/2/value/arguments/1/place/version",
-    "Go": "1",
+    "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -573,7 +597,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/3/place/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -581,7 +605,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/instructions/3/value/arguments/0/place/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -589,7 +613,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/0/arguments/1/value/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -597,39 +621,39 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/0/target/version",
     "Go": "3",
     "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/1/arguments/0/value/version",
-    "Go": "1",
-    "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/1/arguments/length",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/1/target/version",
-    "Go": "2",
+    "Go": "4",
     "Python": "1",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/2/arguments/0/value/version",
-    "Go": "1",
-    "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/2/arguments/length",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/phis/2/target/version",
-    "Go": "2",
+    "Go": "4",
     "Python": "1",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -637,7 +661,7 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/1/terminator/value/arguments/0/place/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
@@ -645,23 +669,39 @@
     "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/0/arguments/1/value/version",
     "Go": "2",
     "Python": "3",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/1/arguments/0/value/version",
-    "Go": "1",
-    "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/1/arguments/length",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
     "Checkpoint": "toSSA",
-    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/2/arguments/0/value/version",
-    "Go": "1",
-    "Python": "2",
-    "Reason": "Go and Py assign normalized SSA versions in different definition traversal order; Phi/data dependencies and final semantics are compared independently"
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/1/target/version",
+    "Go": "5",
+    "Python": "3",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/2/arguments/length",
+    "Go": "2",
+    "Python": "1",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
+  },
+  {
+    "Case": "readonly_cse_loop",
+    "Checkpoint": "toSSA",
+    "Path": "/pipelineCases/readonly_cse_loop/structuredCheckpoints/toSSA/blocks/2/phis/2/target/version",
+    "Go": "5",
+    "Python": "3",
+    "Reason": "Go materializes original local reads on otherwise undefined Phi edges to require complete reachable-predecessor coverage; Py omits those inputs. These unused loop Phi values disappear at the next cleanup checkpoint, and final execution is compared independently"
   },
   {
     "Case": "readonly_cse_loop",
