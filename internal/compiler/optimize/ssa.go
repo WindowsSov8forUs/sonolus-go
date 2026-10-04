@@ -326,35 +326,36 @@ func (FromSSA) Run(_ Context, function *ir.Function) error {
 }
 
 func splitPhiCriticalEdges(function *ir.Function) {
-	type edge struct{ from, to int }
-	edges := map[edge]int{}
 	for _, block := range function.Blocks {
 		if len(block.Phis) == 0 {
 			continue
 		}
 		for _, phi := range block.Phis {
 			for _, arg := range phi.Args {
-				key := edge{from: arg.Predecessor, to: block.ID}
-				if _, exists := edges[key]; exists || terminatorTargetCount(function.Blocks[arg.Predecessor].Terminator) <= 1 {
+				if terminatorTargetCount(function.Blocks[arg.Predecessor].Terminator) <= 1 {
 					continue
 				}
-				id := len(function.Blocks)
-				function.Blocks = append(function.Blocks, &ir.Block{ID: id, Terminator: ir.Jump{Target: block.ID}})
-				retargetEdge(function.Blocks[arg.Predecessor], block.ID, id)
-				edges[key] = id
+				splitPhiEdge(function, arg.Predecessor, block.ID)
 			}
 		}
 	}
-	for _, block := range function.Blocks {
-		for i := range block.Phis {
-			for j := range block.Phis[i].Args {
-				arg := &block.Phis[i].Args[j]
-				if replacement, ok := edges[edge{from: arg.Predecessor, to: block.ID}]; ok {
-					arg.Predecessor = replacement
-				}
+}
+
+// splitPhiEdge preserves the identity of a predecessor's value on an edge.
+// The caller normalizes/sorts Phi arguments after completing its CFG rewrite.
+func splitPhiEdge(function *ir.Function, from, to int) int {
+	id := len(function.Blocks)
+	function.Blocks = append(function.Blocks, &ir.Block{ID: id, Terminator: ir.Jump{Target: to}})
+	retargetEdge(function.Blocks[from], to, id)
+	for i := range function.Blocks[to].Phis {
+		for j := range function.Blocks[to].Phis[i].Args {
+			arg := &function.Blocks[to].Phis[i].Args[j]
+			if arg.Predecessor == from {
+				arg.Predecessor = id
 			}
 		}
 	}
+	return id
 }
 
 func retargetEdge(block *ir.Block, from, to int) {
