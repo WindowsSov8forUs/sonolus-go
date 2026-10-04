@@ -172,8 +172,11 @@ func (RewriteToSwitch) Run(_ Context, f *ir.Function) error {
 			continue
 		}
 		cases := []ir.SwitchCase{{Value: constant, Target: branch.True}}
+		sources := []int{block.ID}
 		fallback := branch.False
-		for fallback != block.ID && len(preds[fallback]) == 1 && len(f.Blocks[fallback].Phis) == 0 && len(f.Blocks[fallback].Instructions) == 0 {
+		defaultSource := block.ID
+		visited := map[int]bool{block.ID: true}
+		for fallback < len(preds) && !visited[fallback] && fallback != f.Entry && len(preds[fallback]) == 1 && len(f.Blocks[fallback].Phis) == 0 && len(f.Blocks[fallback].Instructions) == 0 {
 			next, ok := f.Blocks[fallback].Terminator.(ir.Branch)
 			if !ok {
 				break
@@ -188,10 +191,35 @@ func (RewriteToSwitch) Run(_ Context, f *ir.Function) error {
 			}
 			if !duplicate {
 				cases = append(cases, ir.SwitchCase{Value: nextConstant, Target: next.True})
+				sources = append(sources, fallback)
 			}
+			visited[fallback] = true
+			defaultSource = fallback
 			fallback = next.False
 		}
 		if len(cases) > 1 {
+			// Phi inputs are keyed by predecessor, not by switch case. Give
+			// each original edge into a Phi block a stable forwarding block
+			// before replacing the chain, including the default edge. Merely
+			// renaming predecessors would merge distinct incoming values.
+			type edge struct{ from, to int }
+			routes := map[edge]int{}
+			route := func(from, to int) int {
+				if len(f.Blocks[to].Phis) == 0 {
+					return to
+				}
+				key := edge{from, to}
+				if id, ok := routes[key]; ok {
+					return id
+				}
+				id := splitPhiEdge(f, from, to)
+				routes[key] = id
+				return id
+			}
+			for i := range cases {
+				cases[i].Target = route(sources[i], cases[i].Target)
+			}
+			fallback = route(defaultSource, fallback)
 			block.Terminator = ir.Switch{Value: discriminant, Cases: cases, Default: fallback}
 		}
 	}
@@ -200,7 +228,7 @@ func (RewriteToSwitch) Run(_ Context, f *ir.Function) error {
 
 func equalityCase(expr ir.Expr) (ir.Expr, float64, bool) {
 	call, ok := expr.(ir.RuntimeCall)
-	if !ok || !call.Pure || call.Function != resource.RuntimeFunctionEqual || len(call.Args) != 2 {
+	if !ok || !call.Pure || expressionHasEffects(call) || call.Function != resource.RuntimeFunctionEqual || len(call.Args) != 2 {
 		return nil, 0, false
 	}
 	if constant, ok := call.Args[0].(ir.Const); ok {

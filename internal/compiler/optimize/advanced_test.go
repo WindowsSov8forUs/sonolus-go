@@ -375,6 +375,16 @@ func TestIndexedLocalInitializationUsedByStoreAddress(t *testing.T) {
 // allocation only touch a clone, so they cannot affect the pipeline under test.
 func executeCallValueCheckpoint(t *testing.T, function *ir.Function) []float64 {
 	t.Helper()
+	return executeCheckpointInput(t, function, 1)
+}
+
+func executeCheckpointInput(t *testing.T, function *ir.Function, input float64) []float64 {
+	t.Helper()
+	return executeCheckpointRequest(t, function, simexec.Request{Memory: map[int][]float64{4001: {input}}, StepLimit: 100000})
+}
+
+func executeCheckpointRequest(t *testing.T, function *ir.Function, request simexec.Request) []float64 {
+	t.Helper()
 	final := CloneFunction(function)
 	if !final.Allocated {
 		if err := (FromSSA{}).Run(Context{}, final); err != nil {
@@ -394,8 +404,7 @@ func executeCallValueCheckpoint(t *testing.T, function *ir.Function) []float64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := simexec.Execute(artifacts.Play.Nodes, artifacts.Play.Archetypes[0].Preprocess.Index,
-		simexec.Request{Memory: map[int][]float64{4001: {1}}, StepLimit: 100000})
+	result, err := simexec.Execute(artifacts.Play.Nodes, artifacts.Play.Archetypes[0].Preprocess.Index, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,6 +415,179 @@ func executeCallValueCheckpoint(t *testing.T, function *ir.Function) []float64 {
 		}
 	}
 	return logs
+}
+
+func TestSwitchRewritePreservesIncomingValues(t *testing.T) {
+	load := func(id int) ir.Expr { return ir.Load{Place: ir.SSAPlace{ID: id}} }
+	log := func(value ir.Expr) ir.Instruction {
+		return ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{value}}}
+	}
+	for _, duplicate := range []bool{false, true} {
+		for _, sharedDefault := range []bool{false, true} {
+			for _, input := range []float64{0, 1, 2, 3} {
+				t.Run(fmt.Sprintf("duplicate=%t/default=%t/input=%g", duplicate, sharedDefault, input), func(t *testing.T) {
+					equal := func(value float64) ir.Expr {
+						return ir.RuntimeCall{Function: resource.RuntimeFunctionEqual, Args: []ir.Expr{ir.RuntimeCall{Function: resource.RuntimeFunctionGet, Args: []ir.Expr{ir.Const{Value: 4001}, ir.Const{}}, Pure: true, Result: numberType}, ir.Const{Value: value}}, Pure: true, Result: numberType}
+					}
+					middle := 2.0
+					if duplicate {
+						middle = 1
+					}
+					fn := &ir.Function{Locals: []ir.Type{numberType, numberType}, Blocks: []*ir.Block{
+						{ID: 0, Instructions: []ir.Instruction{
+							ir.Store{Place: ir.SSAPlace{ID: 0}, Value: ir.Const{Value: 10}},
+							ir.Store{Place: ir.SSAPlace{ID: 1}, Value: ir.Const{Value: 20}},
+							ir.Store{Place: ir.SSAPlace{ID: 2}, Value: ir.Const{Value: 30}},
+						}, Terminator: ir.Branch{Condition: equal(1), True: 3, False: 1}},
+						{ID: 1, Terminator: ir.Branch{Condition: equal(middle), True: 3, False: 2}},
+						{ID: 2, Terminator: ir.Branch{Condition: equal(3), True: 3, False: 4}},
+						{ID: 3, Phis: []ir.Phi{
+							{Target: ir.SSAPlace{ID: 3}, Local: ir.LocalPlace{ID: 0}, Args: []ir.PhiArg{{Predecessor: 0, Value: ir.SSAPlace{ID: 0}}, {Predecessor: 1, Value: ir.SSAPlace{ID: 1}}, {Predecessor: 2, Value: ir.SSAPlace{ID: 2}}}},
+							{Target: ir.SSAPlace{ID: 4}, Local: ir.LocalPlace{ID: 1}, Args: []ir.PhiArg{{Predecessor: 0, Value: ir.SSAPlace{ID: 2}}, {Predecessor: 1, Value: ir.SSAPlace{ID: 0}}, {Predecessor: 2, Value: ir.SSAPlace{ID: 1}}}},
+						}, Instructions: []ir.Instruction{log(load(3)), log(load(4))}, Terminator: ir.Return{}},
+						{ID: 4, Instructions: []ir.Instruction{log(ir.Const{Value: 99})}, Terminator: ir.Return{}},
+					}}
+					if sharedDefault {
+						fn.Blocks[2].Terminator = ir.Branch{Condition: equal(3), True: 3, False: 3}
+					}
+					if err := ir.Validate(fn); err != nil {
+						t.Fatal(err)
+					}
+					want := executeCheckpointInput(t, fn, input)
+					if err := (RewriteToSwitch{}).Run(Context{}, fn); err != nil {
+						t.Fatal(err)
+					}
+					if err := ir.Validate(fn); err != nil {
+						t.Fatal(err)
+					}
+					if _, ok := fn.Blocks[0].Terminator.(ir.Switch); !ok {
+						t.Fatal("chain was not rewritten")
+					}
+					if got := executeCheckpointInput(t, fn, input); !reflect.DeepEqual(got, want) {
+						t.Fatalf("got %v, want %v", got, want)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestOptimizerControlFixture(t *testing.T) {
+	packages, err := source.LoadMode(mode.ModePlay, "../testdata/optimizercontrol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser := frontend.NewParser()
+	if err := parser.Parse(mode.ModePlay, packages[0]); err != nil {
+		t.Fatal(err)
+	}
+	project, err := parser.GetProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, archetype := range project.Modes[mode.ModePlay].Archetypes {
+		inputs := []float64{1.0 / 540, 1}
+		if archetype.Name == "Split" {
+			inputs = []float64{1000000}
+		}
+		for _, input := range inputs {
+			t.Run(fmt.Sprintf("%s/%g", archetype.Name, input), func(t *testing.T) {
+				original := archetype.Callbacks[0].IR
+				want := executeCheckpointInput(t, original, input)
+				if archetype.Name == "Gauge" {
+					ids := []float64{5556, 5557, 5558, 5562, 5563, 5564, 5565, 5566, 5567, 5571, 5572, 5573}
+					if len(want) != 85 || want[0] != 12 {
+						t.Fatalf("gauge: %v", want)
+					}
+					for i, id := range ids {
+						if want[1+i*7] != id {
+							t.Fatalf("sprite %d: %g, want %g", i, want[1+i*7], id)
+						}
+					}
+				} else if !reflect.DeepEqual(want, []float64{1000000, 0, 1000000, 0}) {
+					t.Fatalf("binary64 split: %v", want)
+				}
+				check := func(label string, fn *ir.Function) {
+					t.Helper()
+					got := executeCheckpointInput(t, fn, input)
+					if len(got) != len(want) {
+						t.Fatalf("%s: got %v, want %v", label, got, want)
+					}
+					for i := range got {
+						if math.Abs(got[i]-want[i]) > 1e-12 {
+							t.Fatalf("%s observation %d: %.17g != %.17g", label, i, got[i], want[i])
+						}
+					}
+				}
+				for _, level := range []Level{LevelMinimal, LevelFast, LevelStandard} {
+					fn, err := NewOptimizer(level).Optimize(Context{Mode: mode.ModePlay, Callback: "preprocess"}, original)
+					if err != nil {
+						t.Fatal(err)
+					}
+					check(fmt.Sprint(level), fn)
+				}
+				fn := CloneFunction(original)
+				for index, pass := range NewOptimizer(LevelStandard).passes {
+					if err := pass.Run(Context{}, fn); err != nil {
+						t.Fatalf("%s: %v", pass.Name(), err)
+					}
+					if err := ir.Validate(fn); err != nil {
+						t.Fatalf("%s: %v", pass.Name(), err)
+					}
+					check(fmt.Sprintf("%d/%s", index+1, pass.Name()), fn)
+				}
+			})
+		}
+	}
+}
+
+func TestSwitchRewriteLoopAndEffects(t *testing.T) {
+	load := func(id int) ir.Expr { return ir.Load{Place: ir.SSAPlace{ID: id}} }
+	equal := func(value ir.Expr, n float64) ir.Expr {
+		return ir.RuntimeCall{Function: resource.RuntimeFunctionEqual, Args: []ir.Expr{value, ir.Const{Value: n}}, Pure: true, Result: numberType}
+	}
+	fn := &ir.Function{Locals: []ir.Type{numberType}, Blocks: []*ir.Block{
+		{ID: 0, Instructions: []ir.Instruction{
+			ir.Store{Place: ir.SSAPlace{ID: 0}, Value: ir.Const{Value: 2}},
+			ir.Store{Place: ir.SSAPlace{ID: 1}, Value: ir.Const{Value: 1}},
+			ir.Store{Place: ir.SSAPlace{ID: 2}, Value: ir.Const{}},
+		}, Terminator: ir.Jump{Target: 1}},
+		{ID: 1, Phis: []ir.Phi{{Target: ir.SSAPlace{ID: 3}, Local: ir.LocalPlace{ID: 0}, Args: []ir.PhiArg{
+			{Predecessor: 0, Value: ir.SSAPlace{ID: 0}}, {Predecessor: 1, Value: ir.SSAPlace{ID: 2}}, {Predecessor: 2, Value: ir.SSAPlace{ID: 1}},
+		}}}, Terminator: ir.Branch{Condition: equal(load(3), 1), True: 1, False: 2}},
+		{ID: 2, Terminator: ir.Branch{Condition: equal(load(3), 2), True: 1, False: 3}},
+		{ID: 3, Instructions: []ir.Instruction{ir.Eval{Value: ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{load(3)}}}}, Terminator: ir.Return{}},
+	}}
+	if err := ir.Validate(fn); err != nil {
+		t.Fatal(err)
+	}
+	if err := (RewriteToSwitch{}).Run(Context{}, fn); err != nil {
+		t.Fatal(err)
+	}
+	if err := ir.Validate(fn); err != nil {
+		t.Fatal(err)
+	}
+	if got := executeCallValueCheckpoint(t, fn); !reflect.DeepEqual(got, []float64{0}) {
+		t.Fatalf("loop result %v", got)
+	}
+
+	// A pure Equal wrapper must not hide the effectful discriminant. Both
+	// comparisons execute DebugLog; replacing them by one switch would lose one.
+	effect := ir.RuntimeCall{Function: resource.RuntimeFunctionDebugLog, Args: []ir.Expr{ir.Const{Value: 9}}, Result: numberType}
+	fn = &ir.Function{Blocks: []*ir.Block{
+		{ID: 0, Terminator: ir.Branch{Condition: equal(effect, 1), True: 2, False: 1}},
+		{ID: 1, Terminator: ir.Branch{Condition: equal(effect, 2), True: 2, False: 2}},
+		{ID: 2, Terminator: ir.Return{}},
+	}}
+	if err := (RewriteToSwitch{}).Run(Context{}, fn); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fn.Blocks[0].Terminator.(ir.Branch); !ok {
+		t.Fatal("effectful comparisons were merged")
+	}
+	if got := executeCallValueCheckpoint(t, fn); !reflect.DeepEqual(got, []float64{9, 9}) {
+		t.Fatalf("effects %v", got)
+	}
 }
 
 func TestCallValuePipelineCheckpoints(t *testing.T) {
