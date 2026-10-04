@@ -14,6 +14,8 @@ type Validator struct {
 	definitionSet     []bool
 	sparseDefinitions map[int]ssaDefinition
 	denseDefinitions  bool
+	predecessorCounts []int
+	lastPredecessor   []int
 }
 
 func Validate(fn *Function) error {
@@ -87,11 +89,13 @@ func (validator *Validator) Validate(fn *Function) error {
 		}
 	}
 	definitionCount, maxDefinitionID := 0, -1
+	hasPhis := false
 	for _, block := range fn.Blocks {
 		if block == nil {
 			continue
 		}
 		for _, phi := range block.Phis {
+			hasPhis = true
 			if phi.Target.ID >= 0 {
 				definitionCount++
 				maxDefinitionID = max(maxDefinitionID, phi.Target.ID)
@@ -102,6 +106,42 @@ func (validator *Validator) Validate(fn *Function) error {
 				if place, ok := store.Place.(SSAPlace); ok && place.ID >= 0 {
 					definitionCount++
 					maxDefinitionID = max(maxDefinitionID, place.ID)
+				}
+			}
+		}
+	}
+	if hasPhis {
+		if cap(validator.predecessorCounts) < len(fn.Blocks) {
+			validator.predecessorCounts = make([]int, len(fn.Blocks))
+			validator.lastPredecessor = make([]int, len(fn.Blocks))
+		} else {
+			validator.predecessorCounts = validator.predecessorCounts[:len(fn.Blocks)]
+			validator.lastPredecessor = validator.lastPredecessor[:len(fn.Blocks)]
+			clear(validator.predecessorCounts)
+			clear(validator.lastPredecessor)
+		}
+		for id, block := range fn.Blocks {
+			if !reachable[id] {
+				continue
+			}
+			add := func(target int) {
+				// Reachability traversal has already checked every target.
+				// Multiple switch cases from one block share a Phi input.
+				if validator.lastPredecessor[target] != id+1 {
+					validator.lastPredecessor[target] = id + 1
+					validator.predecessorCounts[target]++
+				}
+			}
+			switch term := block.Terminator.(type) {
+			case Jump:
+				add(term.Target)
+			case Branch:
+				add(term.True)
+				add(term.False)
+			case Switch:
+				add(term.Default)
+				for _, item := range term.Cases {
+					add(item.Target)
 				}
 			}
 		}
@@ -143,6 +183,7 @@ func (validator *Validator) Validate(fn *Function) error {
 				return fmt.Errorf("block %d phi local: %w", block.ID, err)
 			}
 			previousPredecessor := -1
+			reachableArguments := 0
 			for _, arg := range phi.Args {
 				if arg.Predecessor < 0 || arg.Predecessor >= len(fn.Blocks) || arg.Value.ID < 0 {
 					return fmt.Errorf("block %d phi has invalid argument", block.ID)
@@ -157,6 +198,12 @@ func (validator *Validator) Validate(fn *Function) error {
 				if !containsTarget(fn.Blocks[arg.Predecessor].Terminator, block.ID) {
 					return fmt.Errorf("block %d phi argument predecessor %d has no edge to block", block.ID, arg.Predecessor)
 				}
+				if reachable[arg.Predecessor] {
+					reachableArguments++
+				}
+			}
+			if reachable[block.ID] && reachableArguments != validator.predecessorCounts[block.ID] {
+				return fmt.Errorf("block %d phi target %d has %d inputs for %d reachable predecessors", block.ID, phi.Target.ID, reachableArguments, validator.predecessorCounts[block.ID])
 			}
 		}
 		for _, instruction := range block.Instructions {

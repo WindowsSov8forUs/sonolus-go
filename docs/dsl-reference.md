@@ -379,6 +379,8 @@ Archetype receiver method 只有在名称与下表 callback 签名同时匹配�
 
 Go 运算符与标准库遵循 Go 数值规则：`int(x)`、`int64(x)` 与整数 `/` 向零截断，`%` 和 `math.Mod` 使用 remainder，`math.Round` 的半数远离零。运行时 `int64` 与 `int` 使用相同的单槽 Sonolus number 表示，支持显式互转、算术与比较；这用于在 Runtime 精确整数范围内表达 int32 wrap 等有界中间计算，不承诺完整 64 位溢出语义。需要 Sonolus/Python modulo 或 JS `Math.round` 时分别显式调用 `native.Mod`、`native.Round`。其他固定宽度整数与 unsigned runtime 运算不属于 DSL；超出 Sonolus number 精确整数范围的 Go overflow 行为不作承诺。
 
+浮点表达式不承诺逐节点 binary32 舍入或客户端 binary64 中间精度；`-O 0` 也不是严格浮点模式。依赖固定舍入位置的误差补偿算法目前不属于已验证的精确算术能力，详见[优化器数值契约](optimization.md#目标与契约)。
+
 ## Runtime checks
 
 `Assert` 遵循 Compiler runtime-check 等级，`Require` 始终检查，`StaticAssert` 必须在编译期成立。静态为 false 的 `Assert`/`Require` 仍生成 callback termination，而不是编译错误；`StaticAssert` 与 `Unreachable` 才用于要求编译期证明。`Terminate(message)` 可从任意内联 helper 终止当前 callback，`Notify(message)` 仅在 `notify` 等级发出诊断并继续执行。`RuntimeChecksEnabled()` 是当前编译选项的编译期常量，可用于裁剪仅在检查开启时需要的代码；`Unreachable(message)` 只允许位于被常量裁剪的不可达路径，任何实际 lowering 到的调用都会稳定报错。`none` 移除动态检查，`terminate` 失败时退出 callback，`notify` 还会依次发出诊断码的 `DebugLog` 与 `DebugPause`。诊断码在完整 Project 聚合后按 mode、global/archetype、callback、RPO/instruction、源码位置和 inline stack 稳定编号，并只保证在相同源码快照内稳定。诊断表保存在 `compiler.Artifacts.Diagnostics`，不进入 EngineData wire schema。

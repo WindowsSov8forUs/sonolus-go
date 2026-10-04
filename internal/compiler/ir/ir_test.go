@@ -150,6 +150,44 @@ func TestBuilderRejectsInvalidLocalTypeWithoutPanicking(t *testing.T) {
 	}
 }
 
+func TestValidateRequiresCompletePhiInputs(t *testing.T) {
+	for _, shape := range []string{"missing", "complete", "duplicate-targets", "unreachable-predecessor", "loop-missing"} {
+		t.Run(shape, func(t *testing.T) {
+			fn := &Function{Locals: []Type{{Slots: 1}}, Blocks: []*Block{
+				{ID: 0, Instructions: []Instruction{Store{Place: SSAPlace{ID: 0}, Value: Const{Value: 7}}}, Terminator: Branch{Condition: Const{Value: 1}, True: 1, False: 2}},
+				{ID: 1, Terminator: Jump{Target: 3}},
+				{ID: 2, Terminator: Jump{Target: 3}},
+				{ID: 3, Phis: []Phi{{Target: SSAPlace{ID: 1}, Local: LocalPlace{ID: 0}, Args: []PhiArg{{Predecessor: 1, Value: SSAPlace{ID: 0}}}}}, Terminator: Return{}},
+			}}
+			if shape == "complete" {
+				fn.Blocks[3].Phis[0].Args = append(fn.Blocks[3].Phis[0].Args, PhiArg{Predecessor: 2, Value: SSAPlace{ID: 0}})
+			}
+			if shape == "duplicate-targets" || shape == "unreachable-predecessor" {
+				fn.Blocks[0].Terminator = Jump{Target: 1}
+				fn.Blocks[1].Terminator = Switch{Value: Const{}, Cases: []SwitchCase{{Value: 1, Target: 3}, {Value: 2, Target: 3}}, Default: 3}
+			}
+			if shape == "loop-missing" {
+				fn.Blocks[0].Terminator = Jump{Target: 1}
+				fn.Blocks[3].Terminator = Branch{Condition: Const{}, True: 3, False: 2}
+			}
+			if shape == "unreachable-predecessor" {
+				fn.Blocks[3].Phis[0].Args = append(fn.Blocks[3].Phis[0].Args, PhiArg{Predecessor: 2, Value: SSAPlace{ID: 0}})
+			}
+			validator := new(Validator)
+			for range 2 { // Reuse must not retain predecessor counts.
+				err := validator.Validate(fn)
+				if shape == "missing" || shape == "loop-missing" {
+					if err == nil || !strings.Contains(err.Error(), "inputs for") {
+						t.Fatalf("missing Phi input accepted: %v", err)
+					}
+				} else if err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestValidateRejectsReachableUnterminatedBlock(t *testing.T) {
 	fn := &Function{Name: "invalid", Entry: 0, Blocks: []*Block{{ID: 0}}}
 	if err := Validate(fn); err == nil || !strings.Contains(err.Error(), "no terminator") {

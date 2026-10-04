@@ -16,6 +16,8 @@
 
 所有等级必须保持 callback 语义一致。
 
+这不包含逐节点 binary32 舍入保证。IR 常量、Go 常量求值与内部模拟器使用 `float64`；backend 还会合并数学节点。Go 源码中的 `float64` 不代表客户端承诺 binary64 中间精度，ROM 的 binary32 存储格式也不代表所有数学函数逐操作 binary32。依赖固定舍入位置的误差补偿算法目前没有受支持的严格精度模式；内部模拟通过不能作为客户端精确计分的证明。Minimal 也会经过 backend，不能把 `-O 0` 当成严格浮点模式。
+
 等级不保证性能单调：Fast 的 pipeline 不是 Minimal 的超集，Standard 也不保证每个 callback 的动态执行成本都低于前两档。节点池大小、运行时执行步数和编译成本应分别测量。
 
 ## Minimal
@@ -59,6 +61,28 @@ Standard 以 `sonolus.py@1040bc0` 的 pass 语义和顺序为基线，包含：
 - 基于活性干涉图的确定性 first-fit allocation。
 
 只提升可静态寻址的 scalar local slot。动态索引 aggregate 保持 memory 形式，避免错误 alias 推断。
+
+Phi 必须覆盖每个可达前驱，同一前驱的多个 switch case 只占一个输入。`ToSSA` 遇到没有支配定义的入边时显式保留原 local 读取，不省略输入或假定其为零。`RewriteToSwitch` 合并比较链时，通过中转块保留通向 Phi 的原始边身份；不同 case/default 原本携带不同值时，不能简单把 Phi 前驱统一改成 switch 所在块。循环回边同样遵守这一规则。含动态副作用的比较表达式不能合并为只求值一次的 switch。
+
+### O2 九宫格与数值差异的归因
+
+2026-10-04 的定向验证区分了两类问题：
+
+| 问题 | 根因与定性 | 修复或能力边界 |
+|---|---|---|
+| 九宫格从 12 片变成 11 片 | 比较链改写绕过旧前驱，未维护后继 Phi；不可达块清理随后删除旧输入。是确定的编译器实现缺陷 | 保留原始边身份并校验 Phi 的完整前驱覆盖；集中 fixture 在两种比例、三级优化及逐 pass 最终 EngineData 执行中验证 12 片、精灵顺序和坐标 |
+| 合法性检查未拦截 | 原 Validator 只检查已有参数，未检查缺失参数；ToSSA 自身也会省略无支配定义的输入 | 校验每条可达入边，同时修复 ToSSA 的输入构造；不能只依赖后续 DCE 删除无用 Phi |
+| 补偿算术的常量／动态路径不同 | 使用宿主精度求常量，与调用方额外施加的节点结果 binary32 量化不兼容 | 是当前实现不支持该精度模型的能力缺口，不是已证实的官方客户端契约违反；不能以局部改成 float32 或放宽计分误差作为修复 |
+
+数值根因使用 `c=4097*b; high=c-(c-b); low=b-high`、`b=1000000` 单独隔离。默认 binary64 内部模拟在三级及全部 checkpoint 都得到 `1000000/0`。将内部模拟器通过临时 Go overlay 改为仅在每次节点返回后转换为 float32（不修改正式执行器）后，前五个 pass 得到 `999936/64`；第六步 `SparseConditionalConstantPropagation` 首次使常量路径变为 `1000000/0`，动态内存输入仍为 `999936/64`，后续保持这一差异。PR #84 之前的 `7fe5042` 优化器/backend 在相同诊断模型下也在第六步产生相同差异，故该数值问题不是这轮性能改动引入。因此该最小算式的首差明确位于第一轮 SCCP；此结论不声称完整计分链只有这一个敏感变换。
+
+固定 Py 基线也使用宿主 int/float 求常量，同一个 splitter 得到 `1000000/0`，同样没有逐节点 binary32 保证。它的 switch 改写会迁移 Phi 输入，能处理不冲突的旧前驱；但多个原始前驱合并到同一目标时，`args[block] = args.pop(next_block)` 会覆盖已有输入，独立 CFG 复现也丢失分支值。Go 因而不能以“对齐 Py”代替语义验证。
+
+历史归因：Go 的原 `RewriteToSwitch` 和宿主精度常量求值均可追溯到 `d135407`；但九宫格复现的触发确实与 PR #84 有关。在同一当前 frontend 产生的 fixture IR 上，通过临时 Go overlay 替换历史 optimizer/backend 实现，`7fe5042`（PR 前）和 `dc6a912` 均通过，紧接的 `848d9f1` 首次输出 11 片。该提交允许 CoalesceFlow 删除循环内空跳转块，使后续比较链能够绕过承载 Phi 输入的前驱。单因素对照中，恢复空跳转转发的 `cycles[block.ID]` 保护即通过；只禁用条件事实传播、恢复唯一前驱合并的循环保护或换回旧 RemoveUnreachable 均仍失败。因此它是此复现的触发提交，旧 switch 算法是错误实际发生处。
+
+保留 `848d9f1` 的其余实现、只叠加本次 switch 边身份修复及其辅助函数，两种比例的三级与逐 pass 执行重新通过，无须撤回循环优化。反向只覆盖回旧版 RewriteToSwitch、保留本次其余实现时，定向用例再次给出错误 Phi 值，九宫格在该 pass 被完整性校验拒绝。上述版本比较是固定最小 fixture 的编译器链路实验，不冒充历史完整引擎或官方客户端复测。
+
+官方[数学函数优化](https://wiki.sonolus.com/engine-specs/function-optimizations/mathematical-functions)列出常量折叠与数学节点优化，[ROM 规范](https://wiki.sonolus.com/engine-specs/resources/engine-rom)规定 binary32 存储；这两项都没有建立节点结果量化模型。针对该模型的严格模式需要覆盖常量求值、表达式重组、backend 和模拟器，并与目标客户端的运算及内存精度实测绑定。当前未提供这种模式，也未签发客户端精确计分结论。
 
 Go 在 CopyCoalesce 前额外执行一次 AdvancedDeadCodeElimination，删除会制造无效干涉的死写入；合并后的原有清理继续删除新产生的死复制。这个顺序差异来自 Go 保留完整 allocation 干涉图的实现，不能只照搬 Py 基于存活集合的 copy 图规则。SSA 消除与控制流合并之后，再执行一次受成本约束的 InlineVars 与 AdvancedDeadCodeElimination，清理重复条件使用消失后留下的单次快照。
 
