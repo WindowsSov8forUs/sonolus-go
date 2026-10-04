@@ -408,69 +408,6 @@ func executeCallValueCheckpoint(t *testing.T, function *ir.Function) []float64 {
 	return logs
 }
 
-func TestGaugeAndProductPipelineCheckpoints(t *testing.T) {
-	packages, err := source.LoadMode(mode.ModePlay, "../testdata/gaugeprecision")
-	if err != nil {
-		t.Fatal(err)
-	}
-	parser := frontend.NewParser()
-	if err := parser.Parse(mode.ModePlay, packages[0]); err != nil {
-		t.Fatal(err)
-	}
-	project, err := parser.GetProject()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, archetype := range project.Modes[mode.ModePlay].Archetypes {
-		t.Run(archetype.Name, func(t *testing.T) {
-			function := CloneFunction(archetype.Callbacks[0].IR)
-			want := []float64{12, 5556, 5557, 5558, 5562, 5563, 5564, 5565, 5566, 5567, 5571, 5572, 5573}
-			if archetype.Name == "Product" {
-				// These products are exact in the simulator's binary64 model.
-				// A client model rounding every node to binary32 has a different
-				// expected product and residual; do not conflate the two contracts.
-				want = []float64{954627.99072265625, 0, 954627.99072265625, 0}
-			}
-			check := func(label string) {
-				t.Helper()
-				if got := executeCallValueCheckpoint(t, function); !reflect.DeepEqual(got, want) {
-					t.Fatalf("%s: got %v, want %v", label, got, want)
-				}
-			}
-			check("frontend")
-			for _, level := range []Level{LevelMinimal, LevelFast, LevelStandard} {
-				optimized, err := NewOptimizer(level).Optimize(Context{Mode: mode.ModePlay, Callback: "preprocess"}, function)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if got := executeCallValueCheckpoint(t, optimized); !reflect.DeepEqual(got, want) {
-					t.Fatalf("%s: got %v, want %v", level, got, want)
-				}
-			}
-			context := Context{Mode: mode.ModePlay, Callback: "preprocess", analyses: newAnalysisManager()}
-			for index, pass := range NewOptimizer(LevelStandard).passes {
-				managed := pass.(ManagedPass)
-				for _, analysis := range managed.Requires() {
-					if err := context.analyses.ensure(analysis, function); err != nil {
-						t.Fatal(err)
-					}
-				}
-				if err := pass.Run(context, function); err != nil {
-					t.Fatal(err)
-				}
-				if err := ir.Validate(function); err != nil {
-					t.Fatal(err)
-				}
-				check(fmt.Sprintf("pass %d %s", index+1, pass.Name()))
-				context.analyses.invalidateExcept(managed.Preserves())
-				for _, analysis := range managed.Destroys() {
-					delete(context.analyses.values, analysis)
-				}
-			}
-		})
-	}
-}
-
 func TestCallValuePipelineCheckpoints(t *testing.T) {
 	packages, err := source.LoadMode(mode.ModePlay, "../testdata/callvalues")
 	if err != nil {

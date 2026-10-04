@@ -285,18 +285,6 @@ IR optimizer 之后，backend 始终执行以 `sonolus.js-compiler@37b0eee` 为�
 
 ## 差分与回归
 
-### 连续分支改写的 Phi 边身份修复（2026-10-04）
-
-`f9e0f44` 的 Standard 第 20 步 `RewriteToSwitch` 将连续相等判断合并为 switch 时，只改了跳转目标，没有保留被绕过比较块送入后继 Phi 的值。随后的不可达块删除会连同这些 Phi 输入一起删除。实际两层九宫格循环因此从 12 个非退化矩形变成 11 个，并出现坐标错位；前 19 个步骤输出正确，故不是数组容量或绘制 API 的限制。
-
-修复记录每个 case/default 原来的前驱。只有被改接且目标含 Phi 的边才创建转接块，并复制该边原有的 Phi 输入；同一源/目标边复用转接块。这样保留不同 case 汇入同一目标时各自的值，不关闭整个 switch 优化。`gaugeprecision` fixture 在三个等级及每个 Standard checkpoint 执行最终 EngineData，固定检查 12 片及其顺序；使用方另外复用了完整 HUD 七场景对照。
-
-补偿乘积是另一项精度边界，不能与上述 CFG 缺陷合并：现有常量求值器和内部 simulator 使用 binary64，而使用方的附加模型对每个节点强制 binary32 舍入。`4097 * 1000000` 在两种模型中分别为 4097000000 与 4096999936；继续执行 `c-(c-b)` 后，b 的高/低分量分别为 `1000000/0` 与 `999936/64`。现有 `Product` 回归验证 binary64 下三级优化和逐 checkpoint 输出一致；它不证明客户端逐节点 binary32 模型，也不证明这种模型下的误差已修复。未增加精度模式、未改算术折叠或数值版本契约。
-
-官方[数学函数优化规则](https://wiki.sonolus.com/engine-specs/function-optimizations/mathematical-functions)明确支持常量折叠，但该页没有约定其浮点精度；[ROM规范](https://wiki.sonolus.com/engine-specs/resources/engine-rom)规定的是存储格式。不能由后者推导全部算术节点必须逐步舍入到binary32，也不能把禁用所有常量折叠视作已获得依据的修复。
-
-该修复已通过隔离 Ubuntu worker 上的全量 build、串行 test、串行 race、vet 和 Godori 四模式 CLI vet；受测修改文件与本地源码哈希一致。未修改依赖或版本字段，未替换使用方已安装的编译器，也未做客户端验收。
-
 仓库保存固定 Py pass snapshot 和 JS SNode golden。普通 Go CI 只读取 checked-in golden，不依赖相邻 Python/Node checkout。更新固定参考版本时，必须显式运行对应 testdata regeneration script并审核差异。
 
 具体 fixture/snapshot schema、allowlist 规则和 regeneration 命令见[维护指南](maintenance.md)。
