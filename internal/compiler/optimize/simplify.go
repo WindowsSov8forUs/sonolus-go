@@ -172,7 +172,9 @@ func (RewriteToSwitch) Run(_ Context, f *ir.Function) error {
 			continue
 		}
 		cases := []ir.SwitchCase{{Value: constant, Target: branch.True}}
+		casePredecessors := []int{block.ID}
 		fallback := branch.False
+		fallbackPredecessor := block.ID
 		for fallback != block.ID && len(preds[fallback]) == 1 && len(f.Blocks[fallback].Phis) == 0 && len(f.Blocks[fallback].Instructions) == 0 {
 			next, ok := f.Blocks[fallback].Terminator.(ir.Branch)
 			if !ok {
@@ -188,10 +190,43 @@ func (RewriteToSwitch) Run(_ Context, f *ir.Function) error {
 			}
 			if !duplicate {
 				cases = append(cases, ir.SwitchCase{Value: nextConstant, Target: next.True})
+				casePredecessors = append(casePredecessors, fallback)
 			}
+			fallbackPredecessor = fallback
 			fallback = next.False
 		}
 		if len(cases) > 1 {
+			// A bypassed comparison can supply a different Phi value from
+			// the first comparison, even when both edges reach the same block.
+			// Preserve that edge identity instead of dropping its Phi input
+			// when the comparison block becomes unreachable.
+			edges := map[[2]int]int{}
+			preserveEdge := func(predecessor, target int) int {
+				if predecessor == block.ID || len(f.Blocks[target].Phis) == 0 {
+					return target
+				}
+				key := [2]int{predecessor, target}
+				if edge, ok := edges[key]; ok {
+					return edge
+				}
+				edge := len(f.Blocks)
+				f.Blocks = append(f.Blocks, &ir.Block{ID: edge, Terminator: ir.Jump{Target: target}})
+				for i := range f.Blocks[target].Phis {
+					phi := &f.Blocks[target].Phis[i]
+					for _, arg := range phi.Args {
+						if arg.Predecessor == predecessor {
+							phi.Args = append(phi.Args, ir.PhiArg{Predecessor: edge, Value: arg.Value})
+							break
+						}
+					}
+				}
+				edges[key] = edge
+				return edge
+			}
+			for i := range cases {
+				cases[i].Target = preserveEdge(casePredecessors[i], cases[i].Target)
+			}
+			fallback = preserveEdge(fallbackPredecessor, fallback)
 			block.Terminator = ir.Switch{Value: discriminant, Cases: cases, Default: fallback}
 		}
 	}
