@@ -268,6 +268,138 @@ func TestInlineVarsExpandsNestedDefinitionsWithinBudget(t *testing.T) {
 	}
 }
 
+func TestInlineVarsBoundsCompoundingTrees(t *testing.T) {
+	for _, steps := range []int{3, 40} {
+		t.Run(fmt.Sprintf("squares=%d", steps), func(t *testing.T) {
+			builder := ir.NewBuilder("compounding", ir.Type{})
+			entry := builder.NewBlock()
+			_ = builder.SetEntry(entry)
+			_ = builder.SetCurrent(entry)
+			rom, err := builder.Memory("EngineRom", ir.Const{}, 1, 0, true, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var value ir.Expr = ir.Load{Place: rom}
+			for i := 0; i < steps; i++ {
+				local := builder.NewLocal(fmt.Sprintf("square%d", i), numberType)
+				expr := builder.RuntimeCall(resource.RuntimeFunctionMultiply, []ir.Expr{value, value}, numberType, true, ir.SourcePos{})
+				if err := builder.Store(ir.Places(local), ir.Value{Type: numberType, Slots: []ir.Expr{expr}}, ir.SourcePos{}); err != nil {
+					t.Fatal(err)
+				}
+				value = local.Slots[0]
+			}
+			_ = builder.Eval(builder.RuntimeCall(resource.RuntimeFunctionDebugLog, []ir.Expr{value}, ir.Type{}, false, ir.SourcePos{}))
+			_ = builder.Return(ir.Value{})
+			input, err := builder.Finish()
+			if err != nil {
+				t.Fatal(err)
+			}
+			context := Context{Mode: mode.ModePlay, Callback: "preprocess"}
+			for _, aggressive := range []bool{false, true} {
+				candidate := CloneFunction(input)
+				if err := (ToSSA{}).Run(context, candidate); err != nil {
+					t.Fatal(err)
+				}
+				if err := (InlineVars{Aggressive: aggressive}).Run(context, candidate); err != nil {
+					t.Fatal(err)
+				}
+				if err := ir.Validate(candidate); err != nil {
+					t.Fatal(err)
+				}
+				count := 0
+				rewriteFunctionExpressionsChanged(candidate, func(expr ir.Expr) (ir.Expr, bool) {
+					count++
+					return expr, false
+				})
+				if count > 20000 {
+					t.Fatalf("aggressive=%t: %d tree nodes from %d squares", aggressive, count, steps)
+				}
+				if aggressive && steps == 3 {
+					argument := candidate.Blocks[0].Instructions[steps].(ir.Eval).Value.(ir.RuntimeCall).Args[0]
+					walkExpr(argument, func(expr ir.Expr) {
+						if load, ok := expr.(ir.Load); ok {
+							if _, temporary := load.Place.(ir.SSAPlace); temporary {
+								t.Fatal("small compounding tree was not inlined")
+							}
+						}
+					})
+				}
+			}
+			// Exercise allocation and backend as well as the pass itself. ROM
+			// prevents SCCP from replacing the input with a compile-time constant.
+			for _, level := range []Level{LevelMinimal, LevelFast, LevelStandard} {
+				final, err := NewOptimizer(level).Optimize(context, input)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, bits := range []uint32{0, 0x3f800000, 0xbf800000, 0x3f7fffff} {
+					rom := []byte{byte(bits), byte(bits >> 8), byte(bits >> 16), byte(bits >> 24)}
+					want := float64(math.Float32frombits(bits))
+					for i := 0; i < steps; i++ {
+						want *= want
+					}
+					got := executeCheckpointRequest(t, final, simexec.Request{ROM: rom, StepLimit: 100000})
+					if !reflect.DeepEqual(got, []float64{want}) {
+						t.Fatalf("level=%v bits=%x: got %v want %g", level, bits, got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestInlineVarsRetainsOversizedDefinitions(t *testing.T) {
+	for _, shape := range []string{"wide", "deep", "address"} {
+		t.Run(shape, func(t *testing.T) {
+			builder := ir.NewBuilder(shape, numberType)
+			entry := builder.NewBlock()
+			_ = builder.SetEntry(entry)
+			_ = builder.SetCurrent(entry)
+			var value ir.Expr = ir.Const{Value: 1}
+			if shape == "deep" {
+				for i := 0; i < 300; i++ {
+					value = builder.RuntimeCall(resource.RuntimeFunctionNegate, []ir.Expr{value}, numberType, true, ir.SourcePos{})
+				}
+			} else {
+				args := make([]ir.Expr, 17000)
+				for i := range args {
+					args[i] = ir.Const{}
+				}
+				value = builder.RuntimeCall(resource.RuntimeFunctionAdd, args, numberType, true, ir.SourcePos{})
+				if shape == "address" {
+					place, err := builder.Memory("EngineRom", value, 1, 0, true, false)
+					if err != nil {
+						t.Fatal(err)
+					}
+					value = ir.Load{Place: place}
+				}
+			}
+			local := builder.NewLocal("value", numberType)
+			if err := builder.Store(ir.Places(local), ir.Value{Type: numberType, Slots: []ir.Expr{value}}, ir.SourcePos{}); err != nil {
+				t.Fatal(err)
+			}
+			_ = builder.Return(local)
+			input, err := builder.Finish()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, aggressive := range []bool{false, true} {
+				candidate := CloneFunction(input)
+				if err := (InlineVars{Aggressive: aggressive}).Run(Context{Mode: mode.ModePlay}, candidate); err != nil {
+					t.Fatal(err)
+				}
+				result := candidate.Blocks[0].Terminator.(ir.Return).Value.Slots[0]
+				if !reflect.DeepEqual(result, local.Slots[0]) {
+					t.Fatalf("aggressive=%t: oversized definition was copied into return", aggressive)
+				}
+				if err := ir.Validate(candidate); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestInlineVarsKeepsWorkOutsideLoops(t *testing.T) {
 	builder := ir.NewBuilder("loop-inlining", ir.Type{})
 	entry, loop, exit := builder.NewBlock(), builder.NewBlock(), builder.NewBlock()

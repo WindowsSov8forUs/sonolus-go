@@ -829,6 +829,12 @@ func sonolusRound(value float64) float64 {
 
 type InlineVars struct{ Aggressive bool }
 
+// Bound compile-time tree copying independently of the runtime cost heuristic.
+// In particular, aggressive inlining must not expand a small SSA DAG into an
+// exponential tree before CSE gets a chance to run.
+const inlineCopyBudget = 16384
+const inlineExpansionDepth = 256
+
 func (InlineVars) Requires() []Analysis  { return []Analysis{AnalysisDominance} }
 func (InlineVars) Preserves() []Analysis { return []Analysis{AnalysisDominance, AnalysisSSA} }
 func (InlineVars) Destroys() []Analysis  { return []Analysis{AnalysisLiveness} }
@@ -854,6 +860,7 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 	crossBlock := map[temporaryPlaceKey]bool{}
 	crossLoop := map[temporaryPlaceKey]bool{}
 	loops := map[int]map[int]bool{}
+	inputSize := 0
 	if !p.Aggressive {
 		preds := predecessors(f)
 		for latch, block := range f.Blocks {
@@ -883,6 +890,7 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 		instructionIndex := 0
 		visit := func(expr ir.Expr) {
 			walkExpr(expr, func(value ir.Expr) {
+				inputSize++
 				load, ok := value.(ir.Load)
 				if !ok {
 					return
@@ -947,8 +955,14 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 	}
 	expanding := map[temporaryPlaceKey]bool{}
 	expanded := map[temporaryPlaceKey]ir.Expr{}
+	// Charge every owned copy, including copies used to build cached expansions.
+	// Large callbacks get a linear allowance; small ones can still expose CSE.
+	remaining := max(inlineCopyBudget, 4*inputSize)
 	var inline func(ir.Expr) (ir.Expr, bool)
 	inline = func(e ir.Expr) (ir.Expr, bool) {
+		if remaining == 0 || len(expanding) >= inlineExpansionDepth {
+			return e, false
+		}
 		l, ok := e.(ir.Load)
 		if !ok {
 			return e, false
@@ -989,12 +1003,53 @@ func (p InlineVars) Run(context Context, f *ir.Function) error {
 		if !affordable(k, replacement) {
 			return e, false
 		}
+		size, fits := inlineCopySize(replacement, min(remaining, inlineCopyBudget), inlineExpansionDepth)
+		if !fits {
+			// Keep the original temporary definition and load. This changes
+			// only the optimization opportunity, not evaluation or storage.
+			return e, false
+		}
+		remaining -= size
 		// Later passes may mutate expression argument slices. Each use must
 		// own its tree even though expansion is cached within this callback.
 		return cloneExpr(replacement), true
 	}
 	rewriteFunctionExpressionsChanged(f, inline)
 	return nil
+}
+
+// Count the actual tree copied by cloneExpr, including dynamic address trees.
+// Stop before either limit is exceeded, without allocating a speculative copy.
+func inlineCopySize(expression ir.Expr, budget, depth int) (int, bool) {
+	if budget <= 0 || depth <= 0 {
+		return 0, false
+	}
+	size := 1
+	child := func(expr ir.Expr) bool {
+		n, fits := inlineCopySize(expr, budget-size, depth-1)
+		size += n
+		return fits
+	}
+	switch value := expression.(type) {
+	case ir.RuntimeCall:
+		for _, argument := range value.Args {
+			if !child(argument) {
+				return 0, false
+			}
+		}
+	case ir.Load:
+		switch place := value.Place.(type) {
+		case ir.IndexedLocalPlace:
+			if !child(place.Index) {
+				return 0, false
+			}
+		case ir.MemoryPlace:
+			if !child(place.Index) {
+				return 0, false
+			}
+		}
+	}
+	return size, true
 }
 
 // SSA aliases are immutable snapshots. Resolve them before counting uses so
