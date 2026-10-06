@@ -88,6 +88,18 @@ Go 在 CopyCoalesce 前额外执行一次 AdvancedDeadCodeElimination，删除�
 
 `InlineVars` 的普通和 aggressive 形式均排除存在动态索引访问的整个 local，包括通过赋值地址表达式间接读取的数组。动态写入可能覆盖任意固定槽，不能只统计 `LocalPlace` 赋值就认定该槽只有一个定义。其余普通 local 只有在唯一赋值支配所有读取、且同 block 内赋值严格早于读取时才能替换；赋值右侧与地址表达式都属于写入前的读取。SSA 与合法的普通 local 内联继续保留。
 
+### 表达式展开的编译资源预算
+
+普通与 aggressive 内联都在深拷贝之前检查表达式树大小。单次复制最多包含 16384 个表达式节点、256 层；每个 callback 的每次内联 pass 累计最多复制 `max(16384, 4 × 输入表达式节点数)` 个节点，构建缓存展开结果所做的复制也计入预算。动态地址的表达式同样计数，递归展开定义链另受 256 层限制。超过预算时保留原临时变量及读取，继续后续 O2 pipeline；不会降低优化等级、改变 storage 或放宽 4096 slots 上限。每个替换位置仍持有独立表达式树，避免后续原地变换污染其他使用位置。
+
+这是编译侧的结构预算，不是进程内存字节上限或运行时成本模型。它限制旧实现中反复复制共享 SSA 依赖造成的膨胀；少量重复展开仍用于暴露 CSE 机会，但不能等到后续 CSE 才处理已经失控的树。超过预算可能保留更多临时读写，属于明确受限的优化取舍。
+
+资源约束参考 `sonolus.py@c45300d46ae53f659d71e0108216e39339434463`（v1.2.5）有预算的 tree lowering；Go 的累计复制计费适配现有树形 IR，并非移植其 Cython SSA arena。历史 pass 差分 golden 仍固定于 `1040bc0`，其来源不因本地 Python 参考 checkout 更新而改写。
+
+2026-10-07 对审计冻结候选 `(*sirius.Frame).UpdateSequential` 的同一第 21 步输入进行受限重放：修复前在 2.487 秒触及 1 GiB 主动停止线；修复后该 pass 用时约 0.00496 秒完成，进程组峰值 14.64 MiB，逻辑表达式出现次数从 14,105,282 降至 15,684，最大单根从 4,183,666 降至 444。同一候选完整 Watch O2、runtime checks notify 构建也完成，监控总时长 1.161 秒、峰值 215.70 MiB。两次修复后测量仍使用 1 GiB 停止线；峰值来自 Linux cgroup `memory.peak`，包括页缓存，不是 RSS。冻结 ZIP SHA256 为 `57d923ed58b739a7df43ed018ed6f676b8ffadbf70219a35a4ec4f9186dc18f6`。这些结果证明该资源故障已消除，不替代实际客户端渲染验收。
+
+对应回归覆盖 40 层连续平方、小树继续内联、宽树与深树截断、动态地址计费，以及三级优化后的最终 EngineData 执行结果。Linux/amd64、Go 1.25.13、GOMAXPROCS=2 的隔离 worker 上，`go test -p=1 -count=1 ./...`、`go test -p=1 -race -count=1 ./...`、`go vet ./...`、`go build ./...` 和 `go run ./cmd/sonolus-go vet -O 2 ./godori` 全部通过；固定 Py 差分资产未修改。
+
 ## 副作用与数值
 
 优化只处理 local 和 catalog 明确标记为 pure 的 RuntimeCall。semantic memory、动态索引和非纯调用采用保守规则，不跨副作用读取、删除或重排。
