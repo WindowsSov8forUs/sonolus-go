@@ -176,11 +176,18 @@ func TestNativeAvailabilityMatrixIsExplicit(t *testing.T) {
 
 func TestNativeEffectsMatchCompilerMetadata(t *testing.T) {
 	want := map[string]Effect{
-		"sonolus/native.Add":              EffectPure,
-		"sonolus/native.DebugLog":         EffectWrite,
-		"sonolus/native.DebugPause":       EffectWrite,
-		"sonolus/native.AddLifeScheduled": EffectWrite,
-		"sonolus/native.Draw":             EffectWrite,
+		"sonolus/native.Get":                  EffectRead,
+		"sonolus/native.GetPointed":           EffectRead,
+		"sonolus/native.GetShifted":           EffectRead,
+		"sonolus/native.StackGet":             EffectRead,
+		"sonolus/native.StackGetFrame":        EffectRead,
+		"sonolus/native.StackGetPointer":      EffectRead,
+		"sonolus/native.StackGetFramePointer": EffectRead,
+		"sonolus/native.Add":                  EffectPure,
+		"sonolus/native.DebugLog":             EffectWrite,
+		"sonolus/native.DebugPause":           EffectWrite,
+		"sonolus/native.AddLifeScheduled":     EffectWrite,
+		"sonolus/native.Draw":                 EffectWrite,
 	}
 	for key, effect := range want {
 		symbol := byKey[key]

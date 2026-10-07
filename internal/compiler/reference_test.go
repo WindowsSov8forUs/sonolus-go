@@ -328,6 +328,63 @@ func executeOptionalRoot(mode executableMode, label string, seed float64) (execu
 	return executionResult{Value: math.Float64bits(value), Memory: map[string]uint64{}, Effects: []string{}}, nil
 }
 
+func TestNativeMemorySnapshots(t *testing.T) {
+	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksNotify} {
+		for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+			t.Run(fmt.Sprintf("checks%d/%s", checks, level), func(t *testing.T) {
+				artifacts, err := NewCompiler(Options{Optimization: level, RuntimeChecks: checks}, "./testdata/nativememory").Compile(mode.ModeWatch)
+				if err != nil {
+					t.Fatal(err)
+				}
+				roots := map[string]int{}
+				for _, archetype := range artifacts.Watch.Archetypes {
+					roots[string(archetype.Name)] = archetype.UpdateSequential.Index
+				}
+				root, ok := roots["Frame"]
+				if !ok {
+					t.Fatal("missing Frame")
+				}
+				for kind := range 3 {
+					for _, seed := range []float64{0, 9} {
+						memory := make([]float64, 116)
+						memory[7] = seed
+						result, err := simexec.Execute(artifacts.Watch.Nodes, root, simexec.Request{Memory: map[int][]float64{4102: memory, 4001: {float64(kind)}}})
+						if err != nil {
+							t.Fatal(err)
+						}
+						delta := float64(1)
+						if kind == 2 {
+							delta = 16
+						}
+						want := []float64{seed, seed + delta, delta}
+						var got []float64
+						for _, effect := range result.Effects {
+							if effect.Function != resource.RuntimeFunctionDebugLog {
+								t.Fatalf("unexpected effect: %v", effect)
+							}
+							got = append(got, effect.Arguments...)
+						}
+						if !reflect.DeepEqual(got, want) || result.Memory[4102][7] != seed+delta {
+							t.Errorf("kind=%d seed=%g: logs=%v memory=%g; want %v memory=%g", kind, seed, got, result.Memory[4102][7], want, seed+delta)
+						}
+					}
+				}
+				result, err := simexec.Execute(artifacts.Watch.Nodes, roots["Reads"], simexec.Request{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []float64
+				for _, effect := range result.Effects {
+					got = append(got, effect.Arguments...)
+				}
+				if want := []float64{3, 3, 8, 8, 27, 91, 40, 50}; !reflect.DeepEqual(got, want) || result.Memory[4102][7] != 40 {
+					t.Fatalf("native read variants: logs=%v memory=%v want=%v", got, result.Memory[4102], want)
+				}
+			})
+		}
+	}
+}
+
 func TestCallValuesPreserveGoSemantics(t *testing.T) {
 	combined := []float64{2, 8, 8, 8, 8, 8, 8, 8, 8, 4, 4, 2, 1, 8, 10, 10, 10, 10, 10, 324, 324, 324, 10}
 	elements := make([]float64, 0, 96)
