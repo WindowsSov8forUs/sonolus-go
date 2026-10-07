@@ -313,6 +313,8 @@ Level global 还可以包含 pointer 与 interface 字段，用于编译期有�
 
 四种模式的 `Time` facade 均完整暴露 `BeatToBPM`、`BeatToTime`、`BeatToStartingBeat`、`BeatToStartingTime`、`TimeToScaledTime`、`TimeToStartingScaledTime`、`TimeToStartingTime` 与 `TimeToTimeScale`。Play、Watch 与 Tutorial 还提供当前帧时间读取，Watch 额外提供 `Skip`。业务引擎优先使用这些接口，`sonolus/native` 只保留给没有高层语义包装的显式 Runtime escape hatch。
 
+`native.Get`、`GetPointed`、`GetShifted` 与栈读取按源码求值时刻取得值；它们没有写入副作用，但不是结果恒定的纯函数。写入前保存的局部变量继续保留旧快照，写入后的新调用必须重新读取；O0/O1/O2 都保持此语义。`native.IncrementPre/DecrementPre` 返回修改前的值，`IncrementPost/DecrementPost` 返回修改后的值，这是 Sonolus 节点名称的约定。
+
 ## Callback
 
 Archetype receiver method 只有在名称与下表 callback 签名同时匹配时才绑定到 EngineData；同名但签名不同的方法保留为普通可内联 receiver method：

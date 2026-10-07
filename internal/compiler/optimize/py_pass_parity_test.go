@@ -810,44 +810,85 @@ func TestPinnedPythonAllocationOverflowBoundary(t *testing.T) {
 
 func TestPinnedPythonFinalEngineDataSemantics(t *testing.T) {
 	golden := loadPythonPassGolden(t)
+	comparePythonFinalSemantics(t, golden.PipelineCases, []Level{LevelStandard}, true)
+}
+
+func TestCurrentPythonFinalEngineDataSemantics(t *testing.T) {
+	data, err := os.ReadFile("../testdata/optimize/py_current_golden.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var golden struct {
+		SchemaVersion int                           `json:"schemaVersion"`
+		PythonCommit  string                        `json:"pythonCommit"`
+		PipelineCases map[string]pythonPipelineCase `json:"pipelineCases"`
+	}
+	if err := json.Unmarshal(data, &golden); err != nil {
+		t.Fatal(err)
+	}
+	if golden.SchemaVersion != 1 || golden.PythonCommit != "c45300d46ae53f659d71e0108216e39339434463" {
+		t.Fatalf("unexpected current Python provenance: schema=%d commit=%s", golden.SchemaVersion, golden.PythonCommit)
+	}
+	builders, _ := pipelineFixtureBuilders(t)
+	if !reflect.DeepEqual(sortedKeys(builders), sortedKeys(golden.PipelineCases)) {
+		t.Fatal("current Python fixture inventory differs")
+	}
+	for name, builder := range builders {
+		item := golden.PipelineCases[name]
+		if pipelineFixtureCaseByName(t, name).ExpectAllocateError {
+			_, err := NewOptimizer(LevelStandard).Optimize(Context{Mode: "play", Callback: "updateParallel"}, builder())
+			if err == nil || !strings.Contains(err.Error(), "4096") || item.AllocateError != "temporary-memory-overflow" {
+				t.Fatalf("%s allocation: Go=%v Python=%q", name, err, item.AllocateError)
+			}
+		} else if item.Nodes == "" || item.NodeCount <= 0 || item.AllocateError != "" {
+			t.Fatalf("%s missing current Python final tree", name)
+		}
+	}
+	comparePythonFinalSemantics(t, golden.PipelineCases, []Level{LevelMinimal, LevelFast, LevelStandard}, false)
+}
+
+func comparePythonFinalSemantics(t *testing.T, cases map[string]pythonPipelineCase, levels []Level, enforceHistoricalCost bool) {
+	t.Helper()
 	builders, matrix := pipelineFixtureBuilders(t)
-	for _, caseName := range sortedKeys(builders) {
-		if pipelineFixtureCaseByName(t, caseName).ExpectAllocateError {
-			continue
-		}
-		function := builders[caseName]()
-		if err := runStandardPrefix(function, len(NewOptimizer(LevelStandard).passes)); err != nil {
-			t.Fatal(err)
-		}
-		goTree, _, err := parityBackendTree(function)
-		if err != nil {
-			t.Fatal(err)
-		}
-		goNodes, goRoot, err := parseCanonicalTree(goTree)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pythonNodes, pythonRoot, err := parseCanonicalTree(golden.PipelineCases[caseName].Nodes)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, input := range matrix[caseName] {
-			request := simexec.Request{Memory: map[int][]float64{2000: {input}}}
-			if caseName == "readonly_cse_loop" {
-				bits := math.Float32bits(float32(input))
-				request.ROM = []byte{byte(bits), byte(bits >> 8), byte(bits >> 16), byte(bits >> 24)}
+	for _, level := range levels {
+		for _, caseName := range sortedKeys(builders) {
+			if pipelineFixtureCaseByName(t, caseName).ExpectAllocateError {
+				continue
 			}
-			goResult, goErr := simexec.Execute(goNodes, goRoot, request)
-			pythonResult, pythonErr := simexec.Execute(pythonNodes, pythonRoot, request)
-			if goErr != nil || pythonErr != nil {
-				t.Fatalf("%s input %g: Go err=%v Python err=%v", caseName, input, goErr, pythonErr)
+			function, err := NewOptimizer(level).Optimize(Context{Mode: "play", Callback: "updateParallel"}, builders[caseName]())
+			if err != nil {
+				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(goResult.Memory[2000], pythonResult.Memory[2000]) || !reflect.DeepEqual(goResult.Effects, pythonResult.Effects) {
-				t.Fatalf("%s input %g semantic mismatch:\nGo: %+v\nPython: %+v", caseName, input, goResult, pythonResult)
+			goTree, _, err := parityBackendTree(function)
+			if err != nil {
+				t.Fatal(err)
 			}
-			t.Logf("%s input=%g Go steps=%d Py steps=%d", caseName, input, goResult.Steps, pythonResult.Steps)
-			if goResult.Steps > pythonResult.Steps {
-				t.Errorf("%s input %g runtime cost exceeds pinned Py: Go=%d Py=%d", caseName, input, goResult.Steps, pythonResult.Steps)
+			goNodes, goRoot, err := parseCanonicalTree(goTree)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pythonNodes, pythonRoot, err := parseCanonicalTree(cases[caseName].Nodes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, input := range matrix[caseName] {
+				request := simexec.Request{Memory: map[int][]float64{2000: {input}}}
+				if caseName == "readonly_cse_loop" {
+					bits := math.Float32bits(float32(input))
+					request.ROM = []byte{byte(bits), byte(bits >> 8), byte(bits >> 16), byte(bits >> 24)}
+				}
+				goResult, goErr := simexec.Execute(goNodes, goRoot, request)
+				pythonResult, pythonErr := simexec.Execute(pythonNodes, pythonRoot, request)
+				if goErr != nil || pythonErr != nil {
+					t.Fatalf("%s input %g: Go err=%v Python err=%v", caseName, input, goErr, pythonErr)
+				}
+				if !reflect.DeepEqual(goResult.Memory[2000], pythonResult.Memory[2000]) || !reflect.DeepEqual(goResult.Effects, pythonResult.Effects) {
+					t.Errorf("%s/%s input %g semantic mismatch:\nGo: %+v\nPython: %+v", level, caseName, input, goResult, pythonResult)
+				}
+				t.Logf("%s input=%g Go steps=%d Py steps=%d", caseName, input, goResult.Steps, pythonResult.Steps)
+				if enforceHistoricalCost && goResult.Steps > pythonResult.Steps {
+					t.Errorf("%s input %g runtime cost exceeds pinned Py: Go=%d Py=%d", caseName, input, goResult.Steps, pythonResult.Steps)
+				}
 			}
 		}
 	}

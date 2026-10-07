@@ -6,14 +6,19 @@
 # The output is compared by Go's TestPipelineGolden in optimize_test.go.
 
 import json
+import sys
 from pathlib import Path
 
 from sonolus.backend.ir import IRConst, IRGet, IRSet, IRInstr, IRPureInstr
 from sonolus.backend.place import BlockPlace, TempBlock
-from sonolus.backend.finalize import cfg_to_engine_node
 from sonolus.backend.optimize.flow import BasicBlock, traverse_cfg_reverse_postorder
-from sonolus.backend.optimize.optimize import STANDARD_PASSES
-from sonolus.backend.optimize.passes import OptimizerConfig, run_passes
+CURRENT = "--current" in sys.argv
+if CURRENT:
+    from sonolus.backend.optimize import STANDARD_PASSES, OptimizerConfig, run_passes, cfg_to_engine_node, optimize_and_finalize
+else:
+    from sonolus.backend.finalize import cfg_to_engine_node
+    from sonolus.backend.optimize.optimize import STANDARD_PASSES
+    from sonolus.backend.optimize.passes import OptimizerConfig, run_passes
 from sonolus.backend.ops import Op
 from sonolus.backend.mode import Mode
 from sonolus.backend.blocks import PlayBlock
@@ -354,6 +359,24 @@ CASES = {
 out = {}
 for name, build in CASES.items():
     case_spec = next(case for case in fixture["cases"] if case["name"] == name)
+    if CURRENT:
+        try:
+            node = optimize_and_finalize(build(), STANDARD_PASSES, CFG)
+        except ValueError as error:
+            if not case_spec.get("expectAllocateError") or "Temporary memory limit exceeded" not in str(error):
+                raise
+            out[name] = {"nodes": "", "nodeCount": 0, "allocateError": "temporary-memory-overflow"}
+        else:
+            if case_spec.get("expectAllocateError"):
+                raise AssertionError(f"{name} unexpectedly allocated within 4096 slots")
+            # Exercise the production fused path and the exported CFG path.
+            exported = cfg_to_engine_node(run_pipeline(build()), CFG)
+            if canon_node(node) != canon_node(exported):
+                raise AssertionError(f"{name}: fused and exported pipeline disagree")
+            def count_nodes(value):
+                return 1 + sum(count_nodes(arg) for arg in getattr(value, "args", ()))
+            out[name] = {"nodes": canon_node(node), "nodeCount": count_nodes(node), "allocateError": ""}
+        continue
     if case_spec.get("expectAllocateError"):
         try:
             run_passes(build(), STANDARD_PASSES[:CHECKPOINTS["allocate"]], CFG)

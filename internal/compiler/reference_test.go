@@ -140,7 +140,7 @@ func TestReferenceEngineDataGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := referenceSnapshot{
-		PythonCommit:  "1040bc0dcc116efdbca05f144edec302e839bcd3",
+		PythonCommit:  "c45300d46ae53f659d71e0108216e39339434463",
 		JSCommit:      "37b0eee5aa16d1e01973d33d625d86f5ef72d268",
 		Configuration: artifacts.Configuration,
 		ROM:           romBits(artifacts.ROM),
