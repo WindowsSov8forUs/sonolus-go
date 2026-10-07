@@ -49,7 +49,17 @@ Fast 首先尝试顺序分配；超过限制时使用活性复用。快速布局
 
 ## Standard
 
-Standard 以 `sonolus.py@1040bc0` 的 pass 语义和顺序为基线，包含：
+### 可变原生读取与 O2 快照
+
+2026-10-07 的计数器审计定位到 catalog 将 JS `sideEffectFreeFuncs` 直接解释为纯表达式。`native.Get(4102,7)` 因而带 `Pure=true` 进入普通 RuntimeCall，绕过结构化 memory 的只读检查；CSE 可跨 Set 复用旧读取，LICM/内联也共享该错误可移动性前提。
+
+修复将三种原生 Get 和栈读取标为 `EffectRead`，Frontend 仅对 `EffectPure` 设置 `Pure=true`，其他有返回值的调用在求值点物化。集中回归在 none/notify × 三优化级比较直接 Set、helper Set、循环累计 Set 的 before/after/count 与真实内存，并覆盖 pointed/shifted 读取、指针重绑、循环内更新及参数求值顺序。JS “无副作用”不再被用于推断这些读取具有引用透明性。
+
+新 Py 基线使用的 IncrementPost 节点同时暴露了内部执行器 Pre/Post 返回值反置：Sonolus [Post 返回修改后值](https://wiki.sonolus.com/engine-specs/functions/increment-post)，[Pre 返回修改前值](https://wiki.sonolus.com/engine-specs/functions/increment-pre)。执行器按该契约修正，覆盖增/减 × 前/后 × 普通/pointed/shifted 共 12 种组合；这属于验证器修复，与 O2 旧读取的根因独立。
+
+### Pass 组织
+
+当前语义参考固定为 `sonolus.py@c45300d46ae53f659d71e0108216e39339434463`（v1.2.5），通过其 Cython 优化器生成的最终 EngineData 对照三级 Go 产物。Go 的独立 pass 组织保留 `1040bc0` 的历史来源，包含：
 
 - CFG 清理和小条件块合并。
 - ToSSA、两轮 SCCP、FromSSA。
@@ -65,6 +75,8 @@ Standard 以 `sonolus.py@1040bc0` 的 pass 语义和顺序为基线，包含：
 Phi 必须覆盖每个可达前驱，同一前驱的多个 switch case 只占一个输入。`ToSSA` 遇到没有支配定义的入边时显式保留原 local 读取，不省略输入或假定其为零。`RewriteToSwitch` 合并比较链时，通过中转块保留通向 Phi 的原始边身份；不同 case/default 原本携带不同值时，不能简单把 Phi 前驱统一改成 switch 所在块。循环回边同样遵守这一规则。含动态副作用的比较表达式不能合并为只求值一次的 switch。
 
 ### O2 九宫格与数值差异的归因
+
+下节为 `1040bc0` 旧基线时期的历史定位，不能据此推断 v1.2.5 仍有同样缺陷。
 
 2026-10-04 的定向验证区分了两类问题：
 

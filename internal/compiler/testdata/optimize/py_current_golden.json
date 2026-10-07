@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "pythonCommit": "c45300d46ae53f659d71e0108216e39339434463",
+  "pipelineCases": {
+    "linear_constant": {
+      "nodes": "Block(JumpLoop(Execute(Set(#2000,#0,#3),#1),#0))",
+      "nodeCount": 9,
+      "allocateError": ""
+    },
+    "diamond_constant": {
+      "nodes": "Block(JumpLoop(Execute(Set(#2000,#0,#1),#1),#0))",
+      "nodeCount": 9,
+      "allocateError": ""
+    },
+    "diamond_memory": {
+      "nodes": "Block(JumpLoop(Execute(If(Greater(Get(#2000,#0),#5),#1,#2)),Execute(Set(#2000,#1,#1),#3),Execute(Set(#2000,#1,#2),#3),#0))",
+      "nodeCount": 24,
+      "allocateError": ""
+    },
+    "loop_memory": {
+      "nodes": "Block(JumpLoop(Execute(Set(#10000,#0,Set(#10000,#1,#0)),#1),Execute(SetAdd(#10000,#0,Get(#2000,#0)),If(Less(IncrementPost(#10000,#1),#10),#1,#2)),Execute(Set(#2000,#1,Get(#10000,#0)),#3),#0))",
+      "nodeCount": 35,
+      "allocateError": ""
+    },
+    "switch_chain": {
+      "nodes": "Block(JumpLoop(Execute(SwitchIntegerWithDefault(Subtract(Get(#2000,#0),#1),#3,#2,#1)),Execute(Set(#2000,#1,#30),#4),Execute(Set(#2000,#1,#20),#4),Execute(Set(#2000,#1,#10),#4),#0))",
+      "nodeCount": 31,
+      "allocateError": ""
+    },
+    "readonly_cse_loop": {
+      "nodes": "Block(JumpLoop(Execute(Set(#10000,#0,#0),#1),Execute(Set(#2000,#1,Add(Get(#3000,#0),#1,Add(Get(#3000,#0),#1))),If(Less(IncrementPost(#10000,#0),#3),#1,#2)),Execute(#3),#0))",
+      "nodeCount": 33,
+      "allocateError": ""
+    },
+    "impure_effect": {
+      "nodes": "Block(JumpLoop(Execute(DebugLog(#7),Set(#2000,#0,#1),#1),#0))",
+      "nodeCount": 11,
+      "allocateError": ""
+    },
+    "allocation_4095": {
+      "nodes": "Block(JumpLoop(Execute(Set(#2000,#0,Set(#10000,#4094,#9)),#1),#0))",
+      "nodeCount": 12,
+      "allocateError": ""
+    },
+    "allocation_4096": {
+      "nodes": "Block(JumpLoop(Execute(Set(#2000,#0,Set(#10000,#4095,#10)),#1),#0))",
+      "nodeCount": 12,
+      "allocateError": ""
+    },
+    "allocation_4097": {
+      "nodes": "",
+      "nodeCount": 0,
+      "allocateError": "temporary-memory-overflow"
+    }
+  }
+}

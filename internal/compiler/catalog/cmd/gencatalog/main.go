@@ -281,6 +281,12 @@ func nativeEntries(root string) []entry {
 		if sideEffectFree[name] {
 			effect = "EffectPure"
 		}
+		// JS sideEffectFreeFuncs describes removable evaluation, not referential
+		// transparency. Like sonolus.py Op.Get, mutable reads are not pure.
+		switch name {
+		case "Get", "GetPointed", "GetShifted", "StackGet", "StackGetFrame", "StackGetPointer", "StackGetFramePointer":
+			effect = "EffectRead"
+		}
 		known[name] = entry{pkg: "sonolus/native", name: name, kind: "KindNative", signature: signature, modes: allNativeModes, phases: allNativePhases, effect: effect, runtime: name, source: "sonolus.js mode indexes|sonolus.js native|sonolus-core-go", minArgs: minArgs, maxArgs: maxArgs, resultSlots: resultSlots, hasRuntimeSignature: true}
 	}
 	constRE := regexp.MustCompile(`RuntimeFunction([A-Za-z0-9_]+)\s+RuntimeFunction\s*=\s*"([A-Za-z0-9_]+)"`)

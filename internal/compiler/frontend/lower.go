@@ -5086,7 +5086,7 @@ func (l *lowerer) lowerCatalogRecipe(n *ast.CallExpr, symbol *catalog.Symbol, ar
 	case catalog.RecipeMemory:
 		return l.memoryCall(n, recipe, args)
 	case catalog.RecipeRuntime:
-		return l.runtimeCall(n, recipe.Runtime, symbol.Effect != catalog.EffectWrite, recipe.Prefix, args)
+		return l.runtimeCall(n, recipe.Runtime, symbol.Effect == catalog.EffectPure, recipe.Prefix, args)
 	default:
 		l.errorAt(n, "Sonolus API %s cannot be lowered in callbacks: %s", symbol.Key(), recipe.Reason)
 		return zeroValue(l.pkg.TypesInfo.TypeOf(n))

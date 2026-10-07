@@ -5,7 +5,7 @@
 ## 事实来源与固定基线
 
 - 当前编译器入口为 `internal/compiler`，不得恢复旧 compiler 或 `internal/newcompiler` 链路。
-- Py optimizer 基线固定为 `sonolus.py@1040bc0dcc116efdbca05f144edec302e839bcd3`。
+- Py optimizer 当前基线固定为 `sonolus.py@c45300d46ae53f659d71e0108216e39339434463`（v1.2.5）。历史逐 pass golden 继续标明原始 `1040bc0` 来源。
 - JS Runtime/SNode 基线固定为 `sonolus.js-compiler@37b0eee5aa16d1e01973d33d625d86f5ef72d268`。
 - Catalog 是 callback API、layout、阶段权限、effect 与 lowering recipe 的唯一事实来源。
 - Godori 只负责证明实际四模式引擎可由标准优化级成功编译；产物语义、优化级一致性、Development Level、CLI 和具体功能边界由对应内部测试集负责。
@@ -45,7 +45,9 @@ Godori 普通测试不重复验证关卡生成器内部行为。修改关卡源�
 
 ## Py optimizer 差分
 
-`internal/compiler/testdata/optimize/pipeline_fixture.json` 是 schema v2 中立 CFG 输入；Go 与 Python 分别解析它。生成的 `py_pass_golden.json` 是 schema v4 snapshot，覆盖 ToSSA、第一轮 SCCP cleanup、第二轮 SCCP、FromSSA、Allocate 和完整 Standard 输出。
+`internal/compiler/testdata/optimize/pipeline_fixture.json` 是 schema v2 中立 CFG 输入；Go 与 Python 分别解析它。当前 `py_current_golden.json` 由 v1.2.5 的 Cython 优化器生成，核对 fused/export 两条输出路径，并与三级 Go 最终节点树比较内存、副作用与 4096 槽分配边界。当前语义对照不承诺 Go 的步骤数低于新 Python。
+
+历史 `py_pass_golden.json` 是 `1040bc0` 的 schema v4 snapshot，保留 ToSSA、第一轮 SCCP cleanup、第二轮 SCCP、FromSSA、Allocate 和完整 Standard 输出；新 Cython 架构不再提供这些独立 pass 检查点。仅在维护历史基线时传入 `-Historical` 和对应旧 checkout。
 
 更新固定 Py 基线或经审核的 pipeline 语义时运行：
 
@@ -53,7 +55,7 @@ Godori 普通测试不重复验证关卡生成器内部行为。修改关卡源�
 & internal/compiler/testdata/optimize/regenerate.ps1 -PythonCheckout ..\sonolus.py
 ```
 
-结构等价但规范化 CFG 不同的条目必须精确写入 `py_pass_allowlist.json`，包含 case、checkpoint、JSON pointer、Go/Py 值与原因。未知差异和失效 allowlist 都会使测试失败；不得通过放宽全局比较处理。
+历史结构对照中，等价但规范化 CFG 不同的条目必须精确写入 `py_pass_allowlist.json`，包含 case、checkpoint、JSON pointer、Go/Py 值与原因。未知差异和失效 allowlist 都会使测试失败；不得通过放宽全局比较处理。当前基线按最终可观察语义验收，不复用旧版的结构 allowlist。
 
 ## Backend 与 JS golden
 

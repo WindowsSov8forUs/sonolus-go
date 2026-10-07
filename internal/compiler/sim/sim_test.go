@@ -1295,12 +1295,35 @@ func TestMemoryStackAndStreamBuiltins(t *testing.T) {
 	if value := mustBuiltin("GetPointed", 2, 0, 0); value != 10 {
 		t.Fatalf("GetPointed = %v, want 10", value)
 	}
-	if value := mustBuiltin("IncrementPostPointed", 2, 0, 0); value != 10 {
-		t.Fatalf("IncrementPostPointed = %v, want 10", value)
+	if value := mustBuiltin("IncrementPostPointed", 2, 0, 0); value != 11 {
+		t.Fatalf("IncrementPostPointed = %v, want 11", value)
 	}
 	mustBuiltin("Copy", 1, 4, 1, 5, 1)
 	if value := mustBuiltin("Get", 1, 5); value != 11 {
 		t.Fatalf("copied value = %v, want 11", value)
+	}
+	// Sonolus Pre/Post refers to the returned state, not C/Go operator spelling.
+	for _, operation := range []struct {
+		name          string
+		value, stored float64
+	}{
+		{"IncrementPre", 10, 11}, {"IncrementPost", 11, 11},
+		{"DecrementPre", 10, 9}, {"DecrementPost", 9, 9},
+	} {
+		for _, address := range []struct {
+			suffix string
+			args   []float64
+		}{
+			{"", []float64{1, 4}}, {"Pointed", []float64{2, 0, 0}}, {"Shifted", []float64{1, 2, 1, 2}},
+		} {
+			mustBuiltin("Set", 1, 4, 10)
+			name := operation.name + address.suffix
+			value := mustBuiltin(name, address.args...)
+			stored := mustBuiltin("Get", 1, 4)
+			if value != operation.value || stored != operation.stored {
+				t.Fatalf("%s value=%g stored=%g, want %g/%g", name, value, stored, operation.value, operation.stored)
+			}
+		}
 	}
 
 	mustBuiltin("StackInit")

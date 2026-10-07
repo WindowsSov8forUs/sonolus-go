@@ -965,10 +965,11 @@ func (e *executor) increment(name string, a []float64) (float64, bool, error) {
 	if _, _, err := e.writeIndex(block, index, value); err != nil {
 		return 0, true, err
 	}
+	// Sonolus names the returned state: Pre is before mutation, Post is after.
 	if pre {
-		return value, true, nil
+		return old, true, nil
 	}
-	return old, true, nil
+	return value, true, nil
 }
 
 func address2(a []float64) (int, int, error) {
