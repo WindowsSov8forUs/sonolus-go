@@ -1,14 +1,14 @@
 module github.com/WindowsSov8forUs/sonolus-go/v2
 
-go 1.25.13
+go 1.26.9
 
 require (
 	github.com/WindowsSov8forUs/sonolus-core-go v0.2.2
 	github.com/WindowsSov8forUs/sonolus-server-go v0.1.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gin-gonic/gin v1.12.0
-	golang.org/x/mod v0.37.0
-	golang.org/x/tools v0.47.0
+	golang.org/x/mod v0.41.0
+	golang.org/x/tools v0.49.0
 )
 
 require (
@@ -36,10 +36,10 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )
