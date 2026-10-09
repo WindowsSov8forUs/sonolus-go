@@ -9797,10 +9797,17 @@ func (l *lowerer) assign(n *ast.AssignStmt) {
 			}
 			values = append([]lowerValue(nil), combined.multi...)
 		} else {
+			tuple, ok := types.Unalias(l.resolveType(combined.type_)).(*types.Tuple)
+			if !ok || tuple.Len() != len(n.Lhs) {
+				l.errorAt(n, "multiple assignment requires one value per target or one statically typed multi-value result")
+				return
+			}
 			values = make([]lowerValue, len(n.Lhs))
 			offset := 0
-			for i, lhs := range n.Lhs {
-				typ := l.resolveType(l.pkg.TypesInfo.TypeOf(lhs))
+			for i := range n.Lhs {
+				// Split by the returned types: blank targets have no type in an
+				// ordinary assignment but still consume their full result layout.
+				typ := l.resolveType(tuple.At(i).Type())
 				size := l.runtimeTypeOf(typ).Slots
 				if offset+size > len(combined.slots) {
 					l.errorAt(n, "internal type-layout inconsistency while expanding multiple assignment: result has %d slots, target %d requires slots [%d:%d]", len(combined.slots), i+1, offset, offset+size)
