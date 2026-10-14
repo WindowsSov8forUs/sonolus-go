@@ -56,6 +56,8 @@ Handle 是空结构，用户无法直接指定 ID。名称只从准确 construct
 
 `Sprite.Exists()`、`Clip.Exists()` 与粒子 `Effect.Exists()` 分别映射 `HasSkinSprite`、`HasEffectClip`、`HasParticleEffect`，对应 Py 的 `is_available`，用于在资源包缺少可选资源时选择 fallback。
 
+Watch 模式中 Sonolus 只呈现 `PlayScheduled`、`PlayLoopedScheduled` 与 `StopLoopedScheduled`，`Play`、`PlayLooped` 与 `StopLooped` 会被 Runtime 忽略（Wiki：Watch Presentation System）。编译器与 Py 一样仍接受这些调用，Watch 音效应在 `preprocess` 中按时间调度。
+
 资源与 Configuration 是引擎共享声明，应放在不带模式 build tag 的文件中。带 `play`、`watch`、`preview` 或 `tutorial` build tag 的文件用于对应模式的 archetype 与 callback。
 
 四种模式的 frontend 都解析并校验完整资源声明，backend 按目标 EngineData 的字段选择输出：
