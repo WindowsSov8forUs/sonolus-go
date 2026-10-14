@@ -251,6 +251,14 @@ func (n *Note) Preprocess() {
 	Assets.Note.DrawCurvedR(q, v, 8, 1, 1)
 	Assets.Note.DrawCurvedBT(q, v, v, 8, 1, 1)
 	Assets.Note.DrawCurvedLR(q, v, v, 8, 1, 1)
+	layered := sonolus.ZIndex{Z1: 21, Z2: 22, Z3: 23, Z4: 24}
+	Assets.Note.DrawZ(q, layered, 1)
+	Assets.Note.DrawCurvedBZ(q, v, 8, layered, 1)
+	Assets.Note.DrawCurvedTZ(q, v, 8, sonolus.ZIndex{Z1: 21}, 1)
+	Assets.Note.DrawCurvedLZ(q, v, 8, layered, 1)
+	Assets.Note.DrawCurvedRZ(q, v, 8, layered, 1)
+	Assets.Note.DrawCurvedBTZ(q, v, v, 8, layered, 1)
+	Assets.Note.DrawCurvedLRZ(q, v, v, 8, layered, 1)
 	_ = Assets.Note.Exists()
 	if Assets.Note.Exists() && Effects.Hit.Exists() && Particles.Hit.Exists() {
 		Assets.Note.Draw(q, 2, 1)

@@ -1205,6 +1205,42 @@ func TestEntityLifeAndScoreFacadesUseEntityBlocks(t *testing.T) {
 	}
 }
 
+func TestMultiKeyZDrawArguments(t *testing.T) {
+	// Draw: z1 after the quad, alpha, then z2..z4; curved draws put z2..z4
+	// after the curve parameters. Unset ZIndex keys are 0.
+	want := []struct {
+		function resource.RuntimeFunction
+		z        [4]float64
+		alpha    float64
+	}{
+		{resource.RuntimeFunctionDraw, [4]float64{5, 5, 5, 5}, 1},
+		{resource.RuntimeFunctionDraw, [4]float64{1, 6, 3, 4}, 0.5},
+		{resource.RuntimeFunctionDrawCurvedT, [4]float64{7, 0, 0, 0}, 1},
+		{resource.RuntimeFunctionDrawCurvedLR, [4]float64{1, 2, 3, 6}, 1},
+	}
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/multiz")
+		result, err := engine.Run(Request{
+			Mode: ModePlay, Archetype: "LayeredNote", Callback: "updateParallel",
+			Memory: map[int][]float64{4001: {6}},
+		})
+		if err != nil {
+			t.Fatalf("optimization %d: %v", optimization, err)
+		}
+		if len(result.Effects) != len(want) {
+			t.Fatalf("optimization %d effects = %+v", optimization, result.Effects)
+		}
+		for index, effect := range result.Effects {
+			expected, args := want[index], effect.Arguments
+			n := len(args)
+			got := [4]float64{args[9], args[n-3], args[n-2], args[n-1]}
+			if effect.Function != expected.function || got != expected.z || args[10] != expected.alpha {
+				t.Fatalf("optimization %d draw %d = %s %v, want %s z %v alpha %v", optimization, index, effect.Function, args, expected.function, expected.z, expected.alpha)
+			}
+		}
+	}
+}
+
 func TestRuntimeChecksEnabledIsCompileTimeAndUnreachableIsPruned(t *testing.T) {
 	for _, test := range []struct {
 		checks RuntimeChecks

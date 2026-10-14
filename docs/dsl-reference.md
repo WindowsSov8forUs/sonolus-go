@@ -56,6 +56,8 @@ Handle 是空结构，用户无法直接指定 ID。名称只从准确 construct
 
 `Sprite.Exists()`、`Clip.Exists()` 与粒子 `Effect.Exists()` 分别映射 `HasSkinSprite`、`HasEffectClip`、`HasParticleEffect`，对应 Py 的 `is_available`，用于在资源包缺少可选资源时选择 fallback。
 
+`Sprite.Draw` 与 `DrawCurved*` 的单个 `z` 会同时写入 Sonolus `Draw` 的 z1..z4。需要多键排序时使用 `DrawZ`、`DrawCurvedBZ`、`DrawCurvedTZ`、`DrawCurvedLZ`、`DrawCurvedRZ`、`DrawCurvedBTZ`、`DrawCurvedLRZ` 并传入 `sonolus.ZIndex{Z1, Z2, Z3, Z4}`：先按 Z1 排序，相等时依次比较 Z2、Z3、Z4；未设置的键为 0，与 Py `draw(quad, z=(z1, …))` 的补零规则一致。
+
 Watch 模式中 Sonolus 只呈现 `PlayScheduled`、`PlayLoopedScheduled` 与 `StopLoopedScheduled`，`Play`、`PlayLooped` 与 `StopLooped` 会被 Runtime 忽略（Wiki：Watch Presentation System）。编译器与 Py 一样仍接受这些调用，Watch 音效应在 `preprocess` 中按时间调度。
 
 资源与 Configuration 是引擎共享声明，应放在不带模式 build tag 的文件中。带 `play`、`watch`、`preview` 或 `tutorial` build tag 的文件用于对应模式的 archetype 与 callback。

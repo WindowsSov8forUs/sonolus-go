@@ -7035,15 +7035,30 @@ func (l *lowerer) resourceCall(n *ast.CallExpr, operation string, args []lowerVa
 	pure := false
 	var callArgs []ir.Expr
 	var returns bool
-	switch operation {
+	// ZIndex variants pass four sort keys; the single-z forms repeat z.
+	zKeys := func(arg lowerValue) (ir.Expr, ir.Expr, ir.Expr, ir.Expr, bool) {
+		switch len(arg.slots) {
+		case 1:
+			return arg.slots[0], arg.slots[0], arg.slots[0], arg.slots[0], true
+		case 4:
+			return arg.slots[0], arg.slots[1], arg.slots[2], arg.slots[3], true
+		}
+		return nil, nil, nil, nil, false
+	}
+	switch strings.TrimSuffix(operation, "Z") {
 	case "sprite.draw":
 		values, ok := flat(0, 1)
 		if !ok || len(values) != 9 || len(args) < 4 {
 			l.errorAt(n, "sprite draw layout mismatch")
 			return lowerValue{}
 		}
-		z, alpha := args[2].slots[0], args[3].slots[0]
-		callArgs = append(values, z, alpha, z, z, z)
+		z1, z2, z3, z4, zok := zKeys(args[2])
+		if !zok {
+			l.errorAt(n, "sprite draw layout mismatch")
+			return lowerValue{}
+		}
+		alpha := args[3].slots[0]
+		callArgs = append(values, z1, alpha, z2, z3, z4)
 		runtime = resource.RuntimeFunctionDraw
 	case "sprite.drawCurvedB", "sprite.drawCurvedT", "sprite.drawCurvedL", "sprite.drawCurvedR":
 		values, ok := flat(0, 1)
@@ -7051,24 +7066,34 @@ func (l *lowerer) resourceCall(n *ast.CallExpr, operation string, args []lowerVa
 			l.errorAt(n, "single-edge curved sprite draw layout mismatch")
 			return lowerValue{}
 		}
-		control, segments, z, alpha := args[2].slots, args[3].slots[0], args[4].slots[0], args[5].slots[0]
-		callArgs = append(values, z, alpha, segments, control[0], control[1], z, z, z)
+		z1, z2, z3, z4, zok := zKeys(args[4])
+		if !zok {
+			l.errorAt(n, "single-edge curved sprite draw layout mismatch")
+			return lowerValue{}
+		}
+		control, segments, alpha := args[2].slots, args[3].slots[0], args[5].slots[0]
+		callArgs = append(values, z1, alpha, segments, control[0], control[1], z2, z3, z4)
 		runtime = map[string]resource.RuntimeFunction{
 			"sprite.drawCurvedB": resource.RuntimeFunctionDrawCurvedB,
 			"sprite.drawCurvedT": resource.RuntimeFunctionDrawCurvedT,
 			"sprite.drawCurvedL": resource.RuntimeFunctionDrawCurvedL,
 			"sprite.drawCurvedR": resource.RuntimeFunctionDrawCurvedR,
-		}[operation]
+		}[strings.TrimSuffix(operation, "Z")]
 	case "sprite.drawCurvedBT", "sprite.drawCurvedLR":
 		values, ok := flat(0, 1)
 		if !ok || len(values) != 9 || len(args) != 7 || len(args[2].slots) != 2 || len(args[3].slots) != 2 {
 			l.errorAt(n, "two-edge curved sprite draw layout mismatch")
 			return lowerValue{}
 		}
+		z1, z2, z3, z4, zok := zKeys(args[5])
+		if !zok {
+			l.errorAt(n, "two-edge curved sprite draw layout mismatch")
+			return lowerValue{}
+		}
 		first, second := args[2].slots, args[3].slots
-		segments, z, alpha := args[4].slots[0], args[5].slots[0], args[6].slots[0]
-		callArgs = append(values, z, alpha, segments, first[0], first[1], second[0], second[1], z, z, z)
-		if operation == "sprite.drawCurvedBT" {
+		segments, alpha := args[4].slots[0], args[6].slots[0]
+		callArgs = append(values, z1, alpha, segments, first[0], first[1], second[0], second[1], z2, z3, z4)
+		if strings.TrimSuffix(operation, "Z") == "sprite.drawCurvedBT" {
 			runtime = resource.RuntimeFunctionDrawCurvedBT
 		} else {
 			runtime = resource.RuntimeFunctionDrawCurvedLR

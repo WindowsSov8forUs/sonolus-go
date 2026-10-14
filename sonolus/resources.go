@@ -60,6 +60,19 @@ func (s Sprite) DrawCurvedBT(q Quad, controlB, controlT Vec2, segments, z, opaci
 func (s Sprite) DrawCurvedLR(q Quad, controlL, controlR Vec2, segments, z, opacity float64) {}
 func (s Sprite) Exists() bool                                                               { return false }
 
+// DrawZ and DrawCurved*Z draw with a multi-key z (see ZIndex).
+func (s Sprite) DrawZ(q Quad, z ZIndex, opacity float64)                                        {}
+func (s Sprite) DrawCurvedBZ(q Quad, control Vec2, segments float64, z ZIndex, opacity float64) {}
+func (s Sprite) DrawCurvedTZ(q Quad, control Vec2, segments float64, z ZIndex, opacity float64) {}
+func (s Sprite) DrawCurvedLZ(q Quad, control Vec2, segments float64, z ZIndex, opacity float64) {}
+func (s Sprite) DrawCurvedRZ(q Quad, control Vec2, segments float64, z ZIndex, opacity float64) {}
+
+func (s Sprite) DrawCurvedBTZ(q Quad, controlB, controlT Vec2, segments float64, z ZIndex, opacity float64) {
+}
+
+func (s Sprite) DrawCurvedLRZ(q Quad, controlL, controlR Vec2, segments float64, z ZIndex, opacity float64) {
+}
+
 type Clip struct{}
 
 func EffectClip(name string) Clip { return Clip{} }
