@@ -1241,6 +1241,32 @@ func TestMultiKeyZDrawArguments(t *testing.T) {
 	}
 }
 
+func TestDynamicIndexOfConstantArrays(t *testing.T) {
+	// Lanes are sprite IDs 1..4 (after Note = 0); [3]{10,20,30} is an
+	// arithmetic table, [3]{1,4,2} is not.
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/multiz")
+		for lane := 0.0; lane < 2; lane++ {
+			result, err := engine.Run(Request{Mode: ModePlay, Archetype: "IndexedNote", Callback: "updateParallel", Memory: map[int][]float64{4001: {lane}}})
+			if err != nil {
+				t.Fatalf("optimization %d lane %v: %v", optimization, lane, err)
+			}
+			if len(result.Effects) != 2 || result.Effects[0].Arguments[0] != 1+lane || result.Effects[1].Arguments[0] != 2+lane {
+				t.Fatalf("optimization %d lane %v draws = %+v", optimization, lane, result.Effects)
+			}
+		}
+		for lane, want := range []float64{1001, 2004, 3002} {
+			result, err := engine.Run(Request{Mode: ModePlay, Archetype: "IndexedNote", Callback: "preprocess", Memory: map[int][]float64{4000: {0}, 4001: {float64(lane)}}})
+			if err != nil {
+				t.Fatalf("optimization %d lane %d: %v", optimization, lane, err)
+			}
+			if got := result.Memory[4000][0]; got != want {
+				t.Fatalf("optimization %d lane %d value = %v, want %v", optimization, lane, got, want)
+			}
+		}
+	}
+}
+
 func TestRuntimeChecksEnabledIsCompileTimeAndUnreachableIsPruned(t *testing.T) {
 	for _, test := range []struct {
 		checks RuntimeChecks
