@@ -1476,6 +1476,13 @@ func TestParseDeclarationsRejectsWrongCallbackPhase(t *testing.T) {
 	}
 }
 
+func TestParseDeclarationsRejectsEntityLifeWritesOutsidePreprocess(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidentitylife")
+	if err == nil || !strings.Contains(err.Error(), "sonolus/play.entityAPI.SetLife cannot write during updateSequential callback") || !strings.Contains(err.Error(), "sonolus/play.entityAPI.SetScoreMultiplierAt cannot write during updateSequential callback") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseDeclarationsRejectsWrongCallbackPhaseThroughHelper(t *testing.T) {
 	_, err := parseMode(mode.ModePlay, "./testdata/invalidhelper")
 	if err == nil || !strings.Contains(err.Error(), "cannot write during updateParallel callback") {

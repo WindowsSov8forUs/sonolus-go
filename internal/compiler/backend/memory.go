@@ -20,7 +20,9 @@ var memoryBlocks = map[mode.Mode]map[string]int{
 		"LevelScore": 2004, "LevelLife": 2005, "EngineRom": 3000,
 		"memory": 4000, "data": 4001, "shared": 4002,
 		"CurrentEntityInfo": 4003, "CurrentEntityDespawn": 4004, "CurrentInputResult": 4005,
+		"CurrentEntityScore": 4006, "CurrentEntityLife": 4007,
 		"EntityDataArray": 4101, "EntitySharedMemoryArray": 4102, "EntityInfo": 4103,
+		"EntityScore": 4106, "EntityLife": 4107,
 		"ArchetypeLife": 5000, "ArchetypeScore": 5001,
 	},
 	mode.ModeWatch: {
@@ -31,7 +33,9 @@ var memoryBlocks = map[mode.Mode]map[string]int{
 		"LevelScore": 2004, "LevelLife": 2005, "EngineRom": 3000,
 		"memory": 4000, "data": 4001, "shared": 4002,
 		"CurrentEntityInfo": 4003, "CurrentInputResult": 4004,
+		"CurrentEntityScore": 4005, "CurrentEntityLife": 4006,
 		"EntityDataArray": 4101, "EntitySharedMemoryArray": 4102, "EntityInfo": 4103,
+		"EntityScore": 4105, "EntityLife": 4106,
 		"ArchetypeLife": 5000, "ArchetypeScore": 5001,
 	},
 	mode.ModePreview: {

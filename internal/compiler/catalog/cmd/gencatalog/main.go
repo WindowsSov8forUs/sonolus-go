@@ -53,7 +53,7 @@ func semantic(item entry) entry {
 		item.effect = "EffectPure"
 		return item
 	}
-	readPrefixes := []string{"Get", "Has", "Len", "Capacity", "Contains", "Exists", "Count", "Now", "Delta", "Scaled", "Previous", "Offset", "BeatTo", "TimeTo", "Rect", "Info", "Result", "Is", "Aspect", "Judge", "Archetype", "Base", "Consecutive", "Initial", "Max", "Value", "Key", "Next", "Skip", "Accuracy", "Judgment", "Direction", "Debug", "Replay", "Multiplayer"}
+	readPrefixes := []string{"Get", "Has", "Len", "Capacity", "Contains", "Exists", "Count", "Now", "Delta", "Scaled", "Previous", "Offset", "BeatTo", "TimeTo", "Rect", "Info", "Result", "Is", "Aspect", "Judge", "Archetype", "Base", "Consecutive", "Initial", "Max", "Value", "Key", "Next", "Skip", "Accuracy", "Judgment", "Direction", "Debug", "Replay", "Multiplayer", "Life", "ScoreMultiplier"}
 	for _, prefix := range readPrefixes {
 		if strings.HasPrefix(name, prefix) {
 			item.effect = "EffectRead"
@@ -109,6 +109,10 @@ func semantic(item entry) entry {
 		item.phases = "preprocess"
 	}
 	if item.pkg == "sonolus/watch" && item.receiver == "entityAPI" && item.name == "SetResult" {
+		item.phases = "preprocess"
+	}
+	// Entity Life and Entity Score blocks are writable only in preprocess.
+	if item.receiver == "entityAPI" && (strings.HasPrefix(item.name, "SetLife") || strings.HasPrefix(item.name, "SetScoreMultiplier")) {
 		item.phases = "preprocess"
 	}
 	if item.name == "Set" {

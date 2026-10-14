@@ -1172,6 +1172,39 @@ func TestGoMathAndSonolusNumberSemanticsStayDistinct(t *testing.T) {
 	}
 }
 
+func TestEntityLifeAndScoreFacadesUseEntityBlocks(t *testing.T) {
+	// Entity Score / Entity Life and their arrays are 4006/4007/4106/4107 in
+	// play and 4005/4006/4105/4106 in watch.
+	for _, test := range []struct {
+		mode                               Mode
+		score, life, scoreArray, lifeArray int
+	}{{ModePlay, 4006, 4007, 4106, 4107}, {ModeWatch, 4005, 4006, 4105, 4106}} {
+		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+			engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/entitylife")
+			result, err := engine.Run(Request{
+				Mode: test.mode, Archetype: "LifeNote", Callback: "preprocess",
+				Memory: map[int][]float64{
+					4000: {0}, test.score: {0}, test.life: {0, 0, 0, 0},
+					test.scoreArray: make([]float64, 3), test.lifeArray: make([]float64, 12),
+				},
+			})
+			if err != nil {
+				t.Fatalf("%s optimization %d: %v", test.mode, optimization, err)
+			}
+			life, lifeArray := result.Memory[test.life], result.Memory[test.lifeArray]
+			if life[0] != 1 || life[1] != 2 || life[2] != 3 || life[3] != -20 || result.Memory[test.score][0] != 1.5 {
+				t.Fatalf("%s optimization %d: entity life %v score %v", test.mode, optimization, life, result.Memory[test.score])
+			}
+			if lifeArray[8] != 0 || lifeArray[11] != -7 || result.Memory[test.scoreArray][1] != 0.5 {
+				t.Fatalf("%s optimization %d: life array %v score array %v", test.mode, optimization, lifeArray, result.Memory[test.scoreArray])
+			}
+			if got := result.Memory[4000][0]; got != -25 {
+				t.Fatalf("%s optimization %d: read-back %v, want -25", test.mode, optimization, got)
+			}
+		}
+	}
+}
+
 func TestRuntimeChecksEnabledIsCompileTimeAndUnreachableIsPruned(t *testing.T) {
 	for _, test := range []struct {
 		checks RuntimeChecks

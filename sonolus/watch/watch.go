@@ -94,6 +94,31 @@ func (entityAPI) SetResult(value InputResult) {}
 func Spawn[T any](data T)                     {}
 func ArchetypeID[T any]() int                 { return -1 }
 func ArchetypeKey[T any]() float64            { return -1 }
+
+// Life returns the current entity's life increments (Entity Life block).
+func (entityAPI) Life() LifeValues { return LifeValues{} }
+
+// SetLife sets the current entity's life increments; preprocess only.
+func (entityAPI) SetLife(value LifeValues) {}
+
+// LifeAt returns the life increments of the entity at index.
+func (entityAPI) LifeAt(index int) LifeValues { return LifeValues{} }
+
+// SetLifeAt sets the life increments of the entity at index; preprocess only.
+func (entityAPI) SetLifeAt(index int, value LifeValues) {}
+
+// ScoreMultiplier returns the current entity's score multiplier (Entity Score block).
+func (entityAPI) ScoreMultiplier() float64 { return 0 }
+
+// SetScoreMultiplier sets the current entity's score multiplier; preprocess only.
+func (entityAPI) SetScoreMultiplier(value float64) {}
+
+// ScoreMultiplierAt returns the score multiplier of the entity at index.
+func (entityAPI) ScoreMultiplierAt(index int) float64 { return 0 }
+
+// SetScoreMultiplierAt sets the score multiplier of the entity at index; preprocess only.
+func (entityAPI) SetScoreMultiplierAt(index int, value float64) {}
+
 func CurrentEntityRef[T any]() sonolus.EntityRef[T] {
 	return sonolus.EntityRef[T]{}
 }
