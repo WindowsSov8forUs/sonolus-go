@@ -71,7 +71,7 @@ func bucketSprite(out *ModeDeclarations, pkg *packages.Package, expr ast.Expr) (
 		if !valid {
 			return resource.EngineDataBucketSprite{}, fmt.Errorf("bucket fallback must reference a declared skin sprite field")
 		}
-		result.FallbackID = fallback
+		result.FallbackID = &fallback
 		start = 2
 	}
 	values := []*float64{&result.X, &result.Y, &result.W, &result.H, &result.Rotation}

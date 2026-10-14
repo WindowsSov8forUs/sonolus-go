@@ -598,7 +598,7 @@ func decodeExecutableMode(data any) (executableMode, error) {
 		}
 	case *resource.EngineWatchData:
 		result.nodes = value.Nodes
-		result.roots["global.updateSpawn"] = value.UpdateSpawn
+		result.roots["global.updateSpawn"] = rootIndex(value.UpdateSpawn)
 		for index, archetype := range value.Archetypes {
 			for name, callback := range map[string]*resource.EngineWatchDataArchetypeCallback{
 				"preprocess": archetype.Preprocess, "spawnTime": archetype.SpawnTime, "despawnTime": archetype.DespawnTime,
@@ -621,9 +621,9 @@ func decodeExecutableMode(data any) (executableMode, error) {
 		}
 	case *resource.EngineTutorialData:
 		result.nodes = value.Nodes
-		result.roots["global.preprocess"] = value.Preprocess
-		result.roots["global.navigate"] = value.Navigate
-		result.roots["global.update"] = value.Update
+		result.roots["global.preprocess"] = rootIndex(value.Preprocess)
+		result.roots["global.navigate"] = rootIndex(value.Navigate)
+		result.roots["global.update"] = rootIndex(value.Update)
 	default:
 		return executableMode{}, fmt.Errorf("unsupported executable mode %T", data)
 	}
@@ -1009,4 +1009,12 @@ func FuzzCompiledCallbackOptimizationSemantics(f *testing.F) {
 			}
 		}
 	})
+}
+
+// rootIndex is a global callback's node index, or 0 when the callback is absent.
+func rootIndex(index *int) int {
+	if index == nil {
+		return 0
+	}
+	return *index
 }

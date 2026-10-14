@@ -1450,7 +1450,7 @@ func TestParseDeclarationsBuckets(t *testing.T) {
 		t.Fatalf("unexpected buckets: %#v", decl.Resources.Buckets)
 	}
 	bucket := decl.Resources.Buckets[0]
-	if bucket.Unit != "#MILLISECONDS" || bucket.Sprites[0].ID != 0 || bucket.Sprites[1].FallbackID != 1 {
+	if bucket.Unit != "#MILLISECONDS" || bucket.Sprites[0].ID != 0 || bucket.Sprites[1].FallbackID == nil || *bucket.Sprites[1].FallbackID != 1 {
 		t.Fatalf("unexpected bucket metadata: %#v", bucket)
 	}
 }

@@ -3,8 +3,8 @@ module github.com/WindowsSov8forUs/sonolus-go/v2
 go 1.26.9
 
 require (
-	github.com/WindowsSov8forUs/sonolus-core-go v0.2.2
-	github.com/WindowsSov8forUs/sonolus-server-go v0.1.0
+	github.com/WindowsSov8forUs/sonolus-core-go v0.3.0
+	github.com/WindowsSov8forUs/sonolus-server-go v0.2.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gin-gonic/gin v1.12.0
 	golang.org/x/mod v0.41.0

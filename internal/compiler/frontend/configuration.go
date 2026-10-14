@@ -406,7 +406,7 @@ func optionBase(field *types.Var, value source.StaticValue) (resource.EngineConf
 		name = field.Name()
 	}
 	return resource.EngineConfigurationOptionBase{
-		Name: core.Text(name), Title: core.Text(title), Description: description,
+		Name: core.Text(name), Title: core.Text(title), Description: core.Text(description),
 		Standard: standard, Advanced: advanced, Scope: scope,
 	}, nil
 }

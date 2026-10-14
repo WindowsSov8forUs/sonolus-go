@@ -104,7 +104,7 @@ func assembleWatch(declarations *frontend.ModeDeclarations) (*resource.EngineWat
 			return nil, err
 		}
 		if !omit {
-			result.UpdateSpawn = index
+			result.UpdateSpawn = &index
 		}
 	}
 	result.Nodes = nonNil(appender.nodes)
@@ -166,11 +166,11 @@ func assembleTutorial(declarations *frontend.ModeDeclarations) (*resource.Engine
 		}
 		switch name {
 		case "preprocess":
-			result.Preprocess = index
+			result.Preprocess = &index
 		case "navigate":
-			result.Navigate = index
+			result.Navigate = &index
 		case "update":
-			result.Update = index
+			result.Update = &index
 		}
 	}
 	for name := range groups {
