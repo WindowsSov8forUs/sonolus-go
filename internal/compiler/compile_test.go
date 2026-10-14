@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/types"
@@ -1585,6 +1586,43 @@ func TestParseDeclarationsConfigurationTimeMetric(t *testing.T) {
 	ui := decl.Configuration.Value.UI
 	if ui.PrimaryMetric != "time" || ui.SecondaryMetric != "time" {
 		t.Fatalf("time metric was not kept: %#v", ui)
+	}
+}
+
+func TestParseDeclarationsConfigurationOptionCategories(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/configuration_category")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := decl.Configuration.Value
+	categories := configuration.OptionCategories
+	if len(categories) != 2 || categories[0].Name != "gameplay" || categories[0].Title != "#GAMEPLAY" || categories[1].Name != "visual" {
+		t.Fatalf("unexpected option categories: %#v", categories)
+	}
+	speed := configuration.Options[0].(resource.EngineConfigurationSliderOption)
+	mirror := configuration.Options[1].(resource.EngineConfigurationToggleOption)
+	if speed.Category != "gameplay" || speed.Description != "#SPEED" || mirror.Category != "visual" {
+		t.Fatalf("unexpected option categories: %#v %#v", speed, mirror)
+	}
+	encoded, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"optionCategories":[{"name":"gameplay","title":"#GAMEPLAY"},{"name":"visual","title":"Visual"}]`) || !strings.Contains(string(encoded), `"category":"gameplay"`) {
+		t.Fatalf("EngineConfiguration JSON = %s", encoded)
+	}
+}
+
+func TestParseDeclarationsRejectsInvalidOptionCategories(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidconfigurationcategory")
+	for _, want := range []string{
+		`duplicate option category "gameplay"`,
+		`option "#SPEED" needs a Category because option categories are declared`,
+		`option "#MIRROR" names undeclared category "visual"`,
+	} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %v does not contain %q", err, want)
+		}
 	}
 }
 

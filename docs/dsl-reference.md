@@ -150,6 +150,7 @@ var Config = GameConfiguration{
 - option metadata 使用对应的强类型 config；空 `Name` 默认使用 Go 字段名。
 - `SelectOptionConfig.Default` 是 `Values` 的索引，values 必须是非空静态字符串列表。
 - `sonolus.UIConfig` 字段自动作为 UI 配置识别，最多一个。
+- `[]sonolus.OptionCategory` 字段自动作为 `optionCategories` 识别（app 1.1.4），最多一个；category 的 `Name` 唯一且非空，`Title` 非空。声明后每个 option 都必须在 config 的 `Category` 中引用已声明的分类；未声明分类时 option 不能设置 `Category`。
 - `[]string` 字段自动作为 replay fallback 识别，最多一个；其值必须引用 option 的最终外部名称，禁止空值和重复。
 
 ## ROM
