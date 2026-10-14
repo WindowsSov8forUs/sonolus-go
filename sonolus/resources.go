@@ -76,6 +76,9 @@ func (c Clip) PlayLoopedScheduled(at float64) ScheduledLoopedEffectHandle {
 func (h LoopedEffectHandle) Stop()                    {}
 func (h ScheduledLoopedEffectHandle) Stop(at float64) {}
 
+// Exists reports whether the effect clip is available (HasEffectClip).
+func (c Clip) Exists() bool { return false }
+
 type Effect struct{}
 
 func ParticleEffect(name string) Effect { return Effect{} }
@@ -85,6 +88,9 @@ type ParticleHandle struct{ ID float64 }
 func (p Effect) Spawn(q Quad, duration float64, loop bool) ParticleHandle { return ParticleHandle{} }
 func (h ParticleHandle) Move(q Quad)                                      {}
 func (h ParticleHandle) Destroy()                                         {}
+
+// Exists reports whether the particle effect is available (HasParticleEffect).
+func (p Effect) Exists() bool { return false }
 
 type Bucket struct{}
 

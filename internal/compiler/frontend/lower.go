@@ -7086,6 +7086,14 @@ func (l *lowerer) resourceCall(n *ast.CallExpr, operation string, args []lowerVa
 		callArgs, _ = flat(0)
 		runtime = resource.RuntimeFunctionHasSkinSprite
 		pure, returns = true, true
+	case "clip.exists":
+		callArgs, _ = flat(0)
+		runtime = resource.RuntimeFunctionHasEffectClip
+		pure, returns = true, true
+	case "particle.exists":
+		callArgs, _ = flat(0)
+		runtime = resource.RuntimeFunctionHasParticleEffect
+		pure, returns = true, true
 	case "clip.play":
 		callArgs, _ = flat(0, 1)
 		runtime = resource.RuntimeFunctionPlay

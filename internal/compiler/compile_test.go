@@ -299,6 +299,12 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 	if !foundSqrt {
 		t.Fatal("math.Sqrt was not lowered to Power(x, 0.5)")
 	}
+	for _, runtime := range []resource.RuntimeFunction{resource.RuntimeFunctionHasSkinSprite, resource.RuntimeFunctionHasEffectClip, resource.RuntimeFunctionHasParticleEffect} {
+		calls := runtimeCalls[runtime]
+		if len(calls) == 0 || len(calls[0].Args) != 1 {
+			t.Fatalf("resource Exists did not lower to %s: %#v", runtime, calls)
+		}
+	}
 }
 
 func TestDebugRuntimeCallsAreAvailableOutsidePreprocess(t *testing.T) {

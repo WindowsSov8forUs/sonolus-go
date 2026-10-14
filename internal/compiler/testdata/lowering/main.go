@@ -252,6 +252,9 @@ func (n *Note) Preprocess() {
 	Assets.Note.DrawCurvedBT(q, v, v, 8, 1, 1)
 	Assets.Note.DrawCurvedLR(q, v, v, 8, 1, 1)
 	_ = Assets.Note.Exists()
+	if Assets.Note.Exists() && Effects.Hit.Exists() && Particles.Hit.Exists() {
+		Assets.Note.Draw(q, 2, 1)
+	}
 	Effects.Hit.Play(0)
 	Effects.Hit.PlayScheduled(1, 0)
 	loop := Effects.Hit.PlayLooped()

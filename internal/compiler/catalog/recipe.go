@@ -430,6 +430,7 @@ var resourceRecipes = map[string]string{
 	"sonolus.JudgmentWindow.Judge": "judgment.judge", "sonolus.JudgmentWindows.Judge": "judgment.judge",
 	"sonolus.Clip.Play": "clip.play", "sonolus.Clip.PlayScheduled": "clip.playScheduled",
 	"sonolus.Clip.PlayLooped": "clip.playLooped", "sonolus.Clip.PlayLoopedScheduled": "clip.playLoopedScheduled",
+	"sonolus.Clip.Exists": "clip.exists", "sonolus.Effect.Exists": "particle.exists",
 	"sonolus.LoopedEffectHandle.Stop": "loop.stop", "sonolus.ScheduledLoopedEffectHandle.Stop": "loop.stopScheduled",
 	"sonolus.Effect.Spawn": "particle.spawn", "sonolus.ParticleHandle.Move": "particle.move", "sonolus.ParticleHandle.Destroy": "particle.destroy",
 	"sonolus/tutorial.instructionAPI.Show": "instruction.show", "sonolus/tutorial.instructionAPI.Clear": "instruction.clear",

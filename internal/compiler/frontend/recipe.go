@@ -40,7 +40,7 @@ var aggregateOperations = operationSet(
 )
 
 var resourceOperations = operationSet(
-	"archetype.spawn", "archetype.id", "archetype.key", "entity.currentRef", "entityRef.get", "entityRef.getUnchecked", "entityRef.key", "entityRef.as", "entityRef.matches", "entityRef.getAs", "touch.values", "touch.items", "sprite.draw", "sprite.exists", "sprite.drawCurvedB", "sprite.drawCurvedT",
+	"archetype.spawn", "archetype.id", "archetype.key", "entity.currentRef", "entityRef.get", "entityRef.getUnchecked", "entityRef.key", "entityRef.as", "entityRef.matches", "entityRef.getAs", "touch.values", "touch.items", "sprite.draw", "sprite.exists", "clip.exists", "particle.exists", "sprite.drawCurvedB", "sprite.drawCurvedT",
 	"sprite.drawCurvedL", "sprite.drawCurvedR", "sprite.drawCurvedBT", "sprite.drawCurvedLR", "judgment.judge",
 	"clip.play", "clip.playScheduled", "clip.playLooped", "clip.playLoopedScheduled", "loop.stop",
 	"loop.stopScheduled", "particle.spawn", "particle.move", "particle.destroy", "instruction.show", "instruction.clear",
