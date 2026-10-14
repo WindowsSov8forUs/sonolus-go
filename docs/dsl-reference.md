@@ -254,6 +254,8 @@ Archetype callback 内可使用 `play.CurrentEntityRef[T]()`、`watch.CurrentEnt
 
 Play、Watch 与 Preview 可使用对应模式的 `ArchetypeID[T]()` 与 `ArchetypeKey[T]()` 取得具体 Archetype 的编译期 runtime ID 和 key；未声明 key 时返回 `-1`。`T` 必须是当前模式中非 abstract 的准确声明；这些值适合在 Stage 等全局实体中一次性初始化 archetype score/life 等按 ID 排列的 runtime 表。abstract base 没有单一 runtime ID/key，因此稳定拒绝。这是 Go 对 Py “将 archetype class 作为静态值传入 helper”的类型安全替代。
 
+逐实体的生命增量与分数倍率对应 Py 的 `entity_life` 与 `entity_score_multiplier`：Play 与 Watch 的 `Entity.Life()`/`SetLife(LifeValues)`、`Entity.ScoreMultiplier()`/`SetScoreMultiplier(x)` 读写当前实体的 Entity Life / Entity Score 块，`LifeAt(index)`、`SetLifeAt(index, v)`、`ScoreMultiplierAt(index)`、`SetScoreMultiplierAt(index, x)` 按实体 index 读写对应数组块。与 Sonolus 块权限一致，写入只允许在 `preprocess`，读取在所有 callback 可用；它们与 `Life.SetArchetype`、`Score.SetArchetype` 的 archetype 级数值相加。
+
 视图允许读取 `imported`、`data` 与 `shared` 字段，并在对应 callback 阶段写入允许写入的 `data`/`shared` 字段；其他实体的 `memory` 与 `exported` 字段始终拒绝访问。视图可通过 helper 返回、保存到同一静态目标类型的本地 struct、定长数组或 catalog container，并按 entity index 比较；仍不能进入 callback 返回、Archetype/resource/static storage、接口，或对字段取地址。动态实体 index 与嵌套数组 index 会组合成单一 affine memory address，每层边界检查独立保留，且各 index 只求值一次。
 
 ## Replay Streams

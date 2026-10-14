@@ -39,6 +39,25 @@ var memoryRecipes = map[string]memoryRecipe{
 	"sonolus.Bucket.Window":    {"LevelBucket", 0, 6, 0, false},
 	"sonolus.Bucket.SetWindow": {"LevelBucket", 0, 6, 0, true},
 
+	// Entity Life (perfect, great, good, miss increments) and Entity Score
+	// (multiplier) of the current entity, or of any entity by index.
+	"sonolus/play.entityAPI.Life":                  {"CurrentEntityLife", 0, 0, -1, false},
+	"sonolus/play.entityAPI.SetLife":               {"CurrentEntityLife", 0, 0, -1, true},
+	"sonolus/play.entityAPI.LifeAt":                {"EntityLife", 0, 4, 0, false},
+	"sonolus/play.entityAPI.SetLifeAt":             {"EntityLife", 0, 4, 0, true},
+	"sonolus/play.entityAPI.ScoreMultiplier":       {"CurrentEntityScore", 0, 0, -1, false},
+	"sonolus/play.entityAPI.SetScoreMultiplier":    {"CurrentEntityScore", 0, 0, -1, true},
+	"sonolus/play.entityAPI.ScoreMultiplierAt":     {"EntityScore", 0, 1, 0, false},
+	"sonolus/play.entityAPI.SetScoreMultiplierAt":  {"EntityScore", 0, 1, 0, true},
+	"sonolus/watch.entityAPI.Life":                 {"CurrentEntityLife", 0, 0, -1, false},
+	"sonolus/watch.entityAPI.SetLife":              {"CurrentEntityLife", 0, 0, -1, true},
+	"sonolus/watch.entityAPI.LifeAt":               {"EntityLife", 0, 4, 0, false},
+	"sonolus/watch.entityAPI.SetLifeAt":            {"EntityLife", 0, 4, 0, true},
+	"sonolus/watch.entityAPI.ScoreMultiplier":      {"CurrentEntityScore", 0, 0, -1, false},
+	"sonolus/watch.entityAPI.SetScoreMultiplier":   {"CurrentEntityScore", 0, 0, -1, true},
+	"sonolus/watch.entityAPI.ScoreMultiplierAt":    {"EntityScore", 0, 1, 0, false},
+	"sonolus/watch.entityAPI.SetScoreMultiplierAt": {"EntityScore", 0, 1, 0, true},
+
 	"sonolus/play.timeAPI.Now":                  {"RuntimeUpdate", 0, 0, -1, false},
 	"sonolus/play.timeAPI.Delta":                {"RuntimeUpdate", 1, 0, -1, false},
 	"sonolus/play.timeAPI.Scaled":               {"RuntimeUpdate", 2, 0, -1, false},
