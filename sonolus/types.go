@@ -32,6 +32,10 @@ func (v Vec2) SignedAngleDiff(o Vec2) float64         { return 0 }
 
 type Quad struct{ BL, TL, TR, BR Vec2 }
 
+// ZIndex is a multi-key draw order: sprites sort by Z1, ties by Z2, then Z3
+// and Z4 (Sonolus Draw z1..z4). Unset keys are 0, as in sonolus.py.
+type ZIndex struct{ Z1, Z2, Z3, Z4 float64 }
+
 func (q Quad) Center() Vec2                  { return Vec2{} }
 func (q Quad) Translate(v Vec2) Quad         { return Quad{} }
 func (q Quad) Scale(s float64) Quad          { return Quad{} }
