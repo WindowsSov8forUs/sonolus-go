@@ -289,6 +289,16 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 			t.Fatalf("math intrinsic %s was not lowered", runtime)
 		}
 	}
+	foundSqrt := false
+	for _, call := range runtimeCalls[resource.RuntimeFunctionPower] {
+		if len(call.Args) == 2 {
+			exponent, ok := call.Args[1].(ir.Const)
+			foundSqrt = foundSqrt || ok && exponent.Value == 0.5
+		}
+	}
+	if !foundSqrt {
+		t.Fatal("math.Sqrt was not lowered to Power(x, 0.5)")
+	}
 }
 
 func TestDebugRuntimeCallsAreAvailableOutsidePreprocess(t *testing.T) {

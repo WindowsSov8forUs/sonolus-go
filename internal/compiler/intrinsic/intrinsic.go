@@ -29,6 +29,7 @@ type Symbol struct {
 	Runtime resource.RuntimeFunction
 	Arity   int
 	Prefix  []float64
+	Suffix  []float64
 	Value   float64
 }
 
@@ -62,6 +63,8 @@ func init() {
 	} {
 		addRuntime("math", entry.name, entry.fn, entry.arity)
 	}
+	// math.Sqrt has no runtime function; like sonolus.py it lowers to Power(x, 0.5).
+	symbols["math.Sqrt"] = Symbol{Package: "math", Name: "Sqrt", Kind: RuntimeFunction, Runtime: resource.RuntimeFunctionPower, Arity: 1, Suffix: []float64{0.5}}
 	addRuntime("math/rand", "Float64", resource.RuntimeFunctionRandom, 0, 0, 1)
 	addRuntime("math/rand", "Intn", resource.RuntimeFunctionRandomInteger, 1, 0)
 	for name, value := range map[string]float64{

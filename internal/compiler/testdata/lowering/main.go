@@ -203,7 +203,7 @@ func (n *Note) Preprocess() {
 	sum += math.Abs(-1) + math.Floor(1.5) + math.Ceil(1.5) + math.Round(1.5) + math.Trunc(1.5) + math.Log(2)
 	sum += math.Sin(1) + math.Cos(1) + math.Tan(1) + math.Asin(0.5) + math.Acos(0.5) + math.Atan(1)
 	sum += math.Sinh(1) + math.Cosh(1) + math.Tanh(1)
-	sum += math.Atan2(1, 2) + math.Min(1, 2) + math.Max(1, 2) + math.Pow(2, 3) + math.Mod(3, 2)
+	sum += math.Atan2(1, 2) + math.Min(1, 2) + math.Max(1, 2) + math.Pow(2, 3) + math.Mod(3, 2) + math.Sqrt(4)
 	sum += math.E + math.Pi + math.Phi + math.Sqrt2 + math.SqrtE + math.SqrtPi + math.SqrtPhi
 	sum += math.Ln2 + math.Log2E + math.Ln10 + math.Log10E
 	_, _ = a, b

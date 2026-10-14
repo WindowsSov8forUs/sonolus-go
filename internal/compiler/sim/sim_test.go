@@ -1153,13 +1153,14 @@ func TestGoMathAndSonolusNumberSemanticsStayDistinct(t *testing.T) {
 		engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/simulator")
 		for _, test := range []struct {
 			operation float64
+			input     float64
 			want      float64
-		}{{4, -2}, {5, 1}, {6, -2}, {7, -1}} {
+		}{{4, 1, -2}, {5, 1, 1}, {6, 1, -2}, {7, 1, -1}, {8, 6.25, 2.5}, {8, 2, math.Sqrt2}} {
 			result, err := engine.Run(Request{
 				Mode:      ModePlay,
 				Archetype: "ArithmeticNote",
 				Callback:  "preprocess",
-				Memory:    map[int][]float64{4001: {1, test.operation}},
+				Memory:    map[int][]float64{4001: {test.input, test.operation}},
 			})
 			if err != nil {
 				t.Fatalf("optimization %d operation %v: %v", optimization, test.operation, err)

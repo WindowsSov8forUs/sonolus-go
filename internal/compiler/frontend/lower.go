@@ -4639,7 +4639,7 @@ func (l *lowerer) staticCallable(expr ast.Expr) (*staticCallable, bool) {
 				}
 				values[index] = argument.value
 			}
-			return l.runtimeCall(call, symbol.Runtime, true, symbol.Prefix, values)
+			return l.runtimeCall(call, symbol.Runtime, true, symbol.Prefix, values, symbol.Suffix...)
 		}}, true
 	}
 	return &staticCallable{function: fn, pkg: l.packages[fn.Pkg()], substitutions: l.callableTypeSubstitutions(fn, expr)}, true
@@ -5057,7 +5057,7 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 				)
 			}
 		}
-		return l.runtimeCall(n, symbol.Runtime, true, symbol.Prefix, args)
+		return l.runtimeCall(n, symbol.Runtime, true, symbol.Prefix, args, symbol.Suffix...)
 	}
 	return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 }
@@ -8545,13 +8545,16 @@ func (l *lowerer) inlineLiteralArguments(call *ast.CallExpr, callable *staticCal
 	return result
 }
 
-func (l *lowerer) runtimeCall(n *ast.CallExpr, op resource.RuntimeFunction, pure bool, prefix []float64, args []lowerValue) lowerValue {
+func (l *lowerer) runtimeCall(n *ast.CallExpr, op resource.RuntimeFunction, pure bool, prefix []float64, args []lowerValue, suffix ...float64) lowerValue {
 	flat := make([]ir.Expr, 0)
 	for _, p := range prefix {
 		flat = append(flat, ir.Const{Value: p})
 	}
 	for _, arg := range args {
 		flat = append(flat, arg.slots...)
+	}
+	for _, p := range suffix {
+		flat = append(flat, ir.Const{Value: p})
 	}
 	if l.streamSize > 1 && (op == resource.RuntimeFunctionStreamSet || op == resource.RuntimeFunctionStreamHas || op == resource.RuntimeFunctionStreamGetValue || op == resource.RuntimeFunctionStreamGetPreviousKey || op == resource.RuntimeFunctionStreamGetNextKey) {
 		if len(flat) == 0 {
