@@ -379,6 +379,48 @@ func (l *lowerer) packageStaticValue(object types.Object, node ast.Node) (lowerV
 	return value, true
 }
 
+// indexArithmeticConstantArray indexes a non-addressable array of one-slot
+// constants that form an arithmetic progression, such as a resource handle
+// array (IDs are consecutive in declaration order), as first + index*step
+// instead of copying the whole table into temporary memory first.
+func (l *lowerer) indexArithmeticConstantArray(base lowerValue, array *types.Array, index lowerValue, node *ast.IndexExpr) (lowerValue, bool) {
+	length := int(array.Len())
+	if len(base.places) != 0 || length < 2 || len(base.slots) != length || l.runtimeTypeOf(types.NewArray(array.Elem(), 1)).Slots != 1 {
+		return lowerValue{}, false
+	}
+	if _, exists := l.entityBinding(array.Elem()); exists {
+		return lowerValue{}, false
+	}
+	values := make([]float64, length)
+	for position, slot := range base.slots {
+		constant, ok := slot.(ir.Const)
+		if !ok {
+			return lowerValue{}, false
+		}
+		values[position] = constant.Value
+	}
+	step := values[1] - values[0]
+	for position := 2; position < length; position++ {
+		if values[position]-values[position-1] != step || values[0]+float64(position)*step != values[position] {
+			return lowerValue{}, false
+		}
+	}
+	index = l.materialize("array.index", index, node.Index)
+	inBounds := l.pure(resource.RuntimeFunctionAnd, node,
+		l.pure(resource.RuntimeFunctionGreaterOr, node, index.slots[0], ir.Const{}),
+		l.pure(resource.RuntimeFunctionLess, node, index.slots[0], ir.Const{Value: float64(length)}))
+	l.guard(node, inBounds)
+	offset := index.slots[0]
+	if step != 1 {
+		offset = l.pure(resource.RuntimeFunctionMultiply, node, offset, ir.Const{Value: step})
+	}
+	element := ir.Expr(offset)
+	if values[0] != 0 {
+		element = l.pure(resource.RuntimeFunctionAdd, node, ir.Const{Value: values[0]}, offset)
+	}
+	return lowerValue{type_: array.Elem(), slots: []ir.Expr{element}, entityField: base.entityField, immutablePackage: base.immutablePackage}, true
+}
+
 func (l *lowerer) indexImmutablePackageArray(base lowerValue, array *types.Array, index lowerValue, node ast.Node) lowerValue {
 	index = l.materialize("package.array.index", index, node)
 	inBounds := l.pure(resource.RuntimeFunctionAnd, node,
@@ -3979,6 +4021,9 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		}
 		if base.pointerLoad != nil {
 			return l.loadPointerArrayIndex(base, arr, index, n)
+		}
+		if value, ok := l.indexArithmeticConstantArray(base, arr, index, n); ok {
+			return value
 		}
 		if base.immutablePackage && len(base.places) == 0 {
 			return l.indexImmutablePackageArray(base, arr, index, n)
