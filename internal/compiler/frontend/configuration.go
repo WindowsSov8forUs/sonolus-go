@@ -224,7 +224,7 @@ func configurationUI(value source.StaticValue, typ *types.Struct) (resource.Engi
 		return result, err
 	}
 	result.PrimaryMetric = resource.EngineConfigurationMetric(primary)
-	if !allowed(primary, "arcade", "arcadePercentage", "accuracy", "accuracyPercentage", "life", "perfect", "perfectPercentage", "greatGoodMiss", "greatGoodMissPercentage", "miss", "missPercentage", "errorHeatmap") {
+	if !allowed(primary, "arcade", "arcadePercentage", "accuracy", "accuracyPercentage", "life", "perfect", "perfectPercentage", "greatGoodMiss", "greatGoodMissPercentage", "miss", "missPercentage", "errorHeatmap", "time") {
 		return result, fmt.Errorf("invalid primary metric %q", primary)
 	}
 	secondary, err := stringValue("SecondaryMetric", string(result.SecondaryMetric))
@@ -232,7 +232,7 @@ func configurationUI(value source.StaticValue, typ *types.Struct) (resource.Engi
 		return result, err
 	}
 	result.SecondaryMetric = resource.EngineConfigurationMetric(secondary)
-	if !allowed(secondary, "arcade", "arcadePercentage", "accuracy", "accuracyPercentage", "life", "perfect", "perfectPercentage", "greatGoodMiss", "greatGoodMissPercentage", "miss", "missPercentage", "errorHeatmap") {
+	if !allowed(secondary, "arcade", "arcadePercentage", "accuracy", "accuracyPercentage", "life", "perfect", "perfectPercentage", "greatGoodMiss", "greatGoodMissPercentage", "miss", "missPercentage", "errorHeatmap", "time") {
 		return result, fmt.Errorf("invalid secondary metric %q", secondary)
 	}
 	for _, item := range []struct {

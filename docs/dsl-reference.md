@@ -138,7 +138,7 @@ var Config = GameConfiguration{
 
 `UIConfig` 采用与 Py `UiConfig` 相同的声明默认值：省略的 metric、visibility、animation、judgment error style 与 placement 分别补为 `arcade`、`life`、`scale=1/alpha=1`、Py 默认 tween、`late` 和 `top`。Static tracer 会保留 struct literal 字段是否显式出现，因此 `UIVisibility{Scale: 0, Alpha: 0}` 仍是显式隐藏，而不是被默认值覆盖。
 
-公开枚举完整覆盖 Sonolus wire schema：12 种 `UIMetric`、`linear/none` 及四个方向组合的八组 `UIEase`、13 种 `UIJudgmentErrorStyle` 和 7 种 `UIJudgmentErrorPlacement`。Compiler 会在声明阶段拒绝未知字符串；最终 Configuration 可由 `sonolus-core-go` 严格反序列化。
+公开枚举完整覆盖 Sonolus wire schema：13 种 `UIMetric`（含 app 1.1.3 的 `time`）、`linear/none` 及四个方向组合的八组 `UIEase`、13 种 `UIJudgmentErrorStyle` 和 7 种 `UIJudgmentErrorPlacement`。Compiler 会在声明阶段拒绝未知字符串；最终 Configuration 可由 `sonolus-core-go` 严格反序列化。
 
 规则：
 

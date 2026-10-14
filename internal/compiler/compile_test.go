@@ -1570,6 +1570,17 @@ func TestParseDeclarationsConfigurationStaticFields(t *testing.T) {
 	}
 }
 
+func TestParseDeclarationsConfigurationTimeMetric(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/configuration_time")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := decl.Configuration.Value.UI
+	if ui.PrimaryMetric != "time" || ui.SecondaryMetric != "time" {
+		t.Fatalf("time metric was not kept: %#v", ui)
+	}
+}
+
 func TestConfigurationOptionsLowerToRuntimeMemory(t *testing.T) {
 	decl, err := parseMode(mode.ModePlay, "./testdata/configuration")
 	if err != nil {

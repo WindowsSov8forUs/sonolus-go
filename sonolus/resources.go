@@ -171,6 +171,7 @@ const (
 	UIMetricMiss                    UIMetric = "miss"
 	UIMetricMissPercentage          UIMetric = "missPercentage"
 	UIMetricErrorHeatmap            UIMetric = "errorHeatmap"
+	UIMetricTime                    UIMetric = "time"
 
 	UIEaseLinear UIEase = "linear"
 	UIEaseNone   UIEase = "none"

@@ -1104,6 +1104,7 @@ var Symbols = []Symbol{
 	{Package: "sonolus", Name: "UIMetricMissPercentage", Receiver: "", Kind: KindConstant, Signature: "UIMetric", Effect: EffectRead, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "UIMetricPerfect", Receiver: "", Kind: KindConstant, Signature: "UIMetric", Effect: EffectRead, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "UIMetricPerfectPercentage", Receiver: "", Kind: KindConstant, Signature: "UIMetric", Effect: EffectRead, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
+	{Package: "sonolus", Name: "UIMetricTime", Receiver: "", Kind: KindConstant, Signature: "UIMetric", Effect: EffectRead, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "UITween", Receiver: "", Kind: KindType, Signature: "struct {\n\tFrom, To, Duration float64\n\tEase               UIEase\n}", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "UIVisibility", Receiver: "", Kind: KindType, Signature: "struct{ Scale, Alpha float64 }", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
 	{Package: "sonolus", Name: "UnitVec2", Receiver: "", Kind: KindFunction, Signature: "func(angle float64) Vec2", Effect: EffectPure, Source: "sonolus.py|sonolus.js|wiki", Internal: false},
