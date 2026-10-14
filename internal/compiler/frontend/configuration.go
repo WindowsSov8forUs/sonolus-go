@@ -394,21 +394,34 @@ func optionCall(value source.StaticValue, field *types.Var) (*source.StaticCall,
 
 func optionBase(field *types.Var, value source.StaticValue) (resource.EngineConfigurationOptionBase, error) {
 	name, nameOK := staticStringConfig(value, "Name")
+	category, categoryOK := staticStringConfig(value, "Category")
 	title, titleOK := staticStringConfig(value, "Title")
 	description, descriptionOK := staticStringConfig(value, "Description")
 	standard, standardOK := staticBoolConfig(value, "Standard")
 	advanced, advancedOK := staticBoolConfig(value, "Advanced")
 	scope, scopeOK := staticStringConfig(value, "Scope")
-	if !nameOK || !titleOK || !descriptionOK || !standardOK || !advancedOK || !scopeOK {
+	if !nameOK || !categoryOK || !titleOK || !descriptionOK || !standardOK || !advancedOK || !scopeOK {
 		return resource.EngineConfigurationOptionBase{}, fmt.Errorf("configuration.%s: option metadata must be static", field.Name())
 	}
 	if name == "" {
 		name = field.Name()
 	}
 	return resource.EngineConfigurationOptionBase{
-		Name: core.Text(name), Title: core.Text(title), Description: description,
+		Name: core.Text(name), Category: category, Title: core.Text(title), Description: core.Text(description),
 		Standard: standard, Advanced: advanced, Scope: scope,
 	}, nil
+}
+
+func optionBaseOf(option resource.EngineConfigurationOption) resource.EngineConfigurationOptionBase {
+	switch value := option.(type) {
+	case resource.EngineConfigurationSliderOption:
+		return value.EngineConfigurationOptionBase
+	case resource.EngineConfigurationToggleOption:
+		return value.EngineConfigurationOptionBase
+	case resource.EngineConfigurationSelectOption:
+		return value.EngineConfigurationOptionBase
+	}
+	return resource.EngineConfigurationOptionBase{}
 }
 
 func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source.ASTTracer) (*resource.EngineConfiguration, map[*types.Var]int, map[*types.Var]float64, []error) {
@@ -423,7 +436,7 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 	}
 	configurationValue := binding.Value
 	externalNames := map[string]bool{}
-	uiFields, fallbackFields := 0, 0
+	uiFields, fallbackFields, categoryFields := 0, 0, 0
 	for i := 0; i < st.NumFields(); i++ {
 		field := st.Field(i)
 		if field.Embedded() {
@@ -461,6 +474,44 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 				errs = append(errs, fmt.Errorf("configuration.%s: %w", field.Name(), err))
 			} else {
 				cfg.UI = ui
+			}
+			continue
+		}
+		if slice, ok := types.Unalias(field.Type()).(*types.Slice); ok && typeID(slice.Elem()) == rootID("OptionCategory") {
+			categoryFields++
+			if categoryFields > 1 {
+				errs = append(errs, fmt.Errorf("configuration.%s: only one []sonolus.OptionCategory field is allowed", field.Name()))
+				continue
+			}
+			value, found := staticField(configurationValue, field)
+			if !found {
+				errs = append(errs, fmt.Errorf("configuration.%s: option categories are not static", field.Name()))
+				continue
+			}
+			if err := pureStaticError(value, "configuration option categories"); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			elements, valid := staticElements(value)
+			if !valid {
+				errs = append(errs, fmt.Errorf("configuration.%s: option categories must be a static []sonolus.OptionCategory", field.Name()))
+				continue
+			}
+			cfg.OptionCategories = []resource.EngineConfigurationOptionCategory{}
+			seen := map[string]bool{}
+			for _, element := range elements {
+				name, nameOK := staticStringConfig(element, "Name")
+				title, titleOK := staticStringConfig(element, "Title")
+				if !nameOK || !titleOK || name == "" || title == "" {
+					errs = append(errs, fmt.Errorf("configuration.%s: option categories need non-empty static Name and Title", field.Name()))
+					continue
+				}
+				if seen[name] {
+					errs = append(errs, fmt.Errorf("configuration.%s: duplicate option category %q", field.Name(), name))
+					continue
+				}
+				seen[name] = true
+				cfg.OptionCategories = append(cfg.OptionCategories, resource.EngineConfigurationOptionCategory{Name: name, Title: core.Text(title)})
 			}
 			continue
 		}
@@ -578,6 +629,22 @@ func parseConfiguration(named *types.Named, singleton *types.Var, tracer *source
 			optionIDs[field] = len(cfg.Options)
 			defaults[field] = float64(def)
 			cfg.Options = append(cfg.Options, resource.EngineConfigurationSelectOption{EngineConfigurationOptionBase: base, Type: resource.EngineConfigurationOptionTypeSelect, Def: def, Values: values})
+		}
+	}
+	// With optionCategories every option must name one of them (Sonolus 1.1.4).
+	categories := map[string]bool{}
+	for _, category := range cfg.OptionCategories {
+		categories[category.Name] = true
+	}
+	for _, option := range cfg.Options {
+		base := optionBaseOf(option)
+		switch {
+		case cfg.OptionCategories == nil && base.Category != "":
+			errs = append(errs, fmt.Errorf("configuration: option %q has category %q but no []sonolus.OptionCategory field declares categories", base.Name, base.Category))
+		case cfg.OptionCategories != nil && base.Category == "":
+			errs = append(errs, fmt.Errorf("configuration: option %q needs a Category because option categories are declared", base.Name))
+		case cfg.OptionCategories != nil && !categories[base.Category]:
+			errs = append(errs, fmt.Errorf("configuration: option %q names undeclared category %q", base.Name, base.Category))
 		}
 	}
 	for _, fallback := range cfg.ReplayFallbackOptionNames {

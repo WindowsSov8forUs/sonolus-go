@@ -125,7 +125,10 @@ func callback(artifacts *compiler.Artifacts, request Request) ([]resource.Engine
 			return missing()
 		}
 		if request.Archetype == "" && request.Callback == "updateSpawn" {
-			return artifacts.Watch.Nodes, artifacts.Watch.UpdateSpawn, nil
+			if artifacts.Watch.UpdateSpawn == nil {
+				return missing()
+			}
+			return artifacts.Watch.Nodes, *artifacts.Watch.UpdateSpawn, nil
 		}
 		for _, archetype := range artifacts.Watch.Archetypes {
 			if string(archetype.Name) != request.Archetype {
@@ -177,7 +180,7 @@ func callback(artifacts *compiler.Artifacts, request Request) ([]resource.Engine
 		if artifacts.Tutorial == nil {
 			return missing()
 		}
-		index := 0
+		var index *int
 		switch request.Callback {
 		case "preprocess":
 			index = artifacts.Tutorial.Preprocess
@@ -185,10 +188,11 @@ func callback(artifacts *compiler.Artifacts, request Request) ([]resource.Engine
 			index = artifacts.Tutorial.Navigate
 		case "update":
 			index = artifacts.Tutorial.Update
-		default:
+		}
+		if index == nil {
 			return missing()
 		}
-		return artifacts.Tutorial.Nodes, index, nil
+		return artifacts.Tutorial.Nodes, *index, nil
 	default:
 		return nil, 0, invalidRequest("invalid mode %q", request.Mode)
 	}

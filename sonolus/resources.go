@@ -3,6 +3,10 @@ package sonolus
 // Marker types are embedded in user declarations and recognized by go/types.
 type Configuration struct{}
 
+// OptionCategory declares one option category; a configuration field of type
+// []OptionCategory lists them, and each option then names its Category.
+type OptionCategory struct{ Name, Title string }
+
 type SkinResource struct {
 	RenderMode RenderMode
 }
@@ -15,6 +19,7 @@ type InstructionIconResource struct{}
 
 type SliderOptionConfig struct {
 	Name, Title, Description string
+	Category                 string
 	Standard, Advanced       bool
 	Scope                    string
 	Default, Min, Max, Step  float64
@@ -23,6 +28,7 @@ type SliderOptionConfig struct {
 
 type ToggleOptionConfig struct {
 	Name, Title, Description string
+	Category                 string
 	Standard, Advanced       bool
 	Scope                    string
 	Default                  bool
@@ -30,6 +36,7 @@ type ToggleOptionConfig struct {
 
 type SelectOptionConfig struct {
 	Name, Title, Description string
+	Category                 string
 	Standard, Advanced       bool
 	Scope                    string
 	Default                  int
