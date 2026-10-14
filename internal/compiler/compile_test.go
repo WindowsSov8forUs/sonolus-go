@@ -289,6 +289,22 @@ func TestCallbackLoweringRangeAndImmediateClosure(t *testing.T) {
 			t.Fatalf("math intrinsic %s was not lowered", runtime)
 		}
 	}
+	foundSqrt := false
+	for _, call := range runtimeCalls[resource.RuntimeFunctionPower] {
+		if len(call.Args) == 2 {
+			exponent, ok := call.Args[1].(ir.Const)
+			foundSqrt = foundSqrt || ok && exponent.Value == 0.5
+		}
+	}
+	if !foundSqrt {
+		t.Fatal("math.Sqrt was not lowered to Power(x, 0.5)")
+	}
+	for _, runtime := range []resource.RuntimeFunction{resource.RuntimeFunctionHasSkinSprite, resource.RuntimeFunctionHasEffectClip, resource.RuntimeFunctionHasParticleEffect} {
+		calls := runtimeCalls[runtime]
+		if len(calls) == 0 || len(calls[0].Args) != 1 {
+			t.Fatalf("resource Exists did not lower to %s: %#v", runtime, calls)
+		}
+	}
 }
 
 func TestDebugRuntimeCallsAreAvailableOutsidePreprocess(t *testing.T) {
@@ -1551,6 +1567,17 @@ func TestParseDeclarationsConfigurationStaticFields(t *testing.T) {
 	}
 	if got := decl.Configuration.Value.ReplayFallbackOptionNames; len(got) != 2 || got[0] != "Speed" || got[1] != "Lane" {
 		t.Fatalf("unexpected replay fallback: %#v", got)
+	}
+}
+
+func TestParseDeclarationsConfigurationTimeMetric(t *testing.T) {
+	decl, err := parseMode(mode.ModePlay, "./testdata/configuration_time")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := decl.Configuration.Value.UI
+	if ui.PrimaryMetric != "time" || ui.SecondaryMetric != "time" {
+		t.Fatalf("time metric was not kept: %#v", ui)
 	}
 }
 

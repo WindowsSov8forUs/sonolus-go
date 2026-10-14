@@ -185,6 +185,10 @@ func (note *ArithmeticNote) Preprocess() {
 		note.Value = math.Round(-1.5)
 		play.Debug.Log(note.Value)
 		return
+	case 8:
+		note.Value = math.Sqrt(note.Divisor)
+		play.Debug.Log(note.Value)
+		return
 	default:
 		note.Value = native.Round(-1.5)
 		play.Debug.Log(note.Value)

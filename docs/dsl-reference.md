@@ -54,6 +54,10 @@ var Skin = &SkinData{
 
 Handle 是空结构，用户无法直接指定 ID。名称只从准确 constructor 调用的静态字符串参数中提取。字段顺序和定长数组元素顺序决定连续资源 ID。
 
+`Sprite.Exists()`、`Clip.Exists()` 与粒子 `Effect.Exists()` 分别映射 `HasSkinSprite`、`HasEffectClip`、`HasParticleEffect`，对应 Py 的 `is_available`，用于在资源包缺少可选资源时选择 fallback。
+
+Watch 模式中 Sonolus 只呈现 `PlayScheduled`、`PlayLoopedScheduled` 与 `StopLoopedScheduled`，`Play`、`PlayLooped` 与 `StopLooped` 会被 Runtime 忽略（Wiki：Watch Presentation System）。编译器与 Py 一样仍接受这些调用，Watch 音效应在 `preprocess` 中按时间调度。
+
 资源与 Configuration 是引擎共享声明，应放在不带模式 build tag 的文件中。带 `play`、`watch`、`preview` 或 `tutorial` build tag 的文件用于对应模式的 archetype 与 callback。
 
 四种模式的 frontend 都解析并校验完整资源声明，backend 按目标 EngineData 的字段选择输出：
@@ -136,7 +140,7 @@ var Config = GameConfiguration{
 
 `UIConfig` 采用与 Py `UiConfig` 相同的声明默认值：省略的 metric、visibility、animation、judgment error style 与 placement 分别补为 `arcade`、`life`、`scale=1/alpha=1`、Py 默认 tween、`late` 和 `top`。Static tracer 会保留 struct literal 字段是否显式出现，因此 `UIVisibility{Scale: 0, Alpha: 0}` 仍是显式隐藏，而不是被默认值覆盖。
 
-公开枚举完整覆盖 Sonolus wire schema：12 种 `UIMetric`、`linear/none` 及四个方向组合的八组 `UIEase`、13 种 `UIJudgmentErrorStyle` 和 7 种 `UIJudgmentErrorPlacement`。Compiler 会在声明阶段拒绝未知字符串；最终 Configuration 可由 `sonolus-core-go` 严格反序列化。
+公开枚举完整覆盖 Sonolus wire schema：13 种 `UIMetric`（含 app 1.1.3 的 `time`）、`linear/none` 及四个方向组合的八组 `UIEase`、13 种 `UIJudgmentErrorStyle` 和 7 种 `UIJudgmentErrorPlacement`。Compiler 会在声明阶段拒绝未知字符串；最终 Configuration 可由 `sonolus-core-go` 严格反序列化。
 
 规则：
 
@@ -377,7 +381,7 @@ Archetype receiver method 只有在名称与下表 callback 签名同时匹配�
 
 ## 标准库
 
-`math` 支持 catalog 登记且可保持 Go 语义的常量及函数，例如 `Abs`、`Floor`、`Sin`、`Sinh`、`Atan2`、`Min`、`Max`、`Pow`、`Mod`。`math/rand.Float64()` 映射到 Sonolus Runtime RNG，`rand.Intn(n)` 映射到 `[0,n)` 整数随机；常量 `n <= 0` 在编译期报错，动态 `n <= 0` 在所有 runtime-check 等级终止 callback，`notify` 额外输出诊断。
+`math` 支持 catalog 登记且可保持 Go 语义的常量及函数，例如 `Abs`、`Floor`、`Sin`、`Sinh`、`Atan2`、`Min`、`Max`、`Pow`、`Mod`。Runtime 没有平方根函数，`math.Sqrt(x)` 与 Py 的 `math.sqrt` 一样降为 `Power(x, 0.5)`（负数结果为 NaN，与 Go 一致）。`math/rand.Float64()` 映射到 Sonolus Runtime RNG，`rand.Intn(n)` 映射到 `[0,n)` 整数随机；常量 `n <= 0` 在编译期报错，动态 `n <= 0` 在所有 runtime-check 等级终止 callback，`notify` 额外输出诊断。
 
 Go 运算符与标准库遵循 Go 数值规则：`int(x)`、`int64(x)` 与整数 `/` 向零截断，`%` 和 `math.Mod` 使用 remainder，`math.Round` 的半数远离零。运行时 `int64` 与 `int` 使用相同的单槽 Sonolus number 表示，支持显式互转、算术与比较；这用于在 Runtime 精确整数范围内表达 int32 wrap 等有界中间计算，不承诺完整 64 位溢出语义。需要 Sonolus/Python modulo 或 JS `Math.round` 时分别显式调用 `native.Mod`、`native.Round`。其他固定宽度整数与 unsigned runtime 运算不属于 DSL；超出 Sonolus number 精确整数范围的 Go overflow 行为不作承诺。
 
