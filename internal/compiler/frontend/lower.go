@@ -9685,6 +9685,9 @@ func (l *lowerer) dynamicSwitchStmt(n *ast.SwitchStmt, label string) {
 				}
 				condition = lowerValue{type_: types.Typ[types.Bool], slots: []ir.Expr{ir.RuntimeCall{Function: resource.RuntimeFunctionEqual, Args: []ir.Expr{tag.slots[0], condition.slots[0]}, Result: irTypeOf(types.Typ[types.Bool]), Pure: true, Pos: sourcePos(l.pkg, expression.Pos())}}}
 			}
+			if !l.scalarCondition(expression, condition) {
+				continue
+			}
 			next := l.newBlock()
 			_ = l.builder.Branch(condition.slots[0], caseBlocks[i], next)
 			l.setCurrent(next)
@@ -10223,6 +10226,20 @@ func identifiersAsExprs(ids []*ast.Ident) []ast.Expr {
 	return result
 }
 
+// scalarCondition reports whether a lowered condition is a single slot. A
+// condition whose lowering failed (for example indexing an unsupported
+// runtime slice) yields no slots; that is reported instead of crashing, unless
+// an earlier diagnostic already explains it.
+func (l *lowerer) scalarCondition(expression ast.Expr, condition lowerValue) bool {
+	if len(condition.slots) == 1 {
+		return true
+	}
+	if len(l.errs) == 0 {
+		l.errorAt(expression, "condition requires a scalar boolean value")
+	}
+	return false
+}
+
 func (l *lowerer) ifStmt(n *ast.IfStmt) {
 	if n.Init != nil {
 		l.stmt(n.Init)
@@ -10236,6 +10253,9 @@ func (l *lowerer) ifStmt(n *ast.IfStmt) {
 		return
 	}
 	cond := l.expr(n.Cond)
+	if !l.scalarCondition(n.Cond, cond) {
+		return
+	}
 	if len(cond.slots) == 1 {
 		if constant, ok := cond.slots[0].(ir.Const); ok {
 			if constant.Value != 0 {
@@ -10277,6 +10297,9 @@ func (l *lowerer) forStmt(n *ast.ForStmt, label string) {
 		l.jump(body)
 	} else {
 		c := l.expr(n.Cond)
+		if !l.scalarCondition(n.Cond, c) {
+			c.slots = []ir.Expr{ir.Const{}}
+		}
 		_ = l.builder.Branch(c.slots[0], body, exit)
 	}
 	l.breaks = append(l.breaks, exit)

@@ -1373,6 +1373,20 @@ func TestConsecutiveRejectsMissJudgment(t *testing.T) {
 	}
 }
 
+func TestSliceConditionsReportInsteadOfPanicking(t *testing.T) {
+	// Runtime slices are unsupported; a condition that indexes one must fail
+	// with a diagnostic in if, for and switch rather than crash the compiler.
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidslicecondition")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, line := range []string{"play.go:8:", "play.go:16:", "play.go:24:"} {
+		if !strings.Contains(err.Error(), line) || !strings.Contains(err.Error(), "only array indexing is supported") {
+			t.Fatalf("missing diagnostic at %s: %v", line, err)
+		}
+	}
+}
+
 func TestGlobalCallbacksRejectUnknownExportedName(t *testing.T) {
 	_, err := parseMode(mode.ModeTutorial, "./testdata/invalidglobal")
 	if err == nil || !strings.Contains(err.Error(), "Updtae: unknown tutorial global callback") {
