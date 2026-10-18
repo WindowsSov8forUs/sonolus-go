@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"math"
@@ -1201,6 +1202,99 @@ func TestEntityLifeAndScoreFacadesUseEntityBlocks(t *testing.T) {
 			if got := result.Memory[4000][0]; got != -25 {
 				t.Fatalf("%s optimization %d: read-back %v, want -25", test.mode, optimization, got)
 			}
+		}
+	}
+}
+
+func TestConsecutiveScoreAndLifeUseJudgmentSlots(t *testing.T) {
+	// Level Score (2004) and Level Life (2005) lay out the consecutive groups
+	// as Perfect, Great, Good; JudgmentPerfect is 1.
+	wantScore := []float64{0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	wantLife := []float64{10, 11, 12, 13, 14, 15, 1000, 1000}
+	for _, mode := range []Mode{ModePlay, ModeWatch} {
+		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+			engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/levelscore")
+			for judgment, want := range map[float64]float64{1: 3 + 11, 2: 6 + 13, 3: 9 + 15} {
+				result, err := engine.Run(Request{
+					Mode: mode, Archetype: "Initialization", Callback: "preprocess",
+					Memory: map[int][]float64{
+						4000: {judgment, 0}, 2004: make([]float64, 12),
+						2005: {0, 0, 0, 0, 0, 0, 1000, 1000},
+					},
+				})
+				if err != nil {
+					t.Fatalf("%s optimization %d: %v", mode, optimization, err)
+				}
+				if got := result.Memory[2004]; !reflect.DeepEqual(got, wantScore) {
+					t.Fatalf("%s optimization %d: level score %v, want %v", mode, optimization, got, wantScore)
+				}
+				if got := result.Memory[2005]; !reflect.DeepEqual(got, wantLife) {
+					t.Fatalf("%s optimization %d: level life %v, want %v", mode, optimization, got, wantLife)
+				}
+				if got := result.Memory[4000][1]; got != want {
+					t.Fatalf("%s optimization %d judgment %v: read-back %v, want %v", mode, optimization, judgment, got, want)
+				}
+			}
+		}
+	}
+}
+
+func TestConstantTablesUseEngineROM(t *testing.T) {
+	// Binary32-exact tables are read from EngineRom after the NaN/+Inf/-Inf
+	// prefix and the user ROM {9, 8}, each table once across modes, ordered by
+	// contents; the 0.1 table is not exact in binary32 and stays out of ROM.
+	exact, pairs, inexact := []float64{0.5, -3, 2.25, 7}, [][2]float64{{1, 2}, {5, -1}, {0.25, 8}}, []float64{0.1, 0.7, 0.3}
+	watchOnly := []float64{6, 1, 4}
+	for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+		engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/romtables")
+		rom := make([]float64, len(engine.artifacts.ROM)/4)
+		for i := range rom {
+			rom[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(engine.artifacts.ROM[4*i:])))
+		}
+		if len(rom) != 3+2+4+6+3 || rom[3] != 9 || rom[4] != 8 {
+			t.Fatalf("optimization %d: ROM %v", optimization, rom)
+		}
+		for _, value := range rom {
+			if value == 0.1 || value == float64(float32(0.1)) {
+				t.Fatalf("optimization %d: inexact table placed in ROM %v", optimization, rom)
+			}
+		}
+		for i := range 3 {
+			result, err := engine.Run(Request{Mode: ModePlay, Archetype: "Table", Callback: "preprocess", Memory: map[int][]float64{4000: {float64(i), 0, 0, 0, 0}}})
+			if err != nil {
+				t.Fatalf("optimization %d play %d: %v", optimization, i, err)
+			}
+			if got, want := result.Memory[4000], []float64{float64(i), exact[i], pairs[i][0], pairs[i][1], inexact[i]}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("optimization %d play %d: memory %v, want %v", optimization, i, got, want)
+			}
+			result, err = engine.Run(Request{Mode: ModeWatch, Archetype: "Table", Callback: "preprocess", Memory: map[int][]float64{4000: {float64(i), 0, 0, 0, 0}}})
+			if err != nil {
+				t.Fatalf("optimization %d watch %d: %v", optimization, i, err)
+			}
+			if got, want := result.Memory[4000][1:3], []float64{exact[i] + watchOnly[i], pairs[i][0]}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("optimization %d watch %d: memory %v, want %v", optimization, i, got, want)
+			}
+		}
+		checked := compileTestEngine(t, Options{Optimization: optimization, RuntimeChecks: RuntimeChecksTerminate}, "../testdata/romtables")
+		terminated, err := checked.Run(Request{Mode: ModePlay, Archetype: "Table", Callback: "preprocess", Memory: map[int][]float64{4000: {4, 0, 0, 0, 0}}})
+		if err != nil {
+			t.Fatalf("optimization %d out of range: %v", optimization, err)
+		}
+		if got := terminated.Memory[4000]; !reflect.DeepEqual(got, []float64{4, 0, 0, 0, 0}) {
+			t.Fatalf("optimization %d: continued after out-of-range index: %v", optimization, got)
+		}
+	}
+	first, err := Compile(Options{}, "../testdata/romtables")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		again, err := Compile(Options{}, "../testdata/romtables")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(first.artifacts.ROM, again.artifacts.ROM) {
+			t.Fatal("ROM layout is not deterministic")
 		}
 	}
 }

@@ -429,6 +429,8 @@ func (SparseConditionalConstantPropagation) Run(_ Context, function *ir.Function
 				_, changed := constants[place.ID]
 				return folded, changed
 			}
+			_, changed := folded.(ir.Const)
+			return folded, changed
 		case ir.RuntimeCall:
 			_, changed := folded.(ir.Const)
 			return folded, changed
@@ -456,8 +458,20 @@ func evaluateConstantState(expr ir.Expr, states map[int]constantState) constantS
 	case ir.Const:
 		return constantState{kind: constantValue, value: value.Value}
 	case ir.Load:
-		if place, ok := value.Place.(ir.SSAPlace); ok {
+		switch place := value.Place.(type) {
+		case ir.SSAPlace:
 			return states[place.ID]
+		case ir.MemoryPlace:
+			// A constant-table read at a constant index is that table entry.
+			if _, ok := ir.ConstantTable(place.Storage); ok {
+				index := evaluateConstantState(place.Index, states)
+				if index.kind != constantValue {
+					return index
+				}
+				if result, ok := ir.ConstantTableValue(place, index.value); ok && !math.IsNaN(result) && !math.IsInf(result, 0) {
+					return constantState{kind: constantValue, value: result}
+				}
+			}
 		}
 		return constantState{kind: constantOverdefined}
 	case ir.RuntimeCall:
@@ -597,9 +611,16 @@ func collectSSA(expr ir.Expr, result map[int]bool) {
 
 func foldExpr(expr ir.Expr, constants map[int]ir.Const) ir.Expr {
 	if load, ok := expr.(ir.Load); ok {
-		if p, ok := load.Place.(ir.SSAPlace); ok {
+		switch p := load.Place.(type) {
+		case ir.SSAPlace:
 			if c, ok := constants[p.ID]; ok {
 				return c
+			}
+		case ir.MemoryPlace:
+			if index, ok := foldExpr(p.Index, constants).(ir.Const); ok {
+				if result, ok := ir.ConstantTableValue(p, index.Value); ok && !math.IsNaN(result) && !math.IsInf(result, 0) {
+					return ir.Const{Value: result}
+				}
 			}
 		}
 		return load

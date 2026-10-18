@@ -162,6 +162,9 @@ func (c *Compiler) Compile(requested ...mode.Mode) (*Artifacts, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := frontend.PlaceConstantTables(project); err != nil {
+		return nil, fmt.Errorf("compiler: place constant tables: %w", err)
+	}
 	backendStarted := time.Now()
 	result, err := backend.Compile(project)
 	stats.Backend = time.Since(backendStarted)
