@@ -4025,6 +4025,9 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		if value, ok := l.indexArithmeticConstantArray(base, arr, index, n); ok {
 			return value
 		}
+		if value, ok := l.indexConstantROMArray(base, arr, index, n); ok {
+			return value
+		}
 		if base.immutablePackage && len(base.places) == 0 {
 			return l.indexImmutablePackageArray(base, arr, index, n)
 		}

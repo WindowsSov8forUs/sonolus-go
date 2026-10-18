@@ -174,7 +174,7 @@ var ROM sonolus.ROMFile
 
 Go 要求包含 `//go:embed` directive 的源文件导入 `embed`。这里没有直接使用 `embed.FS` 等包内标识符，所以使用空白导入；它只负责让 Go 接受并处理 directive，实际 ROM 变量仍使用 `sonolus.ROMFile` marker。
 
-只允许一个 ROM 声明。`ROMFile` 必须精确绑定一个文件，文件长度必须是 4 的倍数。用户 ROM 按 little-endian float32 保存；需要生成 ROM 时，backend 会在前面添加 NaN、`+Inf`、`-Inf` 三个固定值。显式的空 `ROMValues{}` 仍视为 ROM 声明并生成只含这三个固定值的 `EngineRom`。
+只允许一个 ROM 声明。`ROMFile` 必须精确绑定一个文件，文件长度必须是 4 的倍数。用户 ROM 按 little-endian float32 保存；需要生成 ROM 时，backend 会在前面添加 NaN、`+Inf`、`-Inf` 三个固定值。动态索引的 binary32 精确常量表（见下文 package 数组）追加在用户 ROM（或 fallback ROM）之后，相同内容只放一次，按内容排序，因此布局与 callback 的降级顺序无关。显式的空 `ROMValues{}` 仍视为 ROM 声明并生成只含这三个固定值的 `EngineRom`。
 
 ## Archetype
 
@@ -360,7 +360,7 @@ Archetype receiver method 只有在名称与下表 callback 签名同时匹配�
 - 跨用户包 helper、具体方法、泛型实例、立即调用闭包、命名/多返回值和裸 return。泛型实例在 inline frame 内使用具体 type substitution，因此 scalar、`[N]T`、`struct{...T}`、generic named type、`*T`、`Zero[T]` 与 `SlotsOf[T]` 都按实例化后的多槽 layout lowering。
 - 返回闭包、bound method value、具体类型与静态 interface 的 method expression（`T.M`、`(*T).M`、`I.M`）、package 级不可变 callable、局部 callable/参数的普通重赋值与有限 runtime target dispatch，以及由编译期常量状态证明终止的最多 256 层递归。局部 callable 即使在 runtime 分支内声明也保持静态目标；nil callable 调用在所有 runtime-check 等级终止 callback，`notify` 额外发出诊断。method expression 的显式 receiver 严格求值一次，interface receiver 继续通过 finite concrete-type variant 去虚拟化，不生成 runtime interface 对象。
 - 一维固定 `[N]func(...) ...` 数组的 literal、零值、值复制、动态索引、元素重赋值、value range、helper 参数与返回。每个元素保存有限 target tag；数组赋值和 value range 复制当时目标，后续修改不会反向影响快照。具有静态 initializer 的 package 数组可作为不可变函数表使用，对应 pydori 的 `PHASES` 等 module-level callable tuple；callback 内不得修改其元素或整体值。
-- 普通 package scalar、record 与定长数组同样要求 pure static initializer，并在 callback 中保持不可变。常量索引直接选择对应 slot；动态索引生成带边界检查的有限 switch，只物化所选元素，不为每次访问复制完整 package array backing。
+- 普通 package scalar、record 与定长数组同样要求 pure static initializer，并在 callback 中保持不可变。常量索引直接选择对应 slot。动态索引带边界检查，按元素值选择 lowering：等差的单槽常量表降为 `first + index·step`；其余全部为常量且每个值都能被 binary32 精确表示的数组（含多槽元素与不可寻址的数组字面量）与 sonolus.py 一样放入 `EngineRom`，每个访问点只生成一次 ROM 读取；不能被 binary32 精确表示的表保持精确值，生成只物化所选元素的有限 switch。三者都不为每次访问复制完整 package array backing。
 - 具有 pure static initializer 的 package scalar、runtime record 与定长数组可在 callback 中读取；数组额外支持动态索引和 value range。值会在使用点按 runtime layout 重建且始终不可变，callback 不能修改 package 值整体、字段或数组元素。该能力对应 Py module-level 常量与常量表，但不把 package variable 变成 Sonolus runtime storage。
 - 静态 pointer alias、`new(T)` 非逃逸局部、nil pointer 零值/转换/比较、有限 runtime pointer target 重绑与 target-set 合并、pointer helper 参数/返回、runtime-selected 数组 pointer 的动态索引、解引用读写、pointer 比较、嵌套动态数组 place 和逐 slot comparable aggregate 比较。callback-local 普通 struct 可保存 pointer alias 字段；零值、字段重绑、pointer receiver、整 struct 赋值、嵌套 struct、值参数与 helper 返回都保持 Go 的别名和按值快照语义。Archetype callback receiver 可作为 pointer 参数传入 package helper，helper 对其字段或 pointee 的写入继续作用于当前实体；只有 helper 重绑定参数自身或取得参数变量地址时，才为该参数建立独立 pointer 快照。包含 pointer/container descriptor 的局部定长数组支持零值/literal、整值复制、常量和动态索引、元素/字段重绑、value range、helper 参数与返回。`new(descriptorStruct)` 与 `&localStruct` 具有独立 aggregate 身份；其 pointer 可保存到局部变量或 struct 字段、动态重绑、比较、传参和返回，解引用写入继续作用于被选中的原对象。nil 解引用在所有 runtime-check 等级终止 callback，`notify` 额外发出诊断。
 - Concrete `EntityRef.Get()` view 可保存在 callback-local nullable Archetype pointer：无初始化或显式 `nil` 的局部变量以 entity index `-1` 初始化，可在 runtime 分支中接收同一 Archetype 的 view、重新赋值为 `nil`，并在合流后比较、访问字段或传给 helper。该局部始终保持一个静态 Archetype target，不会退化为普通 pointer、Runtime heap object 或开放类型 entity handle。

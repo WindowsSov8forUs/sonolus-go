@@ -658,6 +658,25 @@ func TestCompilerFallbackROMAndSourcePriority(t *testing.T) {
 	}
 }
 
+func TestConstantTablesFollowFallbackROM(t *testing.T) {
+	// multiz indexes the non-arithmetic table [3]float64{1, 4, 2} dynamically;
+	// it is placed after the fallback ROM, whose offsets are only known once
+	// the fallback applies.
+	fallback := make([]byte, 4)
+	binary.LittleEndian.PutUint32(fallback, math.Float32bits(7.5))
+	artifacts, err := NewCompiler(Options{FallbackROM: fallback}, "./testdata/multiz").Compile(mode.ModePlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values []float32
+	for offset := 12; offset+4 <= len(artifacts.ROM); offset += 4 {
+		values = append(values, math.Float32frombits(binary.LittleEndian.Uint32(artifacts.ROM[offset:])))
+	}
+	if !reflect.DeepEqual(values, []float32{7.5, 1, 4, 2}) {
+		t.Fatalf("user ROM = %v, want fallback then table", values)
+	}
+}
+
 func TestCompilerOmitsUnusedUndeclaredROM(t *testing.T) {
 	artifacts, err := NewCompiler(Options{}, "./testdata/lowering").Compile(mode.ModePlay)
 	if err != nil {

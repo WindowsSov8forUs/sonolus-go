@@ -905,6 +905,30 @@ func TestSCCPTracksExecutablePhiEdges(t *testing.T) {
 	}
 }
 
+func TestSCCPFoldsConstantTableReadsAtConstantIndexes(t *testing.T) {
+	// Pairs {1, 2}, {5, -1}, {0.25, 8}: index 2 (an SSA constant) offset 1 is 8;
+	// a read at an unknown index stays a load.
+	number := ir.Type{Name: "number", Slots: 1}
+	ssa := func(id int) ir.SSAPlace { return ir.SSAPlace{ID: id} }
+	storage := ir.ConstantTableStorage([]float64{1, 2, 5, -1, 0.25, 8})
+	known := ir.MemoryPlace{Storage: storage, Index: ir.Load{Place: ssa(1)}, Stride: 2, Offset: 1, Read: true}
+	unknown := ir.MemoryPlace{Storage: storage, Index: ir.Load{Place: parityMemory(0)}, Stride: 2, Read: true}
+	fn := &ir.Function{Name: "sccp-table", Entry: 0, Result: ir.Type{Name: "pair", Slots: 2}, Blocks: []*ir.Block{
+		{ID: 0, Instructions: []ir.Instruction{ir.Store{Place: ssa(1), Value: ir.RuntimeCall{Function: resource.RuntimeFunctionAdd, Args: []ir.Expr{ir.Const{Value: 1}, ir.Const{Value: 1}}, Result: number, Pure: true}}},
+			Terminator: ir.Return{Value: ir.Value{Type: ir.Type{Name: "pair", Slots: 2}, Slots: []ir.Expr{ir.Load{Place: known}, ir.Load{Place: unknown}}}}},
+	}}
+	if err := (SparseConditionalConstantPropagation{}).Run(Context{}, fn); err != nil {
+		t.Fatal(err)
+	}
+	ret := fn.Blocks[0].Terminator.(ir.Return)
+	if value, ok := ret.Value.Slots[0].(ir.Const); !ok || value.Value != 8 {
+		t.Fatalf("constant-index read = %#v", ret.Value.Slots[0])
+	}
+	if _, ok := ret.Value.Slots[1].(ir.Load); !ok {
+		t.Fatalf("unknown-index read was folded: %#v", ret.Value.Slots[1])
+	}
+}
+
 func TestDeadCodeEliminationPreservesIndexedLocalInitialization(t *testing.T) {
 	makeFunction := func() *ir.Function {
 		return &ir.Function{
