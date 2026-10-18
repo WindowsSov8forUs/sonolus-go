@@ -1387,6 +1387,23 @@ func TestSliceConditionsReportInsteadOfPanicking(t *testing.T) {
 	}
 }
 
+func TestEntityViewBaseRejectsCopiesAndMemoryAccess(t *testing.T) {
+	// view.Base of another entity is a view, not a value: copying it, passing
+	// it by value or touching its memory fields through it is rejected.
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidentitybase")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{
+		"play.go:26:7", "play.go:36:46", "must be addressed (&view.Base) or have a field selected",
+		"EntityRef.Get cannot access memory field Base.Scratch",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("missing %q in: %v", want, err)
+		}
+	}
+}
+
 func TestGlobalCallbacksRejectUnknownExportedName(t *testing.T) {
 	_, err := parseMode(mode.ModeTutorial, "./testdata/invalidglobal")
 	if err == nil || !strings.Contains(err.Error(), "Updtae: unknown tutorial global callback") {
