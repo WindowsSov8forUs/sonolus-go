@@ -1312,6 +1312,9 @@ type labeledTargets struct {
 }
 
 type lowerer struct {
+	// entityBaseUses marks embedded archetype base selections (view.Base)
+	// whose parent addresses them or selects a field (entityViewBase).
+	entityBaseUses            map[*ast.SelectorExpr]bool
 	mode                      mode.Mode
 	phase                     string
 	packages                  map[*types.Package]*packages.Package
@@ -3471,7 +3474,12 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 		v.type_ = pointer.Elem()
 		return v
 	case *ast.UnaryExpr:
+		upcast := n.Op == token.AND && l.markEntityBaseUse(n.X)
 		v := l.expr(n.X)
+		if v.entity != nil && upcast && len(v.slots) == 1 {
+			// &view.Base: a view of the same entity typed as its base
+			return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: v.slots, entity: v.entity}
+		}
 		if v.entity != nil {
 			l.errorAt(n, "EntityRef.Get views cannot be addressed or used with unary operators")
 			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
@@ -3690,6 +3698,7 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				storage, read, write := levelGlobalStorageAccess(declaration, l.mode, l.phase)
 				return l.lowerLevelGlobalValue(n, declaration, storage, ir.Const{Value: float64(declaration.Offset)}, read, write)
 			}
+			l.markEntityBaseUse(n.X)
 			base := l.expr(n.X)
 			if base.persistentPointer != nil {
 				pointer, ok := types.Unalias(base.type_).(*types.Pointer)
@@ -3765,7 +3774,12 @@ func (l *lowerer) expr(expr ast.Expr) lowerValue {
 				}
 				return value
 			}
-			if field.Embedded() && l.currentArchetype != nil {
+			if base.entity != nil {
+				if binding, ok := l.embeddedArchetype(field); ok {
+					return l.entityViewBase(n, base, binding)
+				}
+			}
+			if field.Embedded() && l.currentArchetype != nil && base.entity == nil {
 				if named, ok := namedType(field.Type()); ok {
 					if binding, exists := l.archetypes[named]; exists {
 						inMRO := false
@@ -5425,6 +5439,71 @@ func (l *lowerer) freezePointerValue(value lowerValue, node ast.Node) lowerValue
 		}
 	}
 	return value
+}
+
+// embeddedArchetype reports whether field embeds an archetype declaration.
+func (l *lowerer) embeddedArchetype(field *types.Var) (archetypeBinding, bool) {
+	if !field.Embedded() {
+		return archetypeBinding{}, false
+	}
+	named, ok := namedType(field.Type())
+	if !ok {
+		return archetypeBinding{}, false
+	}
+	binding, exists := l.archetypes[named]
+	return binding, exists
+}
+
+// markEntityBaseUse records that expression, when it selects an embedded
+// archetype base, is addressed or has a field selected by its parent: the
+// two uses entityViewBase accepts.
+func (l *lowerer) markEntityBaseUse(expression ast.Expr) bool {
+	selector, ok := ast.Unparen(expression).(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	selection := l.pkg.TypesInfo.Selections[selector]
+	if selection == nil || selection.Kind() != types.FieldVal {
+		return false
+	}
+	field, ok := selection.Obj().(*types.Var)
+	if !ok {
+		return false
+	}
+	if _, ok := l.embeddedArchetype(field); !ok {
+		return false
+	}
+	if l.entityBaseUses == nil {
+		l.entityBaseUses = map[*ast.SelectorExpr]bool{}
+	}
+	l.entityBaseUses[selector] = true
+	return true
+}
+
+// entityViewBase lowers view.Base, an embedded archetype base selected on an
+// EntityRef.Get view, as a view of the same entity typed as that base: an
+// upcast, as sonolus.py passes another entity where its base class is
+// expected. Field access keeps the per-storage rules of entityReferenceField.
+// A Go value copy of another entity's base has no view representation, so
+// the selection must be addressed (&view.Base) or have a field selected.
+func (l *lowerer) entityViewBase(n *ast.SelectorExpr, view lowerValue, base archetypeBinding) lowerValue {
+	if !l.entityBaseUses[n] {
+		l.errorAt(n, "embedded archetype base %s of an EntityRef.Get view must be addressed (&view.%s) or have a field selected", base.declaration.Name, n.Sel.Name)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	if len(view.slots) != 1 {
+		l.errorAt(n, "EntityRef.Get view requires exactly one entity index slot")
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	inMRO := false
+	for _, member := range view.entity.binding.declaration.MRO {
+		inMRO = inMRO || member == base.declaration
+	}
+	if !inMRO {
+		l.errorAt(n, "archetype %s does not inherit %s", view.entity.binding.declaration.Name, base.declaration.Name)
+		return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+	}
+	return lowerValue{type_: l.pkg.TypesInfo.TypeOf(n), slots: view.slots, entity: &entityReferenceValue{binding: base}}
 }
 
 func (l *lowerer) entityReferenceField(node ast.Node, object *types.Var, reference lowerValue) lowerValue {

@@ -1299,6 +1299,53 @@ func TestConstantTablesUseEngineROM(t *testing.T) {
 	}
 }
 
+func TestEntityViewEmbeddedBase(t *testing.T) {
+	// &view.Base passes another entity to a *Base helper: writes reach that
+	// entity's shared memory, whether or not the current archetype also
+	// embeds Base. Entity 1 (Head) references entity 2; entity 3 (Probe)
+	// also references entity 2. Base.Value is shared slot 0.
+	for _, mode := range []Mode{ModePlay, ModeWatch} {
+		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+			engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/entitybase")
+			shared := make([]float64, 32*4)
+			result, err := engine.Run(Request{
+				Mode: mode, Archetype: "Head", Callback: "preprocess",
+				Memory: map[int][]float64{4000: {0, 0}, 4001: {2}, 4002: shared[32:64], 4102: shared},
+			})
+			if err != nil {
+				t.Fatalf("%s optimization %d head: %v", mode, optimization, err)
+			}
+			got := result.Memory[4102]
+			if got[2*32] != 7 {
+				t.Fatalf("%s optimization %d: other entity's Value %v, want 7", mode, optimization, got[2*32])
+			}
+			if out := result.Memory[4000][1]; out != 77 {
+				t.Fatalf("%s optimization %d: read-back %v, want 77", mode, optimization, out)
+			}
+			result, err = engine.Run(Request{
+				Mode: mode, Archetype: "Probe", Callback: "preprocess",
+				Memory: map[int][]float64{4001: {2}, 4102: make([]float64, 32*4)},
+			})
+			if err != nil {
+				t.Fatalf("%s optimization %d probe: %v", mode, optimization, err)
+			}
+			if got := result.Memory[4102][2*32]; got != 5 {
+				t.Fatalf("%s optimization %d: probe write %v, want 5", mode, optimization, got)
+			}
+			result, err = engine.Run(Request{
+				Mode: mode, Archetype: "Leaf", Callback: "preprocess",
+				Memory: map[int][]float64{4001: {2}, 4002: make([]float64, 32), 4102: make([]float64, 32*4)},
+			})
+			if err != nil {
+				t.Fatalf("%s optimization %d leaf: %v", mode, optimization, err)
+			}
+			if got := result.Memory[4102][2*32]; got != 9 {
+				t.Fatalf("%s optimization %d: shared-only base write %v, want 9", mode, optimization, got)
+			}
+		}
+	}
+}
+
 func TestMultiKeyZDrawArguments(t *testing.T) {
 	// Draw: z1 after the quad, alpha, then z2..z4; curved draws put z2..z4
 	// after the curve parameters. Unset ZIndex keys are 0.
