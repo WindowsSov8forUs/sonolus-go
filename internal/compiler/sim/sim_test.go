@@ -1205,6 +1205,39 @@ func TestEntityLifeAndScoreFacadesUseEntityBlocks(t *testing.T) {
 	}
 }
 
+func TestConsecutiveScoreAndLifeUseJudgmentSlots(t *testing.T) {
+	// Level Score (2004) and Level Life (2005) lay out the consecutive groups
+	// as Perfect, Great, Good; JudgmentPerfect is 1.
+	wantScore := []float64{0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+	wantLife := []float64{10, 11, 12, 13, 14, 15, 1000, 1000}
+	for _, mode := range []Mode{ModePlay, ModeWatch} {
+		for _, optimization := range []OptimizationLevel{OptimizationMinimal, OptimizationFast, OptimizationStandard} {
+			engine := compileTestEngine(t, Options{Optimization: optimization}, "../testdata/levelscore")
+			for judgment, want := range map[float64]float64{1: 3 + 11, 2: 6 + 13, 3: 9 + 15} {
+				result, err := engine.Run(Request{
+					Mode: mode, Archetype: "Initialization", Callback: "preprocess",
+					Memory: map[int][]float64{
+						4000: {judgment, 0}, 2004: make([]float64, 12),
+						2005: {0, 0, 0, 0, 0, 0, 1000, 1000},
+					},
+				})
+				if err != nil {
+					t.Fatalf("%s optimization %d: %v", mode, optimization, err)
+				}
+				if got := result.Memory[2004]; !reflect.DeepEqual(got, wantScore) {
+					t.Fatalf("%s optimization %d: level score %v, want %v", mode, optimization, got, wantScore)
+				}
+				if got := result.Memory[2005]; !reflect.DeepEqual(got, wantLife) {
+					t.Fatalf("%s optimization %d: level life %v, want %v", mode, optimization, got, wantLife)
+				}
+				if got := result.Memory[4000][1]; got != want {
+					t.Fatalf("%s optimization %d judgment %v: read-back %v, want %v", mode, optimization, judgment, got, want)
+				}
+			}
+		}
+	}
+}
+
 func TestMultiKeyZDrawArguments(t *testing.T) {
 	// Draw: z1 after the quad, alpha, then z2..z4; curved draws put z2..z4
 	// after the curve parameters. Unset ZIndex keys are 0.

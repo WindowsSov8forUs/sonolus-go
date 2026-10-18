@@ -25,6 +25,10 @@ type Recipe struct {
 	Stride    int
 	IndexArg  int
 	Write     bool
+	// JudgmentIndex marks an index argument that is a sonolus.Judgment whose
+	// slots start at Perfect (1): the lowered index is judgment − 1 and Miss
+	// is rejected.
+	JudgmentIndex bool
 }
 
 type memoryRecipe struct {
@@ -33,6 +37,20 @@ type memoryRecipe struct {
 	stride   int
 	indexArg int
 	write    bool
+}
+
+// judgmentIndexedRecipes are the memory recipes indexed by a Judgment. Level
+// Score and Level Life lay out the consecutive groups as Perfect, Great, Good
+// (sonolus.py _LevelScore / _LevelLife), while JudgmentPerfect is 1.
+var judgmentIndexedRecipes = map[string]bool{
+	"sonolus/play.lifeAPI.Consecutive":      true,
+	"sonolus/play.lifeAPI.SetConsecutive":   true,
+	"sonolus/play.scoreAPI.Consecutive":     true,
+	"sonolus/play.scoreAPI.SetConsecutive":  true,
+	"sonolus/watch.lifeAPI.Consecutive":     true,
+	"sonolus/watch.lifeAPI.SetConsecutive":  true,
+	"sonolus/watch.scoreAPI.Consecutive":    true,
+	"sonolus/watch.scoreAPI.SetConsecutive": true,
 }
 
 var memoryRecipes = map[string]memoryRecipe{
@@ -500,7 +518,7 @@ func LookupRecipe(symbol *Symbol) Recipe {
 		return Recipe{Kind: RecipeContainer, Operation: operation}
 	}
 	if recipe, ok := memoryRecipes[symbol.Key()]; ok {
-		return Recipe{Kind: RecipeMemory, Storage: recipe.storage, Offset: recipe.offset, Stride: recipe.stride, IndexArg: recipe.indexArg, Write: recipe.write}
+		return Recipe{Kind: RecipeMemory, Storage: recipe.storage, Offset: recipe.offset, Stride: recipe.stride, IndexArg: recipe.indexArg, Write: recipe.write, JudgmentIndex: judgmentIndexedRecipes[symbol.Key()]}
 	}
 	if recipe, ok := uiMemoryRecipes[symbol.Key()]; ok {
 		return Recipe{Kind: RecipeMemory, Storage: recipe.storage, Offset: recipe.offset, Stride: recipe.stride, IndexArg: recipe.indexArg, Write: recipe.write}

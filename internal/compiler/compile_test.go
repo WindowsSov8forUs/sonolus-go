@@ -1366,6 +1366,13 @@ func TestRandIntnRejectsNonPositiveConstantBound(t *testing.T) {
 	}
 }
 
+func TestConsecutiveRejectsMissJudgment(t *testing.T) {
+	_, err := parseMode(mode.ModePlay, "./testdata/invalidjudgment")
+	if err == nil || !strings.Contains(err.Error(), "judgment must be JudgmentPerfect, JudgmentGreat or JudgmentGood") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGlobalCallbacksRejectUnknownExportedName(t *testing.T) {
 	_, err := parseMode(mode.ModeTutorial, "./testdata/invalidglobal")
 	if err == nil || !strings.Contains(err.Error(), "Updtae: unknown tutorial global callback") {

@@ -5578,6 +5578,17 @@ func (l *lowerer) memoryCall(n *ast.CallExpr, recipe catalog.Recipe, args []lowe
 			return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 		}
 		index = args[recipe.IndexArg].slots[0]
+		if recipe.JudgmentIndex {
+			if judgment, ok := index.(ir.Const); ok {
+				if judgment.Value < 1 || judgment.Value > 3 || judgment.Value != math.Trunc(judgment.Value) {
+					l.errorAt(n, "judgment must be JudgmentPerfect, JudgmentGreat or JudgmentGood, got %v", judgment.Value)
+					return zeroValue(l.pkg.TypesInfo.TypeOf(n))
+				}
+				index = ir.Const{Value: judgment.Value - 1}
+			} else {
+				index = l.pure(resource.RuntimeFunctionSubtract, n, index, ir.Const{Value: 1})
+			}
+		}
 	}
 	if recipe.Write {
 		valueArg := recipe.IndexArg + 1
