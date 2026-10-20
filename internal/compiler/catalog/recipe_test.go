@@ -131,9 +131,14 @@ func TestRuntimeSimulationInventoryIsCompleteAndConsistent(t *testing.T) {
 			t.Fatalf("RuntimeFunction %s special-shape metadata is inconsistent: %#v", runtime, metadata)
 		}
 		switch metadata.Class {
-		case SimulationPure, SimulationRandom, SimulationHandler:
+		case SimulationPure, SimulationHandler:
 			if metadata.Effect != EffectPure {
 				t.Fatalf("RuntimeFunction %s class %s has non-pure effect %s", runtime, metadata.Class, metadata.Effect)
+			}
+		case SimulationRandom:
+			// a draw reads the generator state (sonolus.py Op.Random: not pure)
+			if metadata.Effect != EffectRead {
+				t.Fatalf("RuntimeFunction %s class %s has effect %s, want read", runtime, metadata.Class, metadata.Effect)
 			}
 		case SimulationControl, SimulationEffect:
 			if metadata.Effect != EffectWrite {
@@ -183,6 +188,8 @@ func TestNativeEffectsMatchCompilerMetadata(t *testing.T) {
 		"sonolus/native.StackGetFrame":        EffectRead,
 		"sonolus/native.StackGetPointer":      EffectRead,
 		"sonolus/native.StackGetFramePointer": EffectRead,
+		"sonolus/native.Random":               EffectRead,
+		"sonolus/native.RandomInteger":        EffectRead,
 		"sonolus/native.Add":                  EffectPure,
 		"sonolus/native.DebugLog":             EffectWrite,
 		"sonolus/native.DebugPause":           EffectWrite,

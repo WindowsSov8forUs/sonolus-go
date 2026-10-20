@@ -60,6 +60,9 @@ Native mutable reads (Get, GetPointed, GetShifted and stack getters) carry
 EffectRead, not EffectPure. Frontend materializes these calls at their evaluation
 point with Pure=false, so inlining, LICM and CSE cannot move or reuse their values
 across writes. JS sideEffectFreeFuncs alone does not imply referential transparency.
+Random and RandomInteger carry EffectRead for the same reason (sonolus.py Op.Random
+is not pure): every call draws again, so they are never shared or hoisted; the
+math/rand intrinsics take this effect from the catalog.
 
 Backend SNode peephole rules follow `sonolus.js-compiler` commit `37b0eee`, `src/snode/optimize`. They run bottom-up after IR finalization and preserve evaluation of eliminated dynamic arithmetic arguments with `Execute`.
 

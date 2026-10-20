@@ -5119,7 +5119,10 @@ func (l *lowerer) call(n *ast.CallExpr) lowerValue {
 				)
 			}
 		}
-		return l.runtimeCall(n, symbol.Runtime, true, symbol.Prefix, args, symbol.Suffix...)
+		// math/rand draws are not pure: their catalog effect keeps each call
+		// at its evaluation point.
+		simulation, known := catalog.LookupRuntimeSimulation(symbol.Runtime)
+		return l.runtimeCall(n, symbol.Runtime, known && simulation.Effect == catalog.EffectPure, symbol.Prefix, args, symbol.Suffix...)
 	}
 	return zeroValue(l.pkg.TypesInfo.TypeOf(n))
 }

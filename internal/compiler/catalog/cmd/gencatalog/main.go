@@ -286,9 +286,11 @@ func nativeEntries(root string) []entry {
 			effect = "EffectPure"
 		}
 		// JS sideEffectFreeFuncs describes removable evaluation, not referential
-		// transparency. Like sonolus.py Op.Get, mutable reads are not pure.
+		// transparency. Like sonolus.py Op.Get, mutable reads are not pure; like
+		// Op.Random and Op.RandomInteger, every draw reads the generator state.
 		switch name {
-		case "Get", "GetPointed", "GetShifted", "StackGet", "StackGetFrame", "StackGetPointer", "StackGetFramePointer":
+		case "Get", "GetPointed", "GetShifted", "StackGet", "StackGetFrame", "StackGetPointer", "StackGetFramePointer",
+			"Random", "RandomInteger":
 			effect = "EffectRead"
 		}
 		known[name] = entry{pkg: "sonolus/native", name: name, kind: "KindNative", signature: signature, modes: allNativeModes, phases: allNativePhases, effect: effect, runtime: name, source: "sonolus.js mode indexes|sonolus.js native|sonolus-core-go", minArgs: minArgs, maxArgs: maxArgs, resultSlots: resultSlots, hasRuntimeSignature: true}
@@ -498,7 +500,7 @@ func main() {
 
 func simulationEffect(class, declared string) string {
 	switch class {
-	case "SimulationPure", "SimulationRandom", "SimulationHandler":
+	case "SimulationPure", "SimulationHandler":
 		return "EffectPure"
 	case "SimulationControl", "SimulationEffect":
 		return "EffectWrite"

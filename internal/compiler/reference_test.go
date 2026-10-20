@@ -385,6 +385,53 @@ func TestNativeMemorySnapshots(t *testing.T) {
 	}
 }
 
+func TestRandomDrawsAreNotShared(t *testing.T) {
+	// groups of calls that must each draw again
+	groups := [][2]int{{0, 4}, {4, 8}, {8, 10}, {10, 12}, {12, 14}, {14, 20}}
+	for _, checks := range []RuntimeChecks{RuntimeChecksNone, RuntimeChecksNotify} {
+		for _, level := range []optimize.Level{optimize.LevelMinimal, optimize.LevelFast, optimize.LevelStandard} {
+			t.Run(fmt.Sprintf("checks%d/%s", checks, level), func(t *testing.T) {
+				artifacts, err := NewCompiler(Options{Optimization: level, RuntimeChecks: checks}, "./testdata/randomdraws").Compile(mode.ModeWatch)
+				if err != nil {
+					t.Fatal(err)
+				}
+				root := -1
+				for _, archetype := range artifacts.Watch.Archetypes {
+					if archetype.Name == "Draws" {
+						root = archetype.UpdateSequential.Index
+					}
+				}
+				if root < 0 {
+					t.Fatal("missing Draws")
+				}
+				result, err := simexec.Execute(artifacts.Watch.Nodes, root, simexec.Request{RandomSeed: 7})
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []float64
+				for _, effect := range result.Effects {
+					if effect.Function != resource.RuntimeFunctionDebugLog {
+						t.Fatalf("unexpected effect: %v", effect)
+					}
+					got = append(got, effect.Arguments...)
+				}
+				if len(got) != 20 {
+					t.Fatalf("logs = %v, want 20 draws", got)
+				}
+				for _, g := range groups {
+					seen := map[float64]bool{}
+					for _, v := range got[g[0]:g[1]] {
+						if seen[v] {
+							t.Fatalf("draws %v share a value: %v", g, got[g[0]:g[1]])
+						}
+						seen[v] = true
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestCallValuesPreserveGoSemantics(t *testing.T) {
 	combined := []float64{2, 8, 8, 8, 8, 8, 8, 8, 8, 4, 4, 2, 1, 8, 10, 10, 10, 10, 10, 324, 324, 324, 10}
 	elements := make([]float64, 0, 96)

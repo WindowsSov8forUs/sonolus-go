@@ -55,6 +55,10 @@ Fast 首先尝试顺序分配；超过限制时使用活性复用。快速布局
 
 修复将三种原生 Get 和栈读取标为 `EffectRead`，Frontend 仅对 `EffectPure` 设置 `Pure=true`，其他有返回值的调用在求值点物化。集中回归在 none/notify × 三优化级比较直接 Set、helper Set、循环累计 Set 的 before/after/count 与真实内存，并覆盖 pointed/shifted 读取、指针重绑、循环内更新及参数求值顺序。JS “无副作用”不再被用于推断这些读取具有引用透明性。
 
+### 随机数不可共享
+
+同一根因也使 `Random`、`RandomInteger` 带 `EffectPure`，`math/rand` 的 intrinsic 降级更直接固定为 `Pure=true`。Standard 因而把循环中的 `rand.Float64()` 当作循环不变量提到循环外，每次迭代写入同一个随机数（例如逐个填充数组）。按 sonolus.py `Op.Random` / `Op.RandomInteger`（无副作用、非纯）的语义，两者改为 `EffectRead`：每次调用读取随机数状态，在求值点物化，不被 CSE、LICM 或内联共享或移动；未使用的结果仍可删除。intrinsic 降级改为从 catalog 读取该效果，`math` 的纯函数不受影响。回归在 none/notify × 三优化级检查循环内、同参重复调用、`native.Random` / `RandomInteger` 与逐个填充数组的抽取互不相同。
+
 新 Py 基线使用的 IncrementPost 节点同时暴露了内部执行器 Pre/Post 返回值反置：Sonolus [Post 返回修改后值](https://wiki.sonolus.com/engine-specs/functions/increment-post)，[Pre 返回修改前值](https://wiki.sonolus.com/engine-specs/functions/increment-pre)。执行器按该契约修正，覆盖增/减 × 前/后 × 普通/pointed/shifted 共 12 种组合；这属于验证器修复，与 O2 旧读取的根因独立。
 
 ### Pass 组织
