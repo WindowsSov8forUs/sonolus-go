@@ -25,14 +25,20 @@ type CanvasOptions struct {
 	Scroll Scroll
 	Size   float64
 }
+
+// PrintOptions are the arguments of Print. Print passes the fields in
+// declaration order, which is the order of the Sonolus Print function:
+// value, format, decimalPlaces, anchor, pivot, size, rotation, color, alpha,
+// horizontalAlign, background.
 type PrintOptions struct {
 	Value           float64
 	Format          sonolus.PrintFormat
 	DecimalPlaces   int
 	Anchor, Pivot   sonolus.Vec2
 	Size            sonolus.Vec2
-	Rotation, Alpha float64
+	Rotation        float64
 	Color           sonolus.PrintColor
+	Alpha           float64
 	HorizontalAlign sonolus.HorizontalAlign
 	Background      bool
 }

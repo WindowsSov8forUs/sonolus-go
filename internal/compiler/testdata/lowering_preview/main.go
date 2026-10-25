@@ -74,9 +74,10 @@ func (*Note) Preprocess() {
 
 func (*Note) Render() {
 	preview.Canvas.Print(preview.PrintOptions{
-		Value: 1, Format: sonolus.PrintFormatNumber, DecimalPlaces: 2,
-		Anchor: sonolus.NewVec2(0, 0), Pivot: sonolus.NewVec2(0.5, 0.5), Size: sonolus.NewVec2(1, 1),
-		Alpha: 1,
+		Value: 1, Format: sonolus.PrintFormatBPM, DecimalPlaces: 2,
+		Anchor: sonolus.NewVec2(3, 4), Pivot: sonolus.NewVec2(0.5, 0.25), Size: sonolus.NewVec2(6, 7),
+		Rotation: 8, Alpha: 0.75, Color: sonolus.PrintColorPurple,
+		HorizontalAlign: sonolus.HorizontalAlignRight, Background: true,
 	})
 	Skin.Note.Draw(sonolus.Rect{T: 1, R: 1, B: -1, L: -1}.ToQuad(), 0, 1)
 }
