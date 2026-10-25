@@ -879,7 +879,7 @@ func TestDiagnosticsAreIndependentOfCheckoutPath(t *testing.T) {
 	compile := func(root string) map[int]string {
 		t.Helper()
 		files := map[string]string{
-			"go.mod":  fmt.Sprintf("module example.com/diagnostics\n\ngo 1.26.9\n\nrequire github.com/WindowsSov8forUs/sonolus-go/v2 v2.0.0\nreplace github.com/WindowsSov8forUs/sonolus-go/v2 => %s\n", filepath.ToSlash(moduleRoot)),
+			"go.mod":  fmt.Sprintf("module example.com/diagnostics\n\ngo 1.26.10\n\nrequire github.com/WindowsSov8forUs/sonolus-go/v2 v2.0.0\nreplace github.com/WindowsSov8forUs/sonolus-go/v2 => %s\n", filepath.ToSlash(moduleRoot)),
 			"main.go": "package main\n\nfunc main() {}\n",
 			"play.go": `//go:build play
 
@@ -1274,8 +1274,18 @@ func TestPreviewFacadeLowering(t *testing.T) {
 		t.Fatalf("preview preprocess stores: %#v", preprocess.stores)
 	}
 	render := inspectFunction(callbackByName(t, callbacks, "render"))
-	if calls := render.calls[resource.RuntimeFunctionPrint]; len(calls) != 1 || len(calls[0].Args) != 14 {
+	calls := render.calls[resource.RuntimeFunctionPrint]
+	if len(calls) != 1 || len(calls[0].Args) != 14 {
 		t.Fatalf("preview Print calls: %#v", calls)
+	}
+	// Sonolus Print: value, format, decimalPlaces, anchor, pivot, size,
+	// rotation, color, alpha, horizontalAlign, background.
+	want := []float64{1, 20, 2, 3, 4, 0.5, 0.25, 6, 7, 8, 5, 0.75, 1, 1}
+	for index, arg := range calls[0].Args {
+		value, ok := arg.(ir.Const)
+		if !ok || value.Value != want[index] {
+			t.Fatalf("preview Print argument %d = %#v, want %v", index, arg, want[index])
+		}
 	}
 	if calls := render.calls[resource.RuntimeFunctionDraw]; len(calls) != 1 || len(calls[0].Args) != 14 {
 		t.Fatalf("preview Draw calls: %#v", calls)

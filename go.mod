@@ -1,6 +1,6 @@
 module github.com/WindowsSov8forUs/sonolus-go/v2
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/WindowsSov8forUs/sonolus-core-go v0.3.0
